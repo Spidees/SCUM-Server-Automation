@@ -83,7 +83,7 @@ Current project structure with modular architecture:
 │   └── 📁 appcache/                       # Application cache
 ├── 📁 backups/                            # Automatic backups (auto-created)
 ├── 📁 data/                               # Database storage (auto-created)
-│   └── � weekly_leaderboards.db          # SQLite database for statistics
+│   └── 📄 weekly_leaderboards.db          # SQLite database for statistics
 ├── 📁 sqlite-tools/                       # SQLite utilities (auto-downloaded)
 │   ├── 📄 sqlite3.exe                     # SQLite command line tool
 │   ├── 📄 sqlite3_analyzer.exe            # Database analyzer
