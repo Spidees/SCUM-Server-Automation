@@ -2303,7 +2303,7 @@ function Get-WeeklyLeaderboard {
     )
     
     try {
-        $weeklyDbPath = "c:\SCUMServer\data\weekly_leaderboards.db"
+        $weeklyDbPath = ".\data\weekly_leaderboards.db"
         
         if (-not (Test-Path $weeklyDbPath)) {
             Write-Warning "Weekly leaderboards database not found at: $weeklyDbPath"
@@ -2564,7 +2564,7 @@ function Update-WeeklySnapshot {
     )
     
     try {
-        $weeklyDbPath = "c:\SCUMServer\data\weekly_leaderboards.db"
+        $weeklyDbPath = ".\data\weekly_leaderboards.db"
         
         if (-not (Test-Path $weeklyDbPath)) {
             Write-Warning "Weekly leaderboards database not found at: $weeklyDbPath"
@@ -2660,7 +2660,7 @@ function Test-WeeklyResetNeeded {
     #>
     
     try {
-        $weeklyDbPath = "c:\SCUMServer\data\weekly_leaderboards.db"
+        $weeklyDbPath = ".\data\weekly_leaderboards.db"
         
         if (-not (Test-Path $weeklyDbPath)) {
             return $true # Need to create initial snapshot
