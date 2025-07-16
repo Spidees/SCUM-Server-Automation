@@ -2,9 +2,9 @@
 
 # 🎮 SCUM Server Automation v2.1.0
 
-**Professional SCUM Dedicated Server Management for Windows**
+**SCUM Dedicated Server Management for Windows**
 
-This project provides a complete enterprise-grade automation solution for running SCUM dedicated servers on Windows. Features include:
+This project provides a complete automation solution for running SCUM dedicated servers on Windows. Features include:
 
 - ✅ **Automatic First Install** – Fully automated first-time setup, including SteamCMD download and server installation
 - ✅ **Smart Update System** – Intelligent update detection with player notifications and pre-update backups
@@ -295,33 +295,6 @@ The system provides full Discord integration with live embeds, comprehensive not
 
 ---
 
-# 🎯 Advanced Features
-
-## Live Discord Embeds
-- **Server Status Embed** - Real-time server information with player count, performance metrics, and uptime
-- **Live Leaderboards** - Dynamic leaderboards updated automatically with weekly and all-time statistics
-- **Performance Monitoring** - Visual performance indicators with color-coded status
-
-## Database Integration  
-- **SQLite Database** - Stores player statistics, leaderboards, and historical data
-- **19 Leaderboard Categories** - Comprehensive player ranking system
-- **Weekly Resets** - Automatic weekly leaderboard resets with historical preservation
-- **Real-time Statistics** - Live player data collection and analysis
-
-## Advanced Chat System
-- **Game Chat Relay** - Game chat messages displayed in Discord channels
-- **Chat Type Support** - Global, squad, and local chat integration  
-- **Admin Chat Channel** - Separate admin-only chat channel
-- **Message Filtering** - Configurable message length and type filtering
-
-## Intelligent Task Scheduling
-- **Confirmation System** - Admin commands require confirmation via Discord reactions
-- **Task Cancellation** - Ability to cancel scheduled restarts, updates, or stops
-- **Warning System** - Automatic countdown warnings before scheduled actions
-- **Conflict Resolution** - Smart handling of overlapping scheduled tasks
-
----
-
 # 🔧 NSSM Service Configuration
 
 **NSSM (Non-Sucking Service Manager)** allows your SCUM server to run as a Windows service.
@@ -544,136 +517,6 @@ Add SteamIDs for players who should have priority access. Whitelisted players ca
 - SteamCMD logs:
   - `...\steamcmd\logs\`
 
----
-
-# 🔄 System Architecture & Logic
-
-## Modular Design
-The system is built on a comprehensive modular architecture with over 20 specialized PowerShell modules:
-
-### Core Systems
-- **Common Module** (`common.psm1`) - Shared utilities, configuration management, and logging framework
-- **Database Module** (`scum-database.psm1`) - SQLite operations, player statistics, and leaderboard queries
-- **Monitoring Module** (`monitoring.psm1`) - Real-time server health, performance tracking, and crash detection
-
-### Automation Systems  
-- **Backup Module** (`backup.psm1`) - Automated backups with compression and retention management
-- **Scheduling Module** (`scheduling.psm1`) - Restart scheduling, warning systems, and task management
-- **Update Module** (`update.psm1`) - Intelligent update detection and deployment with player notifications
-
-### Communication Systems
-- **Discord Integration** (`discord-integration.psm1`) - Main Discord system coordinator
-- **Live Embeds Manager** (`live-embeds-manager.psm1`) - Real-time status and leaderboard embeds
-- **Notification Manager** (`notification-manager.psm1`) - Comprehensive notification routing system
-- **Admin Commands** (`discord-admin-commands.psm1`) - Server management commands with confirmation
-- **Player Commands** (`discord-player-commands.psm1`) - Information commands for players
-- **Chat Relay** - Game chat messages displayed in Discord channels
-
-### Server Management
-- **Service Module** (`service.psm1`) - Windows service operations and NSSM integration
-- **Installation Module** (`installation.psm1`) - First-time setup and dependency management
-
-## Operational Logic
-
-### Startup Sequence
-1. **Dependency Check** - Verifies and downloads SteamCMD, SQLite tools, server files
-2. **Module Initialization** - Loads all required modules with dependency resolution
-3. **Database Setup** - Initializes SQLite database for statistics and leaderboards
-4. **Discord Connection** - Establishes WebSocket bot connection with presence management
-5. **Monitoring Activation** - Starts real-time server health and performance monitoring
-6. **Scheduled Tasks** - Activates restart scheduling and warning systems
-
-### Update & Backup Logic
-- **Smart Update Detection** - Checks for updates on configurable schedule
-- **Player-Aware Updates** - Delays updates when players are online with notifications
-- **Pre-Update Backups** - Automatic backup before any update operation
-- **Integrity Verification** - Post-update server executable verification
-- **Rollback Capability** - Backup restoration on update failure
-
-### Health Monitoring
-- **Multi-Layer Detection** - Service status, log analysis, and performance metrics
-- **Intelligent Recovery** - Automatic restart with cooldown and attempt limiting  
-- **Performance Tracking** - Real-time FPS monitoring with configurable thresholds
-- **Alert System** - Discord notifications for performance issues and crashes
-
-### Database Operations
-- **Real-Time Statistics** - Continuous player data collection and processing
-- **19 Leaderboard Categories** - Comprehensive ranking system (kills, deaths, playtime, etc.)
-- **Weekly Reset System** - Automatic weekly leaderboard resets with historical preservation
-- **Query Optimization** - Efficient SQLite operations with caching and indexing
-
----
-
-# 🛡️ Enterprise-Grade Error Handling & Logging
-
-## Comprehensive Logging System
-- **Multi-Level Logging** - Debug, Info, Warning, Error with configurable output levels
-- **Automatic Log Rotation** - Size-based rotation to prevent disk space issues
-- **Structured Logging** - Consistent format with timestamps, modules, and stack traces
-- **Performance Logging** - Dedicated performance metrics tracking and analysis
-- **Discord Logging** - Critical events automatically sent to Discord channels
-
-## Advanced Error Handling
-- **Graceful Degradation** - System continues operating even when components fail
-- **Module Isolation** - Errors in one module don't affect others
-- **Automatic Recovery** - Self-healing mechanisms for common failure scenarios
-- **Detailed Stack Traces** - Comprehensive error reporting for troubleshooting
-- **Notification Integration** - Critical errors automatically trigger Discord alerts
-
-## Security & Safety
-- **Path Validation** - All file paths are validated and sanitized
-- **Permission Checking** - Verifies required permissions before operations
-- **Rate Limiting** - Anti-spam mechanisms throughout the system
-- **Resource Monitoring** - Disk space, memory, and CPU usage tracking
-- **Safe Shutdown** - Graceful shutdown procedures to prevent data loss
-
-## Log Files & Locations
-- **Main Log** - `SCUM-Server-Automation.log` (comprehensive system log)
-- **Server Logs** - `server/SCUM/Saved/Logs/` (game server logs)
-- **SteamCMD Logs** - `steamcmd/logs/` (update and download logs)
-- **Performance Logs** - Integrated into main log with detailed metrics
-- **Database Logs** - SQLite operation logs and query performance
-
----
-
-# 🧠 Advanced Automation Workflow
-
-## Complete System Lifecycle
-
-### 1. **System Initialization**
-- **Environment Validation** - Checks Windows version, PowerShell version, administrator privileges
-- **Dependency Resolution** - Downloads and configures SteamCMD, SQLite tools, server files
-- **Module Loading** - Initializes all PowerShell modules with dependency checking
-- **Configuration Validation** - Verifies all configuration settings and paths
-- **Database Initialization** - Sets up SQLite database with proper schema and indexes
-
-### 2. **Discord Integration Activation**  
-- **Bot Authentication** - Establishes secure WebSocket connection to Discord
-- **Channel Verification** - Validates all configured channels and permissions
-- **Live Embed Initialization** - Creates initial status and leaderboard embeds
-- **Command Registration** - Activates admin and player command handlers
-- **Chat Relay Activation** - Starts game chat integration to Discord
-
-### 3. **Server Management Loop**
-- **Health Monitoring** - Continuous server status, performance, and log analysis
-- **Scheduled Operations** - Handles restart schedules, backups, and update checks
-- **Player Statistics** - Real-time data collection and leaderboard updates
-- **Discord Updates** - Live embed updates and notification processing
-- **Performance Analysis** - FPS tracking, alert generation, and optimization
-
-### 4. **Event-Driven Operations**
-- **Player Events** - Join/leave detection, statistics tracking, leaderboard updates
-- **Server Events** - Start/stop detection, crash recovery, performance alerts
-- **Admin Events** - Command processing, scheduled task management, confirmations
-- **System Events** - Update availability, backup completion, error handling
-
-### 5. **Advanced Features**
-- **Weekly Leaderboard Resets** - Automatic weekly statistics reset with historical preservation
-- **Intelligent Update Management** - Player-aware updates with delays and notifications
-- **Multi-Channel Discord Integration** - Role-based notifications and command routing
-- **Comprehensive Task Scheduling** - Advanced scheduling with conflict resolution and cancellation
-
----
 
 # 📝 Best Practices & Troubleshooting
 
