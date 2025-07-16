@@ -1,0 +1,250 @@
+{
+  "//": "==============================================================================",
+  "//": "SCUM Server Automation - Complete Configuration File v2.1.0",
+  "//": "Comprehensive dedicated server management and Discord integration",
+  "//": "==============================================================================",
+  
+  "//": "------------------------------------------------------------------------------",
+  "//": "CORE SYSTEM CONFIGURATION",
+  "//": "Basic server paths, service settings and network configuration",
+  "//": "------------------------------------------------------------------------------",
+  "serviceName": "SCUMSERVER",
+  "appId": "3792580",
+  "publicIP": "99.99.99.99",
+  "publicPort": "7042",
+  
+  "//": "File system paths (relative to automation root)",
+  "serverDir": "./server",
+  "savedDir": "./server/SCUM/Saved",
+  "steamCmd": "./steamcmd/steamcmd.exe",
+  "backupRoot": "./backups",
+  
+  "//": "------------------------------------------------------------------------------",
+  "//": "AUTOMATED OPERATIONS & SCHEDULING",
+  "//": "Server restart schedules, backup automation and update management",
+  "//": "------------------------------------------------------------------------------",
+  
+  "//": "Scheduled restart times (24h format)",
+  "restartTimes": [
+    "03:00",
+    "09:00",
+    "15:00",    
+    "21:00"
+  ],
+  
+  "//": "Backup automation settings",
+  "periodicBackupEnabled": true,
+  "backupIntervalMinutes": 60,
+  "maxBackups": 10,
+  "compressBackups": true,
+  "runBackupOnStart": false,
+  "preRestartBackupEnabled": false,
+  
+  "//": "Update management",
+  "runUpdateOnStart": false,
+  "updateCheckIntervalMinutes": 15,
+  "updateDelayMinutes": 10,
+  
+  "//": "------------------------------------------------------------------------------",
+  "//": "STABILITY & SAFETY MECHANISMS",
+  "//": "Cooldowns, timeouts and safety limits to prevent system issues",
+  "//": "------------------------------------------------------------------------------",
+  "autoRestartCooldownMinutes": 2,
+  "maxConsecutiveRestartAttempts": 3,
+  "serverStartupTimeoutMinutes": 10,
+  "serverShutdownTimeoutMinutes": 5,
+  
+  "//": "------------------------------------------------------------------------------",
+  "//": "LOGGING & MONITORING SYSTEM",
+  "//": "Log management, monitoring intervals and debugging options",
+  "//": "------------------------------------------------------------------------------",
+  "enableDetailedLogging": true,
+  "maxLogFileSizeMB": 100,
+  "logRotationEnabled": true,
+  "consoleLogLevel": "Info",
+  "customLogPath": null,
+  "monitoringIntervalSeconds": 1,
+  "logMonitoringEnabled": true,
+  "logMonitoringIntervalSeconds": 1,
+  "preventStatusRegression": true,
+  
+  "//": "------------------------------------------------------------------------------",
+  "//": "PERFORMANCE MONITORING & ALERTS",
+  "//": "Server performance thresholds and alerting configuration",
+  "//": "------------------------------------------------------------------------------",
+  "performanceAlertThreshold": "Critical",
+  "performanceAlertCooldownMinutes": 5,
+  "performanceLogIntervalMinutes": 1,
+  
+  "//": "Performance level thresholds (players count)",
+  "performanceThresholds": {
+    "excellent": 30,
+    "good": 25,
+    "fair": 20,
+    "poor": 18,
+    "critical": 17
+  },
+  
+  "//": "==============================================================================",
+  "//": "DISCORD INTEGRATION CONFIGURATION",
+  "//": "Complete Discord bot setup including notifications, commands and live embeds",
+  "//": "==============================================================================",
+  "Discord": {
+    "//": "Bot authentication and server identification",
+    "Token": "",
+    "GuildId": "",
+    
+    "//": "Bot presence and activity settings",
+    "Presence": {
+      "Activity": "SCUM Server Automation",
+      "Status": "online",
+      "Type": "Watching",
+      "DynamicActivity": true,
+      "OfflineActivity": "OFFLINE",
+      "OnlineActivityFormat": "{players} / {maxPlayers} players"
+    },
+    
+    "//": "Live status embeds and leaderboards",
+    "LiveEmbeds": {
+      "StatusChannel": "",
+      "LeaderboardsChannel": "",
+      "UpdateInterval": 30,
+      "LeaderboardUpdateInterval": 120,
+      "Images": {
+        "ServerStatus": "https://playhub.cz/scum/3.gif",
+        "Leaderboards": {
+          "Weekly": "https://playhub.cz/scum/2.gif",
+          "AllTime": "https://playhub.cz/scum/4.gif"
+        }
+      }
+    },
+    
+    "//": "Notification system configuration",
+    "Notifications": {
+      "DefaultChannel": "",
+      "SuppressStatusChanges": false,
+      
+      "//": "Channel assignments for different user groups",
+      "Channels": {
+        "Admin": "",
+        "Players": ""
+      },
+      
+      "//": "Role IDs for mentioning specific user groups",
+      "Roles": {
+        "Admin": [
+          ""
+        ],
+        "Players": [
+          ""
+        ]
+      },
+      
+      "//": "Notification routing - which events go to which user groups",
+      "NotificationTypes": {
+        "//": "Admin-only notifications (technical, system events)",
+        "AdminOnly": [
+          "manager.started",
+          "manager.stopped",
+          "backup.started",
+          "backup.completed",
+          "backup.failed",
+          "update.available",
+          "update.started",
+          "update.completed",
+          "update.failed",
+          "performance.critical",
+          "performance.poor",
+          "performance.warning",
+          "performance.alert",
+          "service.started",
+          "service.stopped",
+          "service.starting",
+          "service.stopping",
+          "server.started",
+          "server.stopped",
+          "server.starting",
+          "server.shutting_down",
+          "server.loading",
+          "server.online",
+          "server.offline",
+          "admin.alert",
+          "error"
+        ],
+        "//": "Player notifications (gameplay-relevant events)",
+        "Player": [
+          "server.online",
+          "server.offline",
+          "update.started",
+          "updateWarning15",
+          "updateWarning5",
+          "updateWarning1",
+          "update.completed",
+          "restartWarning15",
+          "restartWarning5",
+          "restartWarning1",
+          "server.scheduledRestart"
+        ]
+      }
+    },
+    
+    "//": "Chat relay system (game chat -> Discord)",
+    "ChatRelay": {
+      "Enabled": true,
+      "Channels": {
+        "Players": "",
+        "Admin": ""
+      },
+      "ChatTypes": {
+        "global": true,
+        "squad": true,
+        "local": true
+      },
+      "MaxMessageLength": 500,
+      "UpdateInterval": 5
+    },
+    
+    "//": "Discord command system",
+    "Commands": {
+      "Enabled": true,
+      
+      "//": "Command channels and permissions",
+      "Channels": {
+        "Admin": "",
+        "Players": ""
+      },
+      "Roles": {
+        "Admin": [
+          ""
+        ],
+        "Players": [
+          ""
+        ]
+      },
+      
+      "//": "Command configuration",
+      "Prefix": "!",
+      "DeleteCommandMessage": false,
+      "CommandCooldownSeconds": 2,
+      
+      "//": "Available admin commands (server management)",
+      "AdminCommands": [
+        "server_restart",
+        "server_stop",
+        "server_start",
+        "server_status",
+        "server_update",
+        "server_backup",
+        "server_cancel",
+        "server_restart_skip"
+      ],
+      
+      "//": "Available player commands (TODO)",
+      "PlayerCommands": [
+        "server_info",
+        "player_stats",
+        "help"
+      ]
+    }
+  }
+}
