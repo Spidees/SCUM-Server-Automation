@@ -35,6 +35,8 @@ Before starting, make sure you have:
 - **Windows 10/11** with Administrator access
 - **PowerShell 5.1+** (pre-installed on Windows)
 - **Discord Bot** (optional, for notifications and admin commands)
+- **Visual C++** from Microsoft ( 2012, 2013 and the 2015-2022 files ) [Download](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
+- **DirectX End-User Runtimes** [Download](https://www.microsoft.com/en-gb/download/details.aspx?id=35)
 
 > 📋 **No manual SCUM server installation required** – the script automatically downloads SteamCMD (if missing) and server files!
 
@@ -45,6 +47,7 @@ Before starting, make sure you have:
 | Tool      | Purpose         | Download Link                       |
 |-----------|----------------|-------------------------------------|
 | **NSSM**  | Service manager | [Download](https://nssm.cc/download) |
+
 
 > **Note:** SteamCMD and SQLite tools are downloaded and extracted automatically by the script if not present. No manual download needed!
 
