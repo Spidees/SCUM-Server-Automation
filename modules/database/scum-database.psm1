@@ -2305,6 +2305,12 @@ function Get-WeeklyLeaderboard {
     try {
         $weeklyDbPath = ".\data\weekly_leaderboards.db"
         
+        # Create data directory if it doesn't exist
+        $dataDir = ".\data"
+        if (-not (Test-Path $dataDir)) {
+            New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+        }
+        
         if (-not (Test-Path $weeklyDbPath)) {
             Write-Warning "Weekly leaderboards database not found at: $weeklyDbPath"
             return @()
@@ -2403,6 +2409,22 @@ function Get-WeeklyDeltaQuery {
         "fish_caught" = "SELECT u.name, (COALESCE(current.fish_caught, 0) - COALESCE(ws.fish_caught, 0)) as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN fishing_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.fish_caught, 0) - COALESCE(ws.fish_caught, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
         
         "kdr" = "SELECT u.name, CASE WHEN COALESCE(current.deaths, 0) > 0 THEN CAST(COALESCE(current.enemy_kills, 0) AS REAL) / COALESCE(current.deaths, 0) ELSE COALESCE(current.enemy_kills, 0) END - CASE WHEN COALESCE(ws.deaths, 0) > 0 THEN CAST(COALESCE(ws.enemy_kills, 0) AS REAL) / COALESCE(ws.deaths, 0) ELSE COALESCE(ws.enemy_kills, 0) END as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN events_stats current ON u.id = current.user_profile_id ORDER BY delta DESC LIMIT $Limit"
+        
+        # Missing categories for weekly leaderboards
+        "squad_score" = "SELECT s.name, (COALESCE(s.score, 0) - COALESCE(ws.squad_score, 0)) as delta FROM squads s LEFT JOIN weekly_snapshots ws ON s.id = ws.squad_id AND ws.week_start_date = '$weekStartStr' WHERE (COALESCE(s.score, 0) - COALESCE(ws.squad_score, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        
+        "squad_members" = "SELECT s.name, (COALESCE(s.members_count, 0) - COALESCE(ws.squad_members, 0)) as delta FROM squads s LEFT JOIN weekly_snapshots ws ON s.id = ws.squad_id AND ws.week_start_date = '$weekStartStr' WHERE (COALESCE(s.members_count, 0) - COALESCE(ws.squad_members, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        
+        "minutes_survived" = "SELECT u.name, (COALESCE(current.minutes_survived, 0) - COALESCE(ws.minutes_survived, 0)) as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.minutes_survived, 0) - COALESCE(ws.minutes_survived, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        
+        # Weapon-specific kills for weekly tracking
+        "melee_kills" = "SELECT u.name, (COALESCE(current.melee_kills, 0) - COALESCE(ws.melee_kills, 0)) as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN weapons_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.melee_kills, 0) - COALESCE(ws.melee_kills, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        
+        "bow_kills" = "SELECT u.name, (COALESCE(current.bow_kills, 0) - COALESCE(ws.bow_kills, 0)) as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN weapons_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.bow_kills, 0) - COALESCE(ws.bow_kills, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        
+        "sniper_kills" = "SELECT u.name, (COALESCE(current.sniper_kills, 0) - COALESCE(ws.sniper_kills, 0)) as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN weapons_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.sniper_kills, 0) - COALESCE(ws.sniper_kills, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        
+        "items_looted" = "SELECT u.name, (COALESCE(current.items_looted, 0) - COALESCE(ws.items_looted, 0)) as delta FROM user_profile u LEFT JOIN weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.items_looted, 0) - COALESCE(ws.items_looted, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
     }
     
     return $categoryQueries[$Category]
@@ -2566,9 +2588,68 @@ function Update-WeeklySnapshot {
     try {
         $weeklyDbPath = ".\data\weekly_leaderboards.db"
         
+        # Create data directory if it doesn't exist
+        $dataDir = ".\data"
+        if (-not (Test-Path $dataDir)) {
+            New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+        }
+        
+        # Create weekly database if it doesn't exist
         if (-not (Test-Path $weeklyDbPath)) {
-            Write-Warning "Weekly leaderboards database not found at: $weeklyDbPath"
-            return $false
+            Write-Log "[Leaderboards] Creating weekly leaderboards database at: $weeklyDbPath"
+            
+            # Create the database with required tables
+            $createDbQuery = @"
+CREATE TABLE IF NOT EXISTS weekly_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_profile_id INTEGER NOT NULL,
+    week_start_date TEXT NOT NULL,
+    locks_picked INTEGER DEFAULT 0,
+    puppets_killed INTEGER DEFAULT 0,
+    headshots INTEGER DEFAULT 0,
+    drone_kills INTEGER DEFAULT 0,
+    sentry_kills INTEGER DEFAULT 0,
+    animals_killed INTEGER DEFAULT 0,
+    longest_kill_distance REAL DEFAULT 0.0,
+    melee_kills INTEGER DEFAULT 0,
+    archery_kills INTEGER DEFAULT 0,
+    minutes_survived REAL DEFAULT 0.0,
+    wounds_patched INTEGER DEFAULT 0,
+    guns_crafted INTEGER DEFAULT 0,
+    bullets_crafted INTEGER DEFAULT 0,
+    arrows_crafted INTEGER DEFAULT 0,
+    clothing_crafted INTEGER DEFAULT 0,
+    containers_looted INTEGER DEFAULT 0,
+    distance_travelled_by_foot REAL DEFAULT 0.0,
+    fame_points REAL DEFAULT 0.0,
+    fish_caught INTEGER DEFAULT 0,
+    events_won INTEGER DEFAULT 0,
+    money_balance INTEGER DEFAULT 0,
+    play_time INTEGER DEFAULT 0,
+    enemy_kills INTEGER DEFAULT 0,
+    deaths INTEGER DEFAULT 0,
+    team_kills INTEGER DEFAULT 0,
+    melee_weapons_crafted INTEGER DEFAULT 0,
+    snapshot_date TEXT,
+    UNIQUE(user_profile_id, week_start_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_snapshots_user_week ON weekly_snapshots(user_profile_id, week_start_date);
+CREATE INDEX IF NOT EXISTS idx_weekly_snapshots_week ON weekly_snapshots(week_start_date);
+
+CREATE TABLE IF NOT EXISTS current_week_info (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    week_start_date TEXT UNIQUE NOT NULL,
+    week_end_date TEXT NOT NULL,
+    created_date TEXT NOT NULL
+);
+"@
+            
+            $createResult = Invoke-WeeklyDatabaseQuery -Query $createDbQuery -DatabasePath $weeklyDbPath
+            if (-not $createResult.Success) {
+                Write-Warning "Failed to create weekly database: $($createResult.Error)"
+                return $false
+            }
         }
         
         $weekStartStr = $WeekStartDate.ToString('yyyy-MM-dd')
@@ -2587,7 +2668,7 @@ function Update-WeeklySnapshot {
         }
         
         # Insert current week info
-        $insertWeekQuery = "INSERT OR REPLACE INTO current_week_info (week_start_date, week_end_date, created_at) VALUES ('$weekStartStr', '$weekEndStr', '$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')')"
+        $insertWeekQuery = "INSERT OR REPLACE INTO current_week_info (week_start_date, week_end_date, created_date) VALUES ('$weekStartStr', '$weekEndStr', '$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')')"
         $weekResult = Invoke-WeeklyDatabaseQuery -Query $insertWeekQuery -DatabasePath $weeklyDbPath
         
         if (-not $weekResult.Success) {
@@ -2661,6 +2742,12 @@ function Test-WeeklyResetNeeded {
     
     try {
         $weeklyDbPath = ".\data\weekly_leaderboards.db"
+        
+        # Create data directory if it doesn't exist
+        $dataDir = ".\data"
+        if (-not (Test-Path $dataDir)) {
+            New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+        }
         
         if (-not (Test-Path $weeklyDbPath)) {
             return $true # Need to create initial snapshot
