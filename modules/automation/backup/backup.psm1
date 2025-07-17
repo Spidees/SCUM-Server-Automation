@@ -76,7 +76,10 @@ function Invoke-GameBackup {
         [int]$MaxBackups = 10,
         
         [Parameter()]
-        [bool]$CompressBackups = $true
+        [bool]$CompressBackups = $true,
+        
+        [Parameter()]
+        [string]$Type = "manual"
     )
     
     Write-Log "[Backup] Starting backup process"
@@ -276,6 +279,7 @@ function Invoke-GameBackup {
                     $sizeMB = [Math]::Round($backupSize / 1MB, 2)
                     $duration = ((Get-Date) - $backupStartTime).ToString("mm\:ss")
                     Send-DiscordNotification -Type 'backup.completed' -Data @{ 
+                        type = $Type
                         size = "${sizeMB} MB"
                         duration = $duration
                     }
@@ -301,6 +305,7 @@ function Invoke-GameBackup {
                     $sizeMB = [Math]::Round($backupSize / 1MB, 2)
                     $duration = ((Get-Date) - $backupStartTime).ToString("mm\:ss")
                     Send-DiscordNotification -Type 'backup.completed' -Data @{ 
+                        type = $Type
                         size = "${sizeMB} MB"
                         duration = $duration
                     }
