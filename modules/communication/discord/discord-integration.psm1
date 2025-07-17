@@ -425,9 +425,21 @@ function Update-BotActivity {
         
         # Create activity string based on server status
         $activity = if ($ServerStatus.IsRunning) {
-            "$($ServerStatus.OnlinePlayers)/$($ServerStatus.MaxPlayers) players"
+            # Use OnlineActivityFormat from config if available
+            if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.OnlineActivityFormat) {
+                $format = $script:DiscordConfig.Presence.OnlineActivityFormat
+                $format -replace '\{players\}', $ServerStatus.OnlinePlayers -replace '\{maxPlayers\}', $ServerStatus.MaxPlayers
+            } else {
+                # Fallback to default format
+                "$($ServerStatus.OnlinePlayers) / $($ServerStatus.MaxPlayers) players"
+            }
         } else {
-            "OFFLINE"
+            # Use OfflineActivity from config if available
+            if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.OfflineActivity) {
+                $script:DiscordConfig.Presence.OfflineActivity
+            } else {
+                "OFFLINE"
+            }
         }
         
         # Bot always has "online" status when manager is running
