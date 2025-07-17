@@ -370,6 +370,7 @@ if (Get-Command "Initialize-BackupModule" -ErrorAction SilentlyContinue) {
                         BackupRoot = if ($configHash.backupRoot) { $configHash.backupRoot } else { ".\backups" }
                         MaxBackups = if ($configHash.maxBackups) { $configHash.maxBackups } else { 10 }
                         CompressBackups = if ($configHash.compressBackups -ne $null) { $configHash.compressBackups } else { $true }
+                        Type = "startup"
                     }
                     
                     $backupResult = Invoke-GameBackup @backupParams
@@ -1081,18 +1082,13 @@ function Invoke-Backup {
                 BackupRoot = if ($backupRoot) { $backupRoot } else { ".\backups" }
                 MaxBackups = if ($configHash.maxBackups) { $configHash.maxBackups } else { 10 }
                 CompressBackups = if ($configHash.compressBackups -ne $null) { $configHash.compressBackups } else { $true }
+                Type = $Type
             }
             
             $backupResult = Invoke-GameBackup @backupParams
             if ($backupResult) {
                 $script:State.LastBackup = Get-Date
                 Write-Log "Backup completed successfully"
-                
-                if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                    try {
-                        $null = Send-DiscordNotification -Type "backup.completed" -Data @{ type = $Type }
-                    } catch { }
-                }
                 return $true
             } else {
                 throw "Backup operation failed"
