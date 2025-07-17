@@ -506,6 +506,8 @@ function Update-GameServer {
     Windows service name
     .PARAMETER SkipServiceStart
     If true, do not start the service or send related notifications after update (used for first install)
+    .PARAMETER MaxRetries
+    Maximum number of retry attempts for recoverable failures (default: 2)
     #>
     param(
         [Parameter(Mandatory)]
@@ -521,7 +523,10 @@ function Update-GameServer {
         [string]$ServiceName,
         
         [Parameter()]
-        [bool]$SkipServiceStart = $false
+        [bool]$SkipServiceStart = $false,
+        
+        [Parameter()]
+        [int]$MaxRetries = 2
     )
     
     Write-Log "[Update] Starting server update process"
@@ -591,14 +596,51 @@ function Update-GameServer {
             Write-Log "[Update] First SteamCMD run detected, may take longer for initialization"
         }
         
-        # Execute update directly
-        try {
-            $process = Start-Process -FilePath $resolvedSteamCmd -ArgumentList $steamCmdArgs -Wait -NoNewWindow -PassThru -WorkingDirectory $steamCmdDir
-            $exitCode = $process.ExitCode
-        } catch {
-            Write-Log "[Update] Failed to start SteamCMD: $($_.Exception.Message)" -Level Error
-            throw "Failed to execute SteamCMD: $($_.Exception.Message)"
+        # Execute update with retry logic for recoverable failures
+        $attempt = 0
+        $lastExitCode = -1
+        $updateSuccessful = $false
+        
+        while ($attempt -le $MaxRetries -and -not $updateSuccessful) {
+            $attempt++
+            
+            if ($attempt -gt 1) {
+                Write-Log "[Update] Retry attempt $attempt of $($MaxRetries + 1) for SteamCMD update"
+                Start-Sleep -Seconds 5  # Wait before retry
+            }
+            
+            try {
+                Write-Log "[Update] Executing SteamCMD (attempt $attempt)"
+                $process = Start-Process -FilePath $resolvedSteamCmd -ArgumentList $steamCmdArgs -Wait -NoNewWindow -PassThru -WorkingDirectory $steamCmdDir
+                $lastExitCode = $process.ExitCode
+                
+                if ($lastExitCode -eq 0 -or $lastExitCode -eq 7) {
+                    $updateSuccessful = $true
+                    break
+                }
+                
+                # Check if this is a recoverable error that should be retried
+                $isRecoverable = $lastExitCode -in @(8, 1, 6)  # Exit codes that may succeed on retry
+                
+                if (-not $isRecoverable -or $attempt -gt $MaxRetries) {
+                    break
+                }
+                
+                Write-Log "[Update] SteamCMD failed with recoverable exit code $lastExitCode, will retry" -Level Warning
+                
+            } catch {
+                Write-Log "[Update] Failed to start SteamCMD (attempt $attempt): $($_.Exception.Message)" -Level Error
+                if ($attempt -gt $MaxRetries) {
+                    throw "Failed to execute SteamCMD after $($MaxRetries + 1) attempts: $($_.Exception.Message)"
+                }
+            }
         }
+        
+        if (-not $updateSuccessful) {
+            throw "SteamCMD failed after $($MaxRetries + 1) attempts with exit code: $lastExitCode"
+        }
+        
+        $exitCode = $lastExitCode
         
         if ($exitCode -eq 0 -or $exitCode -eq 7) {
             if ($exitCode -eq 7) {
@@ -667,7 +709,7 @@ function Update-GameServer {
         }
         else {
             Write-Log "[Update] Server update failed with exit code: $exitCode" -Level Error
-            Write-Log "[Update] Common SteamCMD exit codes: 1=General error, 2=Invalid arguments, 5=Cannot write to directory, 6=Steam client not running, 7=Success with warnings" -Level Error
+            Write-Log "[Update] Common SteamCMD exit codes: 1=General error, 2=Invalid arguments, 5=Cannot write to directory, 6=Steam client not running, 7=Success with warnings, 8=Update required/Version conflict" -Level Error
             
             # Check for common issues
             if ($exitCode -eq 5) {
@@ -676,16 +718,22 @@ function Update-GameServer {
                 Write-Log "[Update] Exit code 2 suggests invalid command arguments" -Level Error
             } elseif ($exitCode -eq 7) {
                 Write-Log "[Update] Exit code 7 usually means success with warnings, but treating as error due to context" -Level Error
+            } elseif ($exitCode -eq 8) {
+                Write-Log "[Update] Exit code 8 suggests update required or version conflict - this usually resolves on retry" -Level Error
+            } elseif ($exitCode -eq 1) {
+                Write-Log "[Update] Exit code 1 suggests general Steam/network error - may resolve on retry" -Level Error
+            } elseif ($exitCode -eq 6) {
+                Write-Log "[Update] Exit code 6 suggests Steam client connectivity issues - may resolve on retry" -Level Error
             }
             
             # Send failure notification
             if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
                 $null = Send-DiscordNotification -Type 'update.failed' -Data @{ 
-                    error = "SteamCMD failed with exit code: $exitCode"
+                    error = "SteamCMD failed with exit code: $exitCode (after $($MaxRetries + 1) attempts)"
                 }
             }
             
-            return @{ Success = $false; Error = "SteamCMD failed with exit code: $exitCode" }
+            return @{ Success = $false; Error = "SteamCMD failed with exit code: $exitCode (after $($MaxRetries + 1) attempts)" }
         }
     }
     catch {
