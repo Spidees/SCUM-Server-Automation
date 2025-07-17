@@ -70,14 +70,78 @@ function Send-DiscordMessage {
             }
             
             $uri = "https://discord.com/api/v10/channels/$ChannelId/messages"
+            
+            # Convert to JSON with proper UTF-8 encoding
             $json = $body | ConvertTo-Json -Depth 10
             
-            $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $json
-            # Return only message ID for success confirmation, not full response
-            if ($response -and $response.id) {
-                return @{ id = $response.id; success = $true }
+            # Ensure proper UTF-8 byte encoding for international characters
+            $utf8Bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+            
+            # Use WebRequest instead of Invoke-RestMethod for better encoding control
+            $webRequest = [System.Net.WebRequest]::Create($uri)
+            $webRequest.Method = "POST"
+            $webRequest.ContentType = "application/json; charset=utf-8"
+            $webRequest.ContentLength = $utf8Bytes.Length
+            
+            # Set User-Agent using the proper property
+            $webRequest.UserAgent = "SCUM-Server-Manager/1.0"
+            
+            # Add other headers (skip Content-Type and User-Agent)
+            foreach ($key in $headers.Keys) {
+                if ($key -eq "Content-Type" -or $key -eq "User-Agent") {
+                    # Already set above
+                    continue
+                }
+                $webRequest.Headers.Add($key, $headers[$key])
             }
-            return $response
+            
+            # Write UTF-8 encoded data
+            $requestStream = $webRequest.GetRequestStream()
+            $requestStream.Write($utf8Bytes, 0, $utf8Bytes.Length)
+            $requestStream.Close()
+            
+            # Get response
+            try {
+                $response = $webRequest.GetResponse()
+                $responseStream = $response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($responseStream, [System.Text.Encoding]::UTF8)
+                $responseContent = $reader.ReadToEnd()
+                $reader.Close()
+                $response.Close()
+                
+                # Parse JSON response
+                $responseObject = $responseContent | ConvertFrom-Json
+                
+                # Return only message ID for success confirmation
+                if ($responseObject -and $responseObject.id) {
+                    return @{ id = $responseObject.id; success = $true }
+                }
+                return $responseObject
+                
+            } catch [System.Net.WebException] {
+                # Handle HTTP errors more gracefully
+                $webException = $_.Exception
+                
+                if ($webException.Response) {
+                    $errorResponse = $webException.Response
+                    $errorStream = $errorResponse.GetResponseStream()
+                    $errorReader = New-Object System.IO.StreamReader($errorStream, [System.Text.Encoding]::UTF8)
+                    $errorContent = $errorReader.ReadToEnd()
+                    $errorReader.Close()
+                    $errorResponse.Close()
+                    
+                    # Parse error response if it's JSON
+                    try {
+                        $errorObject = $errorContent | ConvertFrom-Json
+                        Write-Warning "Discord API Error: $($errorObject.message) (Code: $($errorResponse.StatusCode))"
+                    } catch {
+                        Write-Warning "Discord API Error: $errorContent (Code: $($errorResponse.StatusCode))"
+                    }
+                }
+                
+                # Re-throw the exception for retry logic
+                throw $webException
+            }
             
         } catch {
             $retryCount++
