@@ -2319,16 +2319,36 @@ function Get-WeeklyLeaderboard {
         # Get current week start date
         $currentWeekStart = Get-CurrentWeekStart
         
-        # Calculate weekly deltas for the category
-        $query = Get-WeeklyDeltaQuery -Category $Category -WeekStart $currentWeekStart -Limit $Limit
+        # Calculate weekly deltas for the category using ATTACH DATABASE
+        $weekStartStr = $currentWeekStart.ToString('yyyy-MM-dd')
+        $categoryQueries = @{
+            "kills" = "SELECT u.name, (COALESCE(current.enemy_kills, 0) - COALESCE(ws.enemy_kills, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN events_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.enemy_kills, 0) - COALESCE(ws.enemy_kills, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "deaths" = "SELECT u.name, (COALESCE(current.deaths, 0) - COALESCE(ws.deaths, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN events_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.deaths, 0) - COALESCE(ws.deaths, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "playtime" = "SELECT u.name, (COALESCE(u.play_time, 0) - COALESCE(ws.play_time, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' WHERE (COALESCE(u.play_time, 0) - COALESCE(ws.play_time, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "fame" = "SELECT u.name, (COALESCE(u.fame_points, 0) - COALESCE(ws.fame_points, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' WHERE (COALESCE(u.fame_points, 0) - COALESCE(ws.fame_points, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "money" = "SELECT u.name, (COALESCE(u.money_balance, 0) - COALESCE(ws.money_balance, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' WHERE (COALESCE(u.money_balance, 0) - COALESCE(ws.money_balance, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "headshots" = "SELECT u.name, (COALESCE(current.headshots, 0) - COALESCE(ws.headshots, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.headshots, 0) - COALESCE(ws.headshots, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "puppet_kills" = "SELECT u.name, (COALESCE(current.puppets_killed, 0) - COALESCE(ws.puppets_killed, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.puppets_killed, 0) - COALESCE(ws.puppets_killed, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "animal_kills" = "SELECT u.name, (COALESCE(current.animals_killed, 0) - COALESCE(ws.animals_killed, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.animals_killed, 0) - COALESCE(ws.animals_killed, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "minutes_survived" = "SELECT u.name, (COALESCE(current.minutes_survived, 0) - COALESCE(ws.minutes_survived, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.minutes_survived, 0) - COALESCE(ws.minutes_survived, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+            "items_looted" = "SELECT u.name, (COALESCE(current.containers_looted, 0) - COALESCE(ws.containers_looted, 0)) as delta FROM user_profile u LEFT JOIN weekly.weekly_snapshots ws ON u.id = ws.user_profile_id AND ws.week_start_date = '$weekStartStr' LEFT JOIN survival_stats current ON u.id = current.user_profile_id WHERE (COALESCE(current.containers_looted, 0) - COALESCE(ws.containers_looted, 0)) > 0 ORDER BY delta DESC LIMIT $Limit"
+        }
         
+        $query = $categoryQueries[$Category]
         if (-not $query) {
             Write-Verbose "No query available for weekly category: $Category"
             return @()
         }
         
-        # Execute query against weekly database
-        $result = Invoke-WeeklyDatabaseQuery -Query $query -DatabasePath $weeklyDbPath
+        # Build the complete query with ATTACH DATABASE
+        $fullQuery = @"
+ATTACH DATABASE '$weeklyDbPath' AS weekly;
+$query;
+DETACH DATABASE weekly;
+"@
+        
+        # Execute query against main database (with weekly attached)
+        $result = Invoke-DatabaseQuery -Query $fullQuery
         
         if ($result -and $result.Data -and $result.Data.Count -gt 0) {
             return $result.Data | ForEach-Object {
