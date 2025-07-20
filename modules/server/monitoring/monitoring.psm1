@@ -29,17 +29,19 @@ $script:ServerState = @{
     IsRunning = $false
     OnlinePlayers = 0
     MaxPlayers = 64
+    LastUpdate = Get-Date
     Performance = @{
         CPU = 0
         Memory = 0
         FPS = 0
         Entities = 0
+        LastUpdate = Get-Date
     }
-    LastUpdate = (Get-Date)
-    LastNotificationType = $null  # Track last notification sent
-    LastNotificationTime = $null  # Track when last notification was sent
-    LastPerformanceAlert = $null  # Track last performance alert time
+    LastPerformanceAlert = (Get-Date).AddHours(-1)  # Start with 1 hour ago to allow immediate alerts
 }
+
+# Process tracking to reduce verbose logging
+$script:LastKnownProcessId = $null
 
 # ===============================================================
 # INITIALIZATION
@@ -384,7 +386,10 @@ function Get-ServiceProcess {
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
-        Write-Verbose "[Monitoring] Service '$ServiceName' found: State=$($service.State), ProcessId=$($service.ProcessId)"
+        # Only log service details if there's an issue or change
+        if ($service.State -ne 'Running' -or -not $service.ProcessId -or $service.ProcessId -eq 0) {
+            Write-Verbose "[Monitoring] Service '$ServiceName' issue: State=$($service.State), ProcessId=$($service.ProcessId)"
+        }
         
         if (-not $service.ProcessId -or $service.ProcessId -eq 0) {
             Write-Verbose "[Monitoring] Service '$ServiceName' has no ProcessId or ProcessId is 0"
@@ -398,18 +403,19 @@ function Get-ServiceProcess {
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
-        Write-Verbose "[Monitoring] Service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName)"
-        
         # If service process is nssm.exe, find the child SCUMServer process
         if ($serviceProcess.ProcessName -eq "nssm") {
-            Write-Verbose "[Monitoring] Service uses NSSM wrapper, looking for child SCUMServer process"
-            
             # Find SCUMServer process that could be a child of nssm
             $scumProcesses = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
             if ($scumProcesses) {
                 # Take the SCUMServer process with highest memory usage (most likely the server)
                 $mainProcess = $scumProcesses | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
-                Write-Verbose "[Monitoring] Found SCUMServer process: PID=$($mainProcess.Id), Memory=$([Math]::Round($mainProcess.WorkingSet64 / 1MB, 0))MB"
+                
+                # Store previous process ID to detect changes
+                if (-not $script:LastKnownProcessId -or $script:LastKnownProcessId -ne $mainProcess.Id) {
+                    Write-Verbose "[Monitoring] SCUM server process detected: PID=$($mainProcess.Id), Memory=$([Math]::Round($mainProcess.WorkingSet64 / 1MB, 0))MB"
+                    $script:LastKnownProcessId = $mainProcess.Id
+                }
                 
                 return @{
                     ProcessId = $mainProcess.Id
@@ -421,8 +427,11 @@ function Get-ServiceProcess {
                 return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
             }
         } else {
-            # Direct service process (not using nssm)
-            Write-Verbose "[Monitoring] Direct service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName), Memory=$([Math]::Round($serviceProcess.WorkingSet64 / 1MB, 0))MB"
+            # Direct service process (not using nssm) - only log if PID changed
+            if (-not $script:LastKnownProcessId -or $script:LastKnownProcessId -ne $serviceProcess.Id) {
+                Write-Verbose "[Monitoring] Direct service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName), Memory=$([Math]::Round($serviceProcess.WorkingSet64 / 1MB, 0))MB"
+                $script:LastKnownProcessId = $serviceProcess.Id
+            }
             
             return @{
                 ProcessId = $serviceProcess.Id
@@ -690,6 +699,7 @@ function Update-ServerMonitoring {
     <#
     .SYNOPSIS
     Update server monitoring using log parser events for accurate state detection
+    ENHANCED: Now includes automatic crash detection and recovery
     #>
     
     if (-not $script:Initialized) {
@@ -711,6 +721,90 @@ function Update-ServerMonitoring {
         }
         
         Write-Verbose "[Monitoring] Update-ServerMonitoring called - Previous state: IsRunning=$($previousState.IsRunning)"
+        
+        # NEW: Check for crashed server process (service running but process dead)
+        $healthCheckResult = $null
+        if (Get-Command "Test-GameProcessHealth" -ErrorAction SilentlyContinue) {
+            $serverDir = if ($script:Config -and $script:Config.serverDir) { $script:Config.serverDir } else { ".\server" }
+            $healthCheckResult = Test-GameProcessHealth -ServiceName $script:ServiceName -ServerDirectory $serverDir
+            
+            if ($healthCheckResult -and -not $healthCheckResult.IsHealthy) {
+                Write-Log "[Monitoring] Server health check FAILED: $($healthCheckResult.Reason)" -Level Warning
+                Write-Log "[Monitoring] Service Status: $($healthCheckResult.ServiceStatus), Process Found: $($healthCheckResult.ProcessFound)" -Level Warning
+                
+                # Check if this is the "zombie service" problem (service running but process dead)
+                if ($healthCheckResult.ServiceStatus -eq "Running" -and -not $healthCheckResult.ProcessFound) {
+                    Write-Log "[Monitoring] DETECTED: Service running but server process is DEAD - automatic crash detected!" -Level Error
+                    
+                    # Check if auto-restart is enabled in config
+                    $autoRestartEnabled = if ($script:Config -and $null -ne $script:Config.autoRestart) { 
+                        $script:Config.autoRestart 
+                    } else { 
+                        $true  # Default to enabled
+                    }
+                    
+                    if ($autoRestartEnabled) {
+                        Write-Log "[Monitoring] Auto-restart is ENABLED - triggering automatic repair..." -Level Info
+                        
+                        # Trigger automatic repair
+                        if (Get-Command "Repair-GameService" -ErrorAction SilentlyContinue) {
+                            Write-Log "[Monitoring] Starting automatic server repair..." -Level Info
+                            $repairResult = Repair-GameService -ServiceName $script:ServiceName -Reason "automatic crash recovery"
+                            
+                            if ($repairResult) {
+                                Write-Log "[Monitoring] Automatic server repair completed successfully!" -Level Info
+                                # Send admin-only notification about auto-recovery
+                                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                    $recoveryData = @{
+                                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                        service_name = $script:ServiceName
+                                        message = "Server automatically restarted after crash detection"
+                                        reason = "Process crashed but service remained running"
+                                        type = "auto-recovery"
+                                        severity = "high"
+                                    }
+                                    Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
+                                }
+                            } else {
+                                Write-Log "[Monitoring] Automatic server repair FAILED - manual intervention required!" -Level Error
+                                # Send critical admin-only alert
+                                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                    $alertData = @{
+                                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                        service_name = $script:ServiceName
+                                        error = "Auto-repair failed - manual intervention required"
+                                        reason = $healthCheckResult.Reason
+                                        type = "auto-repair-failed"
+                                        message = "Server crashed and automatic repair failed. Manual intervention required!"
+                                        severity = "critical"
+                                    }
+                                    Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                                }
+                            }
+                        } else {
+                            Write-Log "[Monitoring] Repair-GameService function not available - cannot auto-repair!" -Level Error
+                        }
+                    } else {
+                        Write-Log "[Monitoring] Auto-restart is DISABLED in config - crash detected but no action taken" -Level Warning
+                        # Send admin-only notification about the crash
+                        if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                            $crashData = @{
+                                timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                service_name = $script:ServiceName
+                                error = "Server process crashed (auto-restart disabled)"
+                                reason = $healthCheckResult.Reason
+                                type = "crash-detected"
+                                message = "Server process crashed but auto-restart is disabled. Manual intervention required!"
+                                severity = "critical"
+                            }
+                            Send-DiscordNotification -Type 'admin.alert' -Data $crashData
+                        }
+                    }
+                }
+            } else {
+                Write-Verbose "[Monitoring] Server health check PASSED: $($healthCheckResult.Reason)"
+            }
+        }
         
         # Check for new log events first (this is the primary source of truth for SERVER state)
         $stateChangedViaLogs = $false
