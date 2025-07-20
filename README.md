@@ -1,6 +1,6 @@
 ![SCUM Server Automation](http://playhub.cz/scum/manager/repository-open-graph-template.jpg)
 
-# 🎮 SCUM Server Automation v2.1.0
+# 🎮 SCUM Server Automation v2.1.4
 
 **SCUM Dedicated Server Management for Windows**
 
@@ -18,11 +18,6 @@ This project provides a complete automation solution for running SCUM dedicated 
 - ✅ **Advanced Log Analysis** – Real-time server state detection and event parsing
 - ✅ **Service Management** – Runs as Windows service via NSSM with automatic startup
 - ✅ **Database Integration** – SQLite database for player statistics and leaderboards
-- ✅ **Modular Architecture** – Clean, extensible PowerShell module system with comprehensive documentation
-- ✅ **Rate Limiting** – Anti-spam mechanisms for notifications and commands
-- ✅ **Health Monitoring** – Multi-layered server health detection and recovery
-- ✅ **Scheduled Tasks System** – Advanced task scheduling with confirmation and cancellation
-- ✅ **Professional Logging** – Detailed logs with automatic rotation and size management
 
 ---
 
@@ -219,7 +214,6 @@ The system provides full Discord integration with live embeds, comprehensive not
     },
     
     "Notifications": {
-      "DefaultChannel": "DEFAULT_NOTIFICATION_CHANNEL",
       "Channels": {
         "Admin": "ADMIN_CHANNEL_ID",
         "Players": "PLAYER_CHANNEL_ID" 
@@ -408,14 +402,6 @@ Once you have completed the setup, your server provides enterprise-grade managem
 
 > **Security:** All admin commands require configured Discord roles and can only be used in designated channels. Every action is logged and confirmed via Discord reactions.
 
-## Live Features
-- **Real-time Performance Monitoring** - Continuous FPS tracking with configurable thresholds
-- **Live Discord Embeds** - Auto-updating server status and leaderboard displays
-- **Chat Integration** - Game chat messages displayed in Discord channels
-- **Database Statistics** - Real-time player data collection and leaderboard updates
-- **Intelligent Health Monitoring** - Multi-layered crash detection and automatic recovery
-- **Advanced Logging** - Comprehensive logging with automatic rotation and analysis
-
 ---
 
 # 🔔 Discord Integration
@@ -428,14 +414,6 @@ The system provides comprehensive Discord integration with multiple advanced fea
 - **Chat Relay System** – Game chat messages displayed in Discord with multiple chat types
 - **Rich Notifications** – Comprehensive event notifications with role-based targeting
 - **Admin Command System** – Full server control via Discord with confirmation and security
-
-## Advanced Capabilities
-- **Real-time Database Integration** – Live player statistics and leaderboard updates
-- **Performance Monitoring Display** – Visual FPS indicators and server health status
-- **Scheduled Task Management** – Discord-based scheduling with confirmation system
-- **Multi-channel Support** – Separate channels for different user groups and purposes
-- **Role-based Security** – Granular permissions for different user groups
-- **Anti-spam Protection** – Rate limiting and cooldown systems
 
 ## Discord Bot Setup
 All Discord functionality requires a Discord bot. See the "Discord Integration Setup" section above for complete configuration details.
@@ -522,7 +500,7 @@ Add SteamIDs for players who should have priority access. Whitelisted players ca
 # 📝 Best Practices & Troubleshooting
 
 - Always run as Administrator
-- Use `start_scum_server_automation.bat` for automated server management
+- Use `start_server_manager.bat` for automated server management
 - Use `start_server.bat` and `stop_server.bat` for manual service control
 - Configure Discord fields with empty arrays (`[]`) if not used
 - Monitor `SCUM-Server-Automation.log` for errors and status
