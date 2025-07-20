@@ -1123,6 +1123,29 @@ function Test-PerformanceAlerts {
             return
         }
         
+        # FIFTH: Smart check - don't alert on low FPS when no players are connected
+        # When server has no players, it's normal and expected to have low FPS for power saving
+        $currentPlayers = $script:ServerState.OnlinePlayers
+        if (-not $currentPlayers -or $currentPlayers -le 0) {
+            # Double-check with database if cached value is 0
+            if (Get-Command "Get-OnlinePlayerCount" -ErrorAction SilentlyContinue) {
+                try {
+                    $currentPlayers = Get-OnlinePlayerCount
+                } catch {
+                    $currentPlayers = 0
+                }
+            }
+        }
+        
+        # Default behavior: Only monitor performance when players are connected
+        # Empty server naturally reduces FPS for power saving - this is normal and expected
+        if ($currentPlayers -le 0) {
+            Write-Verbose "[Monitoring] Skipping performance alerts - no players connected ($currentPlayers). Server naturally reduces FPS when empty to save resources."
+            return
+        } else {
+            Write-Verbose "[Monitoring] Players connected ($currentPlayers), performance monitoring active"
+        }
+        
         Write-Verbose "[Monitoring] Performance alert checks passed - server is truly online, proceeding with performance monitoring"
         
         # Skip if we don't have config
