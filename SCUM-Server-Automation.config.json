@@ -1,6 +1,6 @@
 {
   "//": "==============================================================================",
-  "//": "SCUM Server Automation - Complete Configuration File v2.1.0",
+  "//": "SCUM Server Automation - Complete Configuration File v2.1.4",
   "//": "Comprehensive dedicated server management and Discord integration",
   "//": "==============================================================================",
   
@@ -235,6 +235,7 @@
         "server_start",
         "server_status",
         "server_update",
+        "server_validate",
         "server_backup",
         "server_cancel",
         "server_restart_skip"
