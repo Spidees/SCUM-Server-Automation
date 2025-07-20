@@ -56,7 +56,7 @@ function Add-DiscordReaction {
                 $result = Invoke-DiscordAPI -Endpoint $endpoint -Method "PUT"
                 
                 # For PUT reactions, success is indicated by result being $true (204 No Content) or not null
-                if ($result -eq $true -or $result -ne $null) {
+                if ($result -eq $true -or $null -ne $result) {
                     return $true
                 } else {
                     $retryCount++
@@ -377,7 +377,7 @@ function Handle-ServerStatusAdminCommand {
 function Handle-ServerStartAdminCommand {
     <#
     .SYNOPSIS
-    Handle !server_start admin command
+    Handle !server_start admin command with startup monitoring and auto-recovery
     #>
     param([string]$ResponseChannelId)
     
@@ -393,8 +393,157 @@ function Handle-ServerStartAdminCommand {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":arrow_forward: **Starting Server** - Server start command issued..."
         
         if (Get-Command "Start-ServerService" -ErrorAction SilentlyContinue) {
-            Start-ServerService
-            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Server Start** - Command executed successfully! Server is starting..."
+            $startResult = Start-ServerService
+            
+            if ($startResult) {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Server Starting** - Command executed, monitoring startup progress..."
+                
+                # Monitor startup progress for up to 3 minutes
+                $startTime = Get-Date
+                $timeoutMinutes = 3
+                $checkIntervalSeconds = 15
+                $lastStatus = "starting"
+                $startupProgression = @()  # Track startup progression
+                
+                while (((Get-Date) - $startTime).TotalMinutes -lt $timeoutMinutes) {
+                    Start-Sleep -Seconds $checkIntervalSeconds
+                    
+                    # Check current server status
+                    $currentStatus = Get-ServerStatus
+                    
+                    if ($currentStatus.IsRunning) {
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Server Online** - Server started successfully and is accepting connections!"
+                        return
+                    }
+                    
+                    # Check if we have detailed status from monitoring
+                    if ($currentStatus.ActualServerState) {
+                        $detailedState = $currentStatus.ActualServerState
+                        
+                        # Track progression to detect if server is making progress
+                        $startupProgression += @{
+                            Time = Get-Date
+                            State = $detailedState
+                        }
+                        
+                        if ($detailedState -ne $lastStatus) {
+                            $statusMessage = switch ($detailedState) {
+                                "Starting" { ":yellow_circle: **Starting** - Server process is initializing..." }
+                                "Loading" { ":yellow_circle: **Loading** - Server is loading world data..." }
+                                "Offline" { 
+                                    # Check if we've seen progress before going offline
+                                    $hasProgressed = $startupProgression | Where-Object { $_.State -in @("Starting", "Loading") }
+                                    if ($hasProgressed) {
+                                        ":orange_circle: **Temporary Offline** - Server restarting during startup (normal behavior)..."
+                                    } else {
+                                        ":red_circle: **Startup Issue** - Server having difficulty starting..."
+                                    }
+                                }
+                                default { ":clock1: **In Progress** - Server startup continuing..." }
+                            }
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content $statusMessage
+                            $lastStatus = $detailedState
+                            
+                            # Only break early on persistent offline state without any progress
+                            if ($detailedState -eq "Offline") {
+                                $hasProgressed = $startupProgression | Where-Object { $_.State -in @("Starting", "Loading") }
+                                $recentOfflineStates = $startupProgression | Where-Object { 
+                                    $_.State -eq "Offline" -and 
+                                    $_.Time -gt (Get-Date).AddMinutes(-1) 
+                                }
+                                
+                                # Only break if we've been offline for 1+ minute without any progress
+                                if (-not $hasProgressed -and $recentOfflineStates.Count -ge 4) {
+                                    Write-Verbose "[ADMIN-COMMANDS] Breaking early - persistent offline state without progress"
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                # Timeout reached - analyze what happened before triggering auto-recovery
+                $finalStatus = Get-ServerStatus
+                if (-not $finalStatus.IsRunning) {
+                    # Check if server made any startup progress
+                    $hasProgressed = $startupProgression | Where-Object { $_.State -in @("Starting", "Loading") }
+                    $lastKnownState = if ($startupProgression.Count -gt 0) { 
+                        ($startupProgression | Sort-Object Time -Descending | Select-Object -First 1).State 
+                    } else { 
+                        "Unknown" 
+                    }
+                    
+                    if ($hasProgressed) {
+                        # Server was progressing but didn't finish - this might be normal for large worlds
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":warning: **Startup Taking Longer** - Server was progressing (last state: $lastKnownState) but needs more time. This can be normal for large worlds."
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Patience Recommended** - Check server status in a few minutes. Server may still be loading."
+                        return
+                    } else {
+                        # No progress detected - legitimate startup failure
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":warning: **Startup Timeout** - Server did not show startup progress within $timeoutMinutes minutes"
+                    }
+                    
+                    # Check if auto-restart/repair is available and enabled
+                    $autoRestartEnabled = $false
+                    try {
+                        if (Test-Path "SCUM-Server-Automation.config.json") {
+                            $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
+                            $autoRestartEnabled = $configContent.autoRestart -eq $true
+                        }
+                    } catch {
+                        # Ignore config read errors
+                    }
+                    
+                    # Only trigger auto-recovery if no progress was made
+                    if (-not $hasProgressed -and $autoRestartEnabled -and (Get-Command "Repair-GameService" -ErrorAction SilentlyContinue)) {
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":gear: **Auto-Recovery** - No startup progress detected, attempting automatic repair..."
+                        
+                        $serviceName = if ($configContent.serviceName) { $configContent.serviceName } else { "SCUMSERVER" }
+                        $repairResult = Repair-GameService -ServiceName $serviceName -Reason "startup failure auto-recovery"
+                        
+                        if ($repairResult) {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Auto-Recovery Successful** - Server has been automatically repaired and should be starting!"
+                            
+                            # Send admin-only notification about auto-recovery
+                            if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                $recoveryData = @{
+                                    timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                    service_name = $serviceName
+                                    message = "Server startup failed but was automatically recovered"
+                                    reason = "Manual start command failed, auto-repair triggered"
+                                    type = "startup-auto-recovery"
+                                    severity = "high"
+                                }
+                                Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
+                            }
+                        } else {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Auto-Recovery Failed** - Manual intervention required. Check server logs and configuration."
+                            
+                            # Send critical admin alert
+                            if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                $alertData = @{
+                                    timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                    service_name = $serviceName
+                                    error = "Server startup and auto-recovery both failed"
+                                    reason = "Manual start command and repair both unsuccessful"
+                                    type = "startup-failure"
+                                    message = "Server failed to start and automatic recovery failed. Manual intervention required!"
+                                    severity = "critical"
+                                }
+                                Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                            }
+                        }
+                    } else {
+                        if ($hasProgressed) {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":information_source: **Monitor Server** - Server was making progress. Check back in a few minutes to see if startup completes."
+                        } else {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Startup Failed** - Server did not start properly. Check server logs and try again."
+                        }
+                    }
+                }
+            } else {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Start Command Failed** - Failed to issue server start command. Check service configuration."
+            }
         } else {
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Server start function not available"
         }
