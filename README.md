@@ -401,6 +401,7 @@ Once you have completed the setup, your server provides enterprise-grade managem
 - `!server_start` – Start stopped server immediately
 - `!server_status` – Comprehensive status report with performance metrics and player info
 - `!server_update [minutes]` – Smart update system with delay if server running
+- `!server_validate` – Server file validation using SteamCMD
 - `!server_backup` – Execute manual backup with compression
 - `!server_cancel` – Cancel all scheduled admin actions (restart, stop, update)
 - `!server_restart_skip` – Skip the next automatic scheduled restart
