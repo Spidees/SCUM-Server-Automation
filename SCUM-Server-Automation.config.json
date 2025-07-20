@@ -49,6 +49,7 @@
   "//": "STABILITY & SAFETY MECHANISMS",
   "//": "Cooldowns, timeouts and safety limits to prevent system issues",
   "//": "------------------------------------------------------------------------------",
+  "autoRestart": true,
   "autoRestartCooldownMinutes": 2,
   "maxConsecutiveRestartAttempts": 3,
   "serverStartupTimeoutMinutes": 10,
