@@ -122,7 +122,6 @@
     
     "//": "Notification system configuration",
     "Notifications": {
-      "DefaultChannel": "",
       "SuppressStatusChanges": false,
       
       "//": "Channel assignments for different user groups",
