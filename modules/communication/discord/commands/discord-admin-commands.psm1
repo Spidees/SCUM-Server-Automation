@@ -232,6 +232,7 @@ function Request-AdminConfirmation {
             "stop" = ":stop_sign:"
             "update" = ":arrow_up:"
             "skip" = ":fast_forward:"
+            "validation" = ":white_check_mark:"
         }
         
         $actionEmoji = if ($emojiMap.ContainsKey($ActionType)) { $emojiMap[$ActionType] } else { ":warning:" }
@@ -514,7 +515,7 @@ function Handle-ServerStartAdminCommand {
                                     type = "startup-auto-recovery"
                                     severity = "high"
                                 }
-                                Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
+                                $null = Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
                             }
                         } else {
                             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Auto-Recovery Failed** - Manual intervention required. Check server logs and configuration."
@@ -530,7 +531,7 @@ function Handle-ServerStartAdminCommand {
                                     message = "Server failed to start and automatic recovery failed. Manual intervention required!"
                                     severity = "critical"
                                 }
-                                Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                                $null = Send-DiscordNotification -Type 'admin.alert' -Data $alertData
                             }
                         }
                     } else {
@@ -712,6 +713,106 @@ function Handle-ServerUpdateAdminCommand {
         }
     } catch {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to check for updates: $($_.Exception.Message)"
+    }
+}
+
+function Handle-ServerValidateAdminCommand {
+    <#
+    .SYNOPSIS
+    Handle !server_validate admin command for Steam integrity check
+    #>
+    param([string]$ResponseChannelId, [string]$UserId = "")
+    
+    try {
+        # Request confirmation for validation action
+        $confirmed = Request-AdminConfirmation -ChannelId $ResponseChannelId -UserId $UserId -ActionType "validation" -ActionDescription "Run Steam File Integrity Check - This will temporarily stop the server"
+        
+        if (-not $confirmed) {
+            return  # Request-AdminConfirmation already sent cancellation message
+        }
+        
+        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":gear: **Server Validation** - Starting Steam integrity check..."
+        
+        # Check if validation function exists
+        if (Get-Command "Invoke-ServerValidation" -ErrorAction SilentlyContinue) {
+            
+            # Get configuration
+            $configContent = $null
+            try {
+                if (Test-Path "SCUM-Server-Automation.config.json") {
+                    $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
+                } else {
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Configuration file not found"
+                    return
+                }
+            } catch {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to read configuration: $($_.Exception.Message)"
+                return
+            }
+            
+            # Get required paths
+            $steamCmdPath = $configContent.steamCmd
+            $serverDir = $configContent.serverDir
+            $appId = $configContent.appId
+            $serviceName = $configContent.serviceName
+            
+            if (-not $steamCmdPath -or -not $serverDir -or -not $appId) {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Missing required configuration (steamCmd, serverDir, or appId)"
+                return
+            }
+            
+            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Validating** - Running Steam integrity check, this may take several minutes..."
+            
+            # Execute validation
+            $validationResult = Invoke-ServerValidation -SteamCmdPath $steamCmdPath -ServerDirectory $serverDir -AppId $appId -ServiceName $serviceName
+            
+            if ($validationResult -and $validationResult.Success) {
+                $filesChecked = if ($validationResult.FilesChecked) { $validationResult.FilesChecked } else { "Unknown" }
+                $filesFixed = if ($validationResult.FilesFixed) { $validationResult.FilesFixed } else { 0 }
+                
+                if ($filesFixed -gt 0) {
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Validation Complete** - Found and fixed $filesFixed corrupted files out of $filesChecked checked. Server files are now valid."
+                } else {
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Validation Complete** - All $filesChecked server files are valid. No corruption detected."
+                }
+                
+                # Send admin notification about validation
+                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                    $notificationData = @{
+                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                        service_name = $serviceName
+                        files_checked = $filesChecked
+                        files_fixed = $filesFixed
+                        type = "server-validation"
+                        severity = if ($filesFixed -gt 0) { "medium" } else { "low" }
+                        message = if ($filesFixed -gt 0) { "Server validation fixed $filesFixed corrupted files" } else { "Server validation completed - no issues found" }
+                    }
+                    $null = Send-DiscordNotification -Type 'admin.alert' -Data $notificationData
+                }
+                
+            } else {
+                $errorMsg = if ($validationResult -and $validationResult.Error) { $validationResult.Error } else { "Unknown validation error" }
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Validation Failed** - $errorMsg"
+                
+                # Send critical admin alert
+                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                    $alertData = @{
+                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                        service_name = $serviceName
+                        error = $errorMsg
+                        type = "validation-failure"
+                        message = "Server validation failed - manual investigation required"
+                        severity = "high"
+                    }
+                    $null = Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                }
+            }
+            
+        } else {
+            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Server validation function not available"
+        }
+    } catch {
+        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to validate server: $($_.Exception.Message)"
     }
 }
 
@@ -907,7 +1008,7 @@ function Handle-ServerRestartSkipAdminCommand {
             # Send immediate notification to players about skipped restart
             if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
                 try {
-                    Send-DiscordNotification -Type "server.scheduledRestart" -Data @{
+                    $null = Send-DiscordNotification -Type "server.scheduledRestart" -Data @{
                         event = "Scheduled restart at $currentRestartTime has been cancelled"
                         nextRestart = $nextRestartTime
                         skipped = $true
@@ -991,6 +1092,9 @@ function Execute-AdminCommand {
             'server_backup' {
                 Handle-ServerBackupAdminCommand -ResponseChannelId $ResponseChannelId
             }
+            'server_validate' {
+                Handle-ServerValidateAdminCommand -ResponseChannelId $ResponseChannelId -UserId $UserId
+            }
             'server_cancel' {
                 Handle-ServerCancelAdminCommand -ResponseChannelId $ResponseChannelId
             }
@@ -1020,6 +1124,7 @@ Export-ModuleMember -Function @(
     'Handle-ServerStopAdminCommand',
     'Handle-ServerRestartAdminCommand',
     'Handle-ServerUpdateAdminCommand',
+    'Handle-ServerValidateAdminCommand',
     'Handle-ServerBackupAdminCommand',
     'Handle-ServerCancelAdminCommand',
     'Handle-ServerRestartSkipAdminCommand'
