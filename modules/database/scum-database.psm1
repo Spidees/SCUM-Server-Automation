@@ -909,7 +909,7 @@ function Get-WeatherData {
             return @{
                 AirTemperature = $airTemp
                 WaterTemperature = $waterTemp
-                FormattedTemperature = "A: {0}°C | W: {1}°C" -f $airTemp, $waterTemp
+                FormattedTemperature = "A: {0} | W: {1}" -f $airTemp, $waterTemp
                 Success = $true
             }
         }
