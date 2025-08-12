@@ -1,6 +1,6 @@
 {
   "//": "==============================================================================",
-  "//": "SCUM Server Automation - Complete Configuration File v2.1.0",
+  "//": "SCUM Server Automation - Complete Configuration File v2.1.5",
   "//": "Comprehensive dedicated server management and Discord integration",
   "//": "==============================================================================",
   
@@ -13,7 +13,7 @@
   "publicIP": "99.99.99.99",
   "publicPort": "7042",
   
-  "//": "File system paths (relative to automation root)",
+  "//": "File system paths (relative to automation root, don't need editing unless you change directory structure)",
   "serverDir": "./server",
   "savedDir": "./server/SCUM/Saved",
   "steamCmd": "./steamcmd/steamcmd.exe",
@@ -49,6 +49,7 @@
   "//": "STABILITY & SAFETY MECHANISMS",
   "//": "Cooldowns, timeouts and safety limits to prevent system issues",
   "//": "------------------------------------------------------------------------------",
+  "autoRestart": true,
   "autoRestartCooldownMinutes": 2,
   "maxConsecutiveRestartAttempts": 3,
   "serverStartupTimeoutMinutes": 10,
@@ -62,8 +63,7 @@
   "maxLogFileSizeMB": 100,
   "logRotationEnabled": true,
   "consoleLogLevel": "Info",
-  "customLogPath": null,
-  "monitoringIntervalSeconds": 1,
+  "monitoringIntervalSeconds": 30,
   "logMonitoringEnabled": true,
   "logMonitoringIntervalSeconds": 1,
   "preventStatusRegression": true,
@@ -79,10 +79,10 @@
   "//": "Performance level thresholds (players count)",
   "performanceThresholds": {
     "excellent": 30,
-    "good": 25,
-    "fair": 20,
-    "poor": 18,
-    "critical": 17
+    "good": 20,
+    "fair": 15,
+    "poor": 10,
+    "critical": 4
   },
   
   "//": "==============================================================================",
@@ -91,8 +91,8 @@
   "//": "==============================================================================",
   "Discord": {
     "//": "Bot authentication and server identification",
-    "Token": "",
-    "GuildId": "",
+    "Token": "EDIT_DISCORD_BOT_TOKEN",
+    "GuildId": "EDIT_DISCORD_SERVER_ID",
     
     "//": "Bot presence and activity settings",
     "Presence": {
@@ -101,15 +101,19 @@
       "Type": "Watching",
       "DynamicActivity": true,
       "OfflineActivity": "OFFLINE",
-      "OnlineActivityFormat": "{players} / {maxPlayers} players"
+      "OnlineActivityFormat": "{players} / {maxPlayers} players",
+      "ActivityUpdateInterval": 60
     },
     
     "//": "Live status embeds and leaderboards",
     "LiveEmbeds": {
-      "StatusChannel": "",
-      "LeaderboardsChannel": "",
-      "UpdateInterval": 30,
-      "LeaderboardUpdateInterval": 120,
+      "StatusChannel": "EDIT_CHANNEL_ID_FOR_STATUS",
+      "LeaderboardsChannel": "EDIT_CHANNEL_ID_FOR_LEADERBOARDS",
+      "StatusUpdateInterval": 60,
+      "LeaderboardUpdateInterval": 300,
+      "//": "Server timezone offset from UTC (hours)",
+      "//": "Examples: +1 (Central Europe), +2 (Eastern Europe), -5 (Eastern US), -8 (Pacific US), 0 (UTC)",
+      "TimezoneOffset": "+1",
       "Images": {
         "ServerStatus": "https://playhub.cz/scum/3.gif",
         "Leaderboards": {
@@ -121,22 +125,23 @@
     
     "//": "Notification system configuration",
     "Notifications": {
-      "DefaultChannel": "",
       "SuppressStatusChanges": false,
       
       "//": "Channel assignments for different user groups",
       "Channels": {
-        "Admin": "",
-        "Players": ""
+        "Admin": "EDIT_CHANNEL_ID_FOR_ADMIN_NOTIFICATIONS",
+        "Players": "EDIT_CHANNEL_ID_FOR_PLAYER_NOTIFICATIONS"
       },
       
       "//": "Role IDs for mentioning specific user groups",
       "Roles": {
         "Admin": [
-          ""
+          "EDIT_ADMIN_ROLE_ID1",
+          "EDIT_ADMIN_ROLE_ID2"
         ],
         "Players": [
-          ""
+          "EDIT_PLAYER_ROLE_ID1",
+          "EDIT_PLAYER_ROLE_ID2"
         ]
       },
       
@@ -188,12 +193,12 @@
       }
     },
     
-    "//": "Chat relay system (game chat -> Discord)",
+    "//": "Chat relay system (Game Chat to Discord)",
     "ChatRelay": {
       "Enabled": true,
       "Channels": {
-        "Players": "",
-        "Admin": ""
+        "Players": "EDIT_CHANNEL_ID_FOR_PLAYER_CHAT",
+        "Admin": "EDIT_CHANNEL_ID_FOR_ADMIN_CHAT"
       },
       "ChatTypes": {
         "global": true,
@@ -210,15 +215,17 @@
       
       "//": "Command channels and permissions",
       "Channels": {
-        "Admin": "",
-        "Players": ""
+        "Admin": "EDIT_CHANNEL_ID_FOR_ADMIN_COMMANDS",
+        "Players": "EDIT_CHANNEL_ID_FOR_PLAYER_COMMANDS"
       },
       "Roles": {
         "Admin": [
-          ""
+          "EDIT_ADMIN_ROLE_ID1",
+          "EDIT_ADMIN_ROLE_ID2"
         ],
         "Players": [
-          ""
+          "EDIT_PLAYER_ROLE_ID1",
+          "EDIT_PLAYER_ROLE_ID2"
         ]
       },
       
@@ -234,6 +241,7 @@
         "server_start",
         "server_status",
         "server_update",
+        "server_validate",
         "server_backup",
         "server_cancel",
         "server_restart_skip"
@@ -245,6 +253,73 @@
         "player_stats",
         "help"
       ]
+    }
+  },
+  
+  "//": "==============================================================================",
+  "//": "ADVANCED FEATURES CONFIGURATION",
+  "//": "Additional server features and log monitoring systems",
+  "//": "==============================================================================",
+  "SCUMLogFeatures": {
+    "//": "Kill log system",
+    "KillFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_KILL_LOG"
+    },
+    "//": "Event kill log system",
+    "EventKillFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_EVENT_KILL_LOG"
+    },
+    "//": "Admin command log system",
+    "AdminFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_ADMIN_COMMAND_LOG"
+    },
+    "//": "Violations log system",
+    "ViolationsFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNELD_ID_FOR_VIOLATIONS_LOG"
+    },
+    "//": "Fame points log system",
+    "FamePointsFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_FAME_POINTS_LOG"
+    },
+    "//": "Login log system",
+    "LoginFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_LOGIN_LOG"
+    },
+    "//": "Economy log system",
+    "EconomyFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_ECONOMY_LOG"
+    },
+    "//": "Vehicle log system",
+    "VehicleFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_VEHICLE_LOG"
+    },
+    "//": "Raid protection log system",
+    "RaidProtectionFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_RAID_PROTECTION_LOG"
+    },
+    "//": "Gameplay log system",
+    "GameplayFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_GAMEPLAY_LOG"
+    },
+    "//": "Quest log system",
+    "QuestFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_QUEST_LOG"
+    },
+    "//": "Chest log system",
+    "ChestFeed": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_CHEST_LOG"
     }
   }
 }
