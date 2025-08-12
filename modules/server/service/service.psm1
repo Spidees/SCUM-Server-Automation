@@ -7,29 +7,255 @@
 
 #Requires -Version 5.1
 
-# Import common module during initialization
-function Import-RequiredModules {
-    <#
-    .SYNOPSIS
-    Import required modules for service management
-    #>
-    $commonPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "core\common\common.psm1"
-    if (Test-Path $commonPath) {
-        Import-Module $commonPath -Force -Global
-    } else {
-        throw "Cannot find common module at: $commonPath"
+#Requires -Version 5.1
+
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
     }
+} catch {
+    Write-Host "[WARNING] Common module not available for services module" -ForegroundColor Yellow
 }
 
-# Import centralized event system
-$LegacyBridgeModulePath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "communication\discord\legacy-bridge.psm1"
-if (Test-Path $LegacyBridgeModulePath) {
-    Import-Module $LegacyBridgeModulePath -Force -Global -WarningAction SilentlyContinue
-}
+# Process tracking to reduce verbose logging
+$script:LastKnownScumPid = $null
 
 # ===============================================================
 # SERVICE CONTROL
 # ===============================================================
+
+function Test-GameProcessHealth {
+    <#
+    .SYNOPSIS
+    Check if SCUM server process is actually running and healthy
+    .PARAMETER ServiceName
+    Name of the Windows service
+    .PARAMETER ServerDirectory
+    Path to server directory (for log checking)
+    .RETURNS
+    Hashtable with health status
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        
+        [Parameter()]
+        [string]$ServerDirectory
+    )
+    
+    try {
+        # Check if service is running
+        $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if (-not $service -or $service.Status -ne 'Running') {
+            return @{
+                IsHealthy = $false
+                Reason = "Service not running"
+                ServiceStatus = if ($service) { $service.Status } else { "Not Found" }
+                ProcessFound = $false
+                DatabaseResponsive = $false
+            }
+        }
+        
+        # Get the actual process from the service
+        $serviceProcess = $null
+        $scumProcess = $null
+        $processFound = $false
+        try {
+            # Get the service and its process ID
+            $serviceWmi = Get-WmiObject -Class Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
+            if ($serviceWmi -and $serviceWmi.ProcessId -and $serviceWmi.ProcessId -gt 0) {
+                $serviceProcess = Get-Process -Id $serviceWmi.ProcessId -ErrorAction SilentlyContinue
+                
+                # Check if this is NSSM (service wrapper)
+                if ($serviceProcess -and $serviceProcess.ProcessName -eq "nssm") {
+                    # Find the actual SCUM server process (child of NSSM)
+                    $childProcesses = Get-WmiObject -Class Win32_Process | Where-Object { $_.ParentProcessId -eq $serviceProcess.Id }
+                    $scumChild = $childProcesses | Where-Object { $_.Name -like "*SCUM*" -or $_.Name -like "*Server*" }
+                    
+                    if ($scumChild) {
+                        $scumProcess = Get-Process -Id $scumChild.ProcessId -ErrorAction SilentlyContinue
+                        $processFound = $null -ne $scumProcess
+                        # Only log SCUM process detection on first discovery or PID change
+                        if (-not $script:LastKnownScumPid -or $script:LastKnownScumPid -ne $scumProcess.Id) {
+                            Write-Log "[Service] Found SCUM process via NSSM: $($scumProcess.ProcessName) PID $($scumProcess.Id)" -Level Warning
+                            $script:LastKnownScumPid = $scumProcess.Id
+                        }
+                    } else {
+                        # Always log when SCUM process is missing (this is important)
+                        Write-Log "[Service] NSSM service running but no SCUM child process found" -Level Warning
+                        $script:LastKnownScumPid = $null
+                    }
+                } else {
+                    # Direct service process
+                    $scumProcess = $serviceProcess
+                    $processFound = $null -ne $serviceProcess
+                }
+            }
+        } catch {
+            Write-Log "[Service] Could not get process from service: $($_.Exception.Message)" -Level Warning
+        }
+        
+        # Check database responsiveness (if database module is available)
+        $databaseResponsive = $false
+        if (Get-Command "Test-DatabaseConnection" -ErrorAction SilentlyContinue) {
+            try {
+                $dbTest = Test-DatabaseConnection
+                $databaseResponsive = $dbTest.Success
+            } catch {
+                Write-Log "[Service] Database connectivity check failed: $($_.Exception.Message)" -Level Warning
+            }
+        }
+        
+        # Check server log for recent activity (if server directory provided)
+        $logActive = $false
+        if ($ServerDirectory) {
+            $logPath = Join-Path $ServerDirectory "SCUM\Saved\Logs\SCUM.log"
+            if (Test-Path $logPath) {
+                try {
+                    $logInfo = Get-Item $logPath
+                    $lastWrite = $logInfo.LastWriteTime
+                    $timeSinceLastWrite = (Get-Date) - $lastWrite
+                    $logActive = $timeSinceLastWrite.TotalMinutes -lt 15 # Log active in last 15 minutes
+                } catch {
+                    Write-Log "[Service] Could not check log file: $($_.Exception.Message)" -Level Warning
+                }
+            }
+        }
+        
+        # Determine overall health
+        $isHealthy = $processFound -and ($databaseResponsive -or $logActive)
+        
+        $reason = if (-not $processFound) {
+            "Service process not found or not running"
+        } elseif (-not $databaseResponsive -and -not $logActive) {
+            "Server unresponsive (no DB access and no recent log activity)"
+        } else {
+            "Healthy"
+        }
+        
+        return @{
+            IsHealthy = $isHealthy
+            Reason = $reason
+            ServiceStatus = $service.Status
+            ProcessFound = $processFound
+            ServiceProcessId = if ($serviceProcess) { $serviceProcess.Id } else { $null }
+            ServiceProcessName = if ($serviceProcess) { $serviceProcess.ProcessName } else { $null }
+            ScumProcessId = if ($scumProcess) { $scumProcess.Id } else { $null }
+            ScumProcessName = if ($scumProcess) { $scumProcess.ProcessName } else { $null }
+            DatabaseResponsive = $databaseResponsive
+            LogActive = $logActive
+        }
+        
+    } catch {
+        Write-Log "[Service] Error checking game process health: $($_.Exception.Message)" -Level Error
+        return @{
+            IsHealthy = $false
+            Reason = "Health check failed: $($_.Exception.Message)"
+            ServiceStatus = "Unknown"
+            ProcessFound = $false
+            DatabaseResponsive = $false
+        }
+    }
+}
+
+function Repair-GameService {
+    <#
+    .SYNOPSIS
+    Repair a service that's running but the game process is dead
+    .PARAMETER ServiceName
+    Name of the Windows service
+    .PARAMETER Reason
+    Reason for repair
+    .PARAMETER SkipNotifications
+    Skip sending repair notifications
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        
+        [Parameter()]
+        [string]$Reason = "process health repair",
+        
+        [Parameter()]
+        [switch]$SkipNotifications
+    )
+    
+    Write-Log "[Service] Repairing service '$ServiceName' - $Reason"
+    
+    try {
+        # First try to stop gracefully
+        Write-Log "[Service] Attempting graceful service stop..."
+        $stopResult = Stop-GameService -ServiceName $ServiceName -Reason $Reason -SkipNotifications:$SkipNotifications
+        
+        if (-not $stopResult) {
+            Write-Log "[Service] Graceful stop failed, forcing process termination..."
+            
+            # Get the actual process from the service and kill it
+            try {
+                $serviceWmi = Get-WmiObject -Class Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
+                if ($serviceWmi -and $serviceWmi.ProcessId -and $serviceWmi.ProcessId -gt 0) {
+                    $serviceProcess = Get-Process -Id $serviceWmi.ProcessId -ErrorAction SilentlyContinue
+                    
+                    if ($serviceProcess -and $serviceProcess.ProcessName -eq "nssm") {
+                        # Kill SCUM child processes first
+                        $childProcesses = Get-WmiObject -Class Win32_Process | Where-Object { $_.ParentProcessId -eq $serviceProcess.Id }
+                        foreach ($child in $childProcesses) {
+                            $childProc = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                            if ($childProc) {
+                                Write-Log "[Service] Force stopping child process '$($childProc.ProcessName)' PID $($childProc.Id)"
+                                $childProc.Kill()
+                            }
+                        }
+                        Start-Sleep -Seconds 2
+                        
+                        # Then kill NSSM itself
+                        Write-Log "[Service] Force stopping NSSM service process PID $($serviceProcess.Id)"
+                        $serviceProcess.Kill()
+                    } else {
+                        # Direct service process
+                        Write-Log "[Service] Force stopping service process '$($serviceProcess.ProcessName)' PID $($serviceProcess.Id)"
+                        $serviceProcess.Kill()
+                    }
+                    Start-Sleep -Seconds 3
+                } else {
+                    Write-Log "[Service] Could not get process ID from service" -Level Warning
+                }
+            } catch {
+                Write-Log "[Service] Failed to force kill service process: $($_.Exception.Message)" -Level Warning
+            }
+            
+            # Force stop the service
+            try {
+                Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+                Write-Log "[Service] Service force stopped"
+            } catch {
+                Write-Log "[Service] Failed to force stop service: $($_.Exception.Message)" -Level Error
+            }
+        }
+        
+        # Wait a moment for cleanup
+        Start-Sleep -Seconds 5
+        
+        # Start the service again
+        Write-Log "[Service] Starting service after repair..."
+        $startResult = Start-GameService -ServiceName $ServiceName -Context "repair restart" -SkipNotifications:$SkipNotifications
+        
+        if ($startResult) {
+            Write-Log "[Service] Service repair completed successfully"
+            return $true
+        } else {
+            Write-Log "[Service] Service repair failed - could not restart" -Level Error
+            return $false
+        }
+        
+    } catch {
+        Write-Log "[Service] Service repair failed: $($_.Exception.Message)" -Level Error
+        return $false
+    }
+}
 
 function Stop-GameService {
     <#
@@ -92,9 +318,6 @@ function Initialize-ServiceModule {
         [object]$Config
     )
     
-    # Import required modules
-    Import-RequiredModules
-    
     $script:serviceConfig = $Config
     Write-Log "[Service] Module initialized"
 }
@@ -148,7 +371,7 @@ function Test-ServiceRunning {
     }
     catch [System.ServiceProcess.ServiceController+ServiceNotFoundException], [Microsoft.PowerShell.Commands.ServiceCommandException] {
         # Service doesn't exist - this is expected during first install or before service creation
-        Write-Log "[Service] Service '$ServiceName' not found (may not be installed yet)" -Level Verbose
+        Write-Log "[Service] Service '$ServiceName' not found (may not be installed yet)" -Level Warning
         return $false
     }
     catch {
@@ -438,6 +661,8 @@ Export-ModuleMember -Function @(
     'Initialize-ServiceModule',
     'Test-ServiceExists',
     'Test-ServiceRunning',
+    'Test-GameProcessHealth',
+    'Repair-GameService',
     'Start-GameService',
     'Stop-GameService', 
     'Restart-GameService',

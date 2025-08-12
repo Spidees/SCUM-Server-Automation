@@ -5,6 +5,17 @@
 # Processes game chat and forwards to Discord channels
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for chat-manager module" -ForegroundColor Yellow
+}
+
 # Global variables
 $script:ChatConfig = $null
 $script:DiscordConfig = $null
@@ -24,33 +35,33 @@ function Initialize-ChatManager {
     param([hashtable]$Config)
     
     try {
-        Write-Host "[ChatManager] Initializing chat management system..." -ForegroundColor Cyan
+        Write-Log "Initializing chat management system..." -Level "Info"
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Host "[ChatManager] Discord not configured, chat relay disabled" -ForegroundColor Yellow
+            Write-Log "Discord not configured, chat relay disabled" -Level "Info"
             return $false
         }
         
         $script:ChatConfig = $script:DiscordConfig.ChatRelay
         if (-not $script:ChatConfig -or -not $script:ChatConfig.Enabled) {
-            Write-Host "[ChatManager] Chat relay not enabled in configuration" -ForegroundColor Gray
+            Write-Log "Chat relay not enabled in configuration" -Level "Info"
             return $false
         }
         
         # Initialize chat log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Host "[ChatManager] Server directory not configured" -ForegroundColor Red
+            Write-Log "Server directory not configured" -Level "Info"
             return $false
         }
         
         $script:ChatLogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Host "[ChatManager] Chat log directory: $script:ChatLogDirectory" -ForegroundColor Gray
+        Write-Log "Chat log directory: $script:ChatLogDirectory" -Level "Info"
         
         if (-not (Test-Path $script:ChatLogDirectory)) {
-            Write-Host "[ChatManager] Chat log directory not found: $script:ChatLogDirectory" -ForegroundColor Red
+            Write-Log "Chat log directory not found: $script:ChatLogDirectory" -Level "Info"
             return $false
         }
         
@@ -68,14 +79,14 @@ function Initialize-ChatManager {
         $script:IsMonitoring = $true
         $script:IsRelayActive = $true
         
-        Write-Host "[ChatManager] Chat management system initialized successfully" -ForegroundColor Green
-        Write-Host "[ChatManager] Players channel: $($script:ChatConfig.Channels.Players)" -ForegroundColor Gray
-        Write-Host "[ChatManager] Admin channel: $($script:ChatConfig.Channels.Admin)" -ForegroundColor Gray
-        Write-Host "[ChatManager] Update interval: $($script:ChatConfig.UpdateInterval) seconds" -ForegroundColor Gray
+        Write-Log "Chat management system initialized successfully" -Level "Info"
+        Write-Log "Players channel: $($script:ChatConfig.Channels.Players)" -Level "Info"
+        Write-Log "Admin channel: $($script:ChatConfig.Channels.Admin)" -Level "Info"
+        Write-Log "Update interval: $($script:ChatConfig.UpdateInterval) seconds" -Level "Info"
         
         return $true
     } catch {
-        Write-Host "[ChatManager] Failed to initialize: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Failed to initialize: $($_.Exception.Message)" -Level "Info"
         return $false
     }
 }
@@ -128,7 +139,7 @@ function Update-ChatManager {
     # Debug: Print every 5 minutes instead of 60 seconds
     $currentTime = Get-Date
     if (-not $script:LastDebugTime -or ($currentTime - $script:LastDebugTime).TotalSeconds -ge 300) {
-        Write-Host "[ChatManager] Monitoring active" -ForegroundColor Gray
+        Write-Log "Monitoring active" -Level "Info"
         $script:LastDebugTime = $currentTime
     }
     
@@ -140,7 +151,7 @@ function Update-ChatManager {
         }
         
         foreach ($message in $newMessages) {
-            Write-Host "[ChatManager] [$($message.Type)] $($message.Nickname): $($message.Message)" -ForegroundColor Yellow
+            Write-Log "[$($message.Type)] $($message.Nickname): $($message.Message)" -Level "Info"
             Send-ChatMessageToDiscord -Message $message
         }
         
@@ -148,7 +159,7 @@ function Update-ChatManager {
         Save-ChatState
         
     } catch {
-        Write-Host "[ChatManager] Error during chat update: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Error during chat update: $($_.Exception.Message)" -Level "Info"
     }
 }
 
@@ -161,13 +172,13 @@ function Get-NewChatMessages {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestChatLog) {
-        Write-Host "[ChatManager] Switching to new chat log: $latestChatLog" -ForegroundColor Yellow
+        Write-Log "Switching to new chat log: $latestChatLog" -Level "Info"
         $script:CurrentLogFile = $latestChatLog
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Host "[ChatManager] Chat log file not found: $script:CurrentLogFile" -ForegroundColor Yellow
+        Write-Log "Chat log file not found: $script:CurrentLogFile" -Level "Info"
         return @()
     }
     
@@ -181,7 +192,7 @@ function Get-NewChatMessages {
         
         # Debug info every 5 minutes instead of 60 seconds
         if (-not $script:LastFileDebugTime -or ((Get-Date) - $script:LastFileDebugTime).TotalSeconds -ge 300) {
-            Write-Host "[ChatManager] File: $($allLines.Count) lines, position: $($script:LastLineNumber)" -ForegroundColor Gray
+            Write-Log "File: $($allLines.Count) lines, position: $($script:LastLineNumber)" -Level "Info"
             $script:LastFileDebugTime = Get-Date
         }
         
@@ -213,7 +224,7 @@ function Get-NewChatMessages {
         return $newMessages
         
     } catch {
-        Write-Host "[ChatManager] Error reading chat log: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Error reading chat log: $($_.Exception.Message)" -Level "Info"
         return @()
     }
 }
@@ -224,7 +235,7 @@ function Get-LatestChatLogFile {
         $chatFiles = Get-ChildItem -Path $script:ChatLogDirectory -Filter "chat_*.log" -ErrorAction SilentlyContinue
         
         if (-not $chatFiles -or $chatFiles.Count -eq 0) {
-            Write-Host "[ChatManager] No chat log files found in $script:ChatLogDirectory" -ForegroundColor Yellow
+            Write-Log "No chat log files found in $script:ChatLogDirectory" -Level "Info"
             return $null
         }
         
@@ -233,7 +244,7 @@ function Get-LatestChatLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Host "[ChatManager] Error finding latest chat log: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Error finding latest chat log: $($_.Exception.Message)" -Level "Info"
         return $null
     }
 }
@@ -265,7 +276,7 @@ function Send-ChatMessageToDiscord {
         # Ensure proper encoding and length
         $filteredMessage = $filteredMessage.Trim()
         if ($filteredMessage.Length -eq 0) {
-            Write-Host "[ChatManager] Message is empty after filtering, skipping" -ForegroundColor Yellow
+            Write-Log "Message is empty after filtering, skipping" -Level "Info"
             return
         }
         
@@ -295,12 +306,12 @@ function Send-ChatMessageToDiscord {
             try {
                 $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:ChatConfig.Channels.Admin -Content $adminFormattedMessage
                 if ($result -and $result.success) {
-                    Write-Host "[ChatManager] OK Admin" -ForegroundColor Green -NoNewline
+                    Write-Log "OK Admin" -Level "Info"
                 } else {
-                    Write-Host "[ChatManager] FAIL Admin" -ForegroundColor Red -NoNewline
+                    Write-Log "FAIL Admin" -Level "Info"
                 }
             } catch {
-                Write-Host "[ChatManager] ERROR Admin: $($_.Exception.Message)" -ForegroundColor Red -NoNewline
+                Write-Log "ERROR Admin: $($_.Exception.Message)" -Level "Info"
             }
             
             # Send to Players channel only for global messages
@@ -309,22 +320,22 @@ function Send-ChatMessageToDiscord {
                     $playerFormattedMessage = $playerFormatTemplate -replace '\{nickname\}', $filteredNickname -replace '\{message\}', $filteredMessage
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:ChatConfig.Channels.Players -Content $playerFormattedMessage
                     if ($result -and $result.success) {
-                        Write-Host " | OK Players" -ForegroundColor Green
+                        Write-Log " | OK Players" -Level "Info"
                     } else {
-                        Write-Host " | FAIL Players" -ForegroundColor Red
+                        Write-Log " | FAIL Players" -Level "Info"
                     }
                 } catch {
-                    Write-Host " | ERROR Players: $($_.Exception.Message)" -ForegroundColor Red
+                    Write-Log " | ERROR Players: $($_.Exception.Message)" -Level "Info"
                 }
             } else {
-                Write-Host "" # New line for non-global messages
+                # Non-global messages don't need extra logging
             }
         } else {
-            Write-Host "[ChatManager] Discord message function not available" -ForegroundColor Yellow
+            Write-Log "Discord message function not available" -Level "Info"
         }
         
     } catch {
-        Write-Host "[ChatManager] Error sending message to Discord: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Error sending message to Discord: $($_.Exception.Message)" -Level "Info"
     }
 }
 
@@ -377,7 +388,7 @@ function Save-ChatState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Host "[ChatManager] Failed to save state: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "Failed to save state: $($_.Exception.Message)" -Level "Info"
     }
 }
 
@@ -392,19 +403,19 @@ function Load-ChatState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Host "[ChatManager] Previous log file no longer exists, resetting state" -ForegroundColor Yellow
+                Write-Log "Previous log file no longer exists, resetting state" -Level "Info"
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Host "[ChatManager] Loaded previous state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -ForegroundColor Gray
+                Write-Log "Loaded previous state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
             }
         } else {
-            Write-Host "[ChatManager] No previous state found, starting fresh" -ForegroundColor Gray
+            Write-Log "No previous state found, starting fresh" -Level "Info"
             $script:CurrentLogFile = $null
             $script:LastLineNumber = 0
         }
     } catch {
-        Write-Host "[ChatManager] Failed to load state, starting fresh: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "Failed to load state, starting fresh: $($_.Exception.Message)" -Level "Info"
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -414,46 +425,46 @@ function Load-ChatState {
 # DEBUG FUNCTIONS
 # ===============================================================
 function Debug-ChatManager {
-    Write-Host "=== Chat Manager Debug ===" -ForegroundColor Cyan
-    Write-Host "IsMonitoring: $script:IsMonitoring" -ForegroundColor White
-    Write-Host "IsRelayActive: $script:IsRelayActive" -ForegroundColor White
-    Write-Host "CurrentLogFile: $script:CurrentLogFile" -ForegroundColor White
-    Write-Host "LastLineNumber: $script:LastLineNumber" -ForegroundColor White
-    Write-Host "ChatLogDirectory: $script:ChatLogDirectory" -ForegroundColor White
+    Write-Log "=== Chat Manager Debug ===" -Level "Debug"
+    Write-Log "IsMonitoring: $script:IsMonitoring" -Level "Debug"
+    Write-Log "IsRelayActive: $script:IsRelayActive" -Level "Debug"
+    Write-Log "CurrentLogFile: $script:CurrentLogFile" -Level "Debug"
+    Write-Log "LastLineNumber: $script:LastLineNumber" -Level "Debug"
+    Write-Log "ChatLogDirectory: $script:ChatLogDirectory" -Level "Debug"
     
     # Test log file reading
     if ($script:CurrentLogFile -and (Test-Path $script:CurrentLogFile)) {
         $lines = Get-Content $script:CurrentLogFile -Encoding Unicode
-        Write-Host "Total lines in current log: $($lines.Count)" -ForegroundColor White
+        Write-Log "Total lines in current log: $($lines.Count)" -Level "Debug"
         
         if ($lines.Count -gt $script:LastLineNumber) {
             $newLines = $lines[$script:LastLineNumber..($lines.Count - 1)]
-            Write-Host "New lines to process: $($newLines.Count)" -ForegroundColor Yellow
+            Write-Log "New lines to process: $($newLines.Count)" -Level "Debug"
             
             foreach ($line in $newLines) {
                 if (-not [string]::IsNullOrWhiteSpace($line) -and $line -notmatch "Game version:") {
                     $parsed = Parse-ChatLine -Line $line
                     if ($parsed) {
-                        Write-Host "Parsed: [$($parsed.Type)] $($parsed.Nickname): $($parsed.Message)" -ForegroundColor Green
+                        Write-Log "Parsed: [$($parsed.Type)] $($parsed.Nickname): $($parsed.Message)" -Level "Debug"
                         
                         # Check if enabled
                         if ($script:ChatConfig.ChatTypes[$parsed.Type]) {
-                            Write-Host "  -> Chat type enabled, would send to Discord" -ForegroundColor Green
+                            Write-Log "  -> Chat type enabled, would send to Discord" -Level "Debug"
                         } else {
-                            Write-Host "  -> Chat type disabled, skipping" -ForegroundColor Yellow
+                            Write-Log "  -> Chat type disabled, skipping" -Level "Debug"
                         }
                     } else {
-                        Write-Host "Failed to parse: $line" -ForegroundColor Red
+                        Write-Log "Failed to parse: $line" -Level "Debug"
                     }
                 }
             }
         } else {
-            Write-Host "No new lines to process" -ForegroundColor Yellow
+            Write-Log "No new lines to process" -Level "Debug"
         }
     } else {
-        Write-Host "Current log file not found!" -ForegroundColor Red
+        Write-Log "Current log file not found!" -Level "Debug"
     }
-    Write-Host "=========================" -ForegroundColor Cyan
+    Write-Log "=========================" -Level "Debug"
 }
 
 # ===============================================================
@@ -471,7 +482,7 @@ function Get-ChatManagerStatus {
 }
 
 function Stop-ChatManager {
-    Write-Host "[ChatManager] Stopping chat management system..." -ForegroundColor Yellow
+    Write-Log "Stopping chat management system..." -Level "Info"
     
     # Save current state
     Save-ChatState
@@ -480,7 +491,7 @@ function Stop-ChatManager {
     $script:IsMonitoring = $false
     $script:IsRelayActive = $false
     
-    Write-Host "[ChatManager] Chat management system stopped" -ForegroundColor Green
+    Write-Log "Chat management system stopped" -Level "Info"
 }
 
 # ===============================================================
@@ -497,3 +508,4 @@ Export-ModuleMember -Function @(
     'Debug-ChatManager',
     'Apply-MessageFilter'
 )
+

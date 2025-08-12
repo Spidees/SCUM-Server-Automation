@@ -303,10 +303,10 @@ function Write-Log {
     # Only output to console if message level >= console level
     if ($currentLevelPriority -ge $consoleLevelPriority) {
         switch ($Level) {
-            'Debug' { Write-Verbose $logLine }
+            'Debug' { Write-Host $logLine -ForegroundColor Gray }
             'Info' { Write-Host $logLine }
-            'Warning' { Write-Warning $logLine }
-            'Error' { Write-Error $logLine }
+            'Warning' { Write-Host $logLine -ForegroundColor Yellow }
+            'Error' { Write-Host $logLine -ForegroundColor Red }
         }
     }
 }

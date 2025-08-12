@@ -5,6 +5,17 @@
 # Handles bot presence, status updates, and live communication
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for discord-websocket-bot-direct module" -ForegroundColor Yellow
+}
+
 # Global variables
 $script:WebSocket = $null
 $script:BotToken = $null
@@ -38,7 +49,7 @@ function Start-DiscordWebSocketBot {
     )
     
     if ($script:IsConnected) {
-        Write-Warning "Discord bot is already connected"
+        Write-Log "Discord bot is already connected" -Level Warning
         return $true
     }
     
@@ -68,7 +79,7 @@ function Start-DiscordWebSocketBot {
             if ($authResult) {
                 return $true
             } else {
-                Write-Warning "Authentication failed"
+                Write-Log "Authentication failed" -Level Error
                 return $false
             }
         } else {
@@ -172,12 +183,12 @@ function Complete-DiscordHandshake {
                         $RecvObj = $DiscordData | ConvertFrom-Json | Select-Object @{N = "SentOrRecvd"; E = { "Received" } }, @{N = "EventName"; E = { $_.t } }, @{N = "SequenceNumber"; E = { $_.s } }, @{N = "Opcode"; E = { $_.op } }, @{N = "Data"; E = { $_.d } } 
                     }
                     catch { 
-                        Write-Verbose "ConvertFrom-Json failed: $($_.Exception.Message)"
+                        Write-Log "ConvertFrom-Json failed: $($_.Exception.Message)" -Level "Debug"
                         $RecvObj = $null
                     }
                 
                     if ($RecvObj) {
-                        Write-Verbose "[RECV] Received opcode: $($RecvObj.Opcode)"
+                        Write-Log "[RECV] Received opcode: $($RecvObj.Opcode)" -Level "Debug"
                         
                         if ($RecvObj.Opcode -eq '10') {
                             $HeartbeatInterval = [int64]$RecvObj.Data.heartbeat_interval
@@ -249,7 +260,7 @@ function Complete-DiscordHandshake {
                         
                         # Handle invalid session
                         if ($RecvObj.Opcode -eq '9') { 
-                            Write-Warning "[ERROR] Session invalidated. This usually means the bot token is invalid or the bot doesn't have proper permissions."
+                            Write-Log "[ERROR] Session invalidated. This usually means the bot token is invalid or the bot doesn't have proper permissions." -Level Error
                             return $false
                         }
                     }
@@ -264,7 +275,7 @@ function Complete-DiscordHandshake {
         if ($script:AuthComplete) {
             return $true
         } else {
-            Write-Warning "Authentication timeout or failed after $attempts attempts"
+            Write-Log "Authentication timeout or failed after $attempts attempts" -Level Error
             return $false
         }
         
@@ -276,7 +287,7 @@ function Complete-DiscordHandshake {
 
 function Start-PersistentHeartbeat {
     try {
-        Write-Host "[HEARTBEAT] Starting persistent heartbeat mechanism..." -ForegroundColor Green
+        Write-Log "[HEARTBEAT] Starting persistent heartbeat mechanism..."
         $script:HeartbeatRunning = $true
         $script:LastHeartbeatAck = $true
         $script:NextHeartbeat = [int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds) + [int64]$script:HeartbeatInterval
@@ -290,7 +301,7 @@ function Start-PersistentHeartbeat {
             $maxMissedHeartbeats = 5  # Increased tolerance
             $heartbeatCount = 0
             
-            Write-Output "[HEARTBEAT-JOB] Starting heartbeat job with interval: $HeartbeatInterval ms"
+            Write-Log "[HEARTBEAT-JOB] Starting heartbeat job with interval: $HeartbeatInterval ms" -Level Info
             
             while ($true) {
                 try {
@@ -299,13 +310,13 @@ function Start-PersistentHeartbeat {
                     
                     # Check if WebSocket is still open
                     if ($WebSocket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
-                        Write-Output "[HEARTBEAT-JOB] WebSocket is no longer open (State: $($WebSocket.State)), stopping heartbeat"
+                        Write-Log "[HEARTBEAT-JOB] WebSocket is no longer open (State: $($WebSocket.State)), stopping heartbeat" -Level Warning
                         break
                     }
                     
                     # Send heartbeat if it's time
                     if ($currentTime -ge ($lastHeartbeat + $HeartbeatInterval)) {
-                        Write-Output "[HEARTBEAT-JOB] Sending heartbeat #$heartbeatCount..."
+                        Write-Log "[HEARTBEAT-JOB] Sending heartbeat #$heartbeatCount..." -Level Debug
                         
                         $HeartbeatProp = @{ 'op' = 1; 'd' = $SequenceNumber }
                         $Message = $HeartbeatProp | ConvertTo-Json
@@ -323,13 +334,13 @@ function Start-PersistentHeartbeat {
                         if ($SendTask.IsCompleted -and $SendTask.Status -eq 'RanToCompletion') {
                             $lastHeartbeat = $currentTime
                             $missedHeartbeats = 0
-                            Write-Output "[HEARTBEAT-JOB] Heartbeat #$heartbeatCount sent successfully"
+                            Write-Log "[HEARTBEAT-JOB] Heartbeat #$heartbeatCount sent successfully" -Level Debug
                         } else {
                             $missedHeartbeats++
-                            Write-Output "[HEARTBEAT-JOB] Failed to send heartbeat #$heartbeatCount (Status: $($SendTask.Status), Missed: $missedHeartbeats/$maxMissedHeartbeats)"
+                            Write-Log "[HEARTBEAT-JOB] Failed to send heartbeat #$heartbeatCount (Status: $($SendTask.Status), Missed: $missedHeartbeats/$maxMissedHeartbeats)" -Level Warning
                             
                             if ($missedHeartbeats -ge $maxMissedHeartbeats) {
-                                Write-Output "[HEARTBEAT-JOB] Too many missed heartbeats ($missedHeartbeats), connection may be dead"
+                                Write-Log "[HEARTBEAT-JOB] Too many missed heartbeats ($missedHeartbeats), connection may be dead" -Level Error
                                 break
                             }
                         }
@@ -339,11 +350,11 @@ function Start-PersistentHeartbeat {
                     Start-Sleep -Milliseconds 2000  # 2 seconds
                     
                 } catch {
-                    Write-Output "[HEARTBEAT-JOB] Error in heartbeat loop: $($_.Exception.Message)"
+                    Write-Log "[HEARTBEAT-JOB] Error in heartbeat loop: $($_.Exception.Message)" -Level Error
                     $missedHeartbeats++
                     
                     if ($missedHeartbeats -ge $maxMissedHeartbeats) {
-                        Write-Output "[HEARTBEAT-JOB] Too many heartbeat errors ($missedHeartbeats), stopping"
+                        Write-Log "[HEARTBEAT-JOB] Too many heartbeat errors ($missedHeartbeats), stopping" -Level Error
                         break
                     }
                     
@@ -352,13 +363,13 @@ function Start-PersistentHeartbeat {
                 }
             }
             
-            Write-Output "[HEARTBEAT-JOB] Persistent heartbeat stopped after $heartbeatCount heartbeats"
+            Write-Log "[HEARTBEAT-JOB] Persistent heartbeat stopped after $heartbeatCount heartbeats" -Level Info
         }
         
         # Start the heartbeat job
         $script:HeartbeatJob = Start-Job -ScriptBlock $heartbeatScriptBlock -ArgumentList $script:WebSocket, $script:HeartbeatInterval, $script:SequenceNumber
         
-        Write-Host "[HEARTBEAT] Persistent heartbeat job started (ID: $($script:HeartbeatJob.Id))" -ForegroundColor Green
+        Write-Log "[HEARTBEAT] Persistent heartbeat job started (ID: $($script:HeartbeatJob.Id))"
         
     } catch {
         Write-Error "[HEARTBEAT] Failed to start persistent heartbeat: $($_.Exception.Message)"
@@ -369,14 +380,14 @@ function Get-HeartbeatJobOutput {
     if ($script:HeartbeatJob) {
         $output = Receive-Job -Job $script:HeartbeatJob -Keep
         if ($output) {
-            Write-Host "[HEARTBEAT-JOB] Job output:" -ForegroundColor Cyan
-            $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+            Write-Log "Heartbeat job output available" -Level "Debug"
+            $output | ForEach-Object { Write-Log "  $_" -Level "Debug" }
         } else {
-            Write-Host "[HEARTBEAT-JOB] No job output available" -ForegroundColor Yellow
+            Write-Log "No heartbeat job output available" -Level "Debug"
         }
         return $output
     } else {
-        Write-Host "[HEARTBEAT-JOB] No heartbeat job running" -ForegroundColor Red
+        Write-Log "No heartbeat job running" -Level "Debug"
         return $null
     }
 }
@@ -384,14 +395,14 @@ function Get-HeartbeatJobOutput {
 function Stop-PersistentHeartbeat {
     try {
         if ($script:HeartbeatJob) {
-            Write-Host "[HEARTBEAT] Stopping persistent heartbeat job..." -ForegroundColor Yellow
+        Write-Log "[HEARTBEAT] Stopping persistent heartbeat job..." -Level Warning
             Stop-Job -Job $script:HeartbeatJob -PassThru | Remove-Job
             $script:HeartbeatJob = $null
         }
         $script:HeartbeatRunning = $false
-        Write-Host "[HEARTBEAT] Persistent heartbeat stopped" -ForegroundColor Yellow
+        Write-Log "[HEARTBEAT] Persistent heartbeat stopped" -Level Warning
     } catch {
-        Write-Warning "[HEARTBEAT] Error stopping heartbeat: $($_.Exception.Message)"
+        Write-Log "[HEARTBEAT] Error stopping heartbeat: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -409,11 +420,11 @@ function Stop-DiscordWebSocketBot {
         $script:AuthComplete = $false
         $script:HeartbeatRunning = $false
         
-        Write-Host "[STOP] Discord bot disconnected" -ForegroundColor Yellow
+        Write-Log "[STOP] Discord bot disconnected" -Level Warning
         return $true
         
     } catch {
-        Write-Warning "Error stopping Discord bot: $($_.Exception.Message)"
+        Write-Log "Error stopping Discord bot: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -428,7 +439,7 @@ function Maintain-DiscordHeartbeat {
         $CurrentEpochMS = [int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds)
         
         if ($script:HeartbeatInterval -gt 0 -and $CurrentEpochMS -ge $script:NextHeartbeat) {
-            Write-Verbose "[HEARTBEAT] Sending maintenance heartbeat..."
+            Write-Log "[HEARTBEAT] Sending maintenance heartbeat..." -Level "Debug"
             
             # Send heartbeat
             $HeartbeatProp = @{ 'op' = 1; 'd' = $script:SequenceNumber }
@@ -442,7 +453,7 @@ function Maintain-DiscordHeartbeat {
             
             # Update next heartbeat time
             $script:NextHeartbeat = $CurrentEpochMS + [int64]$script:HeartbeatInterval
-            Write-Verbose "[HEARTBEAT] Heartbeat sent, next due at: $($script:NextHeartbeat)"
+            Write-Log "[HEARTBEAT] Heartbeat sent, next due at: $($script:NextHeartbeat)" -Level "Debug"
             
             return $true
         }
@@ -450,7 +461,7 @@ function Maintain-DiscordHeartbeat {
         return $false  # No heartbeat needed yet
         
     } catch {
-        Write-Warning "[HEARTBEAT] Error in heartbeat maintenance: $($_.Exception.Message)"
+        Write-Log "[HEARTBEAT] Error in heartbeat maintenance: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -472,12 +483,12 @@ function Set-DiscordBotStatus {
         Maintain-DiscordHeartbeat | Out-Null
         
         if (-not $script:IsConnected -or -not $script:WebSocket -or $script:WebSocket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
-            Write-Verbose "Discord bot is not connected"
+            Write-Log "Discord bot is not connected" -Level "Debug"
             return $false
         }
         
         # This is a LOW-LEVEL function - no business logic, just send to Discord
-        Write-Verbose "[LOW-LEVEL] Set-DiscordBotStatus called: Status='$Status', Activity='$Activity', Type='$ActivityType'"
+        Write-Log "[LOW-LEVEL] Set-DiscordBotStatus called: Status='$Status', Activity='$Activity', Type='$ActivityType'" -Level "Debug"
         
         # Create presence update
         $presence = @{
@@ -507,14 +518,14 @@ function Set-DiscordBotStatus {
                     type = [int]$activityType  # Force integer type!
                 }
             )
-            Write-Verbose "[LOW-LEVEL] Activity created: name='$Activity', type=$activityType"
+            Write-Log "[LOW-LEVEL] Activity created: name='$Activity', type=$activityType" -Level "Debug"
         } else {
-            Write-Verbose "[LOW-LEVEL] NO ACTIVITY - empty or null activity provided"
+            Write-Log "[LOW-LEVEL] NO ACTIVITY - empty or null activity provided" -Level "Debug"
         }
         
         # Send presence update
         $Message = $presence | ConvertTo-Json -Depth 10
-        Write-Verbose "[LOW-LEVEL] Sending presence update to Discord"
+        Write-Log "[LOW-LEVEL] Sending presence update to Discord" -Level "Debug"
         
         $Array = @()
         $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
@@ -526,11 +537,11 @@ function Set-DiscordBotStatus {
         $script:CurrentActivity = $Activity
         $script:CurrentStatus = $Status
         
-        Write-Verbose "[LOW-LEVEL] Message sent to Discord WebSocket successfully"
+        Write-Log "[LOW-LEVEL] Message sent to Discord WebSocket successfully" -Level "Debug"
         return $true
         
     } catch {
-        Write-Warning "Failed to update bot status: $($_.Exception.Message)"
+        Write-Log "Failed to update bot status: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -555,21 +566,21 @@ function Test-DiscordConnectionHealth {
             if ($script:HeartbeatJob) {
                 $jobState = $script:HeartbeatJob.State
                 if ($jobState -eq 'Failed' -or $jobState -eq 'Stopped') {
-                    Write-Warning "[CONNECTION-HEALTH] Heartbeat job is in $jobState state, connection may be unhealthy"
+                    Write-Log "[CONNECTION-HEALTH] Heartbeat job is in $jobState state, connection may be unhealthy" -Level Warning
                     $isHealthy = $false
                 }
             }
         }
         
         if (-not $isHealthy) {
-            Write-Warning "[CONNECTION-HEALTH] Discord connection is unhealthy, attempting recovery..."
+            Write-Log "[CONNECTION-HEALTH] Discord connection is unhealthy, attempting recovery..." -Level Warning
             return Restore-DiscordConnection
         }
         
         return $true
         
     } catch {
-        Write-Warning "[CONNECTION-HEALTH] Error checking Discord connection health: $($_.Exception.Message)"
+        Write-Log "[CONNECTION-HEALTH] Error checking Discord connection health: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -582,7 +593,7 @@ function Restore-DiscordConnection {
     Tries to restore a lost Discord connection by cleaning up and reconnecting
     #>
     try {
-        Write-Host "[RECOVERY] Attempting to restore Discord connection..." -ForegroundColor Yellow
+        Write-Log "[RECOVERY] Attempting to restore Discord connection..." -Level Warning
         
         # Store current settings for restoration
         $savedToken = $script:BotToken
@@ -595,22 +606,22 @@ function Restore-DiscordConnection {
         }
         
         # Clean up existing connection
-        Write-Verbose "[RECOVERY] Cleaning up existing connection..."
+        Write-Log "[RECOVERY] Cleaning up existing connection..." -Level "Debug"
         Stop-DiscordWebSocketBot | Out-Null
         
         # Wait a moment before reconnecting
         Start-Sleep -Seconds 3
         
         # Attempt reconnection
-        Write-Verbose "[RECOVERY] Attempting to reconnect..."
+        Write-Log "[RECOVERY] Attempting to reconnect..." -Level "Debug"
         $reconnectResult = Start-DiscordWebSocketBot -Token $savedToken -Status $savedStatus -Activity $savedActivity
         
         if ($reconnectResult) {
-            Write-Host "[RECOVERY] Discord connection restored successfully!" -ForegroundColor Green
+            Write-Log "[RECOVERY] Discord connection restored successfully!"
             
             # Start persistent heartbeat if it's not running
             if (-not $script:HeartbeatJob -or $script:HeartbeatJob.State -ne 'Running') {
-                Write-Verbose "[RECOVERY] Starting persistent heartbeat..."
+                Write-Log "[RECOVERY] Starting persistent heartbeat..." -Level "Debug"
                 Start-PersistentHeartbeat
             }
             

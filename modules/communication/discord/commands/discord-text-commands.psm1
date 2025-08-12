@@ -5,6 +5,17 @@
 # Handles command parsing, routing, and rate limiting
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for discord-text-commands module" -ForegroundColor Yellow
+}
+
 # Global variables
 $script:Config = $null
 $script:LastProcessedMessages = @{}
@@ -34,19 +45,19 @@ function Initialize-DiscordTextCommands {
         if ($Config.Discord.Token) {
             Initialize-DiscordAPI -Token $Config.Discord.Token
         } else {
-            Write-Warning "[TEXT-COMMANDS] No Discord bot token found in configuration"
+            Write-Log "[TEXT-COMMANDS] No Discord bot token found in configuration" -Level Warning
             return $false
         }
         
         # Verify Discord commands are enabled
         if (-not $Config.Discord.Commands.Enabled) {
-            Write-Host "[TEXT-COMMANDS] Text commands are disabled in configuration" -ForegroundColor Yellow
+            Write-Log "Text commands are disabled in configuration" -Level "Warning"
             return $false
         }
         
         # Verify required channels are configured
         if (-not $Config.Discord.Commands.Channels.Admin) {
-            Write-Warning "[TEXT-COMMANDS] No admin command channel configured"
+            Write-Log "[TEXT-COMMANDS] No admin command channel configured" -Level Warning
             return $false
         }
         
@@ -61,10 +72,10 @@ function Initialize-DiscordTextCommands {
         # Initialize cooldown tracking
         $script:CommandCooldowns = @{}
         
-        Write-Host "[TEXT-COMMANDS] Discord text commands initialized successfully" -ForegroundColor Green
-        Write-Host "[TEXT-COMMANDS] Admin channel: $($Config.Discord.Commands.Channels.Admin)" -ForegroundColor Cyan
-        Write-Host "[TEXT-COMMANDS] Command prefix: $($Config.Discord.Commands.Prefix)" -ForegroundColor Cyan
-        Write-Host "[TEXT-COMMANDS] Available admin commands: $($Config.Discord.Commands.AdminCommands -join ', ')" -ForegroundColor Cyan
+        Write-Log "Discord text commands initialized successfully" -Level "Info"
+        Write-Log "Admin channel: $($Config.Discord.Commands.Channels.Admin)" -Level "Debug"
+        Write-Log "Command prefix: $($Config.Discord.Commands.Prefix)" -Level "Debug"
+        Write-Log "Available admin commands: $($Config.Discord.Commands.AdminCommands -join ', ')" -Level "Debug"
         
         return $true
         
@@ -104,7 +115,7 @@ function Update-DiscordTextCommands {
         }
         
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Error updating commands: $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Error updating commands: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -163,12 +174,12 @@ function Process-ChannelCommands {
                 $script:LastProcessedMessages[$ChannelId] = $messageTime
                 
             } catch {
-                Write-Warning "[TEXT-COMMANDS] Error processing message: $($_.Exception.Message)"
+                Write-Log "[TEXT-COMMANDS] Error processing message: $($_.Exception.Message)" -Level Error
             }
         }
         
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Error processing channel $ChannelId commands: $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Error processing channel $ChannelId commands: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -210,7 +221,7 @@ function Process-CommandMessage {
         }
         
         if ($commandName -notin $allowedCommands) {
-            Write-Host "[TEXT-COMMANDS] Command '$commandName' not allowed for $CommandType users" -ForegroundColor Yellow
+            Write-Log "Command '$commandName' not allowed for $CommandType users" -Level "Warning"
             return
         }
         
@@ -240,7 +251,7 @@ function Process-CommandMessage {
             $timeSinceLastUse = (Get-Date) - $lastUsed
             if ($timeSinceLastUse.TotalSeconds -lt $cooldownSeconds) {
                 $remainingCooldown = [math]::Ceiling($cooldownSeconds - $timeSinceLastUse.TotalSeconds)
-                Write-Host "[TEXT-COMMANDS] Command on cooldown for $remainingCooldown seconds" -ForegroundColor Yellow
+                Write-Log "Command on cooldown for $remainingCooldown seconds" -Level "Warning"
                 return
             }
         }
@@ -256,12 +267,12 @@ function Process-CommandMessage {
             try {
                 Remove-DiscordMessage -ChannelId $ChannelId -MessageId $Message.id
             } catch {
-                Write-Verbose "[TEXT-COMMANDS] Could not delete command message: $($_.Exception.Message)"
+                Write-Log "[TEXT-COMMANDS] Could not delete command message: $($_.Exception.Message)" -Level "Debug"
             }
         }
         
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Error processing command message: $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Error processing command message: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -299,7 +310,7 @@ function Execute-TextCommand {
             if (Get-Command "Execute-AdminCommand" -ErrorAction SilentlyContinue) {
                 Execute-AdminCommand -CommandName $CommandName -Arguments $Arguments -ResponseChannelId $ResponseChannelId -UserId $UserId
             } else {
-                Write-Warning "[TEXT-COMMANDS] Admin commands module not available"
+                Write-Log "[TEXT-COMMANDS] Admin commands module not available" -Level Warning
                 Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Admin commands module not loaded"
             }
         }
@@ -308,7 +319,7 @@ function Execute-TextCommand {
             if (Get-Command "Execute-PlayerCommand" -ErrorAction SilentlyContinue) {
                 Execute-PlayerCommand -CommandName $CommandName -Arguments $Arguments -ResponseChannelId $ResponseChannelId -UserId $UserId
             } else {
-                Write-Warning "[TEXT-COMMANDS] Player commands module not available"
+                Write-Log "[TEXT-COMMANDS] Player commands module not available" -Level Warning
                 Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Player commands module not loaded"
             }
         }
@@ -317,7 +328,7 @@ function Execute-TextCommand {
         }
         
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Error routing command '$CommandName': $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Error routing command '$CommandName': $($_.Exception.Message)" -Level Error
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to execute command: $($_.Exception.Message)"
     }
 }
@@ -358,12 +369,12 @@ function Send-CommandResponse {
             }
             
             $result = Send-DiscordMessage @messageParams
-            Write-Verbose "[TEXT-COMMANDS] Response sent to channel $ChannelId"
+            Write-Log "[TEXT-COMMANDS] Response sent to channel $ChannelId" -Level "Debug"
         } else {
-            Write-Warning "[TEXT-COMMANDS] Send-DiscordMessage function not available"
+            Write-Log "[TEXT-COMMANDS] Send-DiscordMessage function not available" -Level Warning
         }
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Failed to send response: $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Failed to send response: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -408,7 +419,7 @@ function Test-UserAdminPermissions {
         return $false
         
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Error checking user admin permissions: $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Error checking user admin permissions: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -451,7 +462,7 @@ function Test-UserPlayerPermissions {
         return $false
         
     } catch {
-        Write-Warning "[TEXT-COMMANDS] Error checking user player permissions: $($_.Exception.Message)"
+        Write-Log "[TEXT-COMMANDS] Error checking user player permissions: $($_.Exception.Message)" -Level Error
         return $false
     }
 }

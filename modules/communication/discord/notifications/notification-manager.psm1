@@ -5,6 +5,17 @@
 # Handles server status, backups, updates, and admin notifications
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for notification-manager module" -ForegroundColor Yellow
+}
+
 # Import required modules
 $moduleRoot = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Force -Global -ErrorAction SilentlyContinue
@@ -53,7 +64,7 @@ function Initialize-NotificationManager {
     $script:DiscordConfig = $Config.Discord
     
     if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-        Write-Verbose "Discord not configured, notifications disabled"
+        Write-Log "Discord not configured, notifications disabled" -Level "Debug"
         return $false
     }
     
@@ -64,9 +75,9 @@ function Initialize-NotificationManager {
             DefaultChannel = $script:DiscordConfig.Notifications.DefaultChannel
             NotificationTemplates = $script:DiscordConfig.Notifications.Templates
         }
-        Write-Verbose "Loaded notification configuration from main config"
+        Write-Log "Loaded notification configuration from main config" -Level "Debug"
     } else {
-        Write-Verbose "No notification configuration found in main config"
+        Write-Log "No notification configuration found in main config" -Level "Debug"
     }
     
     # Initialize notification types from config or use defaults
@@ -83,14 +94,14 @@ function Initialize-NotificationManager {
             $script:DefaultPlayerNotificationTypes
         }
         
-        Write-Verbose "Loaded notification types from config - Admin: $($script:AdminOnlyTypes.Count), Player: $($script:PlayerNotificationTypes.Count)"
+        Write-Log "Loaded notification types from config - Admin: $($script:AdminOnlyTypes.Count), Player: $($script:PlayerNotificationTypes.Count)" -Level "Debug"
     } else {
         $script:AdminOnlyTypes = $script:DefaultAdminOnlyTypes
         $script:PlayerNotificationTypes = $script:DefaultPlayerNotificationTypes
-        Write-Verbose "Using default notification types - Admin: $($script:AdminOnlyTypes.Count), Player: $($script:PlayerNotificationTypes.Count)"
+        Write-Log "Using default notification types - Admin: $($script:AdminOnlyTypes.Count), Player: $($script:PlayerNotificationTypes.Count)" -Level "Debug"
     }
     
-    Write-Verbose "Discord notifications initialized successfully"
+    Write-Log "Discord notifications initialized successfully" -Level "Debug"
     return $true
 }
 
@@ -112,21 +123,21 @@ function Send-DiscordNotification {
     
     try {
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Verbose "Discord not configured, skipping notification"
+            Write-Log "Discord not configured, skipping notification" -Level "Debug"
             return
         }
         
         # Check if status change notifications should be suppressed
         if ($script:DiscordConfig.Notifications.SuppressStatusChanges -and 
             $Type -in @('server.online', 'server.offline', 'server.starting', 'server.shutting_down', 'server.loading')) {
-            Write-Verbose "Status change notification suppressed: $Type"
+            Write-Log "Status change notification suppressed: $Type" -Level "Debug"
             return @{ Success = $true; Message = "Notification suppressed by configuration" }
         }
         
         # Get target channels (may be multiple)
         $channels = Get-NotificationChannels -Type $Type
         if (-not $channels -or $channels.Count -eq 0) {
-            Write-Warning "No channels configured for notification type: $Type"
+            Write-Log "No channels configured for notification type: $Type" -Level Warning
             return @{ Success = $false; Error = "No channels configured for notification type: $Type" }
         }
         
@@ -138,7 +149,7 @@ function Send-DiscordNotification {
         $successCount = 0
         
         foreach ($channelId in $channels) {
-            Write-Verbose "Sending to channel: $channelId"
+            Write-Log "Sending to channel: $channelId" -Level "Debug"
             
             # Get role mentions specific to this channel
             $roleMentions = Get-ChannelSpecificRoleMentions -Type $Type -ChannelId $channelId
@@ -162,9 +173,9 @@ function Send-DiscordNotification {
             
             if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
                 try {
-                    Write-Verbose "Sending Discord notification: Type=$Type, ChannelId=$channelId, HasContent=$($messageContent -ne $null)"
+                    Write-Log "Sending Discord notification: Type=$Type, ChannelId=$channelId, HasContent=$($messageContent -ne $null)" -Level "Debug"
                     if ($messageContent) {
-                        Write-Verbose "Message content: $messageContent"
+                        Write-Log "Message content: $messageContent" -Level "Debug"
                     }
                     
                     if ($messageContent) {
@@ -181,32 +192,32 @@ function Send-DiscordNotification {
                     }
                     
                 } catch {
-                    Write-Warning "Discord API error for $Type to channel $channelId`: $($_.Exception.Message)"
+                    Write-Log "Discord API error for $Type to channel $channelId`: $($_.Exception.Message)" -Level Error
                     $results += @{ ChannelId = $channelId; Success = $false; Error = $_.Exception.Message }
                     
                     # Try sending without content as fallback
                     if ($messageContent) {
-                        Write-Verbose "Retrying without role mentions..."
+                        Write-Log "Retrying without role mentions..." -Level "Debug"
                         try {
                             $channelResult = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $channelId -Embed $embed
                             if ($channelResult) {
-                                Write-Verbose "Fallback send successful"
+                                Write-Log "Fallback send successful" -Level "Debug"
                                 $successCount++
                                 $results[-1] = @{ ChannelId = $channelId; Success = $true; Result = $channelResult; Note = "Sent without role mentions" }
                             }
                         } catch {
-                            Write-Warning "Fallback send also failed: $($_.Exception.Message)"
+                            Write-Log "Fallback send also failed: $($_.Exception.Message)" -Level Error
                         }
                     }
                 }
             } else {
-                Write-Warning "Discord API module not available"
+                Write-Log "Discord API module not available" -Level Warning
                 $results += @{ ChannelId = $channelId; Success = $false; Error = "Discord API module not available" }
             }
         }
         
         if ($successCount -gt 0) {
-            Write-Verbose "Discord notification sent to $successCount/$($channels.Count) channels: $Type"
+            Write-Log "Discord notification sent to $successCount/$($channels.Count) channels: $Type" -Level "Debug"
             return @{ 
                 Success = $true
                 Message = "Notification sent to $successCount/$($channels.Count) channels"
@@ -215,7 +226,7 @@ function Send-DiscordNotification {
                 SuccessCount = $successCount
             }
         } else {
-            Write-Warning "Discord notification failed for all channels: $Type"
+            Write-Log "Discord notification failed for all channels: $Type" -Level Error
             return @{ 
                 Success = $false
                 Error = "Failed to send to all channels"
@@ -226,7 +237,7 @@ function Send-DiscordNotification {
         }
         
     } catch {
-        Write-Warning "Discord notification error: $($_.Exception.Message)"
+        Write-Log "Discord notification error: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -270,7 +281,7 @@ function Get-NotificationChannels {
     # Remove duplicates (in case both channels are the same)
     $channels = $channels | Select-Object -Unique
     
-    Write-Verbose "[Channels] Type: $Type, Admin: $isAdminNotification, Player: $isPlayerNotification, Channels: $($channels -join ', ')"
+    Write-Log "[Channels] Type: $Type, Admin: $isAdminNotification, Player: $isPlayerNotification, Channels: $($channels -join ', ')" -Level "Debug"
     
     return $channels
 }
@@ -343,7 +354,7 @@ function Get-NotificationChannel {
         return $script:DiscordConfig.Channels.General
     }
     
-    Write-Warning "No Discord channel configured for notification type: $Type (Admin: $isAdminOnly, Player: $isPlayerNotification)"
+    Write-Log "No Discord channel configured for notification type: $Type (Admin: $isAdminOnly, Player: $isPlayerNotification)" -Level Warning
     return $null
 }
 
@@ -616,7 +627,7 @@ function New-NotificationEmbed {
         }
         
         default {
-            Write-Verbose "Unknown notification type: $Type, creating generic notification"
+            Write-Log "Unknown notification type: $Type, creating generic notification" -Level "Debug"
             $message = if ($Data.message) { $Data.message } else { "Event: **$Type**" }
             
             # Build additional info
@@ -663,14 +674,14 @@ function Get-ChannelSpecificRoleMentions {
     if ($ChannelId -eq $adminChannel -and $rolesConfig.Admin) {
         # Admin channel gets admin roles
         $targetRoles = $rolesConfig.Admin
-        Write-Verbose "Using Admin roles for channel $ChannelId"
+        Write-Log "Using Admin roles for channel $ChannelId" -Level "Debug"
     } elseif ($ChannelId -eq $playerChannel -and $rolesConfig.Players) {
         # Player channel gets player roles  
         $targetRoles = $rolesConfig.Players
-        Write-Verbose "Using Player roles for channel $ChannelId"
+        Write-Log "Using Player roles for channel $ChannelId" -Level "Debug"
     } else {
         # Unknown channel or no roles configured
-        Write-Verbose "No specific roles for channel $ChannelId"
+        Write-Log "No specific roles for channel $ChannelId" -Level "Debug"
         return $roles
     }
     

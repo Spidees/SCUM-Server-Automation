@@ -7,11 +7,18 @@
 
 #Requires -Version 5.1
 
-# Import common utilities with new structure
-$ModulesRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
-Import-Module (Join-Path $ModulesRoot "core\common\common.psm1") -Force -Global
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for parser module" -ForegroundColor Yellow
+}
 
-# Module variables - focused on log reading only
+# Module variables
 $script:LogLinePosition = 0
 $script:LastLogFileSize = $null
 $script:LogMonitoringEnabled = $false

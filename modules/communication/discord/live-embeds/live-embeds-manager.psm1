@@ -5,6 +5,17 @@
 # Manages embed updates, message handling, and display coordination
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for live-embeds-manager module" -ForegroundColor Yellow
+}
+
 # Import required modules
 $rootPath = Split-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) -Parent
 Import-Module (Join-Path $PSScriptRoot "server-status-embed.psm1") -Force -Global
@@ -51,11 +62,11 @@ function Initialize-LiveEmbeds {
                     $results += $leaderboardsOk
                     # Note: Detailed initialization messages are handled by leaderboards-embed.psm1
                 } else {
-                    Write-Warning "Initialize-LeaderboardsEmbed function not found"
+                    Write-Log "Initialize-LeaderboardsEmbed function not found" -Level Warning
                     $results += $false
                 }
             } else {
-                Write-Warning "Leaderboards embed module not found: $leaderboardsModulePath"
+                Write-Log "Leaderboards embed module not found: $leaderboardsModulePath" -Level Warning
                 $results += $false
             }
         } else {
@@ -68,13 +79,13 @@ function Initialize-LiveEmbeds {
         if ($script:LiveEmbedsInitialized) {
             Write-Verbose "Live embeds system initialized successfully"
         } else {
-            Write-Warning "Failed to initialize any live embeds"
+            Write-Log "Failed to initialize any live embeds" -Level Warning
         }
         
         return $script:LiveEmbedsInitialized
         
     } catch {
-        Write-Warning "Failed to initialize live embeds: $($_.Exception.Message)"
+        Write-Log "Failed to initialize live embeds: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -90,7 +101,7 @@ function Initialize-MultipleLeaderboardsEmbeds {
     )
     
     try {
-        Write-Host "Initializing multiple leaderboard embeds..." -ForegroundColor Yellow
+        Write-Log "Initializing multiple leaderboard embeds..." -Level Info
         
         # Define leaderboard categories and their corresponding functions
         $categories = @{
@@ -114,7 +125,7 @@ function Initialize-MultipleLeaderboardsEmbeds {
             
             # Check if the function exists
             if (-not (Get-Command $functionName -ErrorAction SilentlyContinue)) {
-                Write-Warning "Function $functionName not found - skipping $category leaderboard"
+                Write-Log "Function $functionName not found - skipping $category leaderboard" -Level Warning
                 continue
             }
             
@@ -133,13 +144,13 @@ function Initialize-MultipleLeaderboardsEmbeds {
                         LastUpdate = Get-Date
                         Function = $functionName
                     }
-                    Write-Host "Found existing $category leaderboard embed (ID: $($existingEmbed.id))" -ForegroundColor Cyan
+                    Write-Log "Found existing $category leaderboard embed (ID: $($existingEmbed.id))" -Level Info
                     $successCount++
                 } else {
                     # Create new embed with current data
                     $embedData = & $functionName
                     if (-not $embedData) {
-                        Write-Warning "Failed to create embed data for $category"
+                        Write-Log "Failed to create embed data for $category" -Level Error
                         continue
                     }
                     
@@ -152,10 +163,10 @@ function Initialize-MultipleLeaderboardsEmbeds {
                             LastUpdate = Get-Date
                             Function = $functionName
                         }
-                        Write-Host "Created $category leaderboard embed (ID: $($message.id))" -ForegroundColor Green
+                        Write-Log "Created $category leaderboard embed (ID: $($message.id))" -Level Info
                         $successCount++
                     } else {
-                        Write-Warning "Failed to send $category leaderboard embed to Discord"
+                        Write-Log "Failed to send $category leaderboard embed to Discord" -Level Error
                     }
                 }
                 
@@ -163,15 +174,15 @@ function Initialize-MultipleLeaderboardsEmbeds {
                 Start-Sleep -Milliseconds 1000
                 
             } catch {
-                Write-Warning "Failed to create $category leaderboard embed: $($_.Exception.Message)"
+                Write-Log "Failed to create $category leaderboard embed: $($_.Exception.Message)" -Level Error
             }
         }
         
-        Write-Host "Successfully initialized $successCount leaderboard embeds" -ForegroundColor Cyan
+        Write-Log "Successfully initialized $successCount leaderboard embeds" -Level Info
         return ($successCount -gt 0)
         
     } catch {
-        Write-Warning "Failed to initialize multiple leaderboard embeds: $($_.Exception.Message)"
+        Write-Log "Failed to initialize multiple leaderboard embeds: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -216,7 +227,7 @@ function Update-LiveLeaderboards {
         Write-Verbose "Updating new leaderboards system (19 categories)"
         Update-LeaderboardsEmbed
     } else {
-        Write-Warning "Update-LeaderboardsEmbed function not available"
+        Write-Log "Update-LeaderboardsEmbed function not available" -Level Warning
     }
 }
 
@@ -245,13 +256,13 @@ function Update-MultipleLeaderboardsEmbeds {
                 # Create updated embed data
                 $embedData = & $functionName
                 if (-not $embedData) {
-                    Write-Warning "Failed to create updated embed data for $category"
+                    Write-Log "Failed to create updated embed data for $category" -Level Error
                     continue
                 }
                 
                 # Update the embed in Discord
                 if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-                    Write-Warning "Discord config or token not available for updating $category embed"
+                    Write-Log "Discord config or token not available for updating $category embed" -Level Warning
                     continue
                 }
                 
@@ -261,14 +272,14 @@ function Update-MultipleLeaderboardsEmbeds {
                     $updateCount++
                     Write-Verbose "Updated $category leaderboard embed"
                 } else {
-                    Write-Warning "Failed to update $category leaderboard embed"
+                    Write-Log "Failed to update $category leaderboard embed" -Level Error
                 }
                 
                 # Delay between updates to avoid rate limiting
                 Start-Sleep -Milliseconds 1000
                 
             } catch {
-                Write-Warning "Failed to update $category leaderboard embed: $($_.Exception.Message)"
+                Write-Log "Failed to update $category leaderboard embed: $($_.Exception.Message)" -Level Error
             }
         }
         
@@ -276,7 +287,7 @@ function Update-MultipleLeaderboardsEmbeds {
         return ($updateCount -gt 0)
         
     } catch {
-        Write-Warning "Failed to update multiple leaderboard embeds: $($_.Exception.Message)"
+        Write-Log "Failed to update multiple leaderboard embeds: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -360,7 +371,7 @@ function Find-ExistingLeaderboardEmbeds {
             
             # Check if it's a rate limit error (429)
             if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 429) {
-                Write-Warning "Discord rate limit hit while finding embeds (attempt $retryCount/$MaxRetries), waiting..."
+                Write-Log "Discord rate limit hit while finding embeds (attempt $retryCount/$MaxRetries), waiting..." -Level Warning
                 
                 # Extract retry-after from response if available
                 $retryAfter = 1
@@ -380,12 +391,12 @@ function Find-ExistingLeaderboardEmbeds {
             }
             
             # For non-rate-limit errors, return empty array
-            Write-Warning "Failed to find existing leaderboard embeds: $($_.Exception.Message)"
+            Write-Log "Failed to find existing leaderboard embeds: $($_.Exception.Message)" -Level Error
             return @()
         }
     }
     
-    Write-Warning "Failed to find existing leaderboard embeds after $MaxRetries attempts due to rate limiting"
+    Write-Log "Failed to find existing leaderboard embeds after $MaxRetries attempts due to rate limiting" -Level Error
     return @()
 }
 

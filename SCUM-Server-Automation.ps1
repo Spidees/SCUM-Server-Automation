@@ -11,6 +11,7 @@ param(
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Initial console output before logging is available
 Write-Host "=== SCUM Server Automation - Starting ===" -ForegroundColor Green
 Write-Host "Loading complete system with all modules..." -ForegroundColor Cyan
 
@@ -18,7 +19,7 @@ Write-Host "Loading complete system with all modules..." -ForegroundColor Cyan
 # CLEANUP HANDLER
 # ===============================================================
 $CleanupHandler = {
-    Write-Host "`nShutting down gracefully..." -ForegroundColor Yellow
+    Write-Log "Shutting down gracefully..." -Level Warning
     
     # Send shutdown notification
     if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
@@ -55,10 +56,10 @@ Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $CleanupHandle
 # ===============================================================
 # CONFIGURATION LOADING
 # ===============================================================
-Write-Host "`nLoading configuration..." -ForegroundColor Yellow
+Write-Host "Loading configuration..." -ForegroundColor Yellow
 
 if (-not (Test-Path $ConfigPath)) {
-    Write-Error "Configuration file not found: $ConfigPath"
+    Write-Host "Configuration file not found: $ConfigPath" -ForegroundColor Red
     Read-Host "Press Enter to exit"
     exit 1
 }
@@ -70,7 +71,7 @@ try {
     # Keep original config for array parsing (before hashtable conversion)
     $originalConfig = $config
 } catch {
-    Write-Error "Failed to load configuration: $($_.Exception.Message)"
+    Write-Host "Failed to load configuration: $($_.Exception.Message)" -ForegroundColor Red
     Read-Host "Press Enter to exit"
     exit 1
 }
@@ -112,12 +113,21 @@ $serverDir = $configHash.serverDir
 Write-Host "Service: $serviceName" -ForegroundColor Cyan
 
 # ===============================================================
+# GLOBAL LOG PATH SETUP (MUST BE BEFORE MODULE LOADING)
+# ===============================================================
+# Set global automation log path BEFORE loading any modules
+# This prevents parser module from using server log path
+$global:AutomationLogPath = Join-Path $PSScriptRoot "SCUM-Server-Automation.log"
+Write-Host "Global automation log path: $global:AutomationLogPath" -ForegroundColor Cyan
+
+# ===============================================================
 # MODULE LOADING
 # ===============================================================
 Write-Host "`nLoading system modules..." -ForegroundColor Yellow
 
 $modules = @(
     "core\common\common.psm1",
+    "core\database-service.psm1",
     "core\logging\parser\parser.psm1",
     "server\service\service.psm1",
     "server\monitoring\monitoring.psm1",
@@ -129,6 +139,18 @@ $modules = @(
     "communication\discord\commands\discord-scheduled-tasks.psm1",
     "communication\discord\notifications\notification-manager.psm1",
     "communication\discord\chat\chat-manager.psm1",
+    "logs\kill-log.psm1",
+    "logs\eventkill-log.psm1",
+    "logs\admin-log.psm1",
+    "logs\violations-log.psm1",
+    "logs\famepoints-log.psm1",
+    "logs\gameplay-log.psm1",
+    "logs\quest-log.psm1",
+    "logs\chest-log.psm1",
+    "logs\login-log.psm1",
+    "logs\economy-log.psm1",
+    "logs\vehicle-log.psm1",
+    "logs\raidprotection-log.psm1",
     "automation\backup\backup.psm1",
     "automation\update\update.psm1",
     "automation\scheduling\scheduling.psm1",
@@ -166,24 +188,35 @@ Write-Host "`nInitializing system components..." -ForegroundColor Yellow
 # Initialize common module (logging, paths) - MUST BE FIRST
 if (Get-Command "Initialize-CommonModule" -ErrorAction SilentlyContinue) {
     try {
-        $logPath = "SCUM-Server-Automation.log"
+        $logPath = Join-Path $PSScriptRoot "SCUM-Server-Automation.log"
+        
+        # Set global log path before initializing any modules
+        Set-Variable -Name "AutomationLogPath" -Value $logPath -Scope Global -Force
+        
         Initialize-CommonModule -Config $configHash -LogPath $logPath -RootPath $PSScriptRoot
-        Write-Host "[OK] Common module (logging, paths)" -ForegroundColor Green
+        
+        # NOW Write-Log is available - switch from Write-Host to Write-Log
+        Write-Log "[OK] Common module (logging, paths) initialized"
+        
+        # Write-Log is now available globally from common module - no need to override
+        
     } catch {
         Write-Host "[WARN] Common module failed: $($_.Exception.Message)" -ForegroundColor Yellow
     }
+} else {
+    Write-Host "[ERROR] Common module not available" -ForegroundColor Red
 }
 
 # ===============================================================
 # PHASE 1: SERVER INSTALLATION & SETUP
 # ===============================================================
-Write-Host "`nPhase 1: Server Installation & Setup..." -ForegroundColor Cyan
+Write-Log "Phase 1: Server Installation & Setup..." -Level Info
 
 # Initialize installation system FIRST
 if (Get-Command "Initialize-InstallationModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-InstallationModule -Config $configHash
-        Write-Host "[OK] Installation system initialized" -ForegroundColor Green
+        Write-Log "[OK] Installation system initialized"
         
         # Check if server is installed
         $serverDir = if ($configHash.serverDir) { $configHash.serverDir } else { ".\server" }
@@ -192,110 +225,110 @@ if (Get-Command "Initialize-InstallationModule" -ErrorAction SilentlyContinue) {
         
         # Check if SteamCMD exists
         if (-not (Test-Path $steamCmdPath)) {
-            Write-Host "[INSTALL] SteamCMD not found, installing..." -ForegroundColor Yellow
+            Write-Log "[INSTALL] SteamCMD not found, installing..." -Level Warning
             try {
                 if (Get-Command "Install-SteamCmd" -ErrorAction SilentlyContinue) {
                     $steamResult = Install-SteamCmd -SteamCmdPath $steamCmdPath
                     if ($steamResult.Success) {
-                        Write-Host "[OK] SteamCMD installed successfully" -ForegroundColor Green
+                        Write-Log "[OK] SteamCMD installed successfully"
                     } else {
-                        Write-Host "[ERROR] SteamCMD installation failed: $($steamResult.Error)" -ForegroundColor Red
+                        Write-Log "[ERROR] SteamCMD installation failed: $($steamResult.Error)" -Level Error
                     }
                 } else {
-                    Write-Host "[ERROR] Install-SteamCmd function not available" -ForegroundColor Red
+                    Write-Log "[ERROR] Install-SteamCmd function not available" -Level Error
                 }
             } catch {
-                Write-Host "[ERROR] SteamCMD installation failed: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Log "[ERROR] SteamCMD installation failed: $($_.Exception.Message)" -Level Error
             }
         } else {
-            Write-Host "[OK] SteamCMD found" -ForegroundColor Green
+            Write-Log "[OK] SteamCMD found"
         }
         
         # Check and install SQLite tools
         $sqliteToolsPath = ".\sqlite-tools"
         $sqliteExe = Join-Path $sqliteToolsPath "sqlite3.exe"
         if (-not (Test-Path $sqliteExe)) {
-            Write-Host "[INSTALL] SQLite tools not found, installing..." -ForegroundColor Yellow
+            Write-Log "[INSTALL] SQLite tools not found, installing..." -Level Warning
             try {
                 if (Get-Command "Install-SqliteTools" -ErrorAction SilentlyContinue) {
                     $sqliteResult = Install-SqliteTools -SqliteToolsPath $sqliteToolsPath
                     if ($sqliteResult.Success) {
-                        Write-Host "[OK] SQLite tools installed successfully" -ForegroundColor Green
+                        Write-Log "[OK] SQLite tools installed successfully" -Level Info
                     } else {
-                        Write-Host "[ERROR] SQLite tools installation failed: $($sqliteResult.Error)" -ForegroundColor Red
+                        Write-Log "[ERROR] SQLite tools installation failed: $($sqliteResult.Error)" -Level Error
                     }
                 } else {
-                    Write-Host "[ERROR] Install-SqliteTools function not available" -ForegroundColor Red
+                    Write-Log "[ERROR] Install-SqliteTools function not available" -Level Error
                 }
             } catch {
-                Write-Host "[ERROR] SQLite tools installation failed: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Log "[ERROR] SQLite tools installation failed: $($_.Exception.Message)" -Level Error
             }
         } else {
-            Write-Host "[OK] SQLite tools found" -ForegroundColor Green
+            Write-Log "[OK] SQLite tools found" -Level Info
         }
         
         # Check if server is installed
         if (Get-Command "Test-FirstInstall" -ErrorAction SilentlyContinue) {
             $needsInstall = Test-FirstInstall -ServerDirectory $serverDir -AppId $appId
             if ($needsInstall) {
-                Write-Host "[INSTALL] Server not found, installing SCUM Dedicated Server..." -ForegroundColor Yellow
+                Write-Log "[INSTALL] Server not found, installing SCUM Dedicated Server..." -Level Warning
                 try {
                     if (Get-Command "Invoke-FirstInstall" -ErrorAction SilentlyContinue) {
                         $installResult = Invoke-FirstInstall -SteamCmdPath (Split-Path $steamCmdPath -Parent) -ServerDirectory $serverDir -AppId $appId -ServiceName $serviceName
                         if ($installResult.Success) {
-                            Write-Host "[OK] SCUM Server installed successfully" -ForegroundColor Green
+                            Write-Log "[OK] SCUM Server installed successfully" -Level Info
                             
                             # Check if restart is required for service configuration
                             if ($installResult.RequireRestart) {
-                                Write-Host "" -ForegroundColor White
-                                Write-Host "================================================================" -ForegroundColor Yellow
-                                Write-Host "                    INSTALLATION COMPLETE" -ForegroundColor Yellow
-                                Write-Host "================================================================" -ForegroundColor Yellow
-                                Write-Host "The SCUM server has been successfully installed!" -ForegroundColor Green
-                                Write-Host "" -ForegroundColor White
-                                Write-Host "NEXT STEP:" -ForegroundColor Cyan
-                                Write-Host "Please configure the Windows service using NSSM and then" -ForegroundColor White
-                                Write-Host "restart this automation script." -ForegroundColor White
-                                Write-Host "" -ForegroundColor White
-                                Write-Host "Service details for your reference:" -ForegroundColor Gray
-                                Write-Host "- Service name: $serviceName" -ForegroundColor Gray
-                                Write-Host "- Executable: $(Join-Path $serverDir "SCUM\Binaries\Win64\SCUMServer.exe")" -ForegroundColor Gray
-                                Write-Host "" -ForegroundColor White
-                                Write-Host "================================================================" -ForegroundColor Yellow
-                                Write-Host "Press any key to exit automation script..." -ForegroundColor Cyan
+                                Write-Log "" -Level Info
+                                Write-Log "================================================================" -Level Info
+                                Write-Log "                    INSTALLATION COMPLETE" -Level Info
+                                Write-Log "================================================================" -Level Info
+                                Write-Log "The SCUM server has been successfully installed!" -Level Info
+                                Write-Log "" -Level Info
+                                Write-Log "NEXT STEP:" -Level Info
+                                Write-Log "Please configure the Windows service using NSSM and then" -Level Info
+                                Write-Log "restart this automation script." -Level Info
+                                Write-Log "" -Level Info
+                                Write-Log "Service details for your reference:" -Level Info
+                                Write-Log "- Service name: $serviceName" -Level Info
+                                Write-Log "- Executable: $(Join-Path $serverDir "SCUM\Binaries\Win64\SCUMServer.exe")" -Level Info
+                                Write-Log "" -Level Info
+                                Write-Log "================================================================" -Level Info
+                                Write-Log "Press any key to exit automation script..." -Level Info
                                 $null = Read-Host
                                 exit 0
                             }
                         } else {
-                            Write-Host "[ERROR] Server installation failed: $($installResult.Error)" -ForegroundColor Red
+                            Write-Log "[ERROR] Server installation failed: $($installResult.Error)" -Level Error
                         }
                     } else {
-                        Write-Host "[ERROR] Invoke-FirstInstall function not available" -ForegroundColor Red
+                        Write-Log "[ERROR] Invoke-FirstInstall function not available" -Level Error
                     }
                 } catch {
-                    Write-Host "[ERROR] Server installation failed: $($_.Exception.Message)" -ForegroundColor Red
+                    Write-Log "[ERROR] Server installation failed: $($_.Exception.Message)" -Level Error
                 }
             } else {
-                Write-Host "[OK] SCUM Server installation found" -ForegroundColor Green
+                Write-Log "[OK] SCUM Server installation found" -Level Info
             }
         }
         
     } catch {
-        Write-Host "[WARN] Installation system failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Installation system failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Installation module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Installation module not available" -Level Warning
 }
 
 # Initialize update system SECOND
 if (Get-Command "Initialize-UpdateModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-UpdateModule -Config $configHash
-        Write-Host "[OK] Update system initialized" -ForegroundColor Green
+        Write-Log "[OK] Update system initialized" -Level Info
         
         # Check for updates if configured
         if ($configHash.runUpdateOnStart -eq $true) {
-            Write-Host "[UPDATE] Checking for server updates..." -ForegroundColor Yellow
+            Write-Log "[UPDATE] Checking for server updates..." -Level Warning
             try {
                 if (Get-Command "Test-UpdateAvailable" -ErrorAction SilentlyContinue) {
                     # Resolve paths to absolute paths
@@ -320,49 +353,49 @@ if (Get-Command "Initialize-UpdateModule" -ErrorAction SilentlyContinue) {
                     } $steamCmdPath $serverDirectory $appId $PSScriptRoot
                     
                     if ($updateCheck.UpdateAvailable) {
-                        Write-Host "[UPDATE] Update available (Local: $($updateCheck.InstalledBuild), Latest: $($updateCheck.LatestBuild))" -ForegroundColor Yellow
+                        Write-Log "[UPDATE] Update available (Local: $($updateCheck.InstalledBuild), Latest: $($updateCheck.LatestBuild))" -Level Warning
                         if (Get-Command "Update-GameServer" -ErrorAction SilentlyContinue) {
-                            Write-Host "[UPDATE] Installing server update..." -ForegroundColor Yellow
+                            Write-Log "[UPDATE] Installing server update..." -Level Warning
                             $updateResult = & $updateModule { 
                                 param($steamPath, $serverPath, $appIdValue, $serviceNameValue)
                                 Update-GameServer -SteamCmdPath $steamPath -ServerDirectory $serverPath -AppId $appIdValue -ServiceName $serviceNameValue
                             } $steamCmdPath $serverDirectory $appId $serviceName
                             
                             if ($updateResult.Success) {
-                                Write-Host "[OK] Server updated successfully" -ForegroundColor Green
+                                Write-Log "[OK] Server updated successfully" -Level Info
                             } else {
-                                Write-Host "[WARN] Server update failed: $($updateResult.Error)" -ForegroundColor Yellow
+                                Write-Log "[WARN] Server update failed: $($updateResult.Error)" -Level Warning
                             }
                         }
                     } else {
-                        Write-Host "[OK] Server is up to date (Build: $($updateCheck.InstalledBuild))" -ForegroundColor Green
+                        Write-Log "[OK] Server is up to date (Build: $($updateCheck.InstalledBuild))" -Level Info
                     }
                 } else {
-                    Write-Host "[WARN] Update check function not available" -ForegroundColor Yellow
+                    Write-Log "[WARN] Update check function not available" -Level Warning
                 }
             } catch {
-                Write-Host "[WARN] Update check failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log "[WARN] Update check failed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Host "[SKIP] Startup update check disabled" -ForegroundColor Gray
+            Write-Log "[SKIP] Startup update check disabled" -Level Info
         }
         
     } catch {
-        Write-Host "[WARN] Update system failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Update system failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Update module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Update module not available" -Level Warning
 }
 
 # Initialize backup system THIRD
 if (Get-Command "Initialize-BackupModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-BackupModule -Config $configHash
-        Write-Host "[OK] Backup system initialized" -ForegroundColor Green
+        Write-Log "[OK] Backup system initialized" -Level Info
         
         # Create startup backup if configured
         if ($configHash.runBackupOnStart -eq $true) {
-            Write-Host "[BACKUP] Creating startup backup..." -ForegroundColor Yellow
+            Write-Log "[BACKUP] Creating startup backup..." -Level Warning
             try {
                 if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) {
                     $backupParams = @{
@@ -375,43 +408,43 @@ if (Get-Command "Initialize-BackupModule" -ErrorAction SilentlyContinue) {
                     
                     $backupResult = Invoke-GameBackup @backupParams
                     if ($backupResult) {
-                        Write-Host "[OK] Startup backup completed" -ForegroundColor Green
+                        Write-Log "[OK] Startup backup completed" -Level Info
                     } else {
-                        Write-Host "[WARN] Startup backup failed" -ForegroundColor Yellow
+                        Write-Log "[WARN] Startup backup failed" -Level Warning
                     }
                 } else {
-                    Write-Host "[WARN] Backup function not available" -ForegroundColor Yellow
+                    Write-Log "[WARN] Backup function not available" -Level Warning
                 }
             } catch {
-                Write-Host "[WARN] Startup backup failed: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log "[WARN] Startup backup failed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Host "[SKIP] Startup backup disabled" -ForegroundColor Gray
+            Write-Log "[SKIP] Startup backup disabled" -Level Info
         }
         
     } catch {
-        Write-Host "[WARN] Backup system failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Backup system failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Backup module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Backup module not available" -Level Warning
 }
 
 # ===============================================================
 # PHASE 2: SERVER MONITORING & COMMUNICATION
 # ===============================================================
-Write-Host "`nPhase 2: Server Monitoring & Communication..." -ForegroundColor Cyan
+Write-Log "Phase 2: Server Monitoring & Communication..." -Level Info
 
 # Initialize log parser
 if (Get-Command "Initialize-LogReaderModule" -ErrorAction SilentlyContinue) {
     try {
         $logPath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\Logs\SCUM.log" } else { $null }
         $null = Initialize-LogReaderModule -Config $configHash -LogPath $logPath
-        Write-Host "[OK] Log parser system" -ForegroundColor Green
+        Write-Log "[OK] Log parser system" -Level Info
     } catch {
-        Write-Host "[WARN] Log parser failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Log parser failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Log parser module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Log parser module not available" -Level Warning
 }
 
 # Initialize database
@@ -420,39 +453,62 @@ if (Get-Command "Initialize-DatabaseModule" -ErrorAction SilentlyContinue) {
         $databasePath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\SaveFiles\SCUM.db" } else { $null }
         $dbResult = Initialize-DatabaseModule -Config $configHash -DatabasePath $databasePath
         if ($dbResult.Success) {
-            Write-Host "[OK] Database connection" -ForegroundColor Green
+            Write-Log "[OK] Database connection" -Level Info
+            
+            # Initialize centralized database service
+            $statusInterval = if ($configHash.Discord.LiveEmbeds.StatusUpdateInterval) { $configHash.Discord.LiveEmbeds.StatusUpdateInterval } else { 60 }
+            Initialize-DatabaseService -CacheIntervalSeconds $statusInterval
+            Write-Log "[OK] Centralized database service initialized (cache: $statusInterval seconds)" -Level Info
         } else {
-            Write-Host "[WARN] Database limited: $($dbResult.Error)" -ForegroundColor Yellow
+            Write-Log "[WARN] Database limited: $($dbResult.Error)" -Level Warning
         }
     } catch {
-        Write-Host "[WARN] Database failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Database failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Database module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Database module not available" -Level Warning
+}
+
+# Initialize leaderboards module
+if (Get-Command "Initialize-LeaderboardsModule" -ErrorAction SilentlyContinue) {
+    try {
+        $databasePath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\SaveFiles\SCUM.db" } else { $null }
+        $sqlitePath = ".\sqlite-tools\sqlite3.exe"
+        $lbResult = Initialize-LeaderboardsModule -DatabasePath $databasePath -SqliteExePath $sqlitePath
+        if ($lbResult.Success) {
+            Write-Log "[OK] Leaderboards module" -Level Info
+        } else {
+            Write-Log "[WARN] Leaderboards limited: $($lbResult.Error)" -Level Warning
+        }
+    } catch {
+        Write-Log "[WARN] Leaderboards failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Leaderboards module not available" -Level Warning
 }
 
 # Initialize monitoring (depends on database being initialized first)
 if (Get-Command "Initialize-MonitoringModule" -ErrorAction SilentlyContinue) {
     try {
         $null = Initialize-MonitoringModule -Config $configHash
-        Write-Host "[OK] Server monitoring system" -ForegroundColor Green
+        Write-Log "[OK] Server monitoring system" -Level Info
     } catch {
-        Write-Host "[WARN] Monitoring failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Monitoring failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Monitoring module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Monitoring module not available" -Level Warning
 }
 
 # Initialize scheduling
 if (Get-Command "Initialize-SchedulingModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-SchedulingModule -Config $configHash
-        Write-Host "[OK] Scheduling system" -ForegroundColor Green
+        Write-Log "[OK] Scheduling system" -Level Info
     } catch {
-        Write-Host "[WARN] Scheduling failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Scheduling failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Scheduling module not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Scheduling module not available" -Level Warning
 }
 
 # Function to update Discord leaderboards
@@ -474,39 +530,39 @@ function Update-ManagerDiscordLeaderboards {
 if (Get-Command "Initialize-DiscordIntegration" -ErrorAction SilentlyContinue) {
     try {
         $null = Initialize-DiscordIntegration -Config $configHash
-        Write-Host "[OK] Discord integration initialized successfully" -ForegroundColor Green
+        Write-Log "[OK] Discord integration initialized successfully" -Level Info
         
         # Note: Leaderboard updates will start after monitoring begins
         
     } catch {
-        Write-Host "[WARN] Discord failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Discord failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Discord integration not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Discord integration not available" -Level Warning
 }
 
 # Initialize Discord notification manager
 if (Get-Command "Initialize-NotificationManager" -ErrorAction SilentlyContinue) {
     try {
         $null = Initialize-NotificationManager -Config $configHash
-        Write-Host "[OK] Discord notification manager initialized successfully" -ForegroundColor Green
+        Write-Log "[OK] Discord notification manager initialized successfully" -Level Info
     } catch {
-        Write-Host "[WARN] Discord notification manager failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Discord notification manager failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Discord notification manager not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Discord notification manager not available" -Level Warning
 }
 
 # Initialize Discord scheduled tasks module
 if (Get-Command "Initialize-ScheduledTasksModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-ScheduledTasksModule -Config $configHash
-        Write-Host "[OK] Discord scheduled tasks initialized successfully" -ForegroundColor Green
+        Write-Log "[OK] Discord scheduled tasks initialized successfully" -Level Info
     } catch {
-        Write-Host "[WARN] Discord scheduled tasks failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Discord scheduled tasks failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Discord scheduled tasks not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Discord scheduled tasks not available" -Level Warning
 }
 
 # Initialize Discord chat relay
@@ -514,16 +570,214 @@ if (Get-Command "Initialize-ChatManager" -ErrorAction SilentlyContinue) {
     try {
         $chatManagerResult = Initialize-ChatManager -Config $configHash
         if ($chatManagerResult) {
-            Write-Host "[OK] Discord chat manager initialized successfully" -ForegroundColor Green
+            Write-Log "[OK] Discord chat manager initialized successfully" -Level Info
         } else {
-            Write-Host "[INFO] Discord chat manager not enabled or configured" -ForegroundColor Gray
+            Write-Log "[INFO] Discord chat manager not enabled or configured" -Level Info
         }
     } catch {
-        Write-Host "[WARN] Discord chat manager failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Log "[WARN] Discord chat manager failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Host "[WARN] Discord chat manager not available" -ForegroundColor Yellow
+    Write-Log "[WARN] Discord chat manager not available" -Level Warning
 }
+
+# ===============================================================
+# PHASE 3: LOG MONITORING MODULES
+# ===============================================================
+Write-Log "Phase 3: Log Monitoring Modules..." -Level Info
+
+# Initialize admin log monitoring
+if (Get-Command "Initialize-AdminLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $adminLogResult = Initialize-AdminLogModule -Config $configHash
+        if ($adminLogResult) {
+            Write-Log "[OK] Admin log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Admin log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Admin log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Admin log module not available" -Level Warning
+}
+
+# Initialize kill log monitoring
+if (Get-Command "Initialize-KillLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $killLogResult = Initialize-KillLogModule -Config $configHash
+        if ($killLogResult) {
+            Write-Log "[OK] Kill log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Kill log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Kill log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Kill log module not available" -Level Warning
+}
+
+# Initialize eventkill log monitoring
+if (Get-Command "Initialize-EventKillLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $eventKillLogResult = Initialize-EventKillLogModule -Config $configHash
+        if ($eventKillLogResult) {
+            Write-Log "[OK] Event kill log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Event kill log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Event kill log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Event kill log module not available" -Level Warning
+}
+
+# Initialize violations log monitoring
+if (Get-Command "Initialize-ViolationsLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $violationsLogResult = Initialize-ViolationsLogModule -Config $configHash
+        if ($violationsLogResult) {
+            Write-Log "[OK] Violations log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Violations log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Violations log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Violations log module not available" -Level Warning
+}
+
+# Initialize famepoints log monitoring
+if (Get-Command "Initialize-FamePointsLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $famePointsLogResult = Initialize-FamePointsLogModule -Config $configHash
+        if ($famePointsLogResult) {
+            Write-Log "[OK] Fame points log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Fame points log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Fame points log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Fame points log module not available" -Level Warning
+}
+
+# Initialize login log monitoring
+if (Get-Command "Initialize-LoginLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $loginLogResult = Initialize-LoginLogModule -Config $configHash
+        if ($loginLogResult) {
+            Write-Log "[OK] Login log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Login log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Login log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Login log module not available" -Level Warning
+}
+
+# Initialize economy log monitoring
+if (Get-Command "Initialize-EconomyLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $economyLogResult = Initialize-EconomyLogModule -Config $configHash
+        if ($economyLogResult) {
+            Write-Log "[OK] Economy log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Economy log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Economy log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Economy log module not available" -Level Warning
+}
+
+# Initialize vehicle log monitoring
+if (Get-Command "Initialize-VehicleLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $vehicleLogResult = Initialize-VehicleLogModule -Config $configHash
+        if ($vehicleLogResult) {
+            Write-Log "[OK] Vehicle log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Vehicle log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Vehicle log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Vehicle log module not available" -Level Warning
+}
+
+# Initialize raid protection log monitoring
+if (Get-Command "Initialize-RaidProtectionLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $raidProtectionLogResult = Initialize-RaidProtectionLogModule -Config $configHash
+        if ($raidProtectionLogResult) {
+            Write-Log "[OK] Raid protection log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Raid protection log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Raid protection log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Raid protection log module not available" -Level Warning
+}
+
+# Initialize gameplay log monitoring
+if (Get-Command "Initialize-GameplayLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $gameplayLogResult = Initialize-GameplayLogModule -Config $configHash
+        if ($gameplayLogResult) {
+            Write-Log "[OK] Gameplay log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Gameplay log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Gameplay log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Gameplay log module not available" -Level Warning
+}
+
+# Initialize quest log monitoring
+if (Get-Command "Initialize-QuestLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $questLogResult = Initialize-QuestLogModule -Config $configHash
+        if ($questLogResult) {
+            Write-Log "[OK] Quest log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Quest log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Quest log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Quest log module not available" -Level Warning
+}
+
+# Initialize chest log monitoring
+if (Get-Command "Initialize-ChestLogModule" -ErrorAction SilentlyContinue) {
+    try {
+        $chestLogResult = Initialize-ChestLogModule -Config $configHash
+        if ($chestLogResult) {
+            Write-Log "[OK] Chest log monitoring initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Chest log monitoring not enabled or configured" -Level Info
+        }
+    } catch {
+        Write-Log "[WARN] Chest log monitoring failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Chest log module not available" -Level Warning
+}
+
 
 # ===============================================================
 # MANAGER STATE
@@ -542,38 +796,6 @@ $script:State = @{
 
 # Initialize scheduling state (will be set up in Update-ScheduleManager)
 $script:SchedulingState = $null
-
-# ===============================================================
-# LOGGING FUNCTION
-# ===============================================================
-function Write-Log {
-    param([string]$Message, [string]$Level = "INFO")
-    
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-    
-    $color = switch ($Level.ToUpper()) {
-        "ERROR" { "Red" }
-        "WARN" { "Yellow" }
-        "INFO" { "White" }
-        "DEBUG" { "Gray" }
-        default { "White" }
-    }
-    
-    # Only show DEBUG messages in verbose mode or if VerbosePreference is set
-    $shouldShow = $Level.ToUpper() -ne "DEBUG" -or $VerbosePreference -eq "Continue" -or $PSBoundParameters.ContainsKey('Verbose')
-    
-    if ($shouldShow) {
-        Write-Host $logEntry -ForegroundColor $color
-    }
-    
-    # File logging if available - always log to file regardless of console display
-    if (Get-Command "Write-LogFile" -ErrorAction SilentlyContinue) {
-        try {
-            Write-LogFile -Message $Message -Level $Level
-        } catch { }
-    }
-}
 
 # ===============================================================
 # SERVER STATUS FUNCTIONS
@@ -597,57 +819,10 @@ function Get-CompleteServerStatus {
         try {
             $monitoringStatus = Get-ServerStatus
             
-            # Get additional data from database
-            $totalPlayers = "N/A"
-            $activeSquads = "N/A"
+            # Get cached database statistics from centralized service - NO DIRECT DB CALLS
+            $dbStats = Get-DatabaseServiceStats
             
-            try {
-                # Force re-import database module to ensure functions are available
-                $databaseModule = Get-Module "scum-database" -ErrorAction SilentlyContinue
-                if ($databaseModule) {
-                    $totalPlayersResult = & $databaseModule { Get-TotalPlayerCount }
-                    if ($totalPlayersResult -ne $null) {
-                        $totalPlayers = $totalPlayersResult.ToString()
-                        Write-Verbose "Total players retrieved: $totalPlayers"
-                    }
-                    
-                    $squadResult = & $databaseModule { Get-ActiveSquadCount }
-                    if ($squadResult -ne $null) {
-                        $activeSquads = $squadResult.ToString()
-                        Write-Verbose "Active squads retrieved: $activeSquads"
-                    }
-                } else {
-                    Write-Verbose "Database module not found for stats"
-                }
-            } catch {
-                Write-Verbose "Failed to get database stats: $($_.Exception.Message)"
-            }
-            
-            # Get game time and weather from database
-            $gameTime = "N/A"
-            $temperature = "N/A"
-            
-            try {
-                # Force re-import database module to ensure functions are available
-                $databaseModule = Get-Module "scum-database" -ErrorAction SilentlyContinue
-                if ($databaseModule) {
-                    $timeData = & $databaseModule { Get-GameTimeData }
-                    if ($timeData -and $timeData.Success) {
-                        $gameTime = $timeData.FormattedTime
-                        Write-Verbose "Game time retrieved: $gameTime"
-                    }
-                    
-                    $weatherData = & $databaseModule { Get-WeatherData }
-                    if ($weatherData -and $weatherData.Success) {
-                        $temperature = $weatherData.FormattedTemperature
-                        Write-Verbose "Temperature retrieved: $temperature"
-                    }
-                } else {
-                    Write-Verbose "Database module not found in session"
-                }
-            } catch {
-                Write-Verbose "Failed to get game time/weather from database: $($_.Exception.Message)"
-            }
+            Write-Log "Using centralized database cache: Total=$($dbStats.TotalPlayers), Online=$($dbStats.OnlinePlayers), Squads=$($dbStats.ActiveSquads)" -Level Debug
             
             # Convert monitoring module data to expected format
             $status = @{
@@ -660,23 +835,23 @@ function Get-CompleteServerStatus {
                 DiskUsage = "N/A"
                 NetworkIn = "N/A"
                 NetworkOut = "N/A"
-                ServerIP = "N/A"  # Keep as N/A as requested
-                GameTime = $gameTime
-                Temperature = $temperature
+                ServerIP = "N/A"
+                GameTime = $dbStats.GameTime
+                Temperature = $dbStats.Temperature
                 Performance = if ($monitoringStatus.Performance.FPS -gt 0) { "$($monitoringStatus.Performance.FPS) FPS" } else { "N/A" }
                 Version = "N/A"
                 LastUpdate = $monitoringStatus.LastUpdate.ToString("yyyy-MM-dd HH:mm:ss")
                 # Add database stats for Discord embed
                 DatabaseStats = @{
-                    TotalPlayers = $totalPlayers
-                    ActiveSquads = $activeSquads
+                    TotalPlayers = $dbStats.TotalPlayers.ToString()
+                    ActiveSquads = $dbStats.ActiveSquads.ToString()
                 }
             }
             
             # Update script state to match monitoring data
             $script:State.IsRunning = $monitoringStatus.IsRunning
             
-            Write-Log "Using monitoring module data: IsRunning=$($status.IsRunning), Players=$($status.OnlinePlayers), Total=$totalPlayers" -Level "DEBUG"
+            Write-Log "Using monitoring module data: IsRunning=$($status.IsRunning), Players=$($status.OnlinePlayers), Total=$($dbStats.TotalPlayers)" -Level "DEBUG"
             return $status
             
         } catch {
@@ -685,12 +860,13 @@ function Get-CompleteServerStatus {
         }
     }
     
-    # Fallback to basic status check
+    # Fallback to basic status check with cached data
     $currentServiceStatus = Test-ServiceStatus
+    $dbStats = Get-DatabaseServiceStats
     
     $status = @{
         IsRunning = $currentServiceStatus
-        OnlinePlayers = "0"
+        OnlinePlayers = $dbStats.OnlinePlayers.ToString()
         MaxPlayers = "64"
         Uptime = "N/A"
         CPUUsage = "N/A"
@@ -699,18 +875,18 @@ function Get-CompleteServerStatus {
         NetworkIn = "N/A"
         NetworkOut = "N/A"
         ServerIP = "N/A"
-        GameTime = "N/A"
-        Temperature = "N/A"
-        Performance = "Good"
+        GameTime = $dbStats.GameTime
+        Temperature = $dbStats.Temperature
+        Performance = "Unknown"
         Version = "N/A"
         LastUpdate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         DatabaseStats = @{
-            TotalPlayers = "N/A"
-            ActiveSquads = "N/A"
+            TotalPlayers = $dbStats.TotalPlayers.ToString()
+            ActiveSquads = $dbStats.ActiveSquads.ToString()
         }
     }
     
-    Write-Log "Using fallback status: IsRunning=$($status.IsRunning)" -Level "DEBUG"
+    Write-Log "Using fallback status with cached data: IsRunning=$($status.IsRunning), Total=$($dbStats.TotalPlayers)" -Level "DEBUG"
     return $status
 }
 
@@ -726,7 +902,7 @@ function Update-ServiceMonitoring {
             # Process any state change events
             foreach ($event in $events) {
                 if ($event.IsStateChange) {
-                    Write-Log "Server state changed: $($event.EventType)" -Level "INFO"
+                    Write-Log "Server state changed: $($event.EventType)" -Level Info
                     
                     # Send Discord notification based on event type
                     if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
@@ -740,14 +916,14 @@ function Update-ServiceMonitoring {
                             }
                             
                             if ($eventType) {
-                                Write-Log "Sending Discord notification: $eventType" -Level "INFO"
+                                Write-Log "Sending Discord notification: $eventType" -Level Info
                                 $result = Send-DiscordNotification -Type $eventType -Data @{
                                     service_name = $script:ServiceName
                                     timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                                 }
                                 
                                 if ($result.Success) {
-                                    Write-Log "Discord notification sent successfully: $eventType" -Level "INFO"
+                                    Write-Log "Discord notification sent successfully: $eventType" -Level Info
                                 } else {
                                     Write-Log "Discord notification failed: $($result.Error)" -Level "WARN"
                                 }
@@ -800,15 +976,14 @@ function Update-ServiceMonitoring {
         Update-ServiceMonitoringBasic
     }
     
-    # Force update Discord status periodically (every 5 seconds)
+    # Force update Discord status periodically (using config interval)
     $timeSinceLastUpdate = (Get-Date) - $script:State.LastDiscordUpdate
-    if ($timeSinceLastUpdate.TotalSeconds -ge 5) {
+    if ($timeSinceLastUpdate.TotalSeconds -ge $discordStatusIntervalSeconds) {
         if (Get-Command "Update-DiscordServerStatus" -ErrorAction SilentlyContinue) {
             try {
-                # Get server status from monitoring module
-                $serverStatus = Get-ServerStatus
-                Write-Log "Sending Discord update: IsRunning=$($serverStatus.IsRunning), Players=$($serverStatus.OnlinePlayers)" -Level "DEBUG"
-                Update-DiscordServerStatus -ServerStatus $serverStatus
+                # Pass null - let Update-DiscordServerStatus get status only if needed
+                Write-Log "Sending Discord update..." -Level "DEBUG"
+                Update-DiscordServerStatus -ServerStatus $null
                 $script:State.LastDiscordUpdate = Get-Date
                 Write-Log "Discord status updated (periodic)" -Level "DEBUG"
             } catch {
@@ -917,7 +1092,7 @@ function Update-ScheduleManager {
                 # Accept the result regardless of type as long as it has NextRestartTime
                 if ($initResult -and $initResult.NextRestartTime) {
                     $script:SchedulingState = $initResult
-                    Write-Log "Scheduling system initialized with restart times: $($restartTimes -join ', ')" -Level "INFO"
+                    Write-Log "Scheduling system initialized with restart times: $($restartTimes -join ', ')" -Level Info
                 } else {
                     Write-Log "Initialize-RestartWarningSystem returned invalid state" -Level "WARN"
                     return
@@ -976,7 +1151,7 @@ function Update-ScheduleManager {
             $restartDue = Test-ScheduledRestartDue -WarningState $script:SchedulingState -CurrentTime $now
             
             if ($restartDue) {
-                Write-Log "Scheduled restart is due at $($script:SchedulingState.NextRestartTime.ToString('HH:mm:ss'))" -Level "INFO"
+                Write-Log "Scheduled restart is due at $($script:SchedulingState.NextRestartTime.ToString('HH:mm:ss'))" -Level Info
                 
                 # Execute scheduled restart using scheduling module
                 if (Get-Command "Invoke-ScheduledRestart" -ErrorAction SilentlyContinue) {
@@ -988,12 +1163,12 @@ function Update-ScheduleManager {
                         # Accept the result regardless of type as long as it has NextRestartTime
                         if ($restartResult -and $restartResult.NextRestartTime) {
                             $script:SchedulingState = $restartResult
-                            Write-Log "Scheduled restart completed, next restart: $($script:SchedulingState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level "INFO"
+                            Write-Log "Scheduled restart completed, next restart: $($script:SchedulingState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Info
                         } else {
                             Write-Log "Invoke-ScheduledRestart returned invalid state" -Level "WARN"
                         }
                     } catch {
-                        Write-Log "Failed to execute scheduled restart: $($_.Exception.Message)" -Level "ERROR"
+                        Write-Log "Failed to execute scheduled restart: $($_.Exception.Message)" -Level Error
                     }
                 } else {
                     # Fallback to manual restart execution
@@ -1034,7 +1209,7 @@ function Start-ServerService {
         }
         Write-Log "Service start command issued"
     } catch {
-        Write-Log "Failed to start service: $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Failed to start service: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -1047,7 +1222,7 @@ function Stop-ServerService {
         }
         Write-Log "Service stop command issued"
     } catch {
-        Write-Log "Failed to stop service: $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Failed to stop service: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -1061,11 +1236,11 @@ function Restart-ServerService {
             Invoke-ManualRestart -ServiceName $serviceName -Config $configHash
             Write-Log "Server restart completed using scheduling system"
         } catch {
-            Write-Log "Scheduling system restart failed: $($_.Exception.Message)" -Level "ERROR"
+            Write-Log "Scheduling system restart failed: $($_.Exception.Message)" -Level Error
             throw "Restart failed: $($_.Exception.Message)"
         }
     } else {
-        Write-Log "Scheduling module not available - restart cannot proceed" -Level "ERROR"
+        Write-Log "Scheduling module not available - restart cannot proceed" -Level Error
         throw "Restart failed: Scheduling module not available"
     }
 }
@@ -1098,7 +1273,7 @@ function Invoke-Backup {
             return $false
         }
     } catch {
-        Write-Log "Backup failed: $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Backup failed: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -1115,12 +1290,12 @@ function Update-BackupManager {
     # Check if backup is due
     $timeSinceLastBackup = $now - $script:State.LastBackup
     if ($timeSinceLastBackup.TotalMinutes -ge $backupInterval) {
-        Write-Log "Periodic backup is due (interval: $backupInterval minutes)" -Level "INFO"
+        Write-Log "Periodic backup is due (interval: $backupInterval minutes)" -Level Info
         
         try {
             $backupResult = Invoke-Backup -Type "periodic"
             if ($backupResult) {
-                Write-Log "Periodic backup completed successfully" -Level "INFO"
+                Write-Log "Periodic backup completed successfully" -Level Info
             } else {
                 Write-Log "Periodic backup failed" -Level "WARN"
             }
@@ -1145,7 +1320,7 @@ function Update-UpdateManager {
             $script:State.LastUpdateCheck = $now
             
             if ($updateAvailable) {
-                Write-Log "Server update available!" -Level "INFO"
+                Write-Log "Server update available!" -Level Info
                 
                 # Send update available notification only if we haven't already started an update
                 if (-not $script:State.UpdateInProgress) {
@@ -1170,7 +1345,7 @@ function Update-UpdateManager {
                     }
                     
                     # Start automatic update process
-                    Write-Log "Starting automatic update process" -Level "INFO"
+                    Write-Log "Starting automatic update process" -Level Info
                     $script:State.UpdateInProgress = $true
                     
                     try {
@@ -1184,13 +1359,13 @@ function Update-UpdateManager {
                         $updateResult = Invoke-ImmediateUpdate @updateParams
                         
                         if ($updateResult.Success) {
-                            Write-Log "Automatic update completed successfully" -Level "INFO"
+                            Write-Log "Automatic update completed successfully" -Level Info
                         } else {
-                            Write-Log "Automatic update failed: $($updateResult.Error)" -Level "ERROR"
+                            Write-Log "Automatic update failed: $($updateResult.Error)" -Level Error
                         }
                         
                     } catch {
-                        Write-Log "Automatic update process failed: $($_.Exception.Message)" -Level "ERROR"
+                        Write-Log "Automatic update process failed: $($_.Exception.Message)" -Level Error
                     } finally {
                         $script:State.UpdateInProgress = $false
                     }
@@ -1232,59 +1407,59 @@ function Test-ManagerUpdateAvailable {
 # INTERACTIVE COMMANDS
 # ===============================================================
 function Show-Menu {
-    Write-Host "`n=== SCUM Server Automation Commands ===" -ForegroundColor Cyan
-    Write-Host "1. Show Status" -ForegroundColor White
-    Write-Host "2. Start Server" -ForegroundColor Green
-    Write-Host "3. Stop Server" -ForegroundColor Red
-    Write-Host "4. Restart Server" -ForegroundColor Yellow
-    Write-Host "5. Create Backup" -ForegroundColor Blue
-    Write-Host "6. Check for Updates" -ForegroundColor Magenta
-    Write-Host "7. Show Player Stats" -ForegroundColor Cyan
-    Write-Host "Q. Quit" -ForegroundColor Gray
-    Write-Host "=====================================" -ForegroundColor Cyan
+    Write-Log "=== SCUM Server Automation Commands ===" -Level Info
+    Write-Log "1. Show Status" -Level Info
+    Write-Log "2. Start Server" -Level Info
+    Write-Log "3. Stop Server" -Level Info
+    Write-Log "4. Restart Server" -Level Info
+    Write-Log "5. Create Backup" -Level Info
+    Write-Log "6. Check for Updates" -Level Info
+    Write-Log "7. Show Player Stats" -Level Info
+    Write-Log "Q. Quit" -Level Info
+    Write-Log "=====================================" -Level Info
 }
 
 function Show-Status {
     $serviceStatus = if ($script:State.IsRunning) { "RUNNING" } else { "STOPPED" }
     $serviceColor = if ($script:State.IsRunning) { "Green" } else { "Red" }
     
-    Write-Host "`n=== Server Status ===" -ForegroundColor Cyan
-    Write-Host "Service: $($script:State.ServiceName)" -ForegroundColor White
-    Write-Host "Status: $serviceStatus" -ForegroundColor $serviceColor
+    Write-Log "=== Server Status ===" -Level Info
+    Write-Log "Service: $($script:State.ServiceName)" -Level Info
+    Write-Log "Status: $serviceStatus" -Level Info
     
     if ($script:State.IsRunning) {
         $serverStatus = Get-CompleteServerStatus
-        Write-Host "Players: $($serverStatus.OnlinePlayers) / $($serverStatus.MaxPlayers)" -ForegroundColor White
-        Write-Host "Uptime: $($serverStatus.Uptime)" -ForegroundColor White
-        Write-Host "CPU: $($serverStatus.CPUUsage)" -ForegroundColor White
-        Write-Host "Memory: $($serverStatus.MemoryUsage)" -ForegroundColor White
-        Write-Host "Performance: $($serverStatus.Performance)" -ForegroundColor White
+        Write-Log "Players: $($serverStatus.OnlinePlayers) / $($serverStatus.MaxPlayers)" -Level Info
+        Write-Log "Uptime: $($serverStatus.Uptime)" -Level Info
+        Write-Log "CPU: $($serverStatus.CPUUsage)" -Level Info
+        Write-Log "Memory: $($serverStatus.MemoryUsage)" -Level Info
+        Write-Log "Performance: $($serverStatus.Performance)" -Level Info
     }
     
-    Write-Host "Last Backup: $($script:State.LastBackup.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor White
-    Write-Host "Last Update Check: $($script:State.LastUpdateCheck.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor White
-    Write-Host "====================" -ForegroundColor Cyan
+    Write-Log "Last Backup: $($script:State.LastBackup.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Info
+    Write-Log "Last Update Check: $($script:State.LastUpdateCheck.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Info
+    Write-Log "====================" -Level Info
 }
 
 function Show-PlayerStats {
     if (Get-Command "Get-PlayerLeaderboard" -ErrorAction SilentlyContinue) {
         try {
-            Write-Host "`n=== Top Players ===" -ForegroundColor Cyan
+            Write-Log "=== Top Players ===" -Level Info
             $leaderboard = Get-PlayerLeaderboard -Top 10
             if ($leaderboard) {
                 for ($i = 0; $i -lt $leaderboard.Count; $i++) {
                     $player = $leaderboard[$i]
-                    Write-Host "$($i + 1). $($player.Name) - Score: $($player.Score)" -ForegroundColor White
+                    Write-Log "$($i + 1). $($player.Name) - Score: $($player.Score)" -Level Info
                 }
             } else {
-                Write-Host "No player data available" -ForegroundColor Yellow
+                Write-Log "No player data available" -Level Warning
             }
-            Write-Host "===================" -ForegroundColor Cyan
+            Write-Log "===================" -Level Info
         } catch {
-            Write-Host "Failed to get player stats: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Log "Failed to get player stats: $($_.Exception.Message)" -Level Error
         }
     } else {
-        Write-Host "Player stats not available (database module not loaded)" -ForegroundColor Yellow
+        Write-Log "Player stats not available (database module not loaded)" -Level Warning
     }
 }
 
@@ -1303,7 +1478,7 @@ try {
         Write-Log "Service '$serviceName' found"
     }
 } catch {
-    Write-Log "Error checking service: $($_.Exception.Message)" -Level "ERROR"
+    Write-Log "Error checking service: $($_.Exception.Message)" -Level Error
 }
 
 # Initial status check
@@ -1333,14 +1508,14 @@ Write-Log "Starting automatic monitoring mode..."
 Write-Log "Press Ctrl+C to stop"
 
 # Show monitoring configuration
-Write-Host "`n=== Monitoring Configuration ===" -ForegroundColor Cyan
-Write-Host "[OK] Service Status Monitoring" -ForegroundColor Green
+Write-Log "=== Monitoring Configuration ===" -Level Info
+Write-Log "[OK] Service Status Monitoring" -Level Info
 
 if ($configHash.periodicBackupEnabled -eq $true) {
     $interval = if ($configHash.backupIntervalMinutes) { $configHash.backupIntervalMinutes } else { 60 }
-    Write-Host "[OK] Automatic Backups (every $interval minutes)" -ForegroundColor Green
+    Write-Log "[OK] Automatic Backups (every $interval minutes)" -Level Info
 } else {
-    Write-Host "[SKIP] Automatic Backups (disabled)" -ForegroundColor Yellow
+    Write-Log "[SKIP] Automatic Backups (disabled)" -Level Warning
 }
 
 if ($configHash.restartTimes -and $configHash.restartTimes.Count -gt 0) {
@@ -1359,27 +1534,36 @@ if ($configHash.restartTimes -and $configHash.restartTimes.Count -gt 0) {
         
         if ($restartTimes.Count -gt 0) {
             $times = $restartTimes -join ", "
-            Write-Host "[OK] Scheduled Restarts ($times)" -ForegroundColor Green
+            Write-Log "[OK] Scheduled Restarts ($times)" -Level Info
         } else {
-            Write-Host "[SKIP] Scheduled Restarts (no valid times)" -ForegroundColor Yellow
+            Write-Log "[SKIP] Scheduled Restarts (no valid times)" -Level Warning
         }
     } catch {
-        Write-Host "[SKIP] Scheduled Restarts (configuration error)" -ForegroundColor Yellow
+        Write-Log "[SKIP] Scheduled Restarts (configuration error)" -Level Warning
     }
 } else {
-    Write-Host "[SKIP] Scheduled Restarts (none configured)" -ForegroundColor Yellow
+    Write-Log "[SKIP] Scheduled Restarts (none configured)" -Level Warning
 }
 
-Write-Host "[OK] Update Checking" -ForegroundColor Green
+Write-Log "[OK] Update Checking" -Level Info
 
 $discordStatus = if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) { "[OK] Available" } else { "[SKIP] Module not loaded" }
-Write-Host "$discordStatus Discord Integration" -ForegroundColor $(if ($discordStatus.StartsWith("[OK]")) { "Green" } else { "Yellow" })
+Write-Log "$discordStatus Discord Integration" -Level Info
 
 $databaseStatus = if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) { "[OK] Connected" } else { "[SKIP] Not available" }
-Write-Host "$databaseStatus Database Access" -ForegroundColor $(if ($databaseStatus.StartsWith("[OK]")) { "Green" } else { "Yellow" })
+Write-Log "$databaseStatus Database Access" -Level Info
 
-Write-Host "=================================" -ForegroundColor Cyan
-    Write-Host ""
+Write-Log "=================================" -Level Info
+
+# Start kill log monitoring if available
+if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
+    try {
+        Start-KillLogMonitoring
+        Write-Log "[OK] Kill log monitoring started" -Level Info
+    } catch {
+        Write-Log "[WARN] Failed to start kill log monitoring: $($_.Exception.Message)" -Level Warning
+    }
+}
     
     try {
         $loopCount = 0
@@ -1394,12 +1578,20 @@ Write-Host "=================================" -ForegroundColor Cyan
         $leaderboardInterval = [math]::Round($leaderboardIntervalSeconds / 60) # Convert to minutes for display
         $leaderboardLoops = [math]::Max(1, [math]::Round($leaderboardIntervalSeconds / $monitoringInterval))
         
-        Write-Host "Monitoring interval: $monitoringInterval seconds" -ForegroundColor Gray
-        Write-Host "Leaderboard updates: every $leaderboardInterval minutes ($leaderboardLoops loops)" -ForegroundColor Gray
-        Write-Host ""
+        # Get Discord status update interval from Discord LiveEmbeds config (in seconds)
+        $discordStatusIntervalSeconds = if ($configHash.Discord.LiveEmbeds.UpdateInterval) { 
+            $configHash.Discord.LiveEmbeds.UpdateInterval # Already in seconds
+        } else { 60 } # Default 60 seconds
+        
+        Write-Log "Monitoring interval: $monitoringInterval seconds" -Level Info
+        Write-Log "Discord status updates: every $discordStatusIntervalSeconds seconds" -Level Info
+        Write-Log "Leaderboard updates: every $leaderboardInterval minutes ($leaderboardLoops loops)" -Level Info
         
         while (-not $script:State.ShouldStop) {
             $loopCount++
+            
+            # Update centralized database cache - SINGLE POINT for all database calls
+            Update-DatabaseServiceCache
             
             # Update all managers
             Update-ServiceMonitoring
@@ -1425,6 +1617,114 @@ Write-Host "=================================" -ForegroundColor Cyan
                 }
             }
             
+            # Update admin log processing (check for new admin commands every loop) 
+            if (Get-Command "Update-AdminLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-AdminLogProcessing
+                } catch {
+                    Write-Log "Admin log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update kill log processing (check for new kills every loop)
+            if (Get-Command "Update-KillLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-KillLogProcessing
+                } catch {
+                    Write-Log "Kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update eventkill log processing (check for new event kills every loop)
+            if (Get-Command "Update-EventKillLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-EventKillLogProcessing
+                } catch {
+                    Write-Log "Event kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update violations log processing (check for new violations every loop)
+            if (Get-Command "Update-ViolationsLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-ViolationsLogProcessing
+                } catch {
+                    Write-Log "Violations log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update famepoints log processing (check for new fame points changes every loop)
+            if (Get-Command "Update-FamePointsLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-FamePointsLogProcessing
+                } catch {
+                    Write-Log "Fame points log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update login log processing (check for new logins every loop)
+            if (Get-Command "Update-LoginLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-LoginLogProcessing
+                } catch {
+                    Write-Log "Login log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update economy log processing (check for new economy events every loop)
+            if (Get-Command "Update-EconomyLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-EconomyLogProcessing
+                } catch {
+                    Write-Log "Economy log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update vehicle log processing (check for new vehicle events every loop)
+            if (Get-Command "Update-VehicleLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-VehicleLogProcessing
+                } catch {
+                    Write-Log "Vehicle log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update raid protection log processing (check for new raid events every loop)
+            if (Get-Command "Update-RaidProtectionLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-RaidProtectionLogProcessing
+                } catch {
+                    Write-Log "Raid protection log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update gameplay log processing (check for new gameplay events every loop)
+            if (Get-Command "Update-GameplayLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-GameplayLogProcessing
+                } catch {
+                    Write-Log "Gameplay log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update quest log processing (check for new quest events every loop)
+            if (Get-Command "Update-QuestLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-QuestLogProcessing
+                } catch {
+                    Write-Log "Quest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
+            # Update chest log processing (check for new chest events every loop)
+            if (Get-Command "Update-ChestLogProcessing" -ErrorAction SilentlyContinue) {
+                try {
+                    Update-ChestLogProcessing
+                } catch {
+                    Write-Log "Chest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                }
+            }
+
             # Update Discord text commands (check for new command messages every loop)
             if (Get-Command "Update-DiscordTextCommands" -ErrorAction SilentlyContinue) {
                 try {
@@ -1446,22 +1746,27 @@ Write-Host "=================================" -ForegroundColor Cyan
             }
             
             # Update Discord leaderboards based on config interval
-            if ($loopCount % $leaderboardLoops -eq 0) {
-                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Updating leaderboards..." -ForegroundColor Cyan
-                Update-ManagerDiscordLeaderboards
+            # First update after 30 seconds, then every normal interval from config
+            if (($loopCount -eq 30) -or ($loopCount -gt 30 -and ($loopCount - 30) % $leaderboardLoops -eq 0)) {
+                Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Updating leaderboards..." -Level Info
+                try {
+                    Update-ManagerDiscordLeaderboards
+                } catch {
+                    Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level "WARN"
+                }
                 
                 # Also show server status embed update (happens automatically every 15s, but we show message every 5 min)
-                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Updating server status embed..." -ForegroundColor Cyan
+                Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Updating server status embed..." -Level Info
                 
                 # Check for weekly leaderboard reset (every 5 minutes)
                 if (Get-Command "Test-WeeklyResetNeeded" -ErrorAction SilentlyContinue) {
                     try {
                         if (Test-WeeklyResetNeeded) {
-                            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset triggered" -ForegroundColor Yellow
+                            Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset triggered" -Level Warning
                             if (Get-Command "Invoke-WeeklyReset" -ErrorAction SilentlyContinue) {
                                 $resetResult = Invoke-WeeklyReset
                                 if ($resetResult.Success) {
-                                    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset completed" -ForegroundColor Green
+                                    Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset completed" -Level Info
                                 } else {
                                     Write-Log "Weekly leaderboard reset failed: $($resetResult.Error)" -Level "WARN"
                                 }
@@ -1479,14 +1784,14 @@ Write-Host "=================================" -ForegroundColor Cyan
                 $status = if ($script:State.IsRunning) { "RUNNING" } else { "STOPPED" }
                 $color = if ($script:State.IsRunning) { "Green" } else { "Yellow" }
                 $serverStatus = Get-CompleteServerStatus
-                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Server: $status | Players: $($serverStatus.OnlinePlayers)/$($serverStatus.MaxPlayers) | Last Backup: $($script:State.LastBackup.ToString('HH:mm:ss'))" -ForegroundColor $color
+                Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Server: $status | Players: $($serverStatus.OnlinePlayers)/$($serverStatus.MaxPlayers) | Last Backup: $($script:State.LastBackup.ToString('HH:mm:ss'))" -Level Info
             }
             
             # Sleep for configured monitoring interval
             Start-Sleep -Seconds $monitoringInterval
         }
     } catch {
-        Write-Log "Error in monitoring loop: $($_.Exception.Message)" -Level "ERROR"
+        Write-Log "Error in monitoring loop: $($_.Exception.Message)" -Level Error
     }
 
 # Final cleanup

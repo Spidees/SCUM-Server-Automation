@@ -5,11 +5,15 @@
 
 #Requires -Version 5.1
 
-# Import core common module for logging
-$rootPath = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
-$commonModule = Join-Path $rootPath "modules\core\common\common.psm1"
-if (-not (Get-Command "Write-Log" -ErrorAction SilentlyContinue)) {
-    Import-Module $commonModule -Force -Global
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for monitoring module" -ForegroundColor Yellow
 }
 
 # ===============================================================
@@ -29,17 +33,19 @@ $script:ServerState = @{
     IsRunning = $false
     OnlinePlayers = 0
     MaxPlayers = 64
+    LastUpdate = Get-Date
     Performance = @{
         CPU = 0
         Memory = 0
         FPS = 0
         Entities = 0
+        LastUpdate = Get-Date
     }
-    LastUpdate = (Get-Date)
-    LastNotificationType = $null  # Track last notification sent
-    LastNotificationTime = $null  # Track when last notification was sent
-    LastPerformanceAlert = $null  # Track last performance alert time
+    LastPerformanceAlert = (Get-Date).AddHours(-1)  # Start with 1 hour ago to allow immediate alerts
 }
+
+# Process tracking to reduce verbose logging
+$script:LastKnownProcessId = $null
 
 # ===============================================================
 # INITIALIZATION
@@ -384,7 +390,10 @@ function Get-ServiceProcess {
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
-        Write-Verbose "[Monitoring] Service '$ServiceName' found: State=$($service.State), ProcessId=$($service.ProcessId)"
+        # Only log service details if there's an issue or change
+        if ($service.State -ne 'Running' -or -not $service.ProcessId -or $service.ProcessId -eq 0) {
+            Write-Verbose "[Monitoring] Service '$ServiceName' issue: State=$($service.State), ProcessId=$($service.ProcessId)"
+        }
         
         if (-not $service.ProcessId -or $service.ProcessId -eq 0) {
             Write-Verbose "[Monitoring] Service '$ServiceName' has no ProcessId or ProcessId is 0"
@@ -398,18 +407,19 @@ function Get-ServiceProcess {
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
-        Write-Verbose "[Monitoring] Service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName)"
-        
         # If service process is nssm.exe, find the child SCUMServer process
         if ($serviceProcess.ProcessName -eq "nssm") {
-            Write-Verbose "[Monitoring] Service uses NSSM wrapper, looking for child SCUMServer process"
-            
             # Find SCUMServer process that could be a child of nssm
             $scumProcesses = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
             if ($scumProcesses) {
                 # Take the SCUMServer process with highest memory usage (most likely the server)
                 $mainProcess = $scumProcesses | Sort-Object WorkingSet64 -Descending | Select-Object -First 1
-                Write-Verbose "[Monitoring] Found SCUMServer process: PID=$($mainProcess.Id), Memory=$([Math]::Round($mainProcess.WorkingSet64 / 1MB, 0))MB"
+                
+                # Store previous process ID to detect changes
+                if (-not $script:LastKnownProcessId -or $script:LastKnownProcessId -ne $mainProcess.Id) {
+                    Write-Verbose "[Monitoring] SCUM server process detected: PID=$($mainProcess.Id), Memory=$([Math]::Round($mainProcess.WorkingSet64 / 1MB, 0))MB"
+                    $script:LastKnownProcessId = $mainProcess.Id
+                }
                 
                 return @{
                     ProcessId = $mainProcess.Id
@@ -421,8 +431,11 @@ function Get-ServiceProcess {
                 return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
             }
         } else {
-            # Direct service process (not using nssm)
-            Write-Verbose "[Monitoring] Direct service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName), Memory=$([Math]::Round($serviceProcess.WorkingSet64 / 1MB, 0))MB"
+            # Direct service process (not using nssm) - only log if PID changed
+            if (-not $script:LastKnownProcessId -or $script:LastKnownProcessId -ne $serviceProcess.Id) {
+                Write-Verbose "[Monitoring] Direct service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName), Memory=$([Math]::Round($serviceProcess.WorkingSet64 / 1MB, 0))MB"
+                $script:LastKnownProcessId = $serviceProcess.Id
+            }
             
             return @{
                 ProcessId = $serviceProcess.Id
@@ -468,18 +481,24 @@ function Get-MaxPlayersFromConfig {
 function Get-CurrentPlayerCount {
     <#
     .SYNOPSIS
-    Get current player count from database
+    Get current player count ONLY from centralized database service - NO DIRECT DATABASE CALLS
     #>
     
     try {
-        if (Get-Command "Get-OnlinePlayerCount" -ErrorAction SilentlyContinue) {
-            $count = Get-OnlinePlayerCount -ErrorAction SilentlyContinue
-            if ($null -ne $count -and $count -ge 0) {
-                return $count
+        # Use centralized database service EXCLUSIVELY - NO FALLBACK
+        if (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue) {
+            $dbStats = Get-DatabaseServiceStats
+            if ($null -ne $dbStats -and $dbStats.ContainsKey('OnlinePlayers')) {
+                Write-Log "Monitoring: Using centralized database service for online players: $($dbStats.OnlinePlayers)" -Level Debug
+                return [int]$dbStats.OnlinePlayers
             }
         }
+        
+        # NO FALLBACK - centralized service should always be available
+        Write-Log "Monitoring: Centralized database service not available - returning 0" -Level Warning
         return 0
     } catch {
+        Write-Log "Monitoring: Error getting player count: $($_.Exception.Message)" -Level Warning
         return 0
     }
 }
@@ -571,20 +590,16 @@ function Get-ProcessPerformance {
             }
         }
         
-        # Get entity count and additional stats from database
-        if (Get-Command "Get-ServerStatistics" -ErrorAction SilentlyContinue) {
+        # Get entity count from centralized database service instead of direct database calls
+        if (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue) {
             try {
-                $dbStats = Get-ServerStatistics
-                if ($dbStats) {
-                    # Entity count might be available from database stats
-                    if ($dbStats.EntityCount) {
-                        $performance.Entities = $dbStats.EntityCount
-                    }
-                    
-                    Write-Verbose "[Monitoring] Database stats retrieved: Entities=$($performance.Entities)"
+                $dbStats = Get-DatabaseServiceStats
+                if ($dbStats -and $dbStats.ContainsKey('EntityCount') -and $dbStats.EntityCount) {
+                    $performance.Entities = $dbStats.EntityCount
                 }
+                Write-Verbose "[Monitoring] Using centralized database service for entity count: $($performance.Entities)"
             } catch {
-                Write-Verbose "[Monitoring] Failed to get database statistics: $($_.Exception.Message)"
+                Write-Verbose "[Monitoring] Failed to get centralized database stats: $($_.Exception.Message)"
             }
         }
         
@@ -607,7 +622,7 @@ function Get-ServerStatus {
     #>
     
     if (-not $script:Initialized) {
-        Write-Warning "[Monitoring] Module not initialized"
+        Write-Log "[Monitoring] Module not initialized" -Level Warning
         return $null
     }
     
@@ -617,41 +632,30 @@ function Get-ServerStatus {
     # Get fresh server state from logs
     $currentLogState = Get-ActualServerStateFromLogs
     
-    # Get database statistics if available
+    # Get database statistics from centralized service - NO DIRECT DB CALLS
     $dbStats = @{}
     $gameTime = "N/A"
     $temperature = "N/A"
     
     try {
-        if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) {
-            $dbStats.TotalPlayers = Get-TotalPlayerCount -ErrorAction SilentlyContinue
-        }
-        if (Get-Command "Get-ActiveSquadCount" -ErrorAction SilentlyContinue) {
-            $dbStats.ActiveSquads = Get-ActiveSquadCount -ErrorAction SilentlyContinue
-        }
-        if (Get-Command "Get-VehicleCount" -ErrorAction SilentlyContinue) {
-            $dbStats.TotalVehicles = Get-VehicleCount -ErrorAction SilentlyContinue
-        }
-        if (Get-Command "Get-BaseCount" -ErrorAction SilentlyContinue) {
-            $dbStats.TotalBases = Get-BaseCount -ErrorAction SilentlyContinue
-        }
-        
-        # Get game time and weather
-        if (Get-Command "Get-GameTimeData" -ErrorAction SilentlyContinue) {
-            $timeData = Get-GameTimeData -ErrorAction SilentlyContinue
-            if ($timeData -and $timeData.Success) {
-                $gameTime = $timeData.FormattedTime
-            }
-        }
-        
-        if (Get-Command "Get-WeatherData" -ErrorAction SilentlyContinue) {
-            $weatherData = Get-WeatherData -ErrorAction SilentlyContinue
-            if ($weatherData -and $weatherData.Success) {
-                $temperature = $weatherData.FormattedTemperature
-            }
+        # Use centralized database service EXCLUSIVELY - NO FALLBACK
+        if (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue) {
+            $centralStats = Get-DatabaseServiceStats
+            $dbStats.TotalPlayers = [int]$centralStats.TotalPlayers
+            $dbStats.ActiveSquads = [int]$centralStats.ActiveSquads
+            $gameTime = $centralStats.GameTime
+            $temperature = $centralStats.Temperature
+            Write-Log "Monitoring: Using centralized database service for all stats" -Level Debug
+        } else {
+            # NO FALLBACK - centralized service should always be available
+            Write-Log "Monitoring: Centralized service not available - using defaults" -Level Warning
+            $dbStats.TotalPlayers = 0
+            $dbStats.ActiveSquads = 0
+            $gameTime = "N/A"
+            $temperature = "N/A"
         }
     } catch {
-        # Database not available
+        Write-Log "Monitoring: Database stats unavailable: $($_.Exception.Message)" -Level Debug
     }
     
     return @{
@@ -690,10 +694,11 @@ function Update-ServerMonitoring {
     <#
     .SYNOPSIS
     Update server monitoring using log parser events for accurate state detection
+    ENHANCED: Now includes automatic crash detection and recovery
     #>
     
     if (-not $script:Initialized) {
-        Write-Warning "[Monitoring] Module not initialized"
+        Write-Log "[Monitoring] Module not initialized" -Level Warning
         return @{
             IsRunning = $false
             OnlinePlayers = 0
@@ -711,6 +716,90 @@ function Update-ServerMonitoring {
         }
         
         Write-Verbose "[Monitoring] Update-ServerMonitoring called - Previous state: IsRunning=$($previousState.IsRunning)"
+        
+        # NEW: Check for crashed server process (service running but process dead)
+        $healthCheckResult = $null
+        if (Get-Command "Test-GameProcessHealth" -ErrorAction SilentlyContinue) {
+            $serverDir = if ($script:Config -and $script:Config.serverDir) { $script:Config.serverDir } else { ".\server" }
+            $healthCheckResult = Test-GameProcessHealth -ServiceName $script:ServiceName -ServerDirectory $serverDir
+            
+            if ($healthCheckResult -and -not $healthCheckResult.IsHealthy) {
+                Write-Log "[Monitoring] Server health check FAILED: $($healthCheckResult.Reason)" -Level Warning
+                Write-Log "[Monitoring] Service Status: $($healthCheckResult.ServiceStatus), Process Found: $($healthCheckResult.ProcessFound)" -Level Warning
+                
+                # Check if this is the "zombie service" problem (service running but process dead)
+                if ($healthCheckResult.ServiceStatus -eq "Running" -and -not $healthCheckResult.ProcessFound) {
+                    Write-Log "[Monitoring] DETECTED: Service running but server process is DEAD - automatic crash detected!" -Level Error
+                    
+                    # Check if auto-restart is enabled in config
+                    $autoRestartEnabled = if ($script:Config -and $null -ne $script:Config.autoRestart) { 
+                        $script:Config.autoRestart 
+                    } else { 
+                        $true  # Default to enabled
+                    }
+                    
+                    if ($autoRestartEnabled) {
+                        Write-Log "[Monitoring] Auto-restart is ENABLED - triggering automatic repair..." -Level Info
+                        
+                        # Trigger automatic repair
+                        if (Get-Command "Repair-GameService" -ErrorAction SilentlyContinue) {
+                            Write-Log "[Monitoring] Starting automatic server repair..." -Level Info
+                            $repairResult = Repair-GameService -ServiceName $script:ServiceName -Reason "automatic crash recovery"
+                            
+                            if ($repairResult) {
+                                Write-Log "[Monitoring] Automatic server repair completed successfully!" -Level Info
+                                # Send admin-only notification about auto-recovery
+                                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                    $recoveryData = @{
+                                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                        service_name = $script:ServiceName
+                                        message = "Server automatically restarted after crash detection"
+                                        reason = "Process crashed but service remained running"
+                                        type = "auto-recovery"
+                                        severity = "high"
+                                    }
+                                    Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
+                                }
+                            } else {
+                                Write-Log "[Monitoring] Automatic server repair FAILED - manual intervention required!" -Level Error
+                                # Send critical admin-only alert
+                                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                    $alertData = @{
+                                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                        service_name = $script:ServiceName
+                                        error = "Auto-repair failed - manual intervention required"
+                                        reason = $healthCheckResult.Reason
+                                        type = "auto-repair-failed"
+                                        message = "Server crashed and automatic repair failed. Manual intervention required!"
+                                        severity = "critical"
+                                    }
+                                    Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                                }
+                            }
+                        } else {
+                            Write-Log "[Monitoring] Repair-GameService function not available - cannot auto-repair!" -Level Error
+                        }
+                    } else {
+                        Write-Log "[Monitoring] Auto-restart is DISABLED in config - crash detected but no action taken" -Level Warning
+                        # Send admin-only notification about the crash
+                        if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                            $crashData = @{
+                                timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                service_name = $script:ServiceName
+                                error = "Server process crashed (auto-restart disabled)"
+                                reason = $healthCheckResult.Reason
+                                type = "crash-detected"
+                                message = "Server process crashed but auto-restart is disabled. Manual intervention required!"
+                                severity = "critical"
+                            }
+                            Send-DiscordNotification -Type 'admin.alert' -Data $crashData
+                        }
+                    }
+                }
+            } else {
+                Write-Verbose "[Monitoring] Server health check PASSED: $($healthCheckResult.Reason)"
+            }
+        }
         
         # Check for new log events first (this is the primary source of truth for SERVER state)
         $stateChangedViaLogs = $false
@@ -951,16 +1040,17 @@ function Send-StateNotification {
         $currentPlayers = $script:ServerState.OnlinePlayers
         $maxPlayers = $script:ServerState.MaxPlayers
         
-        # Try to get fresh player data from database if available
-        if ((-not $currentPlayers -or $currentPlayers -le 0) -and (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue)) {
+        # Try to get fresh player data from centralized service if available
+        if ((-not $currentPlayers -or $currentPlayers -le 0) -and (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue)) {
             try {
-                $dbPlayerCount = Get-TotalPlayerCount
-                if ($dbPlayerCount -and $dbPlayerCount -gt 0) {
-                    $currentPlayers = $dbPlayerCount
-                    Write-Verbose "[Monitoring] Got fresh player count from database: $currentPlayers"
+                $dbStats = Get-DatabaseServiceStats
+                if ($dbStats.TotalPlayers -and $dbStats.TotalPlayers -gt 0) {
+                    $currentPlayers = [int]$dbStats.TotalPlayers
+                    Write-Verbose "[Monitoring] Got fresh player count from centralized service: $currentPlayers"
                 }
             } catch {
-                Write-Verbose "[Monitoring] Could not get player count from database"
+                Write-Verbose "[Monitoring] Could not get player count from centralized service"
+                $currentPlayers = 0
             }
         }
         
@@ -1027,6 +1117,33 @@ function Test-PerformanceAlerts {
         if ($actualServerState -ne "Online") {
             Write-Verbose "[Monitoring] Skipping performance alerts - Server state from logs: $actualServerState (not Online)"
             return
+        }
+        
+        # FIFTH: Smart check - don't alert on low FPS when no players are connected
+        # When server has no players, it's normal and expected to have low FPS for power saving
+        $currentPlayers = $script:ServerState.OnlinePlayers
+        if (-not $currentPlayers -or $currentPlayers -le 0) {
+            # Double-check with centralized service if cached value is 0
+            if (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue) {
+                try {
+                    $dbStats = Get-DatabaseServiceStats
+                    if ($dbStats.TotalPlayers -and $dbStats.TotalPlayers -gt 0) {
+                        $currentPlayers = [int]$dbStats.TotalPlayers
+                    }
+                } catch {
+                    Write-Verbose "[Monitoring] Could not get player count from centralized service"
+                    $currentPlayers = 0
+                }
+            }
+        }
+        
+        # Default behavior: Only monitor performance when players are connected
+        # Empty server naturally reduces FPS for power saving - this is normal and expected
+        if ($currentPlayers -le 0) {
+            Write-Verbose "[Monitoring] Skipping performance alerts - no players connected ($currentPlayers). Server naturally reduces FPS when empty to save resources."
+            return
+        } else {
+            Write-Verbose "[Monitoring] Players connected ($currentPlayers), performance monitoring active"
         }
         
         Write-Verbose "[Monitoring] Performance alert checks passed - server is truly online, proceeding with performance monitoring"
@@ -1131,13 +1248,16 @@ function Test-PerformanceAlerts {
                 $currentPlayers = $script:ServerState.OnlinePlayers
                 Write-Verbose "[Monitoring] Using cached online players: $currentPlayers"
             } else {
-                # Try to get ONLINE players only (not total from database)
-                if (Get-Command "Get-OnlinePlayerCount" -ErrorAction SilentlyContinue) {
+                # Try to get ONLINE players from centralized service first
+                if (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue) {
                     try {
-                        $currentPlayers = Get-OnlinePlayerCount
-                        Write-Verbose "[Monitoring] Fresh online player count: $currentPlayers"
+                        $dbStats = Get-DatabaseServiceStats
+                        if ($dbStats.TotalPlayers -and $dbStats.TotalPlayers -ge 0) {
+                            $currentPlayers = [int]$dbStats.TotalPlayers
+                            Write-Verbose "[Monitoring] Fresh player count from centralized service: $currentPlayers"
+                        }
                     } catch {
-                        Write-Verbose "[Monitoring] Could not get online player count from database"
+                        Write-Verbose "[Monitoring] Could not get player count from centralized service"
                         $currentPlayers = 0
                     }
                 } else {
@@ -1360,6 +1480,7 @@ Export-ModuleMember -Function @(
     'Initialize-MonitoringModule',
     'Get-ServerStatus',
     'Get-ServerPlayers', 
+    'Get-CurrentPlayerCount',
     'Update-MonitoringMetrics',
     'Update-ServerMonitoring',
     'Update-DiscordIntegration',

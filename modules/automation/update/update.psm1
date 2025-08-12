@@ -7,18 +7,15 @@
 
 #Requires -Version 5.1
 
-# Import common module during initialization  
-function Import-RequiredModules {
-    <#
-    .SYNOPSIS
-    Import required modules for update management
-    #>
-    $commonPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "core\common\common.psm1"
-    if (Test-Path $commonPath) {
-        Import-Module $commonPath -Force -Global
-    } else {
-        throw "Cannot find common module at: $commonPath"
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
     }
+} catch {
+    Write-Host "[WARNING] Common module not available for update module" -ForegroundColor Yellow
 }
 
 # Module variables
@@ -46,9 +43,6 @@ function Initialize-UpdateModule {
         [Parameter(Mandatory)]
         [object]$Config
     )
-    
-    # Import required modules
-    Import-RequiredModules
     
     $script:updateConfig = $Config
     Write-Log "[Update] Module initialized"
@@ -491,6 +485,220 @@ function Test-UpdateAvailable {
 # ===============================================================
 # UPDATE EXECUTION
 # ===============================================================
+
+function Invoke-ServerValidation {
+    <#
+    .SYNOPSIS
+    Validate SCUM server files using SteamCMD
+    .PARAMETER SteamCmdPath
+    Path to steamcmd.exe
+    .PARAMETER ServerDirectory
+    Server installation directory
+    .PARAMETER AppId
+    Steam application ID
+    .PARAMETER ServiceName
+    Windows service name
+    .PARAMETER MaxRetries
+    Maximum number of retry attempts for recoverable failures (default: 2)
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$SteamCmdPath,
+        
+        [Parameter(Mandatory)]
+        [string]$ServerDirectory,
+        
+        [Parameter(Mandatory)]
+        [string]$AppId,
+        
+        [Parameter(Mandatory)]
+        [string]$ServiceName,
+        
+        [Parameter()]
+        [int]$MaxRetries = 2
+    )
+    
+    Write-Log "[Validation] Starting server file validation process"
+    
+    try {
+        # Check if service is running and stop it
+        $wasRunning = $false
+        if (Test-ServiceRunning $ServiceName) {
+            Write-Log "[Validation] Stopping server service before validation"
+            $wasRunning = $true
+            Stop-GameService -ServiceName $ServiceName -Reason "validation"
+            Start-Sleep -Seconds 10
+        } else {
+            Write-Log "[Validation] Service is not running, proceeding with validation"
+        }
+        
+        # Resolve paths
+        $resolvedSteamCmd = $SteamCmdPath
+        $resolvedServerDir = $ServerDirectory
+        
+        # Ensure SteamCMD path includes the executable
+        if (-not $resolvedSteamCmd.EndsWith("steamcmd.exe")) {
+            $resolvedSteamCmd = Join-Path $resolvedSteamCmd "steamcmd.exe"
+        }
+        
+        # Convert to absolute paths
+        $resolvedSteamCmd = [System.IO.Path]::GetFullPath($resolvedSteamCmd)
+        $resolvedServerDir = [System.IO.Path]::GetFullPath($resolvedServerDir)
+        
+        # Verify SteamCMD exists
+        if (-not (Test-Path $resolvedSteamCmd)) {
+            throw "SteamCMD not found at: $resolvedSteamCmd"
+        }
+        
+        Write-Log "[Validation] SteamCMD path verified: $resolvedSteamCmd"
+        Write-Log "[Validation] Server directory: $resolvedServerDir"
+        
+        # Verify server directory exists
+        if (-not (Test-Path $resolvedServerDir)) {
+            throw "Server directory not found: $resolvedServerDir"
+        }
+        
+        # Build SteamCMD arguments for validation
+        $steamCmdArgs = @(
+            "+force_install_dir"
+            $resolvedServerDir
+            "+login"
+            "anonymous"
+            "+app_update"
+            $AppId
+            "validate"
+            "+quit"
+        )
+        
+        Write-Log "[Validation] Executing SteamCMD validation command"
+        Write-Log "[Validation] SteamCMD: $resolvedSteamCmd"
+        Write-Log "[Validation] Arguments: $($steamCmdArgs -join ' ')"
+        
+        # Execute validation with retry logic
+        $attempt = 0
+        $lastExitCode = -1
+        $validationSuccessful = $false
+        $steamCmdDir = Split-Path $resolvedSteamCmd -Parent
+        
+        while ($attempt -le $MaxRetries -and -not $validationSuccessful) {
+            $attempt++
+            
+            if ($attempt -gt 1) {
+                Write-Log "[Validation] Retry attempt $attempt of $($MaxRetries + 1) for SteamCMD validation"
+                Start-Sleep -Seconds 5
+            }
+            
+            try {
+                Write-Log "[Validation] Executing SteamCMD validation (attempt $attempt)"
+                $process = Start-Process -FilePath $resolvedSteamCmd -ArgumentList $steamCmdArgs -Wait -NoNewWindow -PassThru -WorkingDirectory $steamCmdDir
+                $lastExitCode = $process.ExitCode
+                
+                if ($lastExitCode -eq 0 -or $lastExitCode -eq 7) {
+                    $validationSuccessful = $true
+                    break
+                }
+                
+                # Check if this is a recoverable error that should be retried
+                $isRecoverable = $lastExitCode -in @(8, 1, 6)
+                
+                if (-not $isRecoverable -or $attempt -gt $MaxRetries) {
+                    break
+                }
+                
+                Write-Log "[Validation] SteamCMD failed with recoverable exit code $lastExitCode, will retry" -Level Warning
+                
+            } catch {
+                Write-Log "[Validation] Failed to start SteamCMD (attempt $attempt): $($_.Exception.Message)" -Level Error
+                if ($attempt -gt $MaxRetries) {
+                    throw "Failed to execute SteamCMD after $($MaxRetries + 1) attempts: $($_.Exception.Message)"
+                }
+            }
+        }
+        
+        if (-not $validationSuccessful) {
+            # Restart service if it was running before
+            if ($wasRunning) {
+                Write-Log "[Validation] Restarting service after failed validation"
+                Start-GameService -ServiceName $ServiceName -Context "validation-failed"
+            }
+            throw "SteamCMD validation failed after $($MaxRetries + 1) attempts with exit code: $lastExitCode"
+        }
+        
+        $exitCode = $lastExitCode
+        
+        if ($exitCode -eq 0 -or $exitCode -eq 7) {
+            if ($exitCode -eq 7) {
+                Write-Log "[Validation] Server validation completed with warnings (exit code 7)"
+            } else {
+                Write-Log "[Validation] Server validation completed successfully"
+            }
+            
+            # Give SteamCMD a moment to finalize file operations
+            Start-Sleep -Seconds 2
+            
+            # Verify server executable still exists after validation
+            $scumExePath = Join-Path $resolvedServerDir "SCUM\Binaries\Win64\SCUMServer.exe"
+            $serverFound = Test-Path $scumExePath
+            
+            if (-not $serverFound) {
+                Write-Log "[Validation] Warning: Server executable not found after validation" -Level Warning
+            }
+            
+            # Restart service if it was running before
+            if ($wasRunning) {
+                Write-Log "[Validation] Restarting server service after validation"
+                Start-GameService -ServiceName $ServiceName -Context "validation"
+            }
+            
+            # Return validation results
+            $result = @{
+                Success = $true
+                Error = $null
+                FilesChecked = "Unknown"  # SteamCMD doesn't provide detailed counts
+                FilesFixed = if ($exitCode -eq 7) { "Some" } else { 0 }
+                ExitCode = $exitCode
+                WasRunning = $wasRunning
+            }
+            
+            Write-Log "[Validation] Validation completed successfully"
+            return $result
+        } else {
+            Write-Log "[Validation] Server validation failed with exit code: $exitCode" -Level Error
+            
+            # Restart service if it was running before
+            if ($wasRunning) {
+                Write-Log "[Validation] Restarting service after failed validation"
+                Start-GameService -ServiceName $ServiceName -Context "validation-failed"
+            }
+            
+            return @{
+                Success = $false
+                Error = "SteamCMD validation failed with exit code: $exitCode"
+                ExitCode = $exitCode
+                WasRunning = $wasRunning
+            }
+        }
+    }
+    catch {
+        Write-Log "[Validation] Validation process failed: $($_.Exception.Message)" -Level Error
+        
+        # Restart service if it was running before validation failed
+        if ($wasRunning) {
+            try {
+                Write-Log "[Validation] Attempting to restart service after validation error"
+                Start-GameService -ServiceName $ServiceName -Context "validation-error"
+            } catch {
+                Write-Log "[Validation] Failed to restart service: $($_.Exception.Message)" -Level Error
+            }
+        }
+        
+        return @{
+            Success = $false
+            Error = $_.Exception.Message
+            WasRunning = $wasRunning
+        }
+    }
+}
 
 function Update-GameServer {
     <#
@@ -997,6 +1205,7 @@ Export-ModuleMember -Function @(
     'Get-LatestBuildId',
     'Test-UpdateAvailable',
     'Update-GameServer',
+    'Invoke-ServerValidation',
     'Invoke-ImmediateUpdate',
     'Get-UpdateStatus'
 )

@@ -7,6 +7,17 @@
 
 # Note: Database module must be imported globally before using this module
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for leaderboards-embed module" -ForegroundColor Yellow
+}
+
 # Global variables
 $script:WeeklyEmbed = $null
 $script:AllTimeEmbed = $null
@@ -27,27 +38,27 @@ function Initialize-LeaderboardsEmbed {
     $script:DiscordConfig = $Config.Discord
     
     if (-not $script:DiscordConfig.LiveEmbeds -or -not $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel) {
-        Write-Host "[WARN] Leaderboards embed not configured properly" -ForegroundColor Red
+        Write-Log "[WARN] Leaderboards embed not configured properly" -Level "Info"
         return $false
     }
     
     try {
         # Check for weekly reset first
         if (Test-WeeklyResetNeeded) {
-            Write-Host "Weekly reset needed - performing reset..." -ForegroundColor Yellow
+            Write-Log "Weekly reset needed - performing reset..." -Level "Info"
             Invoke-WeeklyReset
         }
         
         # For production stability, we'll find existing embeds and set them up for updates
         # rather than trying to create new ones during initialization
-        Write-Host "Searching for existing leaderboard embeds..." -ForegroundColor Yellow
+        Write-Log "Searching for existing leaderboard embeds..." -Level "Info"
         
         # Try to find existing embeds
         $existingWeekly = Find-ExistingEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -EmbedType "Weekly"
         $existingAllTime = Find-ExistingEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -EmbedType "All-Time"
         
         if ($existingWeekly) {
-            Write-Host "Found existing weekly leaderboards embed (ID: $($existingWeekly.id))" -ForegroundColor Green
+            Write-Log "Found existing weekly leaderboards embed (ID: $($existingWeekly.id))" -Level "Info"
             $script:WeeklyEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 MessageId = $existingWeekly.id
@@ -56,7 +67,7 @@ function Initialize-LeaderboardsEmbed {
         }
         
         if ($existingAllTime) {
-            Write-Host "Found existing all-time leaderboards embed (ID: $($existingAllTime.id))" -ForegroundColor Green
+            Write-Log "Found existing all-time leaderboards embed (ID: $($existingAllTime.id))" -Level "Info"
             $script:AllTimeEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 MessageId = $existingAllTime.id
@@ -66,23 +77,23 @@ function Initialize-LeaderboardsEmbed {
         
         # If no existing embeds found, they will be created during the first update cycle
         if (-not $existingWeekly) {
-            Write-Host "No existing weekly embed found - will be created during first update" -ForegroundColor Yellow
+            Write-Log "No existing weekly embed found - will be created during first update" -Level "Info"
         }
         
         if (-not $existingAllTime) {
-            Write-Host "No existing all-time embed found - will be created during first update" -ForegroundColor Yellow
+            Write-Log "No existing all-time embed found - will be created during first update" -Level "Info"
         }
         
         # Always return success - embeds will be created/updated during monitoring
-        Write-Host "[OK] Leaderboard system initialized successfully" -ForegroundColor Green
-        Write-Host "   Weekly embed: $($existingWeekly -ne $null)" -ForegroundColor White
-        Write-Host "   All-time embed: $($existingAllTime -ne $null)" -ForegroundColor White
-        Write-Host "   Missing embeds will be created during first update cycle" -ForegroundColor White
+        Write-Log "[OK] Leaderboard system initialized successfully" -Level "Info"
+        Write-Log "   Weekly embed: $($existingWeekly -ne $null)" -Level "Info"
+        Write-Log "   All-time embed: $($existingAllTime -ne $null)" -Level "Info"
+        Write-Log "   Missing embeds will be created during first update cycle" -Level "Info"
         
         return $true
         
     } catch {
-        Write-Warning "Failed to initialize leaderboards embeds: $($_.Exception.Message)"
+        Write-Log "Failed to initialize leaderboards embeds: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -96,7 +107,7 @@ function Initialize-WeeklyEmbed {
     try {
         # Check if embed already exists in memory
         if ($script:WeeklyEmbed -and $script:WeeklyEmbed.MessageId) {
-            Write-Host "Weekly leaderboards embed already exists (ID: $($script:WeeklyEmbed.MessageId))" -ForegroundColor Yellow
+            Write-Log "Weekly leaderboards embed already exists (ID: $($script:WeeklyEmbed.MessageId))" -Level "Info"
             return $true
         }
         
@@ -104,7 +115,7 @@ function Initialize-WeeklyEmbed {
         $existingEmbed = Find-ExistingEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -EmbedType "Weekly"
         
         if ($existingEmbed) {
-            Write-Host "Found existing weekly leaderboards embed (ID: $($existingEmbed.id))" -ForegroundColor Cyan
+            Write-Log "Found existing weekly leaderboards embed (ID: $($existingEmbed.id))" -Level "Info"
             $script:WeeklyEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 MessageId = $existingEmbed.id
@@ -114,11 +125,11 @@ function Initialize-WeeklyEmbed {
         }
         
         # Create new weekly embed
-        Write-Host "Creating new weekly leaderboards embed..." -ForegroundColor Yellow
+        Write-Log "Creating new weekly leaderboards embed..." -Level "Info"
         $embed = New-WeeklyLeaderboardsEmbed
         
         if (-not $embed) {
-            Write-Warning "Failed to create weekly leaderboard embed"
+            Write-Log "Failed to create weekly leaderboard embed" -Level Error
             return $false
         }
         
@@ -126,7 +137,7 @@ function Initialize-WeeklyEmbed {
         $embedJson = $embed | ConvertTo-Json -Depth 10
         
         if ($embedJson.Length -gt 6000) {
-            Write-Warning "Weekly embed too large: $($embedJson.Length) characters"
+            Write-Log "Weekly embed too large: $($embedJson.Length) characters" -Level Warning
             return $false
         }
         
@@ -138,14 +149,14 @@ function Initialize-WeeklyEmbed {
                 MessageId = $message.id
                 LastUpdate = Get-Date
             }
-            Write-Host ":white_check_mark: Weekly leaderboards embed created: $($message.id)" -ForegroundColor Green
+            Write-Log ":white_check_mark: Weekly leaderboards embed created: $($message.id)" -Level "Info"
             return $true
         }
         
         return $false
         
     } catch {
-        Write-Warning "Failed to initialize weekly embed: $($_.Exception.Message)"
+        Write-Log "Failed to initialize weekly embed: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -161,7 +172,7 @@ function Initialize-AllTimeEmbed {
         $existingEmbed = Find-ExistingEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -EmbedType "All-Time"
         
         if ($existingEmbed) {
-            Write-Host "Found existing all-time leaderboards embed (ID: $($existingEmbed.id))" -ForegroundColor Cyan
+            Write-Log "Found existing all-time leaderboards embed (ID: $($existingEmbed.id))" -Level "Info"
             $script:AllTimeEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 MessageId = $existingEmbed.id
@@ -171,7 +182,7 @@ function Initialize-AllTimeEmbed {
         }
         
         # Create new all-time embed
-        Write-Host "Creating new all-time leaderboards embed..." -ForegroundColor Yellow
+        Write-Log "Creating new all-time leaderboards embed..." -Level "Info"
         
         # Add small delay to avoid rate limiting
         Start-Sleep -Seconds 2
@@ -179,7 +190,7 @@ function Initialize-AllTimeEmbed {
         $embed = New-AllTimeLeaderboardsEmbed
         
         if (-not $embed) {
-            Write-Warning "Failed to create all-time embed data"
+            Write-Log "Failed to create all-time embed data" -Level Error
             return $false
         }
         
@@ -187,7 +198,7 @@ function Initialize-AllTimeEmbed {
         $embedJson = $embed | ConvertTo-Json -Depth 10
         
         if ($embedJson.Length -gt 6000) {
-            Write-Warning "All-time embed too large: $($embedJson.Length) characters"
+            Write-Log "All-time embed too large: $($embedJson.Length) characters" -Level Warning
             return $false
         }
         
@@ -199,15 +210,15 @@ function Initialize-AllTimeEmbed {
                 MessageId = $message.id
                 LastUpdate = Get-Date
             }
-            Write-Host ":white_check_mark: All-time leaderboards embed created: $($message.id)" -ForegroundColor Green
+            Write-Log ":white_check_mark: All-time leaderboards embed created: $($message.id)" -Level "Info"
             return $true
         }
         
-        Write-Warning "Send-DiscordMessage returned null for all-time embed"
+        Write-Log "Send-DiscordMessage returned null for all-time embed" -Level Warning
         return $false
         
     } catch {
-        Write-Warning "Failed to initialize all-time embed: $($_.Exception.Message)"
+        Write-Log "Failed to initialize all-time embed: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -221,18 +232,18 @@ function Update-LeaderboardsEmbed {
     try {
         # Check for weekly reset
         if (Test-WeeklyResetNeeded) {
-            Write-Host "Weekly reset needed - performing reset..." -ForegroundColor Yellow
+            Write-Log "Weekly reset needed - performing reset..." -Level "Info"
             Invoke-WeeklyReset
         }
         
         # Create missing embeds if needed
         if (-not $script:WeeklyEmbed -or -not $script:WeeklyEmbed.MessageId) {
-            Write-Host "Creating missing weekly leaderboard embed..." -ForegroundColor Yellow
+            Write-Log "Creating missing weekly leaderboard embed..." -Level "Info"
             Initialize-WeeklyEmbed
         }
         
         if (-not $script:AllTimeEmbed -or -not $script:AllTimeEmbed.MessageId) {
-            Write-Host "Creating missing all-time leaderboard embed..." -ForegroundColor Yellow
+            Write-Log "Creating missing all-time leaderboard embed..." -Level "Info"
             Initialize-AllTimeEmbed
         }
         
@@ -253,7 +264,7 @@ function Update-LeaderboardsEmbed {
         }
         
     } catch {
-        Write-Warning "Failed to update leaderboards embeds: $($_.Exception.Message)"
+        Write-Log "Failed to update leaderboards embeds: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -265,14 +276,14 @@ function Update-WeeklyEmbed {
     
     try {
         if (-not $script:WeeklyEmbed -or -not $script:WeeklyEmbed.MessageId) {
-            Write-Verbose "Weekly embed not initialized"
+            Write-Log "Weekly embed not initialized" -Level "Debug"
             return
         }
         
         $embed = New-WeeklyLeaderboardsEmbed
         
         if (-not $embed) {
-            Write-Warning "Failed to create weekly leaderboard embed"
+            Write-Log "Failed to create weekly leaderboard embed" -Level Error
             return
         }
         
@@ -280,11 +291,11 @@ function Update-WeeklyEmbed {
         
         if ($result) {
             $script:LastWeeklyUpdate = Get-Date
-            Write-Verbose "Weekly leaderboards embed updated"
+            Write-Log "Weekly leaderboards embed updated" -Level "Debug"
         }
         
     } catch {
-        Write-Warning "Failed to update weekly embed: $($_.Exception.Message)"
+        Write-Log "Failed to update weekly embed: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -296,14 +307,14 @@ function Update-AllTimeEmbed {
     
     try {
         if (-not $script:AllTimeEmbed -or -not $script:AllTimeEmbed.MessageId) {
-            Write-Verbose "All-time embed not initialized"
+            Write-Log "All-time embed not initialized" -Level "Debug"
             return
         }
         
         $embed = New-AllTimeLeaderboardsEmbed
         
         if (-not $embed) {
-            Write-Warning "Failed to create all-time leaderboard embed"
+            Write-Log "Failed to create all-time leaderboard embed" -Level Error
             return
         }
         
@@ -311,11 +322,11 @@ function Update-AllTimeEmbed {
         
         if ($result) {
             $script:LastAllTimeUpdate = Get-Date
-            Write-Verbose "All-time leaderboards embed updated"
+            Write-Log "All-time leaderboards embed updated" -Level "Debug"
         }
         
     } catch {
-        Write-Warning "Failed to update all-time embed: $($_.Exception.Message)"
+        Write-Log "Failed to update all-time embed: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -403,7 +414,7 @@ function Get-RandomImageUrl {
         return $null
         
     } catch {
-        Write-Warning "Failed to get random $Type image URL: $($_.Exception.Message)"
+        Write-Log "Failed to get random $Type image URL: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -418,18 +429,18 @@ function New-WeeklyLeaderboardsEmbed {
         $fields = @()
         
         # Get weekly leaderboard data for 12 categories in 2 columns
-        $fields += Format-LeaderboardField -Title ":busts_in_silhouette: TOP SQUADS" -Data (Get-TopSquads -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":stopwatch: TOP SURVIVORS" -Data (Get-TopSurvivors -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":star: TOP FAME POINTS" -Data (Get-TopFame -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":moneybag: TOP MONEY" -Data (Get-TopMoney -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":zombie: TOP PUPPET KILLERS" -Data (Get-TopPuppetKills -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":deer: TOP ANIMAL HUNTERS" -Data (Get-TopAnimalKills -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":crossed_swords: TOP MELEE WARRIORS" -Data (Get-TopMeleeWarriors -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":bow_and_arrow: TOP ARCHERS" -Data (Get-TopArchers -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":gun: TOP SNIPER" -Data (Get-TopSniper -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":dart: TOP HEADSHOT MASTERS" -Data (Get-TopHeadshots -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":unlock: TOP LOCKPICKERS" -Data (Get-TopLockpickers -Limit 5 -WeeklyOnly $true) -Inline $false
-        $fields += Format-LeaderboardField -Title ":package: TOP LOOTERS" -Data (Get-TopLooters -Limit 5 -WeeklyOnly $true) -Inline $false
+        $fields += Format-LeaderboardField -Title ":busts_in_silhouette: TOP SQUADS" -Data (Get-WeeklyLeaderboard -Category "squads" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":stopwatch: TOP SURVIVORS" -Data (Get-WeeklyLeaderboard -Category "minutes_survived" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":star: TOP FAME POINTS" -Data (Get-WeeklyLeaderboard -Category "fame" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":moneybag: TOP MONEY" -Data (Get-WeeklyLeaderboard -Category "money" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":zombie: TOP PUPPET KILLERS" -Data (Get-WeeklyLeaderboard -Category "puppet_kills" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":deer: TOP ANIMAL HUNTERS" -Data (Get-WeeklyLeaderboard -Category "animal_kills" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":crossed_swords: TOP MELEE WARRIORS" -Data (Get-WeeklyLeaderboard -Category "melee_kills" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":bow_and_arrow: TOP ARCHERS" -Data (Get-WeeklyLeaderboard -Category "archery_kills" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":gun: TOP SNIPER" -Data (Get-WeeklyLeaderboard -Category "longest_kill_distance" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":dart: TOP HEADSHOT MASTERS" -Data (Get-WeeklyLeaderboard -Category "headshots" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":unlock: TOP LOCKPICKERS" -Data (Get-WeeklyLeaderboard -Category "locks_picked" -Limit 5) -Inline $false
+        $fields += Format-LeaderboardField -Title ":package: TOP LOOTERS" -Data (Get-WeeklyLeaderboard -Category "containers_looted" -Limit 5) -Inline $false
         
         $weekStart = (Get-Date).AddDays(-(Get-Date).DayOfWeek.value__+1)
         $weekEnd = $weekStart.AddDays(6)
@@ -459,7 +470,7 @@ function New-WeeklyLeaderboardsEmbed {
         return $embed
         
     } catch {
-        Write-Warning "Failed to create weekly leaderboards embed: $($_.Exception.Message)"
+        Write-Log "Failed to create weekly leaderboards embed: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -512,7 +523,7 @@ function New-AllTimeLeaderboardsEmbed {
         return $embed
         
     } catch {
-        Write-Warning "Failed to create all-time leaderboards embed: $($_.Exception.Message)"
+        Write-Log "Failed to create all-time leaderboards embed: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -532,7 +543,11 @@ function Format-LeaderboardField {
     # Check if data is empty or contains only empty/null values
     $validData = @()
     if ($Data -and $Data.Count -gt 0) {
-        $validData = $Data | Where-Object { $_.Name -and ($_.Value -or $_.FormattedValue) }
+        foreach ($item in $Data) {
+            if ($item -and $item.Name -and ($item.Value -or $item.FormattedValue)) {
+                $validData += $item
+            }
+        }
     }
     
     if (-not $validData -or $validData.Count -eq 0) {
@@ -553,11 +568,14 @@ function Format-LeaderboardField {
         # Use normal numbers for all positions
         $positionEmoji = "$position."
         
-        # Less aggressive name truncation - allow longer names
-        $playerName = if ($player.Name -and $player.Name.Length -gt 16) { 
-            $player.Name.Substring(0, 14) + ".." 
+        # Clean and sanitize player name for Discord compatibility
+        $cleanName = Clean-PlayerNameForDiscord -Name $player.Name
+        
+        # Truncate if still too long after cleaning
+        $playerName = if ($cleanName -and $cleanName.Length -gt 16) { 
+            $cleanName.Substring(0, 14) + ".." 
         } else { 
-            $player.Name
+            $cleanName
         }
         
         $value = if ($player.FormattedValue) { $player.FormattedValue } else { $player.Value }
@@ -569,6 +587,45 @@ function Format-LeaderboardField {
         name = $Title
         value = $text.TrimEnd("`n")
         inline = $Inline
+    }
+}
+
+function Clean-PlayerNameForDiscord {
+    <#
+    .SYNOPSIS
+    Ensure player names are properly encoded for Discord without changing the characters
+    Preserves all Unicode characters including Thai, Chinese, Japanese, Arabic, etc.
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Name
+    )
+    
+    if (-not $Name -or $Name.Trim() -eq "") {
+        return "Unknown Player"
+    }
+    
+    try {
+        # Start with the original name
+        $cleanName = $Name.Trim()
+        
+        # Only remove characters that break Discord formatting, keep all Unicode
+        # Remove Discord markdown characters that could break formatting
+        $cleanName = $cleanName -replace '[`]', "'"  # Replace backticks with single quotes
+        $cleanName = $cleanName -replace '[\*_~|\\]', ''  # Remove other markdown chars
+        
+        # Ensure we don't have an empty name
+        if ($cleanName.Trim() -eq "") {
+            return "Player #" + ($Name.GetHashCode() -band 0x7FFFFFFF).ToString().Substring(0, 4)
+        }
+        
+        # Return the name with all original Unicode characters preserved
+        return $cleanName.Trim()
+        
+    } catch {
+        Write-Log "Failed to process player name '$Name': $($_.Exception.Message)" -Level Warning
+        # Fallback to original name if cleaning fails
+        return $Name.Trim()
     }
 }
 
@@ -606,20 +663,20 @@ function Find-ExistingEmbed {
                 
                 # Check if this is the correct type of leaderboards embed
                 if ($EmbedType -eq "Weekly" -and $embed.title -like "*Weekly*") {
-                    Write-Verbose "Found existing weekly leaderboards embed: $($message.id)"
+                    Write-Log "Found existing weekly leaderboards embed: $($message.id)" -Level "Debug"
                     return $message
                 } elseif ($EmbedType -eq "All-Time" -and $embed.title -like "*All-Time*") {
-                    Write-Verbose "Found existing all-time leaderboards embed: $($message.id)"
+                    Write-Log "Found existing all-time leaderboards embed: $($message.id)" -Level "Debug"
                     return $message
                 }
             }
         }
         
-        Write-Verbose "No existing $EmbedType leaderboards embed found"
+        Write-Log "No existing $EmbedType leaderboards embed found" -Level "Debug"
         return $null
         
     } catch {
-        Write-Warning "Failed to find existing $EmbedType leaderboards embed: $($_.Exception.Message)"
+        Write-Log "Failed to find existing $EmbedType leaderboards embed: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -644,8 +701,56 @@ function Get-LeaderboardEmbed {
             return New-AllTimeLeaderboardsEmbed
         }
     } catch {
-        Write-Warning "Failed to get $Type leaderboard embed: $($_.Exception.Message)"
+        Write-Log "Failed to get $Type leaderboard embed: $($_.Exception.Message)" -Level Error
         return $null
+    }
+}
+
+function Test-WeeklyResetNeeded {
+    <#
+    .SYNOPSIS
+    Test if weekly leaderboard reset is needed
+    #>
+    
+    try {
+        $now = Get-Date
+        $lastReset = Get-LastWeeklyReset
+        
+        # Reset every Monday at 00:00
+        $lastMonday = $now.Date
+        while ($lastMonday.DayOfWeek -ne [DayOfWeek]::Monday) {
+            $lastMonday = $lastMonday.AddDays(-1)
+        }
+        
+        return $lastReset -lt $lastMonday
+    } catch {
+        Write-Log "Error checking weekly reset: $($_.Exception.Message)" -Level "Debug"
+        return $false
+    }
+}
+
+function Get-LastWeeklyReset {
+    <#
+    .SYNOPSIS
+    Get timestamp of last weekly reset
+    #>
+    
+    try {
+        $resetFile = "weekly_reset.txt"
+        if (Test-Path $resetFile) {
+            $content = Get-Content $resetFile -Raw
+            return [DateTime]::Parse($content)
+        } else {
+            # Default to last Monday if no reset file
+            $lastMonday = (Get-Date).Date
+            while ($lastMonday.DayOfWeek -ne [DayOfWeek]::Monday) {
+                $lastMonday = $lastMonday.AddDays(-1)
+            }
+            return $lastMonday
+        }
+    } catch {
+        Write-Log "Error getting last reset: $($_.Exception.Message)" -Level "Debug"
+        return (Get-Date).AddDays(-7) # Default to week ago
     }
 }
 
@@ -658,5 +763,7 @@ Export-ModuleMember -Function @(
     'Update-WeeklyEmbed',
     'Update-AllTimeEmbed',
     'Get-LeaderboardEmbed',
-    'Get-RandomImageUrl'
+    'Get-RandomImageUrl',
+    'Format-LeaderboardField'
 )
+

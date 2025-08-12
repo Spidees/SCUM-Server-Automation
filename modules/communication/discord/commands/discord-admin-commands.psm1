@@ -8,15 +8,26 @@
 # Add required .NET types for URL encoding
 Add-Type -AssemblyName System.Web
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for discord-admin-commands module" -ForegroundColor Yellow
+}
+
 # Import required modules for server status checking
 try {
     if (Get-Command "Get-ServerStatus" -ErrorAction SilentlyContinue) {
-        Write-Verbose "[ADMIN-COMMANDS] Server status functions available"
+        Write-Log "[ADMIN-COMMANDS] Server status functions available" -Level "Debug"
     } else {
-        Write-Warning "[ADMIN-COMMANDS] Server status functions not available - state validation may not work"
+        Write-Log "[ADMIN-COMMANDS] Server status functions not available - state validation may not work" -Level Warning
     }
 } catch {
-    Write-Warning "[ADMIN-COMMANDS] Error checking server status availability: $_"
+    Write-Log "[ADMIN-COMMANDS] Error checking server status availability: $_" -Level Warning
 }
 
 # ===============================================================
@@ -56,30 +67,30 @@ function Add-DiscordReaction {
                 $result = Invoke-DiscordAPI -Endpoint $endpoint -Method "PUT"
                 
                 # For PUT reactions, success is indicated by result being $true (204 No Content) or not null
-                if ($result -eq $true -or $result -ne $null) {
+                if ($result -eq $true -or $null -ne $result) {
                     return $true
                 } else {
                     $retryCount++
                     if ($retryCount -lt $MaxRetries) {
-                        Write-Verbose "[ADMIN-COMMANDS] Rate limited, retrying reaction in 1 second..."
+                        Write-Log "[ADMIN-COMMANDS] Rate limited, retrying reaction in 1 second..." -Level "Debug"
                         Start-Sleep -Seconds 1
                         continue
                     }
-                    Write-Warning "[ADMIN-COMMANDS] Failed to add reaction after $MaxRetries attempts"
+                    Write-Log "[ADMIN-COMMANDS] Failed to add reaction after $MaxRetries attempts" -Level Warning
                     return $false
                 }
             } else {
-                Write-Warning "[ADMIN-COMMANDS] Discord API function not available for reactions"
+                Write-Log "[ADMIN-COMMANDS] Discord API function not available for reactions" -Level Warning
                 return $false
             }
         } catch {
             $retryCount++
             if ($retryCount -lt $MaxRetries) {
-                Write-Verbose "[ADMIN-COMMANDS] Error adding reaction, retrying: $($_.Exception.Message)"
+                Write-Log "[ADMIN-COMMANDS] Error adding reaction, retrying: $($_.Exception.Message)" -Level "Debug"
                 Start-Sleep -Seconds 1
                 continue
             }
-            Write-Warning "[ADMIN-COMMANDS] Failed to add reaction after $MaxRetries attempts: $($_.Exception.Message)"
+            Write-Log "[ADMIN-COMMANDS] Failed to add reaction after $MaxRetries attempts: $($_.Exception.Message)" -Level Warning
             return $false
         }
     }
@@ -107,7 +118,7 @@ function Wait-ForReactionConfirmation {
         $startTime = Get-Date
         $timeoutTime = $startTime.AddSeconds($TimeoutSeconds)
         
-        Write-Verbose "[ADMIN-COMMANDS] Waiting for confirmation reaction from user $UserId"
+        Write-Log "[ADMIN-COMMANDS] Waiting for confirmation reaction from user $UserId" -Level "Debug"
         
         while ((Get-Date) -lt $timeoutTime) {
             try {
@@ -119,7 +130,7 @@ function Wait-ForReactionConfirmation {
                     if ($confirmReactions -and $confirmReactions.Count -gt 0) {
                         foreach ($user in $confirmReactions) {
                             if ($user.id -eq $UserId) {
-                                Write-Verbose "[ADMIN-COMMANDS] Confirmation received from user $UserId"
+                                Write-Log "[ADMIN-COMMANDS] Confirmation received from user $UserId" -Level "Debug"
                                 return "confirmed"
                             }
                         }
@@ -132,24 +143,24 @@ function Wait-ForReactionConfirmation {
                     if ($cancelReactions -and $cancelReactions.Count -gt 0) {
                         foreach ($user in $cancelReactions) {
                             if ($user.id -eq $UserId) {
-                                Write-Verbose "[ADMIN-COMMANDS] Cancellation received from user $UserId"
+                                Write-Log "[ADMIN-COMMANDS] Cancellation received from user $UserId" -Level "Debug"
                                 return "cancelled"
                             }
                         }
                     }
                 }
             } catch {
-                Write-Verbose "[ADMIN-COMMANDS] Error checking reactions: $($_.Exception.Message)"
+                Write-Log "[ADMIN-COMMANDS] Error checking reactions: $($_.Exception.Message)" -Level "Debug"
             }
             
             Start-Sleep -Seconds 3  # Check every 3 seconds to prevent rate limiting
         }
         
-        Write-Verbose "[ADMIN-COMMANDS] Confirmation timeout reached"
+        Write-Log "[ADMIN-COMMANDS] Confirmation timeout reached" -Level "Debug"
         return "timeout"
         
     } catch {
-        Write-Warning "[ADMIN-COMMANDS] Error waiting for confirmation: $($_.Exception.Message)"
+        Write-Log "[ADMIN-COMMANDS] Error waiting for confirmation: $($_.Exception.Message)" -Level Error
         return "error"
     }
 }
@@ -186,22 +197,22 @@ function Send-CommandResponse {
             
             # Discord API requires either Content or Embed
             if (-not $Content -and -not $Embed) {
-                Write-Warning "[ADMIN-COMMANDS] No content or embed provided for Discord message"
+                Write-Log "[ADMIN-COMMANDS] No content or embed provided for Discord message" -Level Warning
                 return $null
             }
             
             $result = Send-DiscordMessage @messageParams
-            Write-Verbose "[ADMIN-COMMANDS] Response sent to channel $ChannelId"
+            Write-Log "[ADMIN-COMMANDS] Response sent to channel $ChannelId" -Level "Debug"
             
             if ($ReturnMessageId -and $result -and $result.id) {
                 return $result.id
             }
             
         } else {
-            Write-Warning "[ADMIN-COMMANDS] Send-DiscordMessage function not available"
+            Write-Log "[ADMIN-COMMANDS] Send-DiscordMessage function not available" -Level Warning
         }
     } catch {
-        Write-Warning "[ADMIN-COMMANDS] Failed to send response: $($_.Exception.Message)"
+        Write-Log "[ADMIN-COMMANDS] Failed to send response: $($_.Exception.Message)" -Level Error
     }
     
     return $null
@@ -232,6 +243,7 @@ function Request-AdminConfirmation {
             "stop" = ":stop_sign:"
             "update" = ":arrow_up:"
             "skip" = ":fast_forward:"
+            "validation" = ":white_check_mark:"
         }
         
         $actionEmoji = if ($emojiMap.ContainsKey($ActionType)) { $emojiMap[$ActionType] } else { ":warning:" }
@@ -268,7 +280,7 @@ function Request-AdminConfirmation {
                 }
             } else {
                 # Fallback if reactions don't work - request text confirmation
-                Write-Warning "[ADMIN-COMMANDS] Failed to add reactions, requesting text confirmation"
+                Write-Log "[ADMIN-COMMANDS] Failed to add reactions, requesting text confirmation" -Level Warning
                 Send-CommandResponse -ChannelId $ChannelId -Content ":warning: **MANUAL CONFIRMATION REQUIRED**`n$actionEmoji **$ActionDescription**`n`nReactions failed to load. Type `!confirm` within 30 seconds to proceed or ignore to cancel."
                 
                 # For now, abort for safety until we implement text confirmation
@@ -276,12 +288,12 @@ function Request-AdminConfirmation {
                 return $false
             }
         } else {
-            Write-Warning "[ADMIN-COMMANDS] Failed to send confirmation message"
+            Write-Log "[ADMIN-COMMANDS] Failed to send confirmation message" -Level Error
             return $false
         }
         
     } catch {
-        Write-Warning "[ADMIN-COMMANDS] Error in confirmation process: $($_.Exception.Message)"
+        Write-Log "[ADMIN-COMMANDS] Error in confirmation process: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -377,7 +389,7 @@ function Handle-ServerStatusAdminCommand {
 function Handle-ServerStartAdminCommand {
     <#
     .SYNOPSIS
-    Handle !server_start admin command
+    Handle !server_start admin command with startup monitoring and auto-recovery
     #>
     param([string]$ResponseChannelId)
     
@@ -393,8 +405,157 @@ function Handle-ServerStartAdminCommand {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":arrow_forward: **Starting Server** - Server start command issued..."
         
         if (Get-Command "Start-ServerService" -ErrorAction SilentlyContinue) {
-            Start-ServerService
-            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Server Start** - Command executed successfully! Server is starting..."
+            $startResult = Start-ServerService
+            
+            if ($startResult) {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Server Starting** - Command executed, monitoring startup progress..."
+                
+                # Monitor startup progress for up to 3 minutes
+                $startTime = Get-Date
+                $timeoutMinutes = 3
+                $checkIntervalSeconds = 15
+                $lastStatus = "starting"
+                $startupProgression = @()  # Track startup progression
+                
+                while (((Get-Date) - $startTime).TotalMinutes -lt $timeoutMinutes) {
+                    Start-Sleep -Seconds $checkIntervalSeconds
+                    
+                    # Check current server status
+                    $currentStatus = Get-ServerStatus
+                    
+                    if ($currentStatus.IsRunning) {
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Server Online** - Server started successfully and is accepting connections!"
+                        return
+                    }
+                    
+                    # Check if we have detailed status from monitoring
+                    if ($currentStatus.ActualServerState) {
+                        $detailedState = $currentStatus.ActualServerState
+                        
+                        # Track progression to detect if server is making progress
+                        $startupProgression += @{
+                            Time = Get-Date
+                            State = $detailedState
+                        }
+                        
+                        if ($detailedState -ne $lastStatus) {
+                            $statusMessage = switch ($detailedState) {
+                                "Starting" { ":yellow_circle: **Starting** - Server process is initializing..." }
+                                "Loading" { ":yellow_circle: **Loading** - Server is loading world data..." }
+                                "Offline" { 
+                                    # Check if we've seen progress before going offline
+                                    $hasProgressed = $startupProgression | Where-Object { $_.State -in @("Starting", "Loading") }
+                                    if ($hasProgressed) {
+                                        ":orange_circle: **Temporary Offline** - Server restarting during startup (normal behavior)..."
+                                    } else {
+                                        ":red_circle: **Startup Issue** - Server having difficulty starting..."
+                                    }
+                                }
+                                default { ":clock1: **In Progress** - Server startup continuing..." }
+                            }
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content $statusMessage
+                            $lastStatus = $detailedState
+                            
+                            # Only break early on persistent offline state without any progress
+                            if ($detailedState -eq "Offline") {
+                                $hasProgressed = $startupProgression | Where-Object { $_.State -in @("Starting", "Loading") }
+                                $recentOfflineStates = $startupProgression | Where-Object { 
+                                    $_.State -eq "Offline" -and 
+                                    $_.Time -gt (Get-Date).AddMinutes(-1) 
+                                }
+                                
+                                # Only break if we've been offline for 1+ minute without any progress
+                                if (-not $hasProgressed -and $recentOfflineStates.Count -ge 4) {
+                                    Write-Log "[ADMIN-COMMANDS] Breaking early - persistent offline state without progress" -Level "Debug"
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                # Timeout reached - analyze what happened before triggering auto-recovery
+                $finalStatus = Get-ServerStatus
+                if (-not $finalStatus.IsRunning) {
+                    # Check if server made any startup progress
+                    $hasProgressed = $startupProgression | Where-Object { $_.State -in @("Starting", "Loading") }
+                    $lastKnownState = if ($startupProgression.Count -gt 0) { 
+                        ($startupProgression | Sort-Object Time -Descending | Select-Object -First 1).State 
+                    } else { 
+                        "Unknown" 
+                    }
+                    
+                    if ($hasProgressed) {
+                        # Server was progressing but didn't finish - this might be normal for large worlds
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":warning: **Startup Taking Longer** - Server was progressing (last state: $lastKnownState) but needs more time. This can be normal for large worlds."
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Patience Recommended** - Check server status in a few minutes. Server may still be loading."
+                        return
+                    } else {
+                        # No progress detected - legitimate startup failure
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":warning: **Startup Timeout** - Server did not show startup progress within $timeoutMinutes minutes"
+                    }
+                    
+                    # Check if auto-restart/repair is available and enabled
+                    $autoRestartEnabled = $false
+                    try {
+                        if (Test-Path "SCUM-Server-Automation.config.json") {
+                            $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
+                            $autoRestartEnabled = $configContent.autoRestart -eq $true
+                        }
+                    } catch {
+                        # Ignore config read errors
+                    }
+                    
+                    # Only trigger auto-recovery if no progress was made
+                    if (-not $hasProgressed -and $autoRestartEnabled -and (Get-Command "Repair-GameService" -ErrorAction SilentlyContinue)) {
+                        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":gear: **Auto-Recovery** - No startup progress detected, attempting automatic repair..."
+                        
+                        $serviceName = if ($configContent.serviceName) { $configContent.serviceName } else { "SCUMSERVER" }
+                        $repairResult = Repair-GameService -ServiceName $serviceName -Reason "startup failure auto-recovery"
+                        
+                        if ($repairResult) {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Auto-Recovery Successful** - Server has been automatically repaired and should be starting!"
+                            
+                            # Send admin-only notification about auto-recovery
+                            if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                $recoveryData = @{
+                                    timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                    service_name = $serviceName
+                                    message = "Server startup failed but was automatically recovered"
+                                    reason = "Manual start command failed, auto-repair triggered"
+                                    type = "startup-auto-recovery"
+                                    severity = "high"
+                                }
+                                $null = Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
+                            }
+                        } else {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Auto-Recovery Failed** - Manual intervention required. Check server logs and configuration."
+                            
+                            # Send critical admin alert
+                            if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                                $alertData = @{
+                                    timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                    service_name = $serviceName
+                                    error = "Server startup and auto-recovery both failed"
+                                    reason = "Manual start command and repair both unsuccessful"
+                                    type = "startup-failure"
+                                    message = "Server failed to start and automatic recovery failed. Manual intervention required!"
+                                    severity = "critical"
+                                }
+                                $null = Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                            }
+                        }
+                    } else {
+                        if ($hasProgressed) {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":information_source: **Monitor Server** - Server was making progress. Check back in a few minutes to see if startup completes."
+                        } else {
+                            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Startup Failed** - Server did not start properly. Check server logs and try again."
+                        }
+                    }
+                }
+            } else {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Start Command Failed** - Failed to issue server start command. Check service configuration."
+            }
         } else {
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Server start function not available"
         }
@@ -445,7 +606,7 @@ function Handle-ServerStopAdminCommand {
                     Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Scheduled Stop** - Server will stop in **$Minutes minutes**"
                 } else {
                     Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Scheduled Stop** - Server will stop in **$Minutes minutes**"
-                    Write-Warning "[ADMIN-COMMANDS] Scheduled tasks module not available - showing message only"
+                    Write-Log "[ADMIN-COMMANDS] Scheduled tasks module not available - showing message only" -Level Warning
                 }
             }
         } else {
@@ -499,7 +660,7 @@ function Handle-ServerRestartAdminCommand {
                     Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Scheduled Restart** - Server will restart in **$Minutes minutes**"
                 } else {
                     Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Scheduled Restart** - Server will restart in **$Minutes minutes**"
-                    Write-Warning "[ADMIN-COMMANDS] Scheduled tasks module not available - showing message only"
+                    Write-Log "[ADMIN-COMMANDS] Scheduled tasks module not available - showing message only" -Level Warning
                 }
             }
         }
@@ -549,7 +710,7 @@ function Handle-ServerUpdateAdminCommand {
                             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Scheduled Update** - Server will update in **$Minutes minutes**"
                         } else {
                             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Scheduled Update** - Server will update in **$Minutes minutes**"
-                            Write-Warning "[ADMIN-COMMANDS] Scheduled tasks module not available - showing message only"
+                            Write-Log "[ADMIN-COMMANDS] Scheduled tasks module not available - showing message only" -Level Warning
                         }
                     }
                 }
@@ -563,6 +724,106 @@ function Handle-ServerUpdateAdminCommand {
         }
     } catch {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to check for updates: $($_.Exception.Message)"
+    }
+}
+
+function Handle-ServerValidateAdminCommand {
+    <#
+    .SYNOPSIS
+    Handle !server_validate admin command for Steam integrity check
+    #>
+    param([string]$ResponseChannelId, [string]$UserId = "")
+    
+    try {
+        # Request confirmation for validation action
+        $confirmed = Request-AdminConfirmation -ChannelId $ResponseChannelId -UserId $UserId -ActionType "validation" -ActionDescription "Run Steam File Integrity Check - This will temporarily stop the server"
+        
+        if (-not $confirmed) {
+            return  # Request-AdminConfirmation already sent cancellation message
+        }
+        
+        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":gear: **Server Validation** - Starting Steam integrity check..."
+        
+        # Check if validation function exists
+        if (Get-Command "Invoke-ServerValidation" -ErrorAction SilentlyContinue) {
+            
+            # Get configuration
+            $configContent = $null
+            try {
+                if (Test-Path "SCUM-Server-Automation.config.json") {
+                    $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
+                } else {
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Configuration file not found"
+                    return
+                }
+            } catch {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to read configuration: $($_.Exception.Message)"
+                return
+            }
+            
+            # Get required paths
+            $steamCmdPath = $configContent.steamCmd
+            $serverDir = $configContent.serverDir
+            $appId = $configContent.appId
+            $serviceName = $configContent.serviceName
+            
+            if (-not $steamCmdPath -or -not $serverDir -or -not $appId) {
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Missing required configuration (steamCmd, serverDir, or appId)"
+                return
+            }
+            
+            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":clock1: **Validating** - Running Steam integrity check, this may take several minutes..."
+            
+            # Execute validation
+            $validationResult = Invoke-ServerValidation -SteamCmdPath $steamCmdPath -ServerDirectory $serverDir -AppId $appId -ServiceName $serviceName
+            
+            if ($validationResult -and $validationResult.Success) {
+                $filesChecked = if ($validationResult.FilesChecked) { $validationResult.FilesChecked } else { "Unknown" }
+                $filesFixed = if ($validationResult.FilesFixed) { $validationResult.FilesFixed } else { 0 }
+                
+                if ($filesFixed -gt 0) {
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Validation Complete** - Found and fixed $filesFixed corrupted files out of $filesChecked checked. Server files are now valid."
+                } else {
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Validation Complete** - All $filesChecked server files are valid. No corruption detected."
+                }
+                
+                # Send admin notification about validation
+                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                    $notificationData = @{
+                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                        service_name = $serviceName
+                        files_checked = $filesChecked
+                        files_fixed = $filesFixed
+                        type = "server-validation"
+                        severity = if ($filesFixed -gt 0) { "medium" } else { "low" }
+                        message = if ($filesFixed -gt 0) { "Server validation fixed $filesFixed corrupted files" } else { "Server validation completed - no issues found" }
+                    }
+                    $null = Send-DiscordNotification -Type 'admin.alert' -Data $notificationData
+                }
+                
+            } else {
+                $errorMsg = if ($validationResult -and $validationResult.Error) { $validationResult.Error } else { "Unknown validation error" }
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Validation Failed** - $errorMsg"
+                
+                # Send critical admin alert
+                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
+                    $alertData = @{
+                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                        service_name = $serviceName
+                        error = $errorMsg
+                        type = "validation-failure"
+                        message = "Server validation failed - manual investigation required"
+                        severity = "high"
+                    }
+                    $null = Send-DiscordNotification -Type 'admin.alert' -Data $alertData
+                }
+            }
+            
+        } else {
+            Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Server validation function not available"
+        }
+    } catch {
+        Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to validate server: $($_.Exception.Message)"
     }
 }
 
@@ -580,7 +841,7 @@ function Handle-ServerBackupAdminCommand {
         try {
             Import-Module "$PSScriptRoot\..\..\..\automation\backup\backup.psm1" -Force
         } catch {
-            Write-Warning "[ADMIN-COMMANDS] Failed to import backup module: $($_.Exception.Message)"
+            Write-Log "[ADMIN-COMMANDS] Failed to import backup module: $($_.Exception.Message)" -Level Error
         }
         
         if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) {
@@ -636,13 +897,13 @@ function Handle-ServerCancelAdminCommand {
             $cancelled = Cancel-ScheduledTask
             if ($cancelled) {
                 Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Cancel Actions** - All scheduled admin actions cancelled"
-                Write-Host "[ADMIN-COMMANDS] Cancel command executed - scheduled actions cancelled" -ForegroundColor Yellow
+                Write-Log "Cancel command executed - scheduled actions cancelled" -Level "Info"
             } else {
                 Send-CommandResponse -ChannelId $ResponseChannelId -Content ":information_source: **No Actions** - No scheduled actions to cancel"
             }
         } else {
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Cancel Actions** - All scheduled admin actions cancelled"
-            Write-Host "[ADMIN-COMMANDS] Cancel command executed (scheduled tasks module not available)" -ForegroundColor Yellow
+            Write-Log "Cancel command executed (scheduled tasks module not available)" -Level "Warning"
         }
     } catch {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to cancel actions: $($_.Exception.Message)"
@@ -667,7 +928,7 @@ function Handle-ServerRestartSkipAdminCommand {
         $isAlreadySkipped = Get-RestartSkipStatus
         if ($isAlreadySkipped) {
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":information_source: **Already Skipped** - Next restart is already set to be skipped. Use this command only when you want to skip the upcoming restart."
-            Write-Host "[ADMIN-COMMANDS] Restart skip command rejected - restart already skipped" -ForegroundColor Yellow
+            Write-Log "Restart skip command rejected - restart already skipped" -Level "Warning"
             return
         }
         
@@ -743,7 +1004,7 @@ function Handle-ServerRestartSkipAdminCommand {
         # Validate that we actually have real times, not just defaults
         if ($currentRestartTime -eq "unknown time") {
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Could not determine next restart time. Check server configuration."
-            Write-Host "[ADMIN-COMMANDS] Restart skip failed - could not determine restart times" -ForegroundColor Red
+            Write-Log "Restart skip failed - could not determine restart times" -Level "Error"
             return
         }
         
@@ -758,30 +1019,30 @@ function Handle-ServerRestartSkipAdminCommand {
             # Send immediate notification to players about skipped restart
             if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
                 try {
-                    Send-DiscordNotification -Type "server.scheduledRestart" -Data @{
+                    $null = Send-DiscordNotification -Type "server.scheduledRestart" -Data @{
                         event = "Scheduled restart at $currentRestartTime has been cancelled"
                         nextRestart = $nextRestartTime
                         skipped = $true
                         immediate = $true
                     }
-                    Write-Host "[ADMIN-COMMANDS] Immediate player notification sent about restart skip" -ForegroundColor Green
+                    Write-Log "Immediate player notification sent about restart skip" -Level "Info"
                 } catch {
-                    Write-Host "[ADMIN-COMMANDS] Failed to send immediate player notification: $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Log "Failed to send immediate player notification: $($_.Exception.Message)" -Level "Warning"
                 }
             }
             
             # Note: Server status embed will update automatically in next cycle to show new restart time
             
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":white_check_mark: **Restart Skipped** - Restart at $currentRestartTime cancelled, next restart: $nextRestartTime"
-            Write-Host "[ADMIN-COMMANDS] Restart skip command executed - next restart will be skipped" -ForegroundColor Yellow
-            Write-Host "[ADMIN-COMMANDS] Server status embed will update automatically in next cycle" -ForegroundColor Cyan
+            Write-Log "Restart skip command executed - next restart will be skipped" -Level "Info"
+            Write-Log "Server status embed will update automatically in next cycle" -Level "Debug"
         } else {
             Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Skip Cancelled** - Restart skip was cancelled"
-            Write-Host "[ADMIN-COMMANDS] Restart skip cancelled by admin" -ForegroundColor Yellow
+            Write-Log "Restart skip cancelled by admin" -Level "Info"
         }
     } catch {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to skip restart: $($_.Exception.Message)"
-        Write-Host "[ADMIN-COMMANDS] Error executing restart skip: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Error executing restart skip: $($_.Exception.Message)" -Level "Error"
     }
 }
 
@@ -842,6 +1103,9 @@ function Execute-AdminCommand {
             'server_backup' {
                 Handle-ServerBackupAdminCommand -ResponseChannelId $ResponseChannelId
             }
+            'server_validate' {
+                Handle-ServerValidateAdminCommand -ResponseChannelId $ResponseChannelId -UserId $UserId
+            }
             'server_cancel' {
                 Handle-ServerCancelAdminCommand -ResponseChannelId $ResponseChannelId
             }
@@ -854,7 +1118,7 @@ function Execute-AdminCommand {
         }
         
     } catch {
-        Write-Warning "[ADMIN-COMMANDS] Error executing admin command '$CommandName': $($_.Exception.Message)"
+        Write-Log "[ADMIN-COMMANDS] Error executing admin command '$CommandName': $($_.Exception.Message)" -Level Error
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to execute admin command: $($_.Exception.Message)"
     }
 }
@@ -871,6 +1135,7 @@ Export-ModuleMember -Function @(
     'Handle-ServerStopAdminCommand',
     'Handle-ServerRestartAdminCommand',
     'Handle-ServerUpdateAdminCommand',
+    'Handle-ServerValidateAdminCommand',
     'Handle-ServerBackupAdminCommand',
     'Handle-ServerCancelAdminCommand',
     'Handle-ServerRestartSkipAdminCommand'

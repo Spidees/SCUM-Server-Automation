@@ -5,6 +5,17 @@
 # Includes server info and status commands for regular users
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for discord-player-commands module" -ForegroundColor Yellow
+}
+
 function Handle-ServerInfoPlayerCommand {
     <#
     .SYNOPSIS
@@ -133,7 +144,7 @@ function Execute-PlayerCommand {
     )
     
     try {
-        Write-Host "[PLAYER-COMMANDS] Executing player command: $CommandName" -ForegroundColor Blue
+        Write-Log "Executing player command: $CommandName" -Level "Debug"
         
         switch ($CommandName) {
             'server_info' {
@@ -151,7 +162,7 @@ function Execute-PlayerCommand {
         }
         
     } catch {
-        Write-Warning "[PLAYER-COMMANDS] Error executing player command '$CommandName': $($_.Exception.Message)"
+        Write-Log "[PLAYER-COMMANDS] Error executing player command '$CommandName': $($_.Exception.Message)" -Level Error
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to execute player command: $($_.Exception.Message)"
     }
 }
@@ -182,12 +193,12 @@ function Send-CommandResponse {
             }
             
             $null = Send-DiscordMessage @messageParams
-            Write-Verbose "[PLAYER-COMMANDS] Response sent to channel $ChannelId"
+            Write-Log "[PLAYER-COMMANDS] Response sent to channel $ChannelId" -Level "Debug"
         } else {
-            Write-Warning "[PLAYER-COMMANDS] Send-DiscordMessage function not available"
+            Write-Log "[PLAYER-COMMANDS] Send-DiscordMessage function not available" -Level Warning
         }
     } catch {
-        Write-Warning "[PLAYER-COMMANDS] Failed to send response: $($_.Exception.Message)"
+        Write-Log "[PLAYER-COMMANDS] Failed to send response: $($_.Exception.Message)" -Level Error
     }
 }
 

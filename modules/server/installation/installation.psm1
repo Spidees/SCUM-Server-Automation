@@ -7,18 +7,15 @@
 
 #Requires -Version 5.1
 
-# Import common module during initialization  
-function Import-RequiredModules {
-    <#
-    .SYNOPSIS
-    Import required modules for server installation
-    #>
-    $commonPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "core\common\common.psm1"
-    if (Test-Path $commonPath) {
-        Import-Module $commonPath -Force -Global
-    } else {
-        throw "Cannot find common module at: $commonPath"
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
     }
+} catch {
+    Write-Host "[WARNING] Common module not available for installation module" -ForegroundColor Yellow
 }
 
 # Module variables
@@ -41,9 +38,6 @@ function Initialize-InstallationModule {
         [Parameter(Mandatory)]
         [object]$Config
     )
-    
-    # Import required modules
-    Import-RequiredModules
     
     $script:installationConfig = $Config
     Write-Log "[Installation] Module initialized"

@@ -5,6 +5,17 @@
 # Handles message sending, embed posting, and bot activity updates
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for discord-api module" -ForegroundColor Yellow
+}
+
 # Global variables
 $script:BotToken = $null
 
@@ -21,7 +32,7 @@ function Initialize-DiscordAPI {
     )
     
     $script:BotToken = $Token
-    Write-Host "[DISCORD-API] Bot token initialized successfully" -ForegroundColor Green
+    Write-Log "[DISCORD-API] Bot token initialized successfully"
 }
 
 function Send-DiscordMessage {
@@ -45,7 +56,7 @@ function Send-DiscordMessage {
     $botToken = if ($Token) { $Token } else { $script:BotToken }
     
     if (-not $botToken) {
-        Write-Warning "[DISCORD-API] No bot token available for sending message"
+        Write-Log "[DISCORD-API] No bot token available for sending message" -Level Warning
         return $null
     }
     
@@ -133,9 +144,9 @@ function Send-DiscordMessage {
                     # Parse error response if it's JSON
                     try {
                         $errorObject = $errorContent | ConvertFrom-Json
-                        Write-Warning "Discord API Error: $($errorObject.message) (Code: $($errorResponse.StatusCode))"
+                        Write-Log "Discord API Error: $($errorObject.message) (Code: $($errorResponse.StatusCode))" -Level Error
                     } catch {
-                        Write-Warning "Discord API Error: $errorContent (Code: $($errorResponse.StatusCode))"
+                        Write-Log "Discord API Error: $errorContent (Code: $($errorResponse.StatusCode))" -Level Error
                     }
                 }
                 
@@ -148,7 +159,7 @@ function Send-DiscordMessage {
             
             # Check if it's a rate limit error (429)
             if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 429) {
-                Write-Warning "Discord rate limit hit (attempt $retryCount/$MaxRetries), waiting..."
+                Write-Log "Discord rate limit hit (attempt $retryCount/$MaxRetries), waiting..." -Level Warning
                 
                 # Extract retry-after from response if available
                 $retryAfter = 1
@@ -214,7 +225,7 @@ function Update-DiscordMessage {
     $botToken = if ($Token) { $Token } else { $script:BotToken }
     
     if (-not $botToken) {
-        Write-Warning "[DISCORD-API] No bot token available for updating message"
+        Write-Log "[DISCORD-API] No bot token available for updating message" -Level Warning
         return $null
     }
     
@@ -239,21 +250,88 @@ function Update-DiscordMessage {
             }
             
             $uri = "https://discord.com/api/v10/channels/$ChannelId/messages/$MessageId"
+            
+            # Convert to JSON with proper UTF-8 encoding (same as Send-DiscordMessage)
             $json = $body | ConvertTo-Json -Depth 10
             
-            $response = Invoke-RestMethod -Uri $uri -Method Patch -Headers $headers -Body $json
-            # Return only message ID for success confirmation, not full response
-            if ($response -and $response.id) {
-                return @{ id = $response.id; success = $true }
+            # Ensure proper UTF-8 byte encoding for international characters
+            $utf8Bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+            
+            # Use WebRequest instead of Invoke-RestMethod for better encoding control
+            $webRequest = [System.Net.WebRequest]::Create($uri)
+            $webRequest.Method = "PATCH"
+            $webRequest.ContentType = "application/json; charset=utf-8"
+            $webRequest.ContentLength = $utf8Bytes.Length
+            
+            # Set User-Agent using the proper property
+            $webRequest.UserAgent = "SCUM-Server-Manager/1.0"
+            
+            # Add other headers (skip Content-Type and User-Agent)
+            foreach ($key in $headers.Keys) {
+                if ($key -eq "Content-Type" -or $key -eq "User-Agent") {
+                    # Already set above
+                    continue
+                }
+                $webRequest.Headers.Add($key, $headers[$key])
             }
-            return $response
+            
+            # Write UTF-8 encoded data
+            $requestStream = $webRequest.GetRequestStream()
+            $requestStream.Write($utf8Bytes, 0, $utf8Bytes.Length)
+            $requestStream.Close()
+            
+            # Get response
+            try {
+                $response = $webRequest.GetResponse()
+                $responseStream = $response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($responseStream, [System.Text.Encoding]::UTF8)
+                $responseContent = $reader.ReadToEnd()
+                $reader.Close()
+                $responseStream.Close()
+                $response.Close()
+                
+                $responseObject = $responseContent | ConvertFrom-Json
+                
+                # Return only message ID for success confirmation
+                if ($responseObject -and $responseObject.id) {
+                    return @{ id = $responseObject.id; success = $true }
+                }
+                return $responseObject
+                
+            } catch [System.Net.WebException] {
+                $webException = $_.Exception
+                
+                # Handle rate limiting
+                if ($webException.Response -and $webException.Response.StatusCode -eq 429) {
+                    Write-Log "Discord rate limit hit during update (attempt $retryCount/$MaxRetries), waiting..." -Level Warning
+                    
+                    # Extract retry-after from response if available
+                    $retryAfter = 1
+                    try {
+                        $errorResponse = $webException.Response.GetResponseStream()
+                        $reader = New-Object System.IO.StreamReader($errorResponse, [System.Text.Encoding]::UTF8)
+                        $errorContent = $reader.ReadToEnd() | ConvertFrom-Json
+                        if ($errorContent.retry_after) {
+                            $retryAfter = [Math]::Max($errorContent.retry_after, 1)
+                        }
+                    } catch {
+                        # Use default retry time
+                    }
+                    
+                    Start-Sleep -Seconds ($retryAfter + 1)
+                    continue
+                }
+                
+                # Re-throw for other web exceptions
+                throw
+            }
             
         } catch {
             $retryCount++
             
             # Check if it's a rate limit error (429)
             if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 429) {
-                Write-Warning "Discord rate limit hit during update (attempt $retryCount/$MaxRetries), waiting..."
+                Write-Log "Discord rate limit hit during update (attempt $retryCount/$MaxRetries), waiting..." -Level Warning
                 
                 # Extract retry-after from response if available
                 $retryAfter = 1
@@ -312,7 +390,7 @@ function Get-DiscordChannel {
     $botToken = if ($Token) { $Token } else { $script:BotToken }
     
     if (-not $botToken) {
-        Write-Warning "[DISCORD-API] No bot token available for getting channel"
+        Write-Log "[DISCORD-API] No bot token available for getting channel" -Level Warning
         return $null
     }
     
@@ -349,7 +427,7 @@ function Send-DiscordTyping {
     $botToken = if ($Token) { $Token } else { $script:BotToken }
     
     if (-not $botToken) {
-        Write-Warning "[DISCORD-API] No bot token available for typing indicator"
+        Write-Log "[DISCORD-API] No bot token available for typing indicator" -Level Warning
         return $null
     }
     
@@ -365,7 +443,7 @@ function Send-DiscordTyping {
         
     } catch {
         # Typing indicators are not critical, so we don't throw errors
-        Write-Verbose "Failed to send typing indicator: $($_.Exception.Message)"
+        Write-Log "Failed to send typing indicator: $($_.Exception.Message)" -Level "Debug"
     }
 }
 
@@ -389,7 +467,7 @@ function Get-DiscordChannelMessages {
     )
     
     if (-not $script:BotToken) {
-        Write-Warning "[DISCORD-API] Bot token not available for getting messages"
+        Write-Log "[DISCORD-API] Bot token not available for getting messages" -Level Warning
         return @()
     }
     
@@ -411,7 +489,7 @@ function Get-DiscordChannelMessages {
         return $response
         
     } catch {
-        Write-Warning "[DISCORD-API] Failed to get channel messages: $($_.Exception.Message)"
+        Write-Log "[DISCORD-API] Failed to get channel messages: $($_.Exception.Message)" -Level Error
         return @()
     }
 }
@@ -430,7 +508,7 @@ function Remove-DiscordMessage {
     )
     
     if (-not $script:BotToken) {
-        Write-Warning "[DISCORD-API] Bot token not available for deleting messages"
+        Write-Log "[DISCORD-API] Bot token not available for deleting messages" -Level Warning
         return $false
     }
     
@@ -445,7 +523,7 @@ function Remove-DiscordMessage {
         return $true
         
     } catch {
-        Write-Warning "[DISCORD-API] Failed to delete message: $($_.Exception.Message)"
+        Write-Log "[DISCORD-API] Failed to delete message: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -464,7 +542,7 @@ function Get-UserGuildRoles {
     )
     
     if (-not $script:BotToken) {
-        Write-Warning "[DISCORD-API] Bot token not available for getting user roles"
+        Write-Log "[DISCORD-API] Bot token not available for getting user roles" -Level Warning
         return @()
     }
     
@@ -479,7 +557,7 @@ function Get-UserGuildRoles {
         return $response.roles
         
     } catch {
-        Write-Warning "[DISCORD-API] Failed to get user roles: $($_.Exception.Message)"
+        Write-Log "[DISCORD-API] Failed to get user roles: $($_.Exception.Message)" -Level Error
         return @()
     }
 }
@@ -504,7 +582,7 @@ function Invoke-DiscordAPI {
     $botToken = if ($Token) { $Token } else { $script:BotToken }
     
     if (-not $botToken) {
-        Write-Warning "[DISCORD-API] No bot token available for API call"
+        Write-Log "[DISCORD-API] No bot token available for API call" -Level Warning
         return $null
     }
     
@@ -544,13 +622,13 @@ function Invoke-DiscordAPI {
                 return $true
             }
             
-            Write-Warning "[DISCORD-API] API call failed: HTTP $statusCode - $statusDescription"
+            Write-Log "[DISCORD-API] API call failed: HTTP $statusCode - $statusDescription" -Level Warning
         } else {
-            Write-Warning "[DISCORD-API] API call failed: $($_.Exception.Message)"
+            Write-Log "[DISCORD-API] API call failed: $($_.Exception.Message)" -Level Error
         }
         return $null
     } catch {
-        Write-Warning "[DISCORD-API] API call failed: $($_.Exception.Message)"
+        Write-Log "[DISCORD-API] API call failed: $($_.Exception.Message)" -Level Error
         return $null
     }
 }

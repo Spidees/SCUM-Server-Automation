@@ -5,6 +5,17 @@
 # Provides countdown notifications and task cancellation
 # ===============================================================
 
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for discord-scheduled-tasks module" -ForegroundColor Yellow
+}
+
 # Module variables
 $script:ScheduledTasks = @{}
 $script:TaskConfig = $null
@@ -23,7 +34,7 @@ function Initialize-ScheduledTasksModule {
     
     $script:TaskConfig = $Config
     $script:ScheduledTasks = @{}
-    Write-Host "[SCHEDULED-TASKS] Module initialized" -ForegroundColor Green
+    Write-Log "Scheduled tasks module initialized" -Level "Info"
 }
 
 function Add-ScheduledTask {
@@ -76,7 +87,7 @@ function Add-ScheduledTask {
     
     $script:ScheduledTasks[$TaskType] = $task
     
-    Write-Host "[SCHEDULED-TASKS] Added $TaskType task for $DelayMinutes minutes (execution: $executionTime)" -ForegroundColor Yellow
+    Write-Log "Added $TaskType task for $DelayMinutes minutes (execution: $executionTime)" -Level "Info"
     
     return $task
 }
@@ -103,7 +114,7 @@ function Cancel-ScheduledTask {
         if ($script:ScheduledTasks.ContainsKey($TaskType)) {
             $script:ScheduledTasks.Remove($TaskType)
             if (-not $Silent) {
-                Write-Host "[SCHEDULED-TASKS] Cancelled $TaskType task" -ForegroundColor Yellow
+                Write-Log "Cancelled $TaskType task" -Level "Info"
             }
             return $true
         }
@@ -113,7 +124,7 @@ function Cancel-ScheduledTask {
         $cancelledCount = $script:ScheduledTasks.Count
         $script:ScheduledTasks.Clear()
         if (-not $Silent) {
-            Write-Host "[SCHEDULED-TASKS] Cancelled $cancelledCount scheduled tasks" -ForegroundColor Yellow
+            Write-Log "Cancelled $cancelledCount scheduled tasks" -Level "Info"
         }
         return $cancelledCount -gt 0
     }
@@ -198,10 +209,10 @@ function Send-TaskWarning {
             }
         }
         
-        Write-Host "[SCHEDULED-TASKS] Sent $MinutesRemaining minute warning for $($Task.Type) to players" -ForegroundColor Cyan
+        Write-Log "Sent $MinutesRemaining minute warning for $($Task.Type) to players" -Level "Info"
         
     } catch {
-        Write-Warning "[SCHEDULED-TASKS] Failed to send task warning: $($_.Exception.Message)"
+        Write-Log "[SCHEDULED-TASKS] Failed to send task warning: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -242,31 +253,31 @@ function Execute-ScheduledTask {
             'stop' {
                 if (Get-Command "Stop-ServerService" -ErrorAction SilentlyContinue) {
                     Stop-ServerService
-                    Write-Host "[SCHEDULED-TASKS] Executed scheduled server stop" -ForegroundColor Green
+                    Write-Log "Executed scheduled server stop" -Level "Info"
                 } else {
-                    Write-Warning "[SCHEDULED-TASKS] Stop-ServerService function not available"
+                    Write-Log "[SCHEDULED-TASKS] Stop-ServerService function not available" -Level Warning
                 }
             }
             'restart' {
                 if (Get-Command "Restart-ServerService" -ErrorAction SilentlyContinue) {
                     Restart-ServerService
-                    Write-Host "[SCHEDULED-TASKS] Executed scheduled server restart" -ForegroundColor Green
+                    Write-Log "Executed scheduled server restart" -Level "Info"
                 } else {
-                    Write-Warning "[SCHEDULED-TASKS] Restart-ServerService function not available"
+                    Write-Log "[SCHEDULED-TASKS] Restart-ServerService function not available" -Level Warning
                 }
             }
             'update' {
                 if (Get-Command "Update-ServerInstallation" -ErrorAction SilentlyContinue) {
                     Update-ServerInstallation
-                    Write-Host "[SCHEDULED-TASKS] Executed scheduled server update" -ForegroundColor Green
+                    Write-Log "Executed scheduled server update" -Level "Info"
                 } else {
-                    Write-Warning "[SCHEDULED-TASKS] Update-ServerInstallation function not available"
+                    Write-Log "[SCHEDULED-TASKS] Update-ServerInstallation function not available" -Level Warning
                 }
             }
         }
         
     } catch {
-        Write-Warning "[SCHEDULED-TASKS] Error executing scheduled $($Task.Type): $($_.Exception.Message)"
+        Write-Log "[SCHEDULED-TASKS] Error executing scheduled $($Task.Type): $($_.Exception.Message)" -Level Error
         
         # Send error notification
         if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {

@@ -1,4 +1,4 @@
-﻿# ===============================================================
+# ===============================================================
 # SCUM Server Automation - Server Status Embed
 # ===============================================================
 # Live-updating Discord embed showing server status and statistics
@@ -11,6 +11,7 @@ using module "..\templates\embed-styles.psm1"
 # Global variables
 $script:ServerStatusEmbed = $null
 $script:DiscordConfig = $null
+$script:TimezoneOffset = 1  # Default timezone offset (+1 for Central Europe)
 $script:LastUpdate = Get-Date
 $script:LastKnownState = $null  # Track last known server state for change detection
 
@@ -43,7 +44,7 @@ function Get-RandomServerStatusImageUrl {
         }
         
     } catch {
-        Write-Warning "Failed to get server status image URL: $($_.Exception.Message)"
+        Write-Log "Failed to get server status image URL: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -71,15 +72,31 @@ function Initialize-ServerStatusEmbed {
         $script:DiscordConfig.publicPort = $Config.publicPort
     }
     
+    # Store timezone offset (default to +1 if not specified)
+    $script:TimezoneOffset = 1  # Default to +1 (Central Europe)
+    if ($script:DiscordConfig.LiveEmbeds -and $script:DiscordConfig.LiveEmbeds.TimezoneOffset) {
+        try {
+            $offsetStr = $script:DiscordConfig.LiveEmbeds.TimezoneOffset.ToString()
+            if ($offsetStr -match '^[+-]?\d+$') {
+                $script:TimezoneOffset = [int]$offsetStr
+                Write-Log "Timezone offset set to: $($script:TimezoneOffset)" -Level "Debug"
+            } else {
+                Write-Log "Invalid timezone offset format '$offsetStr', using default +1" -Level "Warning"
+            }
+        } catch {
+            Write-Log "Failed to parse timezone offset, using default +1: $($_.Exception.Message)" -Level "Warning"
+        }
+    }
+    
     if (-not $script:DiscordConfig.LiveEmbeds -or -not $script:DiscordConfig.LiveEmbeds.StatusChannel) {
-        Write-Verbose "Server status embed not configured"
+        Write-Log "Server status embed not configured" -Level "Debug"
         return $false
     }
     
     try {
         # Check if embed already exists in memory
         if ($script:ServerStatusEmbed -and $script:ServerStatusEmbed.MessageId) {
-            Write-Host "Server status embed already exists (ID: $($script:ServerStatusEmbed.MessageId))" -ForegroundColor Yellow
+            Write-Log "Server status embed already exists (ID: $($script:ServerStatusEmbed.MessageId))" -Level "Info"
             return $true
         }
         
@@ -87,7 +104,7 @@ function Initialize-ServerStatusEmbed {
         $existingEmbed = Find-ExistingServerStatusEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel
         
         if ($existingEmbed) {
-            Write-Host "Found existing server status embed (ID: $($existingEmbed.id))" -ForegroundColor Cyan
+            Write-Log "Found existing server status embed (ID: $($existingEmbed.id))" -Level "Info"
             $script:ServerStatusEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.StatusChannel
                 MessageId = $existingEmbed.id
@@ -97,7 +114,7 @@ function Initialize-ServerStatusEmbed {
         }
         
         # Create new embed if none found
-        Write-Host "Creating new server status embed..." -ForegroundColor Yellow
+        Write-Log "Creating new server status embed..." -Level "Info"
         $embed = New-ServerStatusEmbed
         $message = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel -Embed $embed
         
@@ -107,14 +124,14 @@ function Initialize-ServerStatusEmbed {
                 MessageId = $message.id
                 LastUpdate = Get-Date
             }
-            Write-Host "âś… Server status embed created: $($message.id)" -ForegroundColor Green
+            Write-Log "âś… Server status embed created: $($message.id)" -Level "Info"
             return $true
         }
         
         return $false
         
     } catch {
-        Write-Warning "Failed to initialize server status embed: $($_.Exception.Message)"
+        Write-Log "Failed to initialize server status embed: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -130,7 +147,7 @@ function Update-ServerStatusEmbed {
     
     try {
         if (-not $script:ServerStatusEmbed) {
-            Write-Verbose "Server status embed not initialized"
+            Write-Log "Server status embed not initialized" -Level "Debug"
             return
         }
         
@@ -145,19 +162,19 @@ function Update-ServerStatusEmbed {
             if (-not $script:LastKnownState -or $script:LastKnownState -ne $ServerStatus.ActualServerState) {
                 $forceUpdate = $true
                 $script:LastKnownState = $ServerStatus.ActualServerState
-                Write-Verbose "[EMBED] Force updating due to state change: $($ServerStatus.ActualServerState)"
+                Write-Log "[EMBED] Force updating due to state change: $($ServerStatus.ActualServerState)" -Level "Debug"
             }
         }
         
         # If Force flag is used, reset the update timer to allow immediate update
         if ($Force.IsPresent) {
             $script:LastUpdate = (Get-Date).AddSeconds(-$updateInterval - 1)
-            Write-Verbose "[EMBED] Force flag used - resetting rate limit timer"
+            Write-Log "[EMBED] Force flag used - resetting rate limit timer" -Level "Debug"
             $forceUpdate = $true
         }
         
         if (-not $forceUpdate -and $timeSinceUpdate.TotalSeconds -lt $updateInterval) {
-            Write-Verbose "[EMBED] Rate limit active - skipping update (${timeSinceUpdate.TotalSeconds}s < ${updateInterval}s)"
+            Write-Log "[EMBED] Rate limit active - skipping update (${timeSinceUpdate.TotalSeconds}s < ${updateInterval}s)" -Level "Debug"
             return
         }
         
@@ -168,14 +185,14 @@ function Update-ServerStatusEmbed {
         
         if ($result) {
             $script:LastUpdate = Get-Date
-            Write-Verbose "Server status embed updated"
+            Write-Log "Server status embed updated" -Level "Debug"
         }
         
         # Explicitly return nothing to prevent any output
         return
         
     } catch {
-        Write-Warning "Failed to update server status embed: $($_.Exception.Message)"
+        Write-Log "Failed to update server status embed: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -190,7 +207,7 @@ function New-ServerStatusEmbed {
     
     # Server basic info - Get fresh data if needed
     if (-not $ServerStatus -or $ServerStatus.Count -eq 0 -or $null -eq $ServerStatus.IsRunning) {
-        Write-Verbose "[EMBED] No ServerStatus data provided, getting fresh data from Get-ServerStatus"
+        Write-Log "[EMBED] No ServerStatus data provided, getting fresh data from Get-ServerStatus" -Level "Debug"
         if (Get-Command "Get-ServerStatus" -ErrorAction SilentlyContinue) {
             $ServerStatus = Get-ServerStatus
         }
@@ -212,7 +229,7 @@ function New-ServerStatusEmbed {
                 $script:DiscordConfig.publicPort = $configContent.publicPort
             }
         } catch {
-            Write-Verbose "Failed to load server IP from config file: $($_.Exception.Message)"
+            Write-Log "Failed to load server IP from config file: $($_.Exception.Message)" -Level "Debug"
         }
     }
     
@@ -352,24 +369,24 @@ function Get-NextRestartTime {
     $skipStatus = $false
     try {
         # Import scheduling module to access skip functions - use absolute path
-        Write-Verbose "Attempting to import scheduling module..."
+        Write-Log "Attempting to import scheduling module..." -Level "Debug"
         $schedulingModulePath = "c:\SCUMServer\modules\automation\scheduling\scheduling.psm1"
-        Write-Verbose "Using scheduling module path: $schedulingModulePath"
+        Write-Log "Using scheduling module path: $schedulingModulePath" -Level "Debug"
         
         # Import with Global scope to ensure functions are available
         Import-Module $schedulingModulePath -Force -Global -ErrorAction Stop
-        Write-Verbose "Scheduling module imported successfully"
+        Write-Log "Scheduling module imported successfully" -Level "Debug"
         
         if (Get-Command "Get-RestartSkipStatus" -ErrorAction SilentlyContinue) {
-            Write-Verbose "Get-RestartSkipStatus command found, calling it..."
+            Write-Log "Get-RestartSkipStatus command found, calling it..." -Level "Debug"
             $skipStatus = Get-RestartSkipStatus
-            Write-Verbose "Skip status checked: $skipStatus"
+            Write-Log "Skip status checked: $skipStatus" -Level "Debug"
         } else {
-            Write-Verbose "Get-RestartSkipStatus command not found after import"
+            Write-Log "Get-RestartSkipStatus command not found after import" -Level "Debug"
         }
     } catch {
-        Write-Verbose "Could not check restart skip status: $($_.Exception.Message)"
-        Write-Verbose "Error details: $($_.Exception.ToString())"
+        Write-Log "Could not check restart skip status: $($_.Exception.Message)" -Level "Debug"
+        Write-Log "Error details: $($_.Exception.ToString())" -Level "Debug"
     }
     
     # No default fallback times - must load from configuration
@@ -386,10 +403,10 @@ function Get-NextRestartTime {
                 if ($configContent.restartTimes -and $configContent.restartTimes.Count -gt 0) {
                     $restartTimes = $configContent.restartTimes
                     $configLoaded = $true
-                    Write-Verbose "Loaded restart times from config file: $($restartTimes -join ', ')"
+                    Write-Log "Loaded restart times from config file: $($restartTimes -join ', ')" -Level "Debug"
                 }
             } catch {
-                Write-Verbose "Failed to read config file: $($_.Exception.Message)"
+                Write-Log "Failed to read config file: $($_.Exception.Message)" -Level "Debug"
             }
         }
         
@@ -397,7 +414,7 @@ function Get-NextRestartTime {
         if (-not $configLoaded -and $script:DiscordConfig -and $script:DiscordConfig.restartTimes) {
             $restartTimes = $script:DiscordConfig.restartTimes
             $configLoaded = $true
-            Write-Verbose "Using restart times from Discord config: $($restartTimes -join ', ')"
+            Write-Log "Using restart times from Discord config: $($restartTimes -join ', ')" -Level "Debug"
         }
         
         # Source 3: Global config variable (last resort)
@@ -406,19 +423,19 @@ function Get-NextRestartTime {
             if ($globalConfig.restartTimes -and $globalConfig.restartTimes.Count -gt 0) {
                 $restartTimes = $globalConfig.restartTimes
                 $configLoaded = $true
-                Write-Verbose "Using restart times from global config: $($restartTimes -join ', ')"
+                Write-Log "Using restart times from global config: $($restartTimes -join ', ')" -Level "Debug"
             }
         }
         
     } catch {
-        Write-Verbose "Error loading restart times: $($_.Exception.Message)"
+        Write-Log "Error loading restart times: $($_.Exception.Message)" -Level "Debug"
     }
     
     $now = Get-Date
     $today = $now.Date
     
-    Write-Verbose "Current time: $($now.ToString('yyyy-MM-dd HH:mm:ss'))"
-    Write-Verbose "Available restart times: $($restartTimes -join ', ')"
+    Write-Log "Current time: $($now.ToString('yyyy-MM-dd HH:mm:ss'))" -Level "Debug"
+    Write-Log "Available restart times: $($restartTimes -join ', ')" -Level "Debug"
     
     # Convert restart times to string array and validate
     $timeArray = @()
@@ -426,68 +443,68 @@ function Get-NextRestartTime {
         if ($time -and $time.ToString().Trim() -ne "" -and $time.ToString().Trim() -match '^\d{1,2}:\d{2}$') {
             $timeArray += $time.ToString().Trim()
         } else {
-            Write-Verbose "Skipping invalid restart time: '$time'"
+            Write-Log "Skipping invalid restart time: '$time'" -Level "Debug"
         }
     }
     
     if ($timeArray.Count -eq 0) {
-        Write-Verbose "No valid restart times found"
+        Write-Log "No valid restart times found" -Level "Debug"
         return "Not scheduled"
     }
     
-    Write-Verbose "Valid restart times: $($timeArray -join ', ')"
+    Write-Log "Valid restart times: $($timeArray -join ', ')" -Level "Debug"
     
     # Find next restart time TODAY
     $foundToday = $false
     foreach ($timeStr in $timeArray) {
         try {
             $restartTime = [DateTime]::ParseExact("$($today.ToString('yyyy-MM-dd')) $timeStr", "yyyy-MM-dd HH:mm", $null)
-            Write-Verbose "Checking: $($restartTime.ToString('HH:mm')) vs current: $($now.ToString('HH:mm'))"
+            Write-Log "Checking: $($restartTime.ToString('HH:mm')) vs current: $($now.ToString('HH:mm'))" -Level "Debug"
             
             if ($restartTime -gt $now) {
-                Write-Verbose "Next restart TODAY: $($restartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+                Write-Log "Next restart TODAY: $($restartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level "Debug"
                 
                 # If this restart will be skipped, find the next one after it
                 if ($skipStatus) {
-                    Write-Verbose "Current restart will be skipped, looking for next restart after $($restartTime.ToString('HH:mm'))"
+                    Write-Log "Current restart will be skipped, looking for next restart after $($restartTime.ToString('HH:mm'))" -Level "Debug"
                     
                     # Look for next restart today after the skipped one
                     foreach ($nextTimeStr in $timeArray) {
                         try {
                             $nextRestartTime = [DateTime]::ParseExact("$($today.ToString('yyyy-MM-dd')) $nextTimeStr", "yyyy-MM-dd HH:mm", $null)
                             if ($nextRestartTime -gt $restartTime) {
-                                Write-Verbose "Found next restart today after skip: $($nextRestartTime.ToString('HH:mm'))"
-                                $utcTime = $nextRestartTime.ToUniversalTime().AddHours(-1)
+                                Write-Log "Found next restart today after skip: $($nextRestartTime.ToString('HH:mm'))" -Level "Debug"
+                                $utcTime = $nextRestartTime.ToUniversalTime().AddHours(-$script:TimezoneOffset)
                                 $unixTimestamp = [int64](($utcTime - (Get-Date "1970-01-01 00:00:00").ToUniversalTime()).TotalSeconds)
                                 return "<t:$unixTimestamp`:R>"
                             }
                         } catch {
-                            Write-Verbose "Failed to parse next restart time '$nextTimeStr': $($_.Exception.Message)"
+                            Write-Log "Failed to parse next restart time '$nextTimeStr': $($_.Exception.Message)" -Level "Debug"
                         }
                     }
                     
                     # No more restarts today after the skipped one, use tomorrow's first restart
-                    Write-Verbose "No more restarts today after skipped one, using tomorrow's first restart"
+                    Write-Log "No more restarts today after skipped one, using tomorrow's first restart" -Level "Debug"
                     $sortedTimes = $timeArray | Sort-Object { [DateTime]::ParseExact($_, "HH:mm", $null) }
                     $tomorrow = $today.AddDays(1)
                     $firstRestartTomorrow = [DateTime]::ParseExact("$($tomorrow.ToString('yyyy-MM-dd')) $($sortedTimes[0])", "yyyy-MM-dd HH:mm", $null)
-                    $utcTime = $firstRestartTomorrow.ToUniversalTime().AddHours(-1)
+                    $utcTime = $firstRestartTomorrow.ToUniversalTime().AddHours(-$script:TimezoneOffset)
                     $unixTimestamp = [int64](($utcTime - (Get-Date "1970-01-01 00:00:00").ToUniversalTime()).TotalSeconds)
                     return "<t:$unixTimestamp`:R>"
                 } else {
                     # Normal case - no skip
-                    $utcTime = $restartTime.ToUniversalTime().AddHours(-1)
+                    $utcTime = $restartTime.ToUniversalTime().AddHours(-$script:TimezoneOffset)
                     $unixTimestamp = [int64](($utcTime - (Get-Date "1970-01-01 00:00:00").ToUniversalTime()).TotalSeconds)
                     return "<t:$unixTimestamp`:R>"
                 }
             }
         } catch {
-            Write-Verbose "Failed to parse restart time '$timeStr': $($_.Exception.Message)"
+            Write-Log "Failed to parse restart time '$timeStr': $($_.Exception.Message)" -Level "Debug"
         }
     }
     
     # If no restart found today, check TOMORROW
-    Write-Verbose "No restart found today, checking tomorrow..."
+    Write-Log "No restart found today, checking tomorrow..." -Level "Debug"
     if ($timeArray.Count -gt 0) {
         try {
             # Sort times to get the earliest one tomorrow
@@ -495,20 +512,20 @@ function Get-NextRestartTime {
             $tomorrow = $today.AddDays(1)
             $firstRestartTomorrow = [DateTime]::ParseExact("$($tomorrow.ToString('yyyy-MM-dd')) $($sortedTimes[0])", "yyyy-MM-dd HH:mm", $null)
             
-            Write-Verbose "Next restart TOMORROW: $($firstRestartTomorrow.ToString('yyyy-MM-dd HH:mm:ss'))"
+            Write-Log "Next restart TOMORROW: $($firstRestartTomorrow.ToString('yyyy-MM-dd HH:mm:ss'))" -Level "Debug"
             # Convert to Unix timestamp - adjust for Discord timezone interpretation issue
-            $utcTime = $firstRestartTomorrow.ToUniversalTime().AddHours(-1)
+            $utcTime = $firstRestartTomorrow.ToUniversalTime().AddHours(-$script:TimezoneOffset)
             $unixTimestamp = [int64](($utcTime - (Get-Date "1970-01-01 00:00:00").ToUniversalTime()).TotalSeconds)
             
             # Note: Skip status is only for next immediate restart, not tomorrow's
             return "<t:$unixTimestamp`:R>"
         } catch {
-            Write-Verbose "Failed to calculate tomorrow's restart time: $($_.Exception.Message)"
+            Write-Log "Failed to calculate tomorrow's restart time: $($_.Exception.Message)" -Level "Debug"
         }
     }
     
     # Ultimate fallback
-    Write-Verbose "No valid restart times found for today or tomorrow"
+    Write-Log "No valid restart times found for today or tomorrow" -Level "Debug"
     return "Not scheduled"
 }
 
@@ -520,18 +537,18 @@ function Reset-ServerStatusEmbed {
     
     try {
         if ($script:ServerStatusEmbed) {
-            Write-Host "Resetting server status embed..." -ForegroundColor Yellow
+            Write-Log "Resetting server status embed..." -Level "Info"
             $script:ServerStatusEmbed = $null
             $script:LastUpdate = Get-Date
-            Write-Host "âś… Server status embed reset" -ForegroundColor Green
+            Write-Log "âś… Server status embed reset" -Level "Info"
             return $true
         }
         
-        Write-Verbose "No server status embed to reset"
+        Write-Log "No server status embed to reset" -Level "Debug"
         return $false
         
     } catch {
-        Write-Warning "Failed to reset server status embed: $($_.Exception.Message)"
+        Write-Log "Failed to reset server status embed: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -570,17 +587,17 @@ function Find-ExistingServerStatusEmbed {
                     ($embed.fields -and ($embed.fields | Where-Object { $_.name -like "*Status*" })) -or
                     $embed.footer.text -like "*Server Status*") {
                     
-                    Write-Verbose "Found existing server status embed: $($message.id)"
+                    Write-Log "Found existing server status embed: $($message.id)" -Level "Debug"
                     return $message
                 }
             }
         }
         
-        Write-Verbose "No existing server status embed found"
+        Write-Log "No existing server status embed found" -Level "Debug"
         return $null
         
     } catch {
-        Write-Warning "Failed to find existing server status embed: $($_.Exception.Message)"
+        Write-Log "Failed to find existing server status embed: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -594,4 +611,5 @@ Export-ModuleMember -Function @(
     'Find-ExistingServerStatusEmbed',
     'Get-RandomServerStatusImageUrl'
 )
+
 
