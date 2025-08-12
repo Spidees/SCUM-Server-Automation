@@ -188,7 +188,10 @@
           "restartWarning15",
           "restartWarning5",
           "restartWarning1",
-          "server.scheduledRestart"
+          "server.scheduledRestart",
+          "manualStopWarning",
+          "manualRestartWarning",
+          "manualUpdateWarning"
         ]
       }
     },
