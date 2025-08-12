@@ -370,7 +370,7 @@ function Get-NextRestartTime {
     try {
         # Import scheduling module to access skip functions - use absolute path
         Write-Log "Attempting to import scheduling module..." -Level "Debug"
-        $schedulingModulePath = "c:\SCUMServer\modules\automation\scheduling\scheduling.psm1"
+        $schedulingModulePath = Join-Path $PSScriptRoot "..\..\automation\scheduling\scheduling.psm1"
         Write-Log "Using scheduling module path: $schedulingModulePath" -Level "Debug"
         
         # Import with Global scope to ensure functions are available
