@@ -119,7 +119,7 @@ function Read-NewLogLines {
             # CRITICAL FIX: Clear event history to prevent old events from causing false notifications
             $script:LastParsedEvents = @()
             $script:LastKnownPerformanceStats = $null
-            Write-Verbose "[LogReader] Event history cleared due to log rotation"
+            Write-Log "[LogReader] Event history cleared due to log rotation" -Level Info
         }
         
         # No new content
@@ -264,7 +264,7 @@ function Parse-LogLine {
             
             # Only log summary of repeated events occasionally
             if ($script:EventCount[$parsedEvent.EventType] % 10 -eq 0) {
-                Write-Log "[LogReader] Event summary: $($parsedEvent.EventType) occurred $($script:EventCount[$parsedEvent.EventType]) times" -Level Verbose
+                Write-Log "[LogReader] Event summary: $($parsedEvent.EventType) occurred $($script:EventCount[$parsedEvent.EventType]) times" -Level Info
             }
             $script:LastEventTimestamp = $parsedEvent.Timestamp
         }
@@ -463,7 +463,7 @@ function Get-LatestPerformanceStats {
     if ($script:LastKnownPerformanceStats.Timestamp) {
         $age = (Get-Date) - $script:LastKnownPerformanceStats.Timestamp
         if ($age.TotalMinutes -gt 5) {
-            Write-Verbose "[LogReader] Performance stats too old ($([Math]::Round($age.TotalMinutes, 1)) min) - returning null"
+            Write-Log "[LogReader] Performance stats too old ($([Math]::Round($age.TotalMinutes, 1)) min) - returning null" -Level Info
             return $null
         }
     }
@@ -471,7 +471,7 @@ function Get-LatestPerformanceStats {
     # Additional validation: Check if SCUM process is actually running
     $scumProcess = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
     if (-not $scumProcess) {
-        Write-Verbose "[LogReader] Performance stats available but SCUMServer process not running - returning null"
+        Write-Log "[LogReader] Performance stats available but SCUMServer process not running - returning null" -Level Info
         return $null
     }
     
