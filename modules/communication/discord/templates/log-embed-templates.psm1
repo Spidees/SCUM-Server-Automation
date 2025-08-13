@@ -454,7 +454,7 @@ function Send-FamePointsEmbed {
                 "KillClaimed" { "Kills Claimed" }
                 default { $detail.DetailType }
             }
-            $detailsText += "• **$detailName**: $($detail.Amount)`n"
+            $detailsText += "**$detailName**: $($detail.Amount)`n"
         }
         
         $fields += @{
