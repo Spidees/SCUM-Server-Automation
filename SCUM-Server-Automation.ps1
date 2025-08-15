@@ -522,10 +522,10 @@ function Update-ManagerDiscordLeaderboards {
             $result = Update-DiscordLeaderboards -Type "player_stats"
             # Only log completion, not start
         } else {
-            Write-Log "Discord leaderboards function not available" -Level "DEBUG"
+            Write-Log "Discord leaderboards function not available" -Level Debug
         }
     } catch {
-        Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level "WARN"
+        Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -854,11 +854,11 @@ function Get-CompleteServerStatus {
             # Update script state to match monitoring data
             $script:State.IsRunning = $monitoringStatus.IsRunning
             
-            Write-Log "Using monitoring module data: IsRunning=$($status.IsRunning), Players=$($status.OnlinePlayers), Total=$($dbStats.TotalPlayers)" -Level "DEBUG"
+            Write-Log "Using monitoring module data: IsRunning=$($status.IsRunning), Players=$($status.OnlinePlayers), Total=$($dbStats.TotalPlayers)" -Level Debug
             return $status
             
         } catch {
-            Write-Log "Failed to get monitoring status: $($_.Exception.Message)" -Level "DEBUG"
+            Write-Log "Failed to get monitoring status: $($_.Exception.Message)" -Level Debug
             # Fall back to basic status
         }
     }
@@ -889,7 +889,7 @@ function Get-CompleteServerStatus {
         }
     }
     
-    Write-Log "Using fallback status with cached data: IsRunning=$($status.IsRunning), Total=$($dbStats.TotalPlayers)" -Level "DEBUG"
+    Write-Log "Using fallback status with cached data: IsRunning=$($status.IsRunning), Total=$($dbStats.TotalPlayers)" -Level Debug
     return $status
 }
 
@@ -928,14 +928,14 @@ function Update-ServiceMonitoring {
                                 if ($result.Success) {
                                     Write-Log "Discord notification sent successfully: $eventType" -Level Info
                                 } else {
-                                    Write-Log "Discord notification failed: $($result.Error)" -Level "WARN"
+                                    Write-Log "Discord notification failed: $($result.Error)" -Level Warning
                                 }
                             }
                         } catch {
-                            Write-Log "Discord notification error: $($_.Exception.Message)" -Level "WARN"
+                            Write-Log "Discord notification error: $($_.Exception.Message)" -Level Warning
                         }
                     } else {
-                        Write-Log "Discord notification function not available" -Level "WARN"
+                        Write-Log "Discord notification function not available" -Level Warning
                     }
                     
                     # IMMEDIATE Discord status update on state change
@@ -944,7 +944,7 @@ function Update-ServiceMonitoring {
                         try {
                             # Get server status from monitoring module
                             $currentServerStatus = Get-ServerStatus
-                            Write-Log "Updating Discord status immediately due to state change: IsRunning=$($currentServerStatus.IsRunning)" -Level "DEBUG"
+                            Write-Log "Updating Discord status immediately due to state change: IsRunning=$($currentServerStatus.IsRunning)" -Level Debug
                             
                             # Update bot activity
                             Update-BotActivity -ServerStatus $currentServerStatus | Out-Null
@@ -952,9 +952,9 @@ function Update-ServiceMonitoring {
                             # Update server status embed  
                             Update-DiscordServerStatus -ServerStatus $currentServerStatus | Out-Null
                             
-                            Write-Log "Discord status updated immediately after state change" -Level "DEBUG"
+                            Write-Log "Discord status updated immediately after state change" -Level Debug
                         } catch {
-                            Write-Log "Immediate Discord status update failed: $($_.Exception.Message)" -Level "WARN"
+                            Write-Log "Immediate Discord status update failed: $($_.Exception.Message)" -Level Warning
                         }
                     }
                 }
@@ -965,16 +965,16 @@ function Update-ServiceMonitoring {
                 $serverStatus = Get-ServerStatus
                 $script:State.IsRunning = $serverStatus.IsOnline
                 $script:State.LastStatusCheck = Get-Date
-                Write-Log "Internal state updated from monitoring: IsRunning=$($serverStatus.IsOnline)" -Level "DEBUG"
+                Write-Log "Internal state updated from monitoring: IsRunning=$($serverStatus.IsOnline)" -Level Debug
             }
             
         } catch {
-            Write-Log "Monitoring module update failed: $($_.Exception.Message)" -Level "WARN"
+            Write-Log "Monitoring module update failed: $($_.Exception.Message)" -Level Warning
             # Fall back to basic monitoring
             Update-ServiceMonitoringBasic
         }
     } else {
-        Write-Log "Monitoring module not available, using basic monitoring" -Level "WARN"
+        Write-Log "Monitoring module not available, using basic monitoring" -Level Warning
         # Fallback to basic monitoring if module not available
         Update-ServiceMonitoringBasic
     }
@@ -985,12 +985,12 @@ function Update-ServiceMonitoring {
         if (Get-Command "Update-DiscordServerStatus" -ErrorAction SilentlyContinue) {
             try {
                 # Pass null - let Update-DiscordServerStatus get status only if needed
-                Write-Log "Sending Discord update..." -Level "DEBUG"
+                Write-Log "Sending Discord update..." -Level Debug
                 Update-DiscordServerStatus -ServerStatus $null
                 $script:State.LastDiscordUpdate = Get-Date
-                Write-Log "Discord status updated (periodic)" -Level "DEBUG"
+                Write-Log "Discord status updated (periodic)" -Level Debug
             } catch {
-                Write-Log "Periodic Discord update failed: $($_.Exception.Message)" -Level "DEBUG"
+                Write-Log "Periodic Discord update failed: $($_.Exception.Message)" -Level Debug
             }
         }
     }
@@ -1005,7 +1005,7 @@ function Update-ServiceMonitoringBasic {
     
     # Always log current status for debugging
     $statusText = if ($currentStatus) { "RUNNING" } else { "STOPPED" }
-    Write-Log "Service status check: $statusText" -Level "DEBUG"
+    Write-Log "Service status check: $statusText" -Level Debug
     
     # Detect state changes
     if ($wasRunning -ne $script:State.IsRunning) {
@@ -1024,7 +1024,7 @@ function Update-ServiceMonitoringBasic {
                     Update-DiscordServerStatus -ServerStatus $serverStatus
                 }
             } catch {
-                Write-Log "Discord notification failed: $($_.Exception.Message)" -Level "WARN"
+                Write-Log "Discord notification failed: $($_.Exception.Message)" -Level Warning
             }
         }
     }
@@ -1081,11 +1081,11 @@ function Update-ScheduleManager {
         }
         
         if ($restartTimes.Count -eq 0) {
-            Write-Log "No restart times configured, scheduling disabled" -Level "DEBUG"
+            Write-Log "No restart times configured, scheduling disabled" -Level Debug
             return
         }
         
-        Write-Log "Raw restart times from config: $($restartTimes -join ', ')" -Level "DEBUG"
+        Write-Log "Raw restart times from config: $($restartTimes -join ', ')" -Level Debug
         
         # Initialize restart warning system from scheduling module
         if (Get-Command "Initialize-RestartWarningSystem" -ErrorAction SilentlyContinue) {
@@ -1098,15 +1098,15 @@ function Update-ScheduleManager {
                     $script:SchedulingState = $initResult
                     Write-Log "Scheduling system initialized with restart times: $($restartTimes -join ', ')" -Level Info
                 } else {
-                    Write-Log "Initialize-RestartWarningSystem returned invalid state" -Level "WARN"
+                    Write-Log "Initialize-RestartWarningSystem returned invalid state" -Level Warning
                     return
                 }
             } catch {
-                Write-Log "Failed to initialize scheduling system: $($_.Exception.Message)" -Level "WARN"
+                Write-Log "Failed to initialize scheduling system: $($_.Exception.Message)" -Level Warning
                 return
             }
         } else {
-            Write-Log "Scheduling module functions not available" -Level "WARN"
+            Write-Log "Scheduling module functions not available" -Level Warning
             return
         }
     }
@@ -1119,11 +1119,11 @@ function Update-ScheduleManager {
     $stateType = if ($script:SchedulingState) { $script:SchedulingState.GetType().Name } else { "null" }
     $hasNextRestart = if ($script:SchedulingState -and $script:SchedulingState.NextRestartTime) { $true } else { $false }
     
-    Write-Log "SchedulingState validation: Type='$stateType', HasNextRestart=$hasNextRestart" -Level "DEBUG"
+    Write-Log "SchedulingState validation: Type='$stateType', HasNextRestart=$hasNextRestart" -Level Debug
     
     # Accept both hashtable and Object[] as long as it has NextRestartTime
     if (-not $script:SchedulingState -or -not $hasNextRestart) {
-        Write-Log "SchedulingState invalid (Type: $stateType, HasNextRestart: $hasNextRestart), reinitializing..." -Level "WARN"
+        Write-Log "SchedulingState invalid (Type: $stateType, HasNextRestart: $hasNextRestart), reinitializing..." -Level Warning
         $script:SchedulingState = $null
         # Trigger reinitialization on next call
         Update-ScheduleManager
@@ -1142,10 +1142,10 @@ function Update-ScheduleManager {
             if ($warningResult -and $warningResult.NextRestartTime) {
                 $script:SchedulingState = $warningResult
             } else {
-                Write-Log "Update-RestartWarnings returned invalid state" -Level "WARN"
+                Write-Log "Update-RestartWarnings returned invalid state" -Level Warning
             }
         } catch {
-            Write-Log "Failed to update restart warnings: $($_.Exception.Message)" -Level "WARN"
+            Write-Log "Failed to update restart warnings: $($_.Exception.Message)" -Level Warning
         }
     }
     
@@ -1169,14 +1169,14 @@ function Update-ScheduleManager {
                             $script:SchedulingState = $restartResult
                             Write-Log "Scheduled restart completed, next restart: $($script:SchedulingState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Info
                         } else {
-                            Write-Log "Invoke-ScheduledRestart returned invalid state" -Level "WARN"
+                            Write-Log "Invoke-ScheduledRestart returned invalid state" -Level Warning
                         }
                     } catch {
                         Write-Log "Failed to execute scheduled restart: $($_.Exception.Message)" -Level Error
                     }
                 } else {
                     # Fallback to manual restart execution
-                    Write-Log "Scheduling module restart function not available, using fallback" -Level "WARN"
+                    Write-Log "Scheduling module restart function not available, using fallback" -Level Warning
                     
                     if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
                         try {
@@ -1196,7 +1196,7 @@ function Update-ScheduleManager {
                 }
             }
         } catch {
-            Write-Log "Failed to check restart due: $($_.Exception.Message)" -Level "WARN"
+            Write-Log "Failed to check restart due: $($_.Exception.Message)" -Level Warning
         }
     }
 }
@@ -1273,7 +1273,7 @@ function Invoke-Backup {
                 throw "Backup operation failed"
             }
         } else {
-            Write-Log "Backup module not available" -Level "WARN"
+            Write-Log "Backup module not available" -Level Warning
             return $false
         }
     } catch {
@@ -1301,10 +1301,10 @@ function Update-BackupManager {
             if ($backupResult) {
                 Write-Log "Periodic backup completed successfully" -Level Info
             } else {
-                Write-Log "Periodic backup failed" -Level "WARN"
+                Write-Log "Periodic backup failed" -Level Warning
             }
         } catch {
-            Write-Log "Periodic backup error: $($_.Exception.Message)" -Level "WARN"
+            Write-Log "Periodic backup error: $($_.Exception.Message)" -Level Warning
         }
     }
 }
@@ -1317,7 +1317,7 @@ function Update-UpdateManager {
     # Check if update check is due
     $timeSinceLastCheck = $now - $script:State.LastUpdateCheck
     if ($timeSinceLastCheck.TotalMinutes -ge $updateCheckInterval) {
-        Write-Log "Update check is due (interval: $updateCheckInterval minutes)" -Level "DEBUG"
+        Write-Log "Update check is due (interval: $updateCheckInterval minutes)" -Level Debug
         
         try {
             $updateAvailable = Test-ManagerUpdateAvailable
@@ -1344,7 +1344,7 @@ function Update-UpdateManager {
                                 version = $updateInfo.LatestBuild
                             }
                         } catch {
-                            Write-Log "Failed to send update notification: $($_.Exception.Message)" -Level "WARN"
+                            Write-Log "Failed to send update notification: $($_.Exception.Message)" -Level Warning
                         }
                     }
                     
@@ -1375,11 +1375,11 @@ function Update-UpdateManager {
                     }
                 }
             } else {
-                Write-Log "Server is up to date" -Level "DEBUG"
+                Write-Log "Server is up to date" -Level Debug
             }
             
         } catch {
-            Write-Log "Update check failed: $($_.Exception.Message)" -Level "WARN"
+            Write-Log "Update check failed: $($_.Exception.Message)" -Level Warning
             $script:State.LastUpdateCheck = $now  # Still update the check time to avoid spam
         }
     }
@@ -1398,11 +1398,11 @@ function Test-ManagerUpdateAvailable {
             $result = Test-UpdateAvailable @updateParams
             return $result.UpdateAvailable
         } else {
-            Write-Log "Update module not available" -Level "DEBUG"
+            Write-Log "Update module not available" -Level Debug
             return $false
         }
     } catch {
-        Write-Log "Update check failed: $($_.Exception.Message)" -Level "WARN"
+        Write-Log "Update check failed: $($_.Exception.Message)" -Level Warning
         return $false
     }
 }
@@ -1476,8 +1476,8 @@ Write-Log "=== SCUM Server Automation Started ==="
 try {
     $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if (-not $service) {
-        Write-Log "Windows service '$serviceName' not found!" -Level "WARN"
-        Write-Log "You may need to create the service first using nssm.exe" -Level "WARN"
+        Write-Log "Windows service '$serviceName' not found!" -Level Warning
+        Write-Log "You may need to create the service first using nssm.exe" -Level Warning
     } else {
         Write-Log "Service '$serviceName' found"
     }
@@ -1496,10 +1496,10 @@ if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
         if ($result.Success) {
             Write-Log "Startup notification sent"
         } else {
-            Write-Log "Startup notification failed: $($result.Error)" -Level "WARN"
+            Write-Log "Startup notification failed: $($result.Error)" -Level Warning
         }
     } catch {
-        Write-Log "Startup notification failed: $($_.Exception.Message)" -Level "WARN"
+        Write-Log "Startup notification failed: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -1617,7 +1617,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 try {
                     Process-ScheduledTasks
                 } catch {
-                    Write-Log "Scheduled tasks processing failed: $($_.Exception.Message)" -Level "WARN"
+                    Write-Log "Scheduled tasks processing failed: $($_.Exception.Message)" -Level Warning
                 }
             }
             
@@ -1626,7 +1626,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 try {
                     Update-ChatManager
                 } catch {
-                    Write-Log "Chat manager update failed: $($_.Exception.Message)" -Level "WARN"
+                    Write-Log "Chat manager update failed: $($_.Exception.Message)" -Level Warning
                 }
             }
             
@@ -1637,7 +1637,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-AdminLogProcessing
                     } catch {
-                        Write-Log "Admin log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Admin log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1646,7 +1646,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-KillLogProcessing
                     } catch {
-                        Write-Log "Kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Kill log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1655,7 +1655,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-EventKillLogProcessing
                     } catch {
-                        Write-Log "Event kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Event kill log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1664,7 +1664,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-ViolationsLogProcessing
                     } catch {
-                        Write-Log "Violations log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Violations log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1673,7 +1673,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-FamePointsLogProcessing
                     } catch {
-                        Write-Log "Fame points log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Fame points log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1682,7 +1682,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-LoginLogProcessing
                     } catch {
-                        Write-Log "Login log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Login log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1691,7 +1691,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-EconomyLogProcessing
                     } catch {
-                        Write-Log "Economy log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Economy log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1700,7 +1700,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-VehicleLogProcessing
                     } catch {
-                        Write-Log "Vehicle log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Vehicle log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1709,7 +1709,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-RaidProtectionLogProcessing
                     } catch {
-                        Write-Log "Raid protection log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Raid protection log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1718,7 +1718,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-GameplayLogProcessing
                     } catch {
-                        Write-Log "Gameplay log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Gameplay log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1727,7 +1727,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-QuestLogProcessing
                     } catch {
-                        Write-Log "Quest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Quest log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
 
@@ -1736,7 +1736,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Update-ChestLogProcessing
                     } catch {
-                        Write-Log "Chest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Chest log processing failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
             }
@@ -1746,7 +1746,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 try {
                     Update-DiscordTextCommands
                 } catch {
-                    Write-Log "Discord text commands update failed: $($_.Exception.Message)" -Level "WARN"
+                    Write-Log "Discord text commands update failed: $($_.Exception.Message)" -Level Warning
                 }
             }
             
@@ -1756,7 +1756,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                     try {
                         Maintenance-DiscordConnection | Out-Null
                     } catch {
-                        Write-Log "Discord connection maintenance failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Discord connection maintenance failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
             }
@@ -1768,7 +1768,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 try {
                     Update-ManagerDiscordLeaderboards
                 } catch {
-                    Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level "WARN"
+                    Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level Warning
                 }
                 
                 # Also show server status embed update (happens automatically every 15s, but we show message every 5 min)
@@ -1784,12 +1784,12 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                                 if ($resetResult.Success) {
                                     Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset completed" -Level Info
                                 } else {
-                                    Write-Log "Weekly leaderboard reset failed: $($resetResult.Error)" -Level "WARN"
+                                    Write-Log "Weekly leaderboard reset failed: $($resetResult.Error)" -Level Warning
                                 }
                             }
                         }
                     } catch {
-                        Write-Log "Weekly reset check failed: $($_.Exception.Message)" -Level "WARN"
+                        Write-Log "Weekly reset check failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
             }
