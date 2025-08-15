@@ -7,9 +7,12 @@
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {

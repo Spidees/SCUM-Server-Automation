@@ -11,7 +11,10 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -20,9 +23,17 @@ try {
 
 # Import required modules
 $moduleRoot = $PSScriptRoot
-Import-Module (Join-Path $moduleRoot "notifications\notification-manager.psm1") -Force -Global -ErrorAction Stop
-Import-Module (Join-Path $moduleRoot "live-embeds\live-embeds-manager.psm1") -Force -Global -ErrorAction Stop
-Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Force -Global -ErrorAction Stop
+
+# MEMORY LEAK FIX: Conditional imports instead of -Force
+if (-not (Get-Module "notification-manager" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "notifications\notification-manager.psm1") -Global -ErrorAction Stop
+}
+if (-not (Get-Module "live-embeds-manager" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "live-embeds\live-embeds-manager.psm1") -Global -ErrorAction Stop
+}
+if (-not (Get-Module "discord-api" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Global -ErrorAction Stop
+}
 
 # Import Discord WebSocket Bot - with detailed error reporting
 $botModulePath = Join-Path $moduleRoot "core\discord-websocket-bot-direct.psm1"
@@ -33,7 +44,10 @@ $script:LastEmbedUpdate = $null
 
 if (Test-Path $botModulePath) {
     try {
-        Import-Module $botModulePath -Force -Global -WarningAction SilentlyContinue -ErrorAction Stop
+        # MEMORY LEAK FIX: Conditional import instead of -Force
+        if (-not (Get-Module "discord-websocket-bot-direct" -ErrorAction SilentlyContinue)) {
+            Import-Module $botModulePath -Global -WarningAction SilentlyContinue -ErrorAction Stop
+        }
         Write-Host "  [OK] discord-websocket-bot" -ForegroundColor Green
     } catch {
         Write-Log "[ERROR] Failed to import Discord bot module: $($_.Exception.Message)" -Level Error

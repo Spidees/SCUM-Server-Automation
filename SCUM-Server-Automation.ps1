@@ -166,8 +166,11 @@ foreach ($module in $modules) {
     $modulePath = Join-Path $modulesPath $module
     if (Test-Path $modulePath) {
         try {
-            Import-Module $modulePath -Force -Global -WarningAction SilentlyContinue -ErrorAction Stop
             $moduleName = (Split-Path $module -Leaf) -replace '\.psm1$', ''
+            # MEMORY LEAK FIX: Check if module already loaded before importing
+            if (-not (Get-Module $moduleName -ErrorAction SilentlyContinue)) {
+                Import-Module $modulePath -Global -WarningAction SilentlyContinue -ErrorAction Stop
+            }
             Write-Host "  [OK] $moduleName" -ForegroundColor Green
             $loadedModules += $moduleName
         } catch {
@@ -1065,13 +1068,14 @@ function Update-ScheduleManager {
         # Use original config object to get restart times properly
         $restartTimes = if ($originalConfig.restartTimes) { 
             # Convert to proper string array
-            $timeArray = @()
+            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+            $timeList = [System.Collections.ArrayList]::new()
             foreach ($time in $originalConfig.restartTimes) {
                 if ($time -and $time.ToString().Trim() -ne "") {
-                    $timeArray += $time.ToString().Trim()
+                    [void]$timeList.Add($time.ToString().Trim())
                 }
             }
-            $timeArray
+            $timeList.ToArray()
         } else { 
             @() 
         }
@@ -1522,15 +1526,18 @@ if ($configHash.restartTimes -and $configHash.restartTimes.Count -gt 0) {
     # Get restart times from the original JSON content to avoid hashtable conversion issues
     try {
         $originalConfig = Get-Content $ConfigPath | ConvertFrom-Json
-        $restartTimes = @()
+        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+        $restartTimesList = [System.Collections.ArrayList]::new()
         
         if ($originalConfig.restartTimes) {
             foreach ($time in $originalConfig.restartTimes) {
                 if ($time -and $time.ToString().Trim() -ne "") {
-                    $restartTimes += $time.ToString()
+                    [void]$restartTimesList.Add($time.ToString())
                 }
             }
         }
+        
+        $restartTimes = $restartTimesList.ToArray()
         
         if ($restartTimes.Count -gt 0) {
             $times = $restartTimes -join ", "
@@ -1569,7 +1576,8 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
         $loopCount = 0
         
         # Get monitoring interval from config (default 2 seconds)
-        $monitoringInterval = if ($configHash.monitoringIntervalSeconds) { $configHash.monitoringIntervalSeconds } else { 2 }
+        # MEMORY LEAK FIX: Increased default monitoring interval from 2s to 10s to reduce frequency
+        $monitoringInterval = if ($configHash.monitoringIntervalSeconds) { $configHash.monitoringIntervalSeconds } else { 10 }
         
         # Get leaderboard update interval from Discord LiveEmbeds config (in seconds)
         $leaderboardIntervalSeconds = if ($configHash.Discord.LiveEmbeds.LeaderboardUpdateInterval) { 
@@ -1586,6 +1594,11 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
         Write-Log "Monitoring interval: $monitoringInterval seconds" -Level Info
         Write-Log "Discord status updates: every $discordStatusIntervalSeconds seconds" -Level Info
         Write-Log "Leaderboard updates: every $leaderboardInterval minutes ($leaderboardLoops loops)" -Level Info
+        
+        # MEMORY LEAK FIX: Calculate log processing interval to reduce overhead
+        $logProcessingIntervalSeconds = 30 # Process logs every 30 seconds instead of every 2 seconds
+        $logProcessingLoops = [math]::Max(1, [math]::Round($logProcessingIntervalSeconds / $monitoringInterval))
+        Write-Log "Log processing: every $logProcessingIntervalSeconds seconds ($logProcessingLoops loops)" -Level Info
         
         while (-not $script:State.ShouldStop) {
             $loopCount++
@@ -1608,7 +1621,7 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 }
             }
             
-            # Update chat manager (check for new messages every loop)
+            # Update chat manager (check for new messages every loop - critical for real-time)
             if (Get-Command "Update-ChatManager" -ErrorAction SilentlyContinue) {
                 try {
                     Update-ChatManager
@@ -1617,111 +1630,114 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 }
             }
             
-            # Update admin log processing (check for new admin commands every loop) 
-            if (Get-Command "Update-AdminLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-AdminLogProcessing
-                } catch {
-                    Write-Log "Admin log processing failed: $($_.Exception.Message)" -Level "WARN"
+            # MEMORY LEAK FIX: Process logs less frequently to reduce overhead (every 30 seconds)
+            if ($loopCount % $logProcessingLoops -eq 0) {
+                # Update admin log processing 
+                if (Get-Command "Update-AdminLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-AdminLogProcessing
+                    } catch {
+                        Write-Log "Admin log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update kill log processing (check for new kills every loop)
-            if (Get-Command "Update-KillLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-KillLogProcessing
-                } catch {
-                    Write-Log "Kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update kill log processing
+                if (Get-Command "Update-KillLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-KillLogProcessing
+                    } catch {
+                        Write-Log "Kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update eventkill log processing (check for new event kills every loop)
-            if (Get-Command "Update-EventKillLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-EventKillLogProcessing
-                } catch {
-                    Write-Log "Event kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update eventkill log processing
+                if (Get-Command "Update-EventKillLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-EventKillLogProcessing
+                    } catch {
+                        Write-Log "Event kill log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update violations log processing (check for new violations every loop)
-            if (Get-Command "Update-ViolationsLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-ViolationsLogProcessing
-                } catch {
-                    Write-Log "Violations log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update violations log processing
+                if (Get-Command "Update-ViolationsLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-ViolationsLogProcessing
+                    } catch {
+                        Write-Log "Violations log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update famepoints log processing (check for new fame points changes every loop)
-            if (Get-Command "Update-FamePointsLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-FamePointsLogProcessing
-                } catch {
-                    Write-Log "Fame points log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update famepoints log processing
+                if (Get-Command "Update-FamePointsLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-FamePointsLogProcessing
+                    } catch {
+                        Write-Log "Fame points log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update login log processing (check for new logins every loop)
-            if (Get-Command "Update-LoginLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-LoginLogProcessing
-                } catch {
-                    Write-Log "Login log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update login log processing
+                if (Get-Command "Update-LoginLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-LoginLogProcessing
+                    } catch {
+                        Write-Log "Login log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update economy log processing (check for new economy events every loop)
-            if (Get-Command "Update-EconomyLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-EconomyLogProcessing
-                } catch {
-                    Write-Log "Economy log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update economy log processing
+                if (Get-Command "Update-EconomyLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-EconomyLogProcessing
+                    } catch {
+                        Write-Log "Economy log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update vehicle log processing (check for new vehicle events every loop)
-            if (Get-Command "Update-VehicleLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-VehicleLogProcessing
-                } catch {
-                    Write-Log "Vehicle log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update vehicle log processing
+                if (Get-Command "Update-VehicleLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-VehicleLogProcessing
+                    } catch {
+                        Write-Log "Vehicle log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update raid protection log processing (check for new raid events every loop)
-            if (Get-Command "Update-RaidProtectionLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-RaidProtectionLogProcessing
-                } catch {
-                    Write-Log "Raid protection log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update raid protection log processing
+                if (Get-Command "Update-RaidProtectionLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-RaidProtectionLogProcessing
+                    } catch {
+                        Write-Log "Raid protection log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update gameplay log processing (check for new gameplay events every loop)
-            if (Get-Command "Update-GameplayLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-GameplayLogProcessing
-                } catch {
-                    Write-Log "Gameplay log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update gameplay log processing
+                if (Get-Command "Update-GameplayLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-GameplayLogProcessing
+                    } catch {
+                        Write-Log "Gameplay log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update quest log processing (check for new quest events every loop)
-            if (Get-Command "Update-QuestLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-QuestLogProcessing
-                } catch {
-                    Write-Log "Quest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update quest log processing
+                if (Get-Command "Update-QuestLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-QuestLogProcessing
+                    } catch {
+                        Write-Log "Quest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
-            }
 
-            # Update chest log processing (check for new chest events every loop)
-            if (Get-Command "Update-ChestLogProcessing" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-ChestLogProcessing
-                } catch {
-                    Write-Log "Chest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                # Update chest log processing
+                if (Get-Command "Update-ChestLogProcessing" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-ChestLogProcessing
+                    } catch {
+                        Write-Log "Chest log processing failed: $($_.Exception.Message)" -Level "WARN"
+                    }
                 }
             }
 
@@ -1789,6 +1805,14 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
             
             # Sleep for configured monitoring interval
             Start-Sleep -Seconds $monitoringInterval
+            
+            # Force garbage collection every 10 loops to prevent memory leaks
+            if ($loopCount % 10 -eq 0) {
+                [System.GC]::Collect()
+                [System.GC]::WaitForPendingFinalizers()
+                [System.GC]::Collect()
+                Write-Log "[GC] Forced garbage collection (Loop: $loopCount)" -Level Debug
+            }
         }
     } catch {
         Write-Log "Error in monitoring loop: $($_.Exception.Message)" -Level Error

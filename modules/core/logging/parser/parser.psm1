@@ -11,9 +11,21 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
+
+    # MEMORY LEAK FIX: Import log streaming helper - check if already loaded
+    $streamingPath = Join-Path $PSScriptRoot "..\log-streaming.psm1"
+    if (Test-Path $streamingPath) {
+        if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
+            Import-Module $streamingPath -ErrorAction SilentlyContinue
+        }
+    }
+    
 } catch {
     Write-Host "[WARNING] Common module not available for parser module" -ForegroundColor Yellow
 }
@@ -26,7 +38,8 @@ $script:LogFilePath = $null
 $script:LogReaderConfig = $null
 
 # Event tracking for parsed data
-$script:LastParsedEvents = @()
+# Module variables - MEMORY LEAK FIX: Use ArrayList instead of @() array
+$script:LastParsedEvents = New-Object System.Collections.ArrayList
 $script:MaxEventHistory = 100
 
 # Cache for latest performance stats to always provide current data
@@ -64,9 +77,27 @@ function Initialize-LogReaderModule {
         $fileInfo = Get-ItemSafe $LogPath
         if ($fileInfo) {
             $script:LastLogFileSize = $fileInfo.Length
-            # Start from end of file to only process new log entries
-            $allLines = Get-Content $LogPath -ErrorAction SilentlyContinue
-            $script:LogLinePosition = if ($allLines) { $allLines.Count } else { 0 }
+            # Count lines using streaming instead of loading entire file
+            try {
+                $lineCount = 0
+                $streamReader = $null
+                $fileStream = $null
+                try {
+                    $fileStream = [System.IO.FileStream]::new($LogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    $streamReader = [System.IO.StreamReader]::new($fileStream)
+                    
+                    while (-not $streamReader.EndOfStream) {
+                        $streamReader.ReadLine() | Out-Null
+                        $lineCount++
+                    }
+                } finally {
+                    if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
+                    if ($fileStream) { $fileStream.Close(); $fileStream.Dispose() }
+                }
+                $script:LogLinePosition = $lineCount
+            } catch {
+                $script:LogLinePosition = 0
+            }
         }
         
         Write-Log "[LogReader] Log monitoring initialized for: $LogPath"
@@ -117,7 +148,7 @@ function Read-NewLogLines {
             $script:LastLogFileSize = $currentSize
             
             # CRITICAL FIX: Clear event history to prevent old events from causing false notifications
-            $script:LastParsedEvents = @()
+            $script:LastParsedEvents = New-Object System.Collections.ArrayList
             $script:LastKnownPerformanceStats = $null
             Write-Log "[LogReader] Event history cleared due to log rotation" -Level Info
         }
@@ -127,17 +158,42 @@ function Read-NewLogLines {
             return @()
         }
         
-        # Read all lines and get new ones
-        $allLines = Get-Content $LogPath -ErrorAction SilentlyContinue
-        if (-not $allLines -or $allLines.Count -eq 0) {
-            return @()
-        }
-        
-        # Get new lines since last position
+        # MEMORY LEAK FIX: Use streaming approach instead of loading entire file
         $newLines = @()
-        if ($script:LogLinePosition -lt $allLines.Count) {
-            $newLines = $allLines[$script:LogLinePosition..($allLines.Count - 1)]
-            $script:LogLinePosition = $allLines.Count
+        $streamReader = $null
+        $fileStream = $null
+        
+        try {
+            $fileStream = [System.IO.FileStream]::new($LogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $streamReader = [System.IO.StreamReader]::new($fileStream)
+            
+            $currentLineNumber = 0
+            
+            # Skip lines we've already processed
+            while ($currentLineNumber -lt $script:LogLinePosition -and -not $streamReader.EndOfStream) {
+                $streamReader.ReadLine() | Out-Null
+                $currentLineNumber++
+            }
+            
+            # Read new lines
+            while (-not $streamReader.EndOfStream) {
+                $line = $streamReader.ReadLine()
+                if ($line -ne $null) {
+                    # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                    if (-not $newLines) {
+                        $newLines = New-Object System.Collections.ArrayList
+                    }
+                    $null = $newLines.Add($line)
+                    $currentLineNumber++
+                }
+            }
+            
+            # Update our position
+            $script:LogLinePosition = $currentLineNumber
+            
+        } finally {
+            if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
+            if ($fileStream) { $fileStream.Close(); $fileStream.Dispose() }
         }
         
         $script:LastLogFileSize = $currentSize
@@ -234,10 +290,13 @@ function Parse-LogLine {
         return $null
     }
     
-    # Add to event history
-    $script:LastParsedEvents += $parsedEvent
+    # Add to event history - MEMORY LEAK FIX: Use ArrayList.Add() instead of +=
+    $null = $script:LastParsedEvents.Add($parsedEvent)
     if ($script:LastParsedEvents.Count -gt $script:MaxEventHistory) {
-        $script:LastParsedEvents = $script:LastParsedEvents[-$script:MaxEventHistory..-1]
+        # Remove oldest events to maintain limit
+        while ($script:LastParsedEvents.Count -gt $script:MaxEventHistory) {
+            $script:LastParsedEvents.RemoveAt(0)
+        }
     }
     
     # Only log significant events if not in silent mode and reduce spam
@@ -421,7 +480,11 @@ function Analyze-RecentLogLines {
     foreach ($line in $LogLines) {
         $parsedEvent = Parse-LogLine -LogLine $line -Silent
         if ($parsedEvent) {
-            $analysis.EventsDetected += $parsedEvent
+            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+            if (-not ($analysis.EventsDetected)) {
+                $analysis.EventsDetected = New-Object System.Collections.ArrayList
+            }
+            $null = $analysis.EventsDetected.Add($parsedEvent)
             $analysis.LastEventType = $parsedEvent.EventType
             
             if ($parsedEvent.EventType -eq "ServerOnline" -and $parsedEvent.Data.PerformanceStats) {
@@ -493,10 +556,12 @@ function Get-ParsedEvents {
     )
     
     if ($Count -gt 0 -and $script:LastParsedEvents.Count -gt $Count) {
-        return $script:LastParsedEvents[-$Count..-1]
+        # MEMORY LEAK FIX: Convert ArrayList to array and get last N items
+        $startIndex = [Math]::Max(0, $script:LastParsedEvents.Count - $Count)
+        return $script:LastParsedEvents.ToArray()[$startIndex..($script:LastParsedEvents.Count - 1)]
     }
     
-    return $script:LastParsedEvents
+    return $script:LastParsedEvents.ToArray()
 }
 
 function Read-GameLogs {
@@ -519,7 +584,11 @@ function Read-GameLogs {
         foreach ($line in $newLines) {
             $parsedEvent = Parse-LogLine -LogLine $line
             if ($parsedEvent) {
-                $parsedEvents += $parsedEvent
+                # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                if (-not $parsedEvents) {
+                    $parsedEvents = New-Object System.Collections.ArrayList
+                }
+                $null = $parsedEvents.Add($parsedEvent)
             }
         }
         

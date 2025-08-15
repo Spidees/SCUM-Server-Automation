@@ -8,14 +8,27 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
     
-    # Import embed templates
+    # MEMORY LEAK FIX: Import log streaming helper - check if already loaded
+    $streamingPath = Join-Path $PSScriptRoot "..\core\log-streaming.psm1"
+    if (Test-Path $streamingPath) {
+        if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
+            Import-Module $streamingPath -ErrorAction SilentlyContinue
+        }
+    }
+    
+    # MEMORY LEAK FIX: Import embed templates - check if already loaded
     $embedPath = Join-Path $PSScriptRoot "..\communication\discord\templates\log-embed-templates.psm1"
     if (Test-Path $embedPath) {
-        Import-Module $embedPath -Force -ErrorAction SilentlyContinue
+        if (-not (Get-Module "log-embed-templates" -ErrorAction SilentlyContinue)) {
+            Import-Module $embedPath -ErrorAction SilentlyContinue
+        }
     }
 } catch {
     Write-Host "[WARNING] Common module not available for economy-log module" -ForegroundColor Yellow
@@ -134,15 +147,16 @@ function Update-EconomyLogProcessing {
                     SteamId = $firstAction.SteamId
                     Type = $firstAction.Type
                     Trader = $firstAction.Trader
-                    Items = @()
+                    Items = New-Object System.Collections.ArrayList
                     TotalAmount = 0
                 }
                 
                 foreach ($action in $actions) {
-                    $combinedAction.Items += @{
+                    # MEMORY LEAK FIX: Use ArrayList.Add instead of array +=
+                    $null = $combinedAction.Items.Add(@{
                         Item = $action.Item
                         Amount = $action.Amount
-                    }
+                    })
                     $combinedAction.TotalAmount += $action.Amount
                 }
                 
@@ -200,19 +214,16 @@ function Get-NewEconomyActions {
     }
     
     try {
-        # Read all lines from the log file - SCUM economy logs use UTF-16 LE encoding
-        $allLines = Get-Content $script:CurrentLogFile -Encoding Unicode -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Use streaming instead of Get-Content on entire file
+        $result = Read-LogStreamLines -FilePath $script:CurrentLogFile -LastLineNumber $script:LastLineNumber -Encoding ([System.Text.Encoding]::Unicode)
         
-        if (-not $allLines -or $allLines.Count -eq 0) {
+        if (-not $result.Success -or $result.NewLines.Count -eq 0) {
             return @()
         }
         
-        # Get only new lines since last check
-        $newLines = @()
-        if ($script:LastLineNumber -lt $allLines.Count) {
-            $newLines = $allLines[$script:LastLineNumber..($allLines.Count - 1)]
-            $script:LastLineNumber = $allLines.Count
-        }
+        # Update position and get new lines
+        $newLines = $result.NewLines
+        $script:LastLineNumber = $result.TotalLines
         
         if ($newLines.Count -eq 0) {
             return @()
@@ -339,10 +350,9 @@ function Load-EconomyState {
             $latestLogFile = Get-LatestEconomyLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
                 $script:CurrentLogFile = $latestLogFile
-                # Read current file and set position to end
+                # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
-                    $allLines = Get-Content $script:CurrentLogFile -Encoding Unicode -ErrorAction SilentlyContinue
-                    $script:LastLineNumber = if ($allLines) { $allLines.Count } else { 0 }
+                    $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
                     Write-Log "Initialized economy log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
                 } catch {
                     $script:LastLineNumber = 0

@@ -8,7 +8,10 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -135,13 +138,14 @@ function Get-WeeklyLeaderboard {
         $result = Get-WeeklyDeltaResults -Category $Category -WeekStart $currentWeekStart -Limit $Limit
         
         if ($result -and $result.Count -gt 0) {
-            $formattedResults = @()
+            # MEMORY LEAK FIX: Initialize ArrayList outside loop
+            $formattedResults = New-Object System.Collections.ArrayList
             $result | ForEach-Object {
-                $formattedResults += @{
+                $null = $formattedResults.Add(@{
                     Name = $_.name
                     Value = [int]$_.delta
                     FormattedValue = Format-WeeklyValue -Category $Category -Value ([int]$_.delta)
-                }
+                })
             }
             return ,$formattedResults  # Comma operator ensures array is returned even with single item
         }
@@ -354,7 +358,11 @@ function Invoke-WeeklyDatabaseQuery {
                         }
                     }
                     
-                    $results += $row
+                    # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                    if (-not $results) {
+                        $results = New-Object System.Collections.ArrayList
+                    }
+                    $null = $results.Add($row)
                 }
             } elseif ($lines.Count -eq 1) {
                 # Only headers, no data

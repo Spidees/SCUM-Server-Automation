@@ -7,7 +7,10 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -33,7 +36,38 @@ $global:DatabaseService = @{
         CacheIntervalSeconds = 60  # Will be loaded from config
         DatabaseModule = $null
     }
+    # MEMORY LEAK FIX: Cache command existence to avoid repeated Get-Command calls
+    Commands = @{
+        GetTotalPlayerCount = $null
+        GetOnlinePlayerCount = $null
+        GetActiveSquadCount = $null
+        GetGameTimeData = $null
+        GetWeatherData = $null
+        Checked = $false
+    }
     Initialized = $false
+}
+
+function Initialize-CommandCache {
+    <#
+    .SYNOPSIS  
+    Cache database command existence to avoid repeated Get-Command calls
+    #>
+    if ($global:DatabaseService.Commands.Checked) {
+        return # Already checked
+    }
+    
+    Write-Log "[DatabaseService] Caching database command existence..." -Level Debug
+    
+    $global:DatabaseService.Commands.GetTotalPlayerCount = Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue
+    $global:DatabaseService.Commands.GetOnlinePlayerCount = Get-Command "Get-OnlinePlayerCount" -ErrorAction SilentlyContinue  
+    $global:DatabaseService.Commands.GetActiveSquadCount = Get-Command "Get-ActiveSquadCount" -ErrorAction SilentlyContinue
+    $global:DatabaseService.Commands.GetGameTimeData = Get-Command "Get-GameTimeData" -ErrorAction SilentlyContinue
+    $global:DatabaseService.Commands.GetWeatherData = Get-Command "Get-WeatherData" -ErrorAction SilentlyContinue
+    $global:DatabaseService.Commands.Checked = $true
+    
+    $availableCommands = @($global:DatabaseService.Commands.PSObject.Properties | Where-Object { $_.Value -and $_.Name -ne "Checked" }).Count
+    Write-Log "[DatabaseService] Command cache initialized: $availableCommands/5 database commands available" -Level Info
 }
 
 function Initialize-DatabaseService {
@@ -50,39 +84,42 @@ function Initialize-DatabaseService {
     
     Write-Log "[DatabaseService] Initialized with cache interval: $CacheIntervalSeconds seconds" -Level Info
     
+    # Initialize command cache first
+    Initialize-CommandCache
+    
     # Initialize cache with actual data immediately
     Write-Log "[DatabaseService] Loading initial data into cache..." -Level Info
     $now = Get-Date
     
     try {
-        # Load player stats immediately
-        if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) {
-            $totalPlayers = Get-TotalPlayerCount
+        # Load player stats immediately - using cached commands
+        if ($global:DatabaseService.Commands.GetTotalPlayerCount) {
+            $totalPlayers = & $global:DatabaseService.Commands.GetTotalPlayerCount
         } else {
             $totalPlayers = 0
         }
         
-        if (Get-Command "Get-OnlinePlayerCount" -ErrorAction SilentlyContinue) {
-            $onlinePlayers = Get-OnlinePlayerCount  
+        if ($global:DatabaseService.Commands.GetOnlinePlayerCount) {
+            $onlinePlayers = & $global:DatabaseService.Commands.GetOnlinePlayerCount
         } else {
             $onlinePlayers = 0
         }
         
-        if (Get-Command "Get-ActiveSquadCount" -ErrorAction SilentlyContinue) {
-            $activeSquads = Get-ActiveSquadCount
+        if ($global:DatabaseService.Commands.GetActiveSquadCount) {
+            $activeSquads = & $global:DatabaseService.Commands.GetActiveSquadCount
         } else {
             $activeSquads = 0
         }
         
-        # Load game world data immediately
-        if (Get-Command "Get-GameTimeData" -ErrorAction SilentlyContinue) {
-            $timeData = Get-GameTimeData
+        # Load game world data immediately - using cached commands
+        if ($global:DatabaseService.Commands.GetGameTimeData) {
+            $timeData = & $global:DatabaseService.Commands.GetGameTimeData
         } else {
             $timeData = $null
         }
         
-        if (Get-Command "Get-WeatherData" -ErrorAction SilentlyContinue) {
-            $weatherData = Get-WeatherData
+        if ($global:DatabaseService.Commands.GetWeatherData) {
+            $weatherData = & $global:DatabaseService.Commands.GetWeatherData
         } else {
             $weatherData = $null
         }
@@ -147,22 +184,23 @@ function Update-DatabaseServiceCache {
     
     # Update player stats cache
     try {
-        if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) {
-            $totalPlayers = Get-TotalPlayerCount
+        # MEMORY LEAK FIX: Use cached commands instead of repeated Get-Command calls
+        if ($global:DatabaseService.Commands.GetTotalPlayerCount) {
+            $totalPlayers = & $global:DatabaseService.Commands.GetTotalPlayerCount
             $callsMade++
         } else {
             $totalPlayers = 0
         }
         
-        if (Get-Command "Get-OnlinePlayerCount" -ErrorAction SilentlyContinue) {
-            $onlinePlayers = Get-OnlinePlayerCount  
+        if ($global:DatabaseService.Commands.GetOnlinePlayerCount) {
+            $onlinePlayers = & $global:DatabaseService.Commands.GetOnlinePlayerCount
             $callsMade++
         } else {
             $onlinePlayers = 0
         }
         
-        if (Get-Command "Get-ActiveSquadCount" -ErrorAction SilentlyContinue) {
-            $activeSquads = Get-ActiveSquadCount
+        if ($global:DatabaseService.Commands.GetActiveSquadCount) {
+            $activeSquads = & $global:DatabaseService.Commands.GetActiveSquadCount
             $callsMade++
         } else {
             $activeSquads = 0
@@ -180,15 +218,16 @@ function Update-DatabaseServiceCache {
     
     # Update game world cache
     try {
-        if (Get-Command "Get-GameTimeData" -ErrorAction SilentlyContinue) {
-            $timeData = Get-GameTimeData
+        # MEMORY LEAK FIX: Use cached commands instead of repeated Get-Command calls
+        if ($global:DatabaseService.Commands.GetGameTimeData) {
+            $timeData = & $global:DatabaseService.Commands.GetGameTimeData
             $callsMade++
         } else {
             $timeData = $null
         }
         
-        if (Get-Command "Get-WeatherData" -ErrorAction SilentlyContinue) {
-            $weatherData = Get-WeatherData
+        if ($global:DatabaseService.Commands.GetWeatherData) {
+            $weatherData = & $global:DatabaseService.Commands.GetWeatherData
             $callsMade++
         } else {
             $weatherData = $null
@@ -264,4 +303,4 @@ function Get-DatabaseServiceCacheInfo {
 }
 
 # Export functions
-Export-ModuleMember -Function Initialize-DatabaseService, Update-DatabaseServiceCache, Get-DatabaseServiceStats, Get-DatabaseServiceCacheInfo
+Export-ModuleMember -Function Initialize-DatabaseService, Update-DatabaseServiceCache, Get-DatabaseServiceStats, Get-DatabaseServiceCacheInfo, Initialize-CommandCache

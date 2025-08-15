@@ -8,7 +8,10 @@
 try {
     $itemManagerPath = Join-Path $PSScriptRoot "..\..\..\core\item-manager.psm1"
     if (Test-Path $itemManagerPath) {
-        Import-Module $itemManagerPath -Force
+        # MEMORY LEAK FIX: Conditional import instead of -Force
+        if (-not (Get-Module "item-manager" -ErrorAction SilentlyContinue)) {
+            Import-Module $itemManagerPath
+        }
     }
 } catch {
     Write-Host "[WARNING] Could not load item-manager module: $($_.Exception.Message)" -ForegroundColor Yellow

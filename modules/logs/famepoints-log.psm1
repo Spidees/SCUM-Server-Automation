@@ -8,14 +8,27 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
+
+    # MEMORY LEAK FIX: Import log streaming helper - check if already loaded
+    $streamingPath = Join-Path $PSScriptRoot "..\core\log-streaming.psm1"
+    if (Test-Path $streamingPath) {
+        if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
+            Import-Module $streamingPath -ErrorAction SilentlyContinue
+        }
+    }
     
-    # Import embed templates
+    # MEMORY LEAK FIX: Import embed templates - check if already loaded
     $embedPath = Join-Path $PSScriptRoot "..\communication\discord\templates\log-embed-templates.psm1"
     if (Test-Path $embedPath) {
-        Import-Module $embedPath -Force -ErrorAction SilentlyContinue
+        if (-not (Get-Module "log-embed-templates" -ErrorAction SilentlyContinue)) {
+            Import-Module $embedPath -ErrorAction SilentlyContinue
+        }
     }
 } catch {
     Write-Host "[WARNING] Common module not available for famepoints-log module" -ForegroundColor Yellow
@@ -147,19 +160,16 @@ function Get-NewFamePointsActions {
     }
     
     try {
-        # Read all lines from the log file - SCUM fame points logs use UTF-16 LE encoding
-        $allLines = Get-Content $script:CurrentLogFile -Encoding Unicode -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Use streaming instead of Get-Content on entire file
+        $result = Read-LogStreamLines -FilePath $script:CurrentLogFile -LastLineNumber $script:LastLineNumber -Encoding ([System.Text.Encoding]::Unicode)
         
-        if (-not $allLines -or $allLines.Count -eq 0) {
+        if (-not $result.Success -or $result.NewLines.Count -eq 0) {
             return @()
         }
         
-        # Get only new lines since last check
-        $newLines = @()
-        if ($script:LastLineNumber -lt $allLines.Count) {
-            $newLines = $allLines[$script:LastLineNumber..($allLines.Count - 1)]
-            $script:LastLineNumber = $allLines.Count
-        }
+        # Update position and get new lines
+        $newLines = $result.NewLines
+        $script:LastLineNumber = $result.TotalLines
         
         if ($newLines.Count -eq 0) {
             return @()
@@ -175,27 +185,38 @@ function Get-NewFamePointsActions {
                 $parsedAction = ConvertFrom-FamePointsLine -LogLine $line
                 if ($parsedAction) {
                     if ($parsedAction.IsDetail) {
-                        # Collect detail lines that come after periodic summary
-                        $pendingDetails += $parsedAction
+                        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                        if (-not $pendingDetails) {
+                            $pendingDetails = New-Object System.Collections.ArrayList
+                        }
+                        $null = $pendingDetails.Add($parsedAction)
                     } else {
                         # This is a main action
                         if ($parsedAction.Type -eq "periodic") {
                             # If we had a previous periodic action with pending details, finalize it
                             if ($lastPeriodicAction -and $pendingDetails.Count -gt 0) {
                                 $lastPeriodicAction.Details = $pendingDetails
-                                $pendingDetails = @()
+                                $pendingDetails = New-Object System.Collections.ArrayList
                             }
                             # Store this as the new last periodic action
                             $lastPeriodicAction = $parsedAction
-                            $newActions += $parsedAction
+                            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                            if (-not $newActions) {
+                                $newActions = New-Object System.Collections.ArrayList
+                            }
+                            $null = $newActions.Add($parsedAction)
                         } else {
                             # Non-periodic action, finalize any pending periodic action
                             if ($lastPeriodicAction -and $pendingDetails.Count -gt 0) {
                                 $lastPeriodicAction.Details = $pendingDetails
-                                $pendingDetails = @()
+                                $pendingDetails = New-Object System.Collections.ArrayList
                                 $lastPeriodicAction = $null
                             }
-                            $newActions += $parsedAction
+                            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                            if (-not $newActions) {
+                                $newActions = New-Object System.Collections.ArrayList
+                            }
+                            $null = $newActions.Add($parsedAction)
                         }
                     }
                 }
@@ -277,11 +298,10 @@ function Load-FamePointsState {
             $latestLogFile = Get-LatestFamePointsLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
                 $script:CurrentLogFile = $latestLogFile
-                # Read current file and set position to end
+                # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
-                    $allLines = Get-Content $script:CurrentLogFile -Encoding Unicode -ErrorAction SilentlyContinue
-                    $script:LastLineNumber = if ($allLines) { $allLines.Count } else { 0 }
-                    Write-Log "Initialized fame points log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
                 } catch {
                     $script:LastLineNumber = 0
                 }

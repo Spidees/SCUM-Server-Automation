@@ -12,6 +12,9 @@ $script:logPath = $null
 $script:config = $null
 $script:ConfigPaths = @{}
 $script:RootPath = $null
+# MEMORY LEAK FIX: Cache log file size check timestamp to avoid excessive Get-Item calls
+$script:LastLogSizeCheck = [DateTime]::MinValue
+$script:LogSizeCheckInterval = 30 # seconds
 
 # ===============================================================
 # INITIALIZATION
@@ -263,10 +266,17 @@ function Write-Log {
     # Always write to log file (all levels)
     if ($script:logPath) {
         try {
-            # Check log rotation if needed
-            if ($script:config -and $script:config.logRotationEnabled -and (Test-Path $script:logPath)) {
+            # MEMORY LEAK FIX: Check log rotation only periodically to avoid excessive Get-Item calls
+            $now = Get-Date
+            $timeSinceLastCheck = ($now - $script:LastLogSizeCheck).TotalSeconds
+            
+            if ($script:config -and $script:config.logRotationEnabled -and 
+                (Test-Path $script:logPath) -and 
+                $timeSinceLastCheck -ge $script:LogSizeCheckInterval) {
+                
                 $maxSizeMB = if ($script:config.maxLogFileSizeMB) { $script:config.maxLogFileSizeMB } else { 100 }
                 $fileSize = (Get-Item $script:logPath).Length / 1MB
+                $script:LastLogSizeCheck = $now
                 
                 if ($fileSize -gt $maxSizeMB) {
                     $backupPath = $script:logPath -replace '\.log$', "_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"

@@ -7,11 +7,23 @@
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
+
+    # MEMORY LEAK FIX: Import log streaming helper - check if already loaded
+    $streamingPath = Join-Path $PSScriptRoot "..\..\..\core\log-streaming.psm1"
+    if (Test-Path $streamingPath) {
+        if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
+            Import-Module $streamingPath -ErrorAction SilentlyContinue
+        }
+    }    
+
 } catch {
     Write-Host "[WARNING] Common module not available for chat-manager module" -ForegroundColor Yellow
 }
@@ -183,39 +195,32 @@ function Get-NewChatMessages {
     }
     
     try {
-        # Read all lines from the log file - SCUM chat logs use UTF-16 LE encoding
-        $allLines = Get-Content $script:CurrentLogFile -Encoding Unicode -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Use streaming approach instead of loading entire file
+        $streamResult = Read-LogStreamLines -FilePath $script:CurrentLogFile -LastLineNumber $script:LastLineNumber -Encoding ([System.Text.Encoding]::Unicode)
         
-        if (-not $allLines -or $allLines.Count -eq 0) {
+        if (-not $streamResult.Success -or $streamResult.NewLines.Count -eq 0) {
             return @()
         }
+        
+        $newLines = $streamResult.NewLines
+        $script:LastLineNumber = $streamResult.TotalLines
         
         # Debug info every 5 minutes instead of 60 seconds
         if (-not $script:LastFileDebugTime -or ((Get-Date) - $script:LastFileDebugTime).TotalSeconds -ge 300) {
-            Write-Log "File: $($allLines.Count) lines, position: $($script:LastLineNumber)" -Level "Info"
+            Write-Log "File: $($script:LastLineNumber) lines, position: $($script:LastLineNumber)" -Level "Info"
             $script:LastFileDebugTime = Get-Date
         }
         
-        # Get only new lines since last check
-        $newLines = @()
-        if ($script:LastLineNumber -lt $allLines.Count) {
-            $newLines = $allLines[$script:LastLineNumber..($allLines.Count - 1)]
-            $script:LastLineNumber = $allLines.Count
-        }
-        
-        if ($newLines.Count -eq 0) {
-            return @()
-        }
-        
         # Parse chat messages from new lines (with minimal logging)
-        $newMessages = @()
+        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+        $newMessages = New-Object System.Collections.ArrayList
         foreach ($line in $newLines) {
             if (-not [string]::IsNullOrWhiteSpace($line) -and $line -notmatch "Game version:") {
                 $parsedMessage = Parse-ChatLine -Line $line
                 if ($parsedMessage) {
                     # Check if this chat type is enabled
                     if ($script:ChatConfig.ChatTypes -and $script:ChatConfig.ChatTypes[$parsedMessage.Type]) {
-                        $newMessages += $parsedMessage
+                        $null = $newMessages.Add($parsedMessage)
                     }
                 }
             }
@@ -434,7 +439,27 @@ function Debug-ChatManager {
     
     # Test log file reading
     if ($script:CurrentLogFile -and (Test-Path $script:CurrentLogFile)) {
-        $lines = Get-Content $script:CurrentLogFile -Encoding Unicode
+        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+        $lines = New-Object System.Collections.ArrayList
+        $streamReader = $null
+        $fileStream = $null
+        
+        try {
+            $fileStream = [System.IO.FileStream]::new($script:CurrentLogFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $streamReader = [System.IO.StreamReader]::new($fileStream, [System.Text.Encoding]::Unicode)
+            
+            while (-not $streamReader.EndOfStream) {
+                $line = $streamReader.ReadLine()
+                if ($line -ne $null) {
+                    $null = $lines.Add($line)
+                }
+            }
+            
+        } finally {
+            if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
+            if ($fileStream) { $fileStream.Close(); $fileStream.Dispose() }
+        }
+        
         Write-Log "Total lines in current log: $($lines.Count)" -Level "Debug"
         
         if ($lines.Count -gt $script:LastLineNumber) {

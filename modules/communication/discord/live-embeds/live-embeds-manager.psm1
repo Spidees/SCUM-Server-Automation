@@ -7,9 +7,12 @@
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -18,8 +21,14 @@ try {
 
 # Import required modules
 $rootPath = Split-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) -Parent
-Import-Module (Join-Path $PSScriptRoot "server-status-embed.psm1") -Force -Global
-Import-Module (Join-Path $PSScriptRoot "leaderboards-embed.psm1") -Force -Global -ErrorAction SilentlyContinue
+
+# MEMORY LEAK FIX: Conditional imports instead of -Force
+if (-not (Get-Module "server-status-embed" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot "server-status-embed.psm1") -Global
+}
+if (-not (Get-Module "leaderboards-embed" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $PSScriptRoot "leaderboards-embed.psm1") -Global -ErrorAction SilentlyContinue
+}
 
 # Global state
 $script:LiveEmbedsInitialized = $false
@@ -55,7 +64,10 @@ function Initialize-LiveEmbeds {
             # Import the new leaderboards embed module
             $leaderboardsModulePath = Join-Path $PSScriptRoot "leaderboards-embed.psm1"
             if (Test-Path $leaderboardsModulePath) {
-                Import-Module $leaderboardsModulePath -Force -Global
+                # MEMORY LEAK FIX: Conditional import instead of -Force
+                if (-not (Get-Module "leaderboards-embed" -ErrorAction SilentlyContinue)) {
+                    Import-Module $leaderboardsModulePath -Global
+                }
                 
                 if (Get-Command "Initialize-LeaderboardsEmbed" -ErrorAction SilentlyContinue) {
                     $leaderboardsOk = Initialize-LeaderboardsEmbed -Config $Config

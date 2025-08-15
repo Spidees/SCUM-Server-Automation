@@ -11,7 +11,10 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -404,7 +407,8 @@ function Get-RestartSkipStatus {
     # Check persistent file first
     try {
         if (Test-Path $script:SkipFlagFile) {
-            $fileContent = Get-Content -Path $script:SkipFlagFile -ErrorAction SilentlyContinue
+            # MEMORY LEAK FIX: Use simple file read instead of Get-Content for small files
+            $fileContent = [System.IO.File]::ReadAllText($script:SkipFlagFile).Trim()
             if ($fileContent -eq "true") {
                 $script:SkipNextRestart = $true
             }

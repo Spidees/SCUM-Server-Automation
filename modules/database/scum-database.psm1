@@ -11,7 +11,10 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -25,6 +28,10 @@ $script:SqliteProvider = "External"  # Always use external sqlite3.exe
 $script:SqliteExePath = $null        # Path to sqlite3.exe
 $script:LastConnectionTest = [DateTime]::MinValue
 $script:ConnectionTestInterval = 300 # 5 minutes
+# MEMORY LEAK FIX: Cache expensive file operations
+$script:LastSizeCheck = [DateTime]::MinValue
+$script:CachedSize = 0
+$script:CachedLastWrite = [DateTime]::MinValue
 
 # Sub-module paths
 $script:SubModules = @{
@@ -99,7 +106,10 @@ function Initialize-DatabaseModule {
         
         Write-Log "[Database] Main module initialized successfully"
         Write-Log "[Database] Database path: $script:DatabasePath"
-        Write-Log "[Database] Database size: $([math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)) MB"
+        # MEMORY LEAK FIX: Only get database size if logging is verbose to avoid frequent Get-Item calls
+        if ($VerbosePreference -eq "Continue") {
+            Write-Log "[Database] Database size: $([math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)) MB"
+        }
         Write-Log "[Database] Sub-modules loaded: $($initResults.LoadedModules -join ', ')"
         
         return @{ 
@@ -130,8 +140,11 @@ function Initialize-SubModules {
         
         try {
             if (Test-Path $modulePath) {
-                # Import the sub-module
-                Import-Module $modulePath -Force -Global
+                # MEMORY LEAK FIX: Check if sub-module already loaded before importing
+                $subModuleName = "scum-database-$moduleName"
+                if (-not (Get-Module $subModuleName -ErrorAction SilentlyContinue)) {
+                    Import-Module $modulePath -Global
+                }
                 
                 # Initialize the sub-module
                 $initFunctionName = "Initialize-${moduleName}Module"
@@ -139,21 +152,37 @@ function Initialize-SubModules {
                     $initResult = & $initFunctionName -DatabasePath $script:DatabasePath -SqliteExePath $script:SqliteExePath
                     
                     if ($initResult.Success) {
-                        $loadedModules += $moduleName
+                        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                        if (-not $loadedModules) {
+                            $loadedModules = New-Object System.Collections.ArrayList
+                        }
+                        $null = $loadedModules.Add($moduleName)
                         Write-Log "[Database] Sub-module '$moduleName' loaded successfully"
                     } else {
-                        $failedModules += @{ Module = $moduleName; Error = $initResult.Error }
+                        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                        if (-not $failedModules) {
+                            $failedModules = New-Object System.Collections.ArrayList
+                        }
+                        $null = $failedModules.Add(@{ Module = $moduleName; Error = $initResult.Error })
                         Write-Log "[Database] Sub-module '$moduleName' failed to initialize: $($initResult.Error)" -Level Warning
                     }
                 } else {
-                    $loadedModules += $moduleName
+                    # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                    if (-not $loadedModules) {
+                        $loadedModules = New-Object System.Collections.ArrayList
+                    }
+                    $null = $loadedModules.Add($moduleName)
                     Write-Log "[Database] Sub-module '$moduleName' imported (no init function)"
                 }
             } else {
                 Write-Log "[Database] Sub-module '$moduleName' not found at: $modulePath" -Level Info
             }
         } catch {
-            $failedModules += @{ Module = $moduleName; Error = $_.Exception.Message }
+            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+            if (-not $failedModules) {
+                $failedModules = New-Object System.Collections.ArrayList
+            }
+            $null = $failedModules.Add(@{ Module = $moduleName; Error = $_.Exception.Message })
             Write-Log "[Database] Failed to load sub-module '$moduleName': $($_.Exception.Message)" -Level Warning
         }
     }
@@ -249,11 +278,14 @@ function Test-DatabaseConcurrentAccess {
     try {
         Write-Log "[Database] Testing concurrent access safety..." -Level Info
         
+        # MEMORY LEAK FIX: Use ArrayList for recommendations instead of array +=
+        $recommendationsList = [System.Collections.ArrayList]::new()
+        
         $testResults = @{
             Success = $true
             ReadOnlyMode = $true
             LockTimeout = $true
-            Recommendations = @()
+            Recommendations = $recommendationsList
         }
         
         # Test 1: Quick read access
@@ -264,8 +296,8 @@ function Test-DatabaseConcurrentAccess {
         if (-not $quickTest.Success) {
             $testResults.Success = $false
             if ($quickTest.Error -match "locked|busy") {
-                $testResults.Recommendations += "Database is currently locked - SCUM server is actively writing"
-                $testResults.Recommendations += "Consider implementing retry logic with exponential backoff"
+                [void]$recommendationsList.Add("Database is currently locked - SCUM server is actively writing")
+                [void]$recommendationsList.Add("Consider implementing retry logic with exponential backoff")
             }
         }
         
@@ -274,16 +306,16 @@ function Test-DatabaseConcurrentAccess {
         if ($walTest.Success -and $walTest.Data.Count -gt 0) {
             $journalMode = $walTest.Data[0].journal_mode
             if ($journalMode -ne "wal") {
-                $testResults.Recommendations += "Database is not in WAL mode (current: $journalMode)"
-                $testResults.Recommendations += "WAL mode provides better concurrent read access"
-                $testResults.Recommendations += "However, changing this requires SCUM server restart"
+                [void]$recommendationsList.Add("Database is not in WAL mode (current: $journalMode)")
+                [void]$recommendationsList.Add("WAL mode provides better concurrent read access")
+                [void]$recommendationsList.Add("However, changing this requires SCUM server restart")
             }
         }
         
         # Test 3: Performance impact assessment
         if ($readTime.TotalMilliseconds -gt 1000) {
-            $testResults.Recommendations += "Database read took $([math]::Round($readTime.TotalMilliseconds, 0))ms"
-            $testResults.Recommendations += "Consider implementing caching to reduce database access frequency"
+            [void]$recommendationsList.Add("Database read took $([math]::Round($readTime.TotalMilliseconds, 0))ms")
+            [void]$recommendationsList.Add("Consider implementing caching to reduce database access frequency")
         }
         
         $testResults.ReadTime = $readTime.TotalMilliseconds
@@ -489,7 +521,11 @@ function Invoke-ExternalSQLiteQuery {
                         }
                     }
                     
-                    $results += $row
+                    # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                    if (-not $results) {
+                        $results = New-Object System.Collections.ArrayList
+                    }
+                    $null = $results.Add($row)
                 }
             } elseif ($lines.Count -eq 1) {
                 # Only headers, no data
@@ -568,10 +604,17 @@ function Get-ServerStatistics {
             LastUpdate = $null
         }
         
-        # Get database file size
+        # Get database file size - MEMORY LEAK FIX: Cache this expensive operation
         if (Test-PathExists $script:DatabasePath) {
-            $stats.DatabaseSize = [math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)
-            $stats.LastUpdate = (Get-Item $script:DatabasePath).LastWriteTime
+            # Only check file size every 60 seconds to avoid excessive Get-Item calls
+            $now = Get-Date
+            if (-not $script:LastSizeCheck -or ($now - $script:LastSizeCheck).TotalSeconds -ge 60) {
+                $script:LastSizeCheck = $now
+                $script:CachedSize = [math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)
+                $script:CachedLastWrite = (Get-Item $script:DatabasePath).LastWriteTime
+            }
+            $stats.DatabaseSize = $script:CachedSize
+            $stats.LastUpdate = $script:CachedLastWrite
         }
         
         # Get player counts from prisoner module if available

@@ -7,9 +7,12 @@
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -150,18 +153,19 @@ function Complete-DiscordHandshake {
                 # Send heartbeat
                 $HeartbeatProp = @{ 'op' = 1; 'd' = $SequenceNumber }
                 $Message = $HeartbeatProp | ConvertTo-Json
-                $Array = @()
-                $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
-                $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
+                
+                # MEMORY LEAK FIX: Use efficient byte conversion
+                $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+                $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
                 $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
                 while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
                 
                 $NextHeartbeat = (([int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds)) + [int64]$HeartbeatInterval)
             }
             
-            # Try to receive data
+            # Try to receive data with smaller buffer
             $DiscordData = ""
-            $Size = 512000
+            $Size = 32768  # MEMORY LEAK FIX: Reduced from 512000 to 32KB
             $Array = [byte[]] @(, 0) * $Size
         
             $Recv = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
@@ -180,7 +184,15 @@ function Complete-DiscordHandshake {
                 
                 if ($DiscordData.Trim()) {
                     try { 
-                        $RecvObj = $DiscordData | ConvertFrom-Json | Select-Object @{N = "SentOrRecvd"; E = { "Received" } }, @{N = "EventName"; E = { $_.t } }, @{N = "SequenceNumber"; E = { $_.s } }, @{N = "Opcode"; E = { $_.op } }, @{N = "Data"; E = { $_.d } } 
+                        # MEMORY LEAK FIX: Use efficient hashtable creation without Select-Object
+                        $jsonObj = $DiscordData | ConvertFrom-Json
+                        $RecvObj = @{
+                            SentOrRecvd = "Received"
+                            EventName = $jsonObj.t
+                            SequenceNumber = $jsonObj.s
+                            Opcode = $jsonObj.op
+                            Data = $jsonObj.d
+                        }
                     }
                     catch { 
                         Write-Log "ConvertFrom-Json failed: $($_.Exception.Message)" -Level "Debug"
@@ -197,9 +209,10 @@ function Complete-DiscordHandshake {
                             # Send first heartbeat
                             $HeartbeatProp = @{ 'op' = 1; 'd' = $null }
                             $Message = $HeartbeatProp | ConvertTo-Json
-                            $Array = @()
-                            $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
-                            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
+                            
+                            # MEMORY LEAK FIX: Use efficient byte conversion
+                            $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+                            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
                             $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
                             while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
                             
@@ -235,10 +248,11 @@ function Complete-DiscordHandshake {
                                 }
                             }
 
-                            $Message = $Prop | ConvertTo-Json -Depth 10
-                            $Array = @()
-                            $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
-                            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
+                            $Message = $Prop | ConvertTo-Json -Depth 3
+                            
+                            # MEMORY LEAK FIX: Use efficient byte conversion
+                            $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+                            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
                             $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
                             while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
                         }
@@ -287,120 +301,31 @@ function Complete-DiscordHandshake {
 
 function Start-PersistentHeartbeat {
     try {
-        Write-Log "[HEARTBEAT] Starting persistent heartbeat mechanism..."
+        Write-Log "[HEARTBEAT] Starting lightweight heartbeat mechanism..."
         $script:HeartbeatRunning = $true
         $script:LastHeartbeatAck = $true
         $script:NextHeartbeat = [int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds) + [int64]$script:HeartbeatInterval
         
-        # Create a background job for persistent heartbeat
-        $heartbeatScriptBlock = {
-            param($WebSocket, $HeartbeatInterval, $SequenceNumber)
-            
-            $lastHeartbeat = 0
-            $missedHeartbeats = 0
-            $maxMissedHeartbeats = 5  # Increased tolerance
-            $heartbeatCount = 0
-            
-            Write-Log "[HEARTBEAT-JOB] Starting heartbeat job with interval: $HeartbeatInterval ms" -Level Info
-            
-            while ($true) {
-                try {
-                    $currentTime = [int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds)
-                    $heartbeatCount++
-                    
-                    # Check if WebSocket is still open
-                    if ($WebSocket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
-                        Write-Log "[HEARTBEAT-JOB] WebSocket is no longer open (State: $($WebSocket.State)), stopping heartbeat" -Level Warning
-                        break
-                    }
-                    
-                    # Send heartbeat if it's time
-                    if ($currentTime -ge ($lastHeartbeat + $HeartbeatInterval)) {
-                        Write-Log "[HEARTBEAT-JOB] Sending heartbeat #$heartbeatCount..." -Level Debug
-                        
-                        $HeartbeatProp = @{ 'op' = 1; 'd' = $SequenceNumber }
-                        $Message = $HeartbeatProp | ConvertTo-Json
-                        $Array = @()
-                        $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
-                        $MessageSegment = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
-                        
-                        $CT = New-Object System.Threading.CancellationToken
-                        $SendTask = $WebSocket.SendAsync($MessageSegment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $CT)
-                        
-                        # Wait for send to complete with timeout
-                        $timeout = 10000  # 10 seconds
-                        $SendTask.Wait($timeout)
-                        
-                        if ($SendTask.IsCompleted -and $SendTask.Status -eq 'RanToCompletion') {
-                            $lastHeartbeat = $currentTime
-                            $missedHeartbeats = 0
-                            Write-Log "[HEARTBEAT-JOB] Heartbeat #$heartbeatCount sent successfully" -Level Debug
-                        } else {
-                            $missedHeartbeats++
-                            Write-Log "[HEARTBEAT-JOB] Failed to send heartbeat #$heartbeatCount (Status: $($SendTask.Status), Missed: $missedHeartbeats/$maxMissedHeartbeats)" -Level Warning
-                            
-                            if ($missedHeartbeats -ge $maxMissedHeartbeats) {
-                                Write-Log "[HEARTBEAT-JOB] Too many missed heartbeats ($missedHeartbeats), connection may be dead" -Level Error
-                                break
-                            }
-                        }
-                    }
-                    
-                    # Sleep for a shorter interval to be more responsive
-                    Start-Sleep -Milliseconds 2000  # 2 seconds
-                    
-                } catch {
-                    Write-Log "[HEARTBEAT-JOB] Error in heartbeat loop: $($_.Exception.Message)" -Level Error
-                    $missedHeartbeats++
-                    
-                    if ($missedHeartbeats -ge $maxMissedHeartbeats) {
-                        Write-Log "[HEARTBEAT-JOB] Too many heartbeat errors ($missedHeartbeats), stopping" -Level Error
-                        break
-                    }
-                    
-                    # Sleep longer on error
-                    Start-Sleep -Milliseconds 5000
-                }
-            }
-            
-            Write-Log "[HEARTBEAT-JOB] Persistent heartbeat stopped after $heartbeatCount heartbeats" -Level Info
-        }
-        
-        # Start the heartbeat job
-        $script:HeartbeatJob = Start-Job -ScriptBlock $heartbeatScriptBlock -ArgumentList $script:WebSocket, $script:HeartbeatInterval, $script:SequenceNumber
-        
-        Write-Log "[HEARTBEAT] Persistent heartbeat job started (ID: $($script:HeartbeatJob.Id))"
+        # MEMORY LEAK FIX: No Start-Job - heartbeat will be handled in main loop
+        Write-Log "[HEARTBEAT] Heartbeat timing configured - interval: $($script:HeartbeatInterval)ms"
         
     } catch {
-        Write-Error "[HEARTBEAT] Failed to start persistent heartbeat: $($_.Exception.Message)"
+        Write-Error "[HEARTBEAT] Failed to configure heartbeat: $($_.Exception.Message)"
     }
 }
 
 function Get-HeartbeatJobOutput {
-    if ($script:HeartbeatJob) {
-        $output = Receive-Job -Job $script:HeartbeatJob -Keep
-        if ($output) {
-            Write-Log "Heartbeat job output available" -Level "Debug"
-            $output | ForEach-Object { Write-Log "  $_" -Level "Debug" }
-        } else {
-            Write-Log "No heartbeat job output available" -Level "Debug"
-        }
-        return $output
-    } else {
-        Write-Log "No heartbeat job running" -Level "Debug"
-        return $null
-    }
+    # MEMORY LEAK FIX: No job running - return empty
+    Write-Log "No heartbeat job running - using inline heartbeat" -Level "Debug"
+    return $null
 }
 
 function Stop-PersistentHeartbeat {
     try {
-        if ($script:HeartbeatJob) {
-        Write-Log "[HEARTBEAT] Stopping persistent heartbeat job..." -Level Warning
-            Stop-Job -Job $script:HeartbeatJob -PassThru | Remove-Job
-            $script:HeartbeatJob = $null
-        }
+        # MEMORY LEAK FIX: No job to stop - just clear flags
         $script:HeartbeatRunning = $false
-        Write-Log "[HEARTBEAT] Persistent heartbeat stopped" -Level Warning
+        $script:HeartbeatJob = $null
+        Write-Log "[HEARTBEAT] Heartbeat mechanism stopped" -Level Warning
     } catch {
         Write-Log "[HEARTBEAT] Error stopping heartbeat: $($_.Exception.Message)" -Level Error
     }
@@ -444,9 +369,10 @@ function Maintain-DiscordHeartbeat {
             # Send heartbeat
             $HeartbeatProp = @{ 'op' = 1; 'd' = $script:SequenceNumber }
             $Message = $HeartbeatProp | ConvertTo-Json
-            $Array = @()
-            $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
-            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
+            
+            # MEMORY LEAK FIX: Use efficient byte conversion
+            $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
             $CT = New-Object System.Threading.CancellationToken
             $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
             while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
@@ -524,12 +450,12 @@ function Set-DiscordBotStatus {
         }
         
         # Send presence update
-        $Message = $presence | ConvertTo-Json -Depth 10
+        $Message = $presence | ConvertTo-Json -Depth 3
         Write-Log "[LOW-LEVEL] Sending presence update to Discord" -Level "Debug"
         
-        $Array = @()
-        $Message.ToCharArray() | ForEach-Object { $Array += [byte]$_ }
-        $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
+        # MEMORY LEAK FIX: Use efficient byte conversion
+        $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+        $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
         $CT = New-Object System.Threading.CancellationToken
         $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
         while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
@@ -562,13 +488,10 @@ function Test-DiscordConnectionHealth {
         $isHealthy = Test-DiscordBotConnection
         
         if ($isHealthy) {
-            # Check heartbeat job status if it exists
-            if ($script:HeartbeatJob) {
-                $jobState = $script:HeartbeatJob.State
-                if ($jobState -eq 'Failed' -or $jobState -eq 'Stopped') {
-                    Write-Log "[CONNECTION-HEALTH] Heartbeat job is in $jobState state, connection may be unhealthy" -Level Warning
-                    $isHealthy = $false
-                }
+            # MEMORY LEAK FIX: No job to check - just check running flag
+            if (-not $script:HeartbeatRunning) {
+                Write-Log "[CONNECTION-HEALTH] Heartbeat is not running, connection may be unhealthy" -Level Warning
+                $isHealthy = $false
             }
         }
         
@@ -620,8 +543,8 @@ function Restore-DiscordConnection {
             Write-Log "[RECOVERY] Discord connection restored successfully!"
             
             # Start persistent heartbeat if it's not running
-            if (-not $script:HeartbeatJob -or $script:HeartbeatJob.State -ne 'Running') {
-                Write-Log "[RECOVERY] Starting persistent heartbeat..." -Level "Debug"
+            if (-not $script:HeartbeatRunning) {
+                Write-Log "[RECOVERY] Starting heartbeat mechanism..." -Level "Debug"
                 Start-PersistentHeartbeat
             }
             
@@ -638,11 +561,7 @@ function Restore-DiscordConnection {
 }
 
 function Get-BotConnectionStatus {
-    $jobOutput = $null
-    if ($script:HeartbeatJob) {
-        $jobOutput = Receive-Job -Job $script:HeartbeatJob -Keep | Select-Object -Last 5
-    }
-    
+    # MEMORY LEAK FIX: Simplified status without job output
     return @{
         IsConnected = $script:IsConnected
         WebSocketState = if ($script:WebSocket) { $script:WebSocket.State.ToString() } else { "None" }
@@ -651,9 +570,8 @@ function Get-BotConnectionStatus {
         AuthComplete = $script:AuthComplete
         HeartbeatRunning = $script:HeartbeatRunning
         HeartbeatInterval = $script:HeartbeatInterval
-        HeartbeatJobId = if ($script:HeartbeatJob) { $script:HeartbeatJob.Id } else { "None" }
-        HeartbeatJobState = if ($script:HeartbeatJob) { $script:HeartbeatJob.State } else { "None" }
-        HeartbeatJobOutput = $jobOutput
+        HeartbeatJobId = "InlineHeartbeat"
+        HeartbeatJobState = if ($script:HeartbeatRunning) { "Running" } else { "Stopped" }
     }
 }
 

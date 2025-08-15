@@ -9,9 +9,21 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
+
+    # MEMORY LEAK FIX: Import log streaming helper - check if already loaded
+    $streamingPath = Join-Path $PSScriptRoot "..\..\core\log-streaming.psm1"
+    if (Test-Path $streamingPath) {
+        if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
+            Import-Module $streamingPath -ErrorAction SilentlyContinue
+        }
+    }
+        
 } catch {
     Write-Host "[WARNING] Common module not available for monitoring module" -ForegroundColor Yellow
 }
@@ -462,15 +474,35 @@ function Get-MaxPlayersFromConfig {
             return 64
         }
         
-        $content = Get-Content $script:ServerSettingsPath -ErrorAction SilentlyContinue
-        $maxPlayersLine = $content | Where-Object { $_ -match '^scum\.MaxPlayers\s*=\s*(\d+)' }
+        # Read server configuration file using streaming approach - MEMORY LEAK FIXED
+        $streamReader = $null
+        $fileStream = $null
         
-        if ($maxPlayersLine -and $matches[1]) {
-            return [int]$matches[1]
-        } else {
-            Write-Verbose "[Monitoring] MaxPlayers not found in config, using default: 64"
+        try {
+            $fileStream = [System.IO.FileStream]::new($script:ServerSettingsPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $streamReader = [System.IO.StreamReader]::new($fileStream)
+            
+            # MEMORY LEAK FIX: Search for MaxPlayers line by line instead of building string
+            while (-not $streamReader.EndOfStream) {
+                $line = $streamReader.ReadLine()
+                if ($line -ne $null -and $line -match "MaxPlayers\s*=\s*(\d+)") {
+                    $maxPlayers = [int]$matches[1]
+                    Write-Verbose "[Monitoring] Found MaxPlayers: $maxPlayers"
+                    return $maxPlayers
+                }
+            }
+            
+        } catch {
+            Write-Verbose "[Monitoring] Error reading ServerSettings.ini, using default MaxPlayers=64"
             return 64
+        } finally {
+            if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
+            if ($fileStream) { $fileStream.Close(); $fileStream.Dispose() }
         }
+        
+        # If MaxPlayers not found, return default
+        Write-Verbose "[Monitoring] MaxPlayers not found in config, using default: 64"
+        return 64
         
     } catch {
         Write-Log "[Monitoring] Error reading MaxPlayers from config: $($_.Exception.Message)" -Level Warning
@@ -521,24 +553,77 @@ function Get-ProcessPerformance {
     }
     
     try {
-        # Get basic memory and CPU from process
-        $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-        if ($process) {
-            $performance.Memory = [Math]::Round($process.WorkingSet64 / 1MB, 0)
-            
-            # Get actual CPU usage percentage - only real values, no fallback
-            try {
-                $cpuCounter = Get-Counter "\Process($($process.ProcessName))\% Processor Time" -ErrorAction SilentlyContinue
-                if ($cpuCounter -and $cpuCounter.CounterSamples) {
-                    $cpuValue = $cpuCounter.CounterSamples[0].CookedValue
-                    # Convert to percentage and round
-                    $performance.CPU = [Math]::Round($cpuValue, 0)
-                    Write-Verbose "[Monitoring] Real CPU usage: $($performance.CPU)%"
-                } else {
-                    Write-Verbose "[Monitoring] CPU counter not available, keeping CPU at 0"
+        # Cache process object for 10 seconds to avoid memory leaks
+        $cacheKey = "ProcessPerf_$ProcessId"
+        $now = Get-Date
+        
+        if (-not $script:ProcessCache) {
+            $script:ProcessCache = @{}
+        }
+        
+        # Prevent memory leak - clean old cache entries (keep only last 5 minutes)
+        if ($script:ProcessCache.Count -gt 0) {
+            $cutoffTime = $now.AddMinutes(-5)
+            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+            $keysToRemoveList = [System.Collections.ArrayList]::new()
+            foreach ($key in $script:ProcessCache.Keys) {
+                if ($script:ProcessCache[$key].LastUpdate -lt $cutoffTime) {
+                    [void]$keysToRemoveList.Add($key)
                 }
-            } catch {
-                Write-Verbose "[Monitoring] Failed to get CPU counter: $($_.Exception.Message)"
+            }
+            foreach ($key in $keysToRemoveList) {
+                $script:ProcessCache.Remove($key)
+            }
+            if ($keysToRemove.Count -gt 0) {
+                Write-Verbose "[Monitoring] Cleaned $($keysToRemove.Count) old cache entries"
+            }
+        }
+        
+        $cachedProcess = $script:ProcessCache[$cacheKey]
+        if ($cachedProcess -and $cachedProcess.LastUpdate -and 
+            ($now - $cachedProcess.LastUpdate).TotalSeconds -lt 10) {
+            
+            $performance.Memory = $cachedProcess.Memory
+            $performance.CPU = $cachedProcess.CPU
+            Write-Verbose "[Monitoring] Using cached process performance data"
+        } else {
+            # Get fresh data
+            $process = $null
+            try {
+                $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+                if ($process) {
+                    $performance.Memory = [Math]::Round($process.WorkingSet64 / 1MB, 0)
+                    
+                    # Get actual CPU usage percentage - only real values, no fallback  
+                    try {
+                        $cpuCounter = Get-Counter "\Process($($process.ProcessName))\% Processor Time" -ErrorAction SilentlyContinue
+                        if ($cpuCounter -and $cpuCounter.CounterSamples) {
+                            $cpuValue = $cpuCounter.CounterSamples[0].CookedValue
+                            # Convert to percentage and round
+                            $performance.CPU = [Math]::Round($cpuValue, 0)
+                            Write-Verbose "[Monitoring] Real CPU usage: $($performance.CPU)%"
+                        } else {
+                            Write-Verbose "[Monitoring] CPU counter not available, keeping CPU at 0"
+                        }
+                    } catch {
+                        Write-Verbose "[Monitoring] Failed to get CPU counter: $($_.Exception.Message)"
+                    }
+                    
+                    # Update cache
+                    $script:ProcessCache[$cacheKey] = @{
+                        Memory = $performance.Memory
+                        CPU = $performance.CPU
+                        LastUpdate = $now
+                    }
+                }
+            } finally {
+                if ($process) { 
+                    $process.Dispose()
+                    $process = $null
+                }
+                if ($cpuCounter) {
+                    $cpuCounter = $null
+                }
             }
         }
         
@@ -1018,7 +1103,7 @@ function Send-StateNotification {
             # Get memory in MB
             $freshPerformanceData.Memory = [Math]::Round($scumProcess.WorkingSet64 / 1MB, 0)
             
-            # Try to get CPU usage using WMI if available
+            # Try to get CPU usage using WMI if available (cached to prevent memory leaks)
             try {
                 $processWMI = Get-WmiObject -Query "SELECT * FROM Win32_PerfRawData_PerfProc_Process WHERE IDProcess = $($scumProcess.Id)" -ErrorAction SilentlyContinue
                 if ($processWMI -and $processWMI.PercentProcessorTime) {
@@ -1028,12 +1113,20 @@ function Send-StateNotification {
                 }
             } catch {
                 Write-Verbose "[Monitoring] Could not get WMI data for CPU"
+            } finally {
+                if ($processWMI) {
+                    $processWMI = $null
+                }
             }
             
-            # Alternative: Use cached CPU from last performance update if it's recent
-            if ($script:ServerState.Performance.CPU -and $script:ServerState.Performance.CPU -gt 0) {
-                $freshPerformanceData.CPU = $script:ServerState.Performance.CPU
-            }
+            # Dispose process object to prevent memory leaks
+            $scumProcess.Dispose()
+            $scumProcess = $null
+        }
+            
+        # Alternative: Use cached CPU from last performance update if it's recent
+        if ($script:ServerState.Performance.CPU -and $script:ServerState.Performance.CPU -gt 0) {
+            $freshPerformanceData.CPU = $script:ServerState.Performance.CPU
         }
         
         # Get current player count from ServerState or database
@@ -1215,13 +1308,23 @@ function Test-PerformanceAlerts {
             $currentEntities = 0
             
             # Get fresh memory from process
-            $scumProcess = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
-            if ($scumProcess) {
-                $currentMemory = [Math]::Round($scumProcess.WorkingSet64 / 1MB, 0)
-                Write-Verbose "[Monitoring] Fresh memory data: $currentMemory MB"
+            $scumProcess = $null
+            try {
+                $scumProcess = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
+                if ($scumProcess) {
+                    $currentMemory = [Math]::Round($scumProcess.WorkingSet64 / 1MB, 0)
+                    Write-Verbose "[Monitoring] Fresh memory data: $currentMemory MB"
+                }
+            } finally {
+                if ($scumProcess) { 
+                    $scumProcess.Dispose()
+                    $scumProcess = $null
+                }
             }
             
             # Get REAL CPU usage - calculate from process CPU time over a 2-second interval
+            $cpu1 = $null
+            $cpu2 = $null
             try {
                 $cpu1 = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
                 if ($cpu1) {
@@ -1241,6 +1344,9 @@ function Test-PerformanceAlerts {
                 Write-Verbose "[Monitoring] CPU calculation failed: $($_.Exception.Message)"
                 # If we can't get real CPU, don't show fake data
                 $currentCPU = 0
+            } finally {
+                if ($cpu1) { $cpu1.Dispose(); $cpu1 = $null }
+                if ($cpu2) { $cpu2.Dispose(); $cpu2 = $null }
             }
             
             # Get ONLINE player count only - not total registered players
@@ -1374,11 +1480,46 @@ function Initialize-PerformanceCache {
         
         Write-Verbose "[Monitoring] Initializing performance cache from recent log data..."
         
-        # Read recent log lines and process Global Stats entries
-        $allLines = Get-Content $logPath -ErrorAction SilentlyContinue
-        if ($allLines -and $allLines.Count -gt 0) {
-            # Process last 50 lines looking for Global Stats
-            $recentLines = $allLines | Select-Object -Last 50
+        # MEMORY LEAK FIX: Use streaming approach for reading recent log lines
+        $recentLines = @()
+        $streamReader = $null
+        $fileStream = $null
+        
+        try {
+            $fileStream = [System.IO.FileStream]::new($logPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $streamReader = [System.IO.StreamReader]::new($fileStream)
+            
+            # MEMORY LEAK FIX: Use circular buffer to read only last 50 lines instead of entire file
+            $maxLines = 50
+            $buffer = New-Object string[] $maxLines
+            $bufferIndex = 0
+            $totalLines = 0
+            
+            while (-not $streamReader.EndOfStream) {
+                $line = $streamReader.ReadLine()
+                if ($line -ne $null) {
+                    $buffer[$bufferIndex] = $line
+                    $bufferIndex = ($bufferIndex + 1) % $maxLines
+                    $totalLines++
+                }
+            }
+            
+            # Extract the last lines in correct order
+            if ($totalLines -gt 0) {
+                if ($totalLines -le $maxLines) {
+                    $recentLines = $buffer[0..($totalLines - 1)]
+                } else {
+                    # Buffer is full, extract in correct order
+                    $recentLines = $buffer[$bufferIndex..($maxLines - 1)] + $buffer[0..($bufferIndex - 1)]
+                }
+            }
+            
+        } finally {
+            if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
+            if ($fileStream) { $fileStream.Close(); $fileStream.Dispose() }
+        }
+        
+        if ($recentLines.Count -gt 0) {
             $globalStatsProcessed = 0
             
             foreach ($line in $recentLines) {

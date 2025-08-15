@@ -1,15 +1,18 @@
 # ===============================================================
 # SCUM Server Automation - Discord Notification Manager
 # ===============================================================
-# Manages automated Discord notifications for server events
+# Manages automated Discord notifications
 # Handles server status, backups, updates, and admin notifications
 # ===============================================================
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -18,8 +21,14 @@ try {
 
 # Import required modules
 $moduleRoot = Split-Path $PSScriptRoot -Parent
-Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Force -Global -ErrorAction SilentlyContinue
-Import-Module (Join-Path $moduleRoot "templates\embed-styles.psm1") -Force -Global -ErrorAction SilentlyContinue
+
+# MEMORY LEAK FIX: Conditional imports instead of -Force
+if (-not (Get-Module "discord-api" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Global -ErrorAction SilentlyContinue
+}
+if (-not (Get-Module "embed-styles" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "templates\embed-styles.psm1") -Global -ErrorAction SilentlyContinue
+}
 
 # Global variables
 $script:DiscordConfig = $null
@@ -145,7 +154,8 @@ function Send-DiscordNotification {
         $embed = New-NotificationEmbed -Type $Type -Data $Data
         
         # Send to all applicable channels
-        $results = @()
+        # MEMORY LEAK FIX: Use ArrayList instead of array +=
+        $resultsList = [System.Collections.ArrayList]::new()
         $successCount = 0
         
         foreach ($channelId in $channels) {
@@ -158,15 +168,16 @@ function Send-DiscordNotification {
             $messageContent = $null
             if ($roleMentions -and $roleMentions.Count -gt 0) {
                 # Convert roles to proper mention format
-                $roleMentionStrings = @()
+                # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                $roleMentionsList = [System.Collections.ArrayList]::new()
                 foreach ($role in $roleMentions) {
                     if ($role -and $role.ToString().Trim() -ne '') {
                         $mentionString = "<@&$($role.ToString().Trim())>"
-                        $roleMentionStrings += $mentionString
+                        [void]$roleMentionsList.Add($mentionString)
                     }
                 }
-                if ($roleMentionStrings.Count -gt 0) {
-                    $messageContent = $roleMentionStrings -join " "
+                if ($roleMentionsList.Count -gt 0) {
+                    $messageContent = $roleMentionsList.ToArray() -join " "
                 }
             }
             $channelResult = $null
@@ -186,14 +197,14 @@ function Send-DiscordNotification {
                     
                     if ($channelResult) {
                         $successCount++
-                        $results += @{ ChannelId = $channelId; Success = $true; Result = $channelResult }
+                        [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $true; Result = $channelResult })
                     } else {
-                        $results += @{ ChannelId = $channelId; Success = $false; Error = "Discord API call failed" }
+                        [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $false; Error = "Discord API call failed" })
                     }
                     
                 } catch {
                     Write-Log "Discord API error for $Type to channel $channelId`: $($_.Exception.Message)" -Level Error
-                    $results += @{ ChannelId = $channelId; Success = $false; Error = $_.Exception.Message }
+                    [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $false; Error = $_.Exception.Message })
                     
                     # Try sending without content as fallback
                     if ($messageContent) {
@@ -203,7 +214,8 @@ function Send-DiscordNotification {
                             if ($channelResult) {
                                 Write-Log "Fallback send successful" -Level "Debug"
                                 $successCount++
-                                $results[-1] = @{ ChannelId = $channelId; Success = $true; Result = $channelResult; Note = "Sent without role mentions" }
+                                # Update the last added result in ArrayList
+                                $resultsList[$resultsList.Count - 1] = @{ ChannelId = $channelId; Success = $true; Result = $channelResult; Note = "Sent without role mentions" }
                             }
                         } catch {
                             Write-Log "Fallback send also failed: $($_.Exception.Message)" -Level Error
@@ -212,7 +224,7 @@ function Send-DiscordNotification {
                 }
             } else {
                 Write-Log "Discord API module not available" -Level Warning
-                $results += @{ ChannelId = $channelId; Success = $false; Error = "Discord API module not available" }
+                [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $false; Error = "Discord API module not available" })
             }
         }
         
@@ -221,7 +233,7 @@ function Send-DiscordNotification {
             return @{ 
                 Success = $true
                 Message = "Notification sent to $successCount/$($channels.Count) channels"
-                Results = $results
+                Results = $resultsList.ToArray()
                 ChannelCount = $channels.Count
                 SuccessCount = $successCount
             }
@@ -230,7 +242,7 @@ function Send-DiscordNotification {
             return @{ 
                 Success = $false
                 Error = "Failed to send to all channels"
-                Results = $results
+                Results = $resultsList.ToArray()
                 ChannelCount = $channels.Count
                 SuccessCount = 0
             }
@@ -248,7 +260,8 @@ function Get-NotificationChannels {
     #>
     param([string]$Type)
     
-    $channels = @()
+    # MEMORY LEAK FIX: Use ArrayList instead of array +=
+    $channelsList = [System.Collections.ArrayList]::new()
     
     # Use configured notification types or defaults
     $adminOnlyTypes = if ($script:AdminOnlyTypes) { $script:AdminOnlyTypes } else { $script:DefaultAdminOnlyTypes }
@@ -265,21 +278,21 @@ function Get-NotificationChannels {
     
     # Add admin channel if it's an admin notification
     if ($isAdminNotification -and $script:DiscordConfig.Notifications.Channels.Admin) {
-        $channels += $script:DiscordConfig.Notifications.Channels.Admin
+        [void]$channelsList.Add($script:DiscordConfig.Notifications.Channels.Admin)
     }
     
     # Add player channel if it's a player notification
     if ($isPlayerNotification -and $script:DiscordConfig.Notifications.Channels.Players) {
-        $channels += $script:DiscordConfig.Notifications.Channels.Players
+        [void]$channelsList.Add($script:DiscordConfig.Notifications.Channels.Players)
     }
     
     # If no specific channels found, use default
-    if ($channels.Count -eq 0 -and $script:DiscordConfig.Notifications.DefaultChannel) {
-        $channels += $script:DiscordConfig.Notifications.DefaultChannel
+    if ($channelsList.Count -eq 0 -and $script:DiscordConfig.Notifications.DefaultChannel) {
+        [void]$channelsList.Add($script:DiscordConfig.Notifications.DefaultChannel)
     }
     
     # Remove duplicates (in case both channels are the same)
-    $channels = $channels | Select-Object -Unique
+    $channels = $channelsList.ToArray() | Select-Object -Unique
     
     Write-Log "[Channels] Type: $Type, Admin: $isAdminNotification, Player: $isPlayerNotification, Channels: $($channels -join ', ')" -Level "Debug"
     
@@ -631,18 +644,19 @@ function New-NotificationEmbed {
             $message = if ($Data.message) { $Data.message } else { "Event: **$Type**" }
             
             # Build additional info
-            $additionalInfo = @()
+            # MEMORY LEAK FIX: Use ArrayList instead of array +=
+            $additionalInfoList = [System.Collections.ArrayList]::new()
             if ($Data.time -and $Data.time -ne (Get-Date).ToString('HH:mm:ss')) {
-                $additionalInfo += "**Time:** $($Data.time)"
+                [void]$additionalInfoList.Add("**Time:** $($Data.time)")
             }
             if ($Data.players) {
-                $additionalInfo += "**Players:** $($Data.players)"
+                [void]$additionalInfoList.Add("**Players:** $($Data.players)")
             }
             if ($Data.reason) {
-                $additionalInfo += "**Reason:** $($Data.reason)"
+                [void]$additionalInfoList.Add("**Reason:** $($Data.reason)")
             }
             
-            $infoText = if ($additionalInfo.Count -gt 0) { "`n`n" + ($additionalInfo -join "`n") } else { "" }
+            $infoText = if ($additionalInfoList.Count -gt 0) { "`n`n" + ($additionalInfoList.ToArray() -join "`n") } else { "" }
             
             return New-StandardEmbed -Title ":information_source: Server Event" -Description "$message$infoText" -Color (Get-ColorCode "info")
         }

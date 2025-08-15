@@ -47,7 +47,10 @@ function Import-CommonModule {
         if ($commonModulePath -and (Test-Path $commonModulePath)) {
             # Only import if Write-Log is not available to avoid resetting log configuration
             if (-not (Get-Command "Write-Log" -ErrorAction SilentlyContinue)) {
-                Import-Module $commonModulePath -Force -Global -ErrorAction SilentlyContinue
+                # MEMORY LEAK FIX: Check if common module already loaded before importing
+                if (-not (Get-Module "common" -ErrorAction SilentlyContinue)) {
+                    Import-Module $commonModulePath -Global -ErrorAction SilentlyContinue
+                }
             }
             return $true
         }

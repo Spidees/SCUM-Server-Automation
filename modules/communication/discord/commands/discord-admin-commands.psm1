@@ -10,9 +10,12 @@ Add-Type -AssemblyName System.Web
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -498,9 +501,9 @@ function Handle-ServerStartAdminCommand {
                     # Check if auto-restart/repair is available and enabled
                     $autoRestartEnabled = $false
                     try {
-                        if (Test-Path "SCUM-Server-Automation.config.json") {
-                            $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
-                            $autoRestartEnabled = $configContent.autoRestart -eq $true
+                        # MEMORY LEAK FIX: Use global config instead of reading file
+                        if ($global:config) {
+                            $autoRestartEnabled = $global:config.autoRestart -eq $true
                         }
                     } catch {
                         # Ignore config read errors
@@ -750,14 +753,15 @@ function Handle-ServerValidateAdminCommand {
             # Get configuration
             $configContent = $null
             try {
-                if (Test-Path "SCUM-Server-Automation.config.json") {
-                    $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
+                # MEMORY LEAK FIX: Use global config instead of reading file
+                if ($global:config) {
+                    $configContent = $global:config
                 } else {
-                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Configuration file not found"
+                    Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Global configuration not available"
                     return
                 }
             } catch {
-                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to read configuration: $($_.Exception.Message)"
+                Send-CommandResponse -ChannelId $ResponseChannelId -Content ":x: **Error** - Failed to access configuration: $($_.Exception.Message)"
                 return
             }
             
@@ -837,20 +841,26 @@ function Handle-ServerBackupAdminCommand {
     try {
         Send-CommandResponse -ChannelId $ResponseChannelId -Content ":floppy_disk: **Creating Backup** - Manual backup started..."
         
-        # Import backup module if needed
-        try {
-            Import-Module "$PSScriptRoot\..\..\..\automation\backup\backup.psm1" -Force
-        } catch {
-            Write-Log "[ADMIN-COMMANDS] Failed to import backup module: $($_.Exception.Message)" -Level Error
+        # Import backup module if needed (MEMORY LEAK FIX: Only import if not already loaded)
+        if (-not (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue)) {
+            try {
+                # MEMORY LEAK FIX: Conditional import instead of -Force
+                $backupModulePath = "$PSScriptRoot\..\..\..\automation\backup\backup.psm1"
+                if (-not (Get-Module "backup" -ErrorAction SilentlyContinue)) {
+                    Import-Module $backupModulePath
+                }
+            } catch {
+                Write-Log "[ADMIN-COMMANDS] Failed to import backup module: $($_.Exception.Message)" -Level Error
+            }
         }
         
         if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) {
-            # Get paths directly from config instead of using Get-ConfigPaths
+            # Get paths directly from global config
             try {
-                if (Test-Path "SCUM-Server-Automation.config.json") {
-                    $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
-                    $savedDir = $configContent.savedDir
-                    $backupRoot = $configContent.backupRoot
+                # MEMORY LEAK FIX: Use global config instead of reading file
+                if ($global:config) {
+                    $savedDir = $global:config.savedDir
+                    $backupRoot = $global:config.backupRoot
                     
                     if ($savedDir -and $backupRoot) {
                         # Resolve relative paths
@@ -921,8 +931,13 @@ function Handle-ServerRestartSkipAdminCommand {
     )
     
     try {
-        # Import the scheduling module to access skip functions
-        Import-Module "$PSScriptRoot\..\..\..\automation\scheduling\scheduling.psm1" -Force
+        # Import the scheduling module to access skip functions (MEMORY LEAK FIX: Only if not loaded)
+        if (-not (Get-Command "Skip-NextRestart" -ErrorAction SilentlyContinue)) {
+            $schedulingModulePath = "$PSScriptRoot\..\..\..\automation\scheduling\scheduling.psm1"
+            if (-not (Get-Module "scheduling" -ErrorAction SilentlyContinue)) {
+                Import-Module $schedulingModulePath
+            }
+        }
         
         # Check if restart is already skipped
         $isAlreadySkipped = Get-RestartSkipStatus
@@ -937,10 +952,10 @@ function Handle-ServerRestartSkipAdminCommand {
         $nextRestartTime = "unknown time"
         
         try {
-            # Load restart times from config first
-            if (Test-Path "SCUM-Server-Automation.config.json") {
-                $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
-                $restartTimes = $configContent.restartTimes
+            # Load restart times from global config first
+            # MEMORY LEAK FIX: Use global config instead of reading file
+            if ($global:config) {
+                $restartTimes = $global:config.restartTimes
                 
                 if ($restartTimes -and $restartTimes.Count -gt 0) {
                     $now = Get-Date

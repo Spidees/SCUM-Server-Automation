@@ -13,9 +13,21 @@
 try {
     $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
+
+    # MEMORY LEAK FIX: Import log streaming helper - check if already loaded
+    $streamingPath = Join-Path $PSScriptRoot "..\..\core\log-streaming.psm1"
+    if (Test-Path $streamingPath) {
+        if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
+            Import-Module $streamingPath -ErrorAction SilentlyContinue
+        }
+    }
+        
 } catch {
     Write-Host "[WARNING] Common module not available for services module" -ForegroundColor Yellow
 }
@@ -63,6 +75,8 @@ function Test-GameProcessHealth {
         $serviceProcess = $null
         $scumProcess = $null
         $processFound = $false
+        $serviceWmi = $null
+        $childProcesses = $null
         try {
             # Get the service and its process ID
             $serviceWmi = Get-WmiObject -Class Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
@@ -158,6 +172,18 @@ function Test-GameProcessHealth {
             ProcessFound = $false
             DatabaseResponsive = $false
         }
+    } finally {
+        # Clean up WMI and Process objects to prevent memory leaks
+        if ($serviceWmi) { $serviceWmi = $null }
+        if ($childProcesses) { $childProcesses = $null }
+        if ($serviceProcess) { 
+            try { $serviceProcess.Dispose() } catch {}
+            $serviceProcess = $null 
+        }
+        if ($scumProcess) { 
+            try { $scumProcess.Dispose() } catch {}
+            $scumProcess = $null 
+        }
     }
 }
 
@@ -194,6 +220,9 @@ function Repair-GameService {
             Write-Log "[Service] Graceful stop failed, forcing process termination..."
             
             # Get the actual process from the service and kill it
+            $serviceWmi = $null
+            $serviceProcess = $null
+            $childProcesses = $null
             try {
                 $serviceWmi = Get-WmiObject -Class Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
                 if ($serviceWmi -and $serviceWmi.ProcessId -and $serviceWmi.ProcessId -gt 0) {
@@ -206,18 +235,30 @@ function Repair-GameService {
                             $childProc = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
                             if ($childProc) {
                                 Write-Log "[Service] Force stopping child process '$($childProc.ProcessName)' PID $($childProc.Id)"
-                                $childProc.Kill()
+                                try {
+                                    $childProc.Kill()
+                                } finally {
+                                    $childProc.Dispose()
+                                }
                             }
                         }
                         Start-Sleep -Seconds 2
                         
                         # Then kill NSSM itself
                         Write-Log "[Service] Force stopping NSSM service process PID $($serviceProcess.Id)"
-                        $serviceProcess.Kill()
+                        try {
+                            $serviceProcess.Kill()
+                        } finally {
+                            $serviceProcess.Dispose()
+                        }
                     } else {
                         # Direct service process
                         Write-Log "[Service] Force stopping service process '$($serviceProcess.ProcessName)' PID $($serviceProcess.Id)"
-                        $serviceProcess.Kill()
+                        try {
+                            $serviceProcess.Kill()
+                        } finally {
+                            $serviceProcess.Dispose()
+                        }
                     }
                     Start-Sleep -Seconds 3
                 } else {
@@ -225,6 +266,14 @@ function Repair-GameService {
                 }
             } catch {
                 Write-Log "[Service] Failed to force kill service process: $($_.Exception.Message)" -Level Warning
+            } finally {
+                # Clean up all WMI and Process objects
+                if ($serviceWmi) { $serviceWmi = $null }
+                if ($childProcesses) { $childProcesses = $null }
+                if ($serviceProcess) { 
+                    try { $serviceProcess.Dispose() } catch {}
+                    $serviceProcess = $null 
+                }
             }
             
             # Force stop the service
@@ -624,7 +673,38 @@ function Test-IntentionalStop {
         # Method 3: Check for clean shutdown in SCUM log
         $logPath = Join-Path $ServerDirectory "SCUM\Saved\Logs\SCUM.log"
         if (Test-PathExists $logPath) {
-            $recentLines = Get-Content $logPath -Tail 20 -ErrorAction SilentlyContinue
+            # MEMORY LEAK FIX: Use streaming approach to read last 20 lines
+            $recentLines = @()
+            $streamReader = $null
+            $fileStream = $null
+            
+            try {
+                $fileStream = [System.IO.FileStream]::new($logPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                $streamReader = [System.IO.StreamReader]::new($fileStream)
+                
+                # MEMORY LEAK FIX: Use ArrayList instead of array +=
+                $allLinesList = [System.Collections.ArrayList]::new()
+                while (-not $streamReader.EndOfStream) {
+                    $line = $streamReader.ReadLine()
+                    if ($line -ne $null) {
+                        [void]$allLinesList.Add($line)
+                    }
+                }
+                
+                # Get last 20 lines
+                if ($allLinesList.Count -gt 0) {
+                    $startIndex = [Math]::Max(0, $allLinesList.Count - 20)
+                    $allLines = $allLinesList.ToArray()
+                    $recentLines = $allLines[$startIndex..($allLines.Count - 1)]
+                }
+                
+            } catch {
+                # Fall back to empty array on error
+                $recentLines = @()
+            } finally {
+                if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
+                if ($fileStream) { $fileStream.Close(); $fileStream.Dispose() }
+            }
             $cleanShutdownPatterns = @(
                 'LogExit: Exiting\.',
                 'SHUTTING DOWN',

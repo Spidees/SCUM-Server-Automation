@@ -9,9 +9,12 @@
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -426,21 +429,22 @@ function New-WeeklyLeaderboardsEmbed {
     #>
     
     try {
-        $fields = @()
+        # MEMORY LEAK FIX: Use ArrayList instead of array += operations
+        $fields = New-Object System.Collections.ArrayList
         
         # Get weekly leaderboard data for 12 categories in 2 columns
-        $fields += Format-LeaderboardField -Title ":busts_in_silhouette: TOP SQUADS" -Data (Get-WeeklyLeaderboard -Category "squads" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":stopwatch: TOP SURVIVORS" -Data (Get-WeeklyLeaderboard -Category "minutes_survived" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":star: TOP FAME POINTS" -Data (Get-WeeklyLeaderboard -Category "fame" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":moneybag: TOP MONEY" -Data (Get-WeeklyLeaderboard -Category "money" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":zombie: TOP PUPPET KILLERS" -Data (Get-WeeklyLeaderboard -Category "puppet_kills" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":deer: TOP ANIMAL HUNTERS" -Data (Get-WeeklyLeaderboard -Category "animal_kills" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":crossed_swords: TOP MELEE WARRIORS" -Data (Get-WeeklyLeaderboard -Category "melee_kills" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":bow_and_arrow: TOP ARCHERS" -Data (Get-WeeklyLeaderboard -Category "archery_kills" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":gun: TOP SNIPER" -Data (Get-WeeklyLeaderboard -Category "longest_kill_distance" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":dart: TOP HEADSHOT MASTERS" -Data (Get-WeeklyLeaderboard -Category "headshots" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":unlock: TOP LOCKPICKERS" -Data (Get-WeeklyLeaderboard -Category "locks_picked" -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":package: TOP LOOTERS" -Data (Get-WeeklyLeaderboard -Category "containers_looted" -Limit 5) -Inline $false
+        $null = $fields.Add((Format-LeaderboardField -Title ":busts_in_silhouette: TOP SQUADS" -Data (Get-WeeklyLeaderboard -Category "squads" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":stopwatch: TOP SURVIVORS" -Data (Get-WeeklyLeaderboard -Category "minutes_survived" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":star: TOP FAME POINTS" -Data (Get-WeeklyLeaderboard -Category "fame" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":moneybag: TOP MONEY" -Data (Get-WeeklyLeaderboard -Category "money" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":zombie: TOP PUPPET KILLERS" -Data (Get-WeeklyLeaderboard -Category "puppet_kills" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":deer: TOP ANIMAL HUNTERS" -Data (Get-WeeklyLeaderboard -Category "animal_kills" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":crossed_swords: TOP MELEE WARRIORS" -Data (Get-WeeklyLeaderboard -Category "melee_kills" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":bow_and_arrow: TOP ARCHERS" -Data (Get-WeeklyLeaderboard -Category "archery_kills" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":gun: TOP SNIPER" -Data (Get-WeeklyLeaderboard -Category "longest_kill_distance" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":dart: TOP HEADSHOT MASTERS" -Data (Get-WeeklyLeaderboard -Category "headshots" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":unlock: TOP LOCKPICKERS" -Data (Get-WeeklyLeaderboard -Category "locks_picked" -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":package: TOP LOOTERS" -Data (Get-WeeklyLeaderboard -Category "containers_looted" -Limit 5) -Inline $false))
         
         $weekStart = (Get-Date).AddDays(-(Get-Date).DayOfWeek.value__+1)
         $weekEnd = $weekStart.AddDays(6)

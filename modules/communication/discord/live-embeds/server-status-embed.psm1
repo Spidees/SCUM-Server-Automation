@@ -221,15 +221,17 @@ function New-ServerStatusEmbed {
     # Try to load from config file if not available in memory
     if (-not $script:DiscordConfig.publicIP -and (Test-Path "SCUM-Server-Automation.config.json")) {
         try {
-            $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
-            if ($configContent.publicIP) {
-                $script:DiscordConfig.publicIP = $configContent.publicIP
-            }
-            if ($configContent.publicPort) {
-                $script:DiscordConfig.publicPort = $configContent.publicPort
+            # MEMORY LEAK FIX: Use global config instead of repeatedly reading file
+            if ($global:config) {
+                if ($global:config.publicIP) {
+                    $script:DiscordConfig.publicIP = $global:config.publicIP
+                }
+                if ($global:config.publicPort) {
+                    $script:DiscordConfig.publicPort = $global:config.publicPort
+                }
             }
         } catch {
-            Write-Log "Failed to load server IP from config file: $($_.Exception.Message)" -Level "Debug"
+            Write-Log "Failed to load server IP from global config: $($_.Exception.Message)" -Level "Debug"
         }
     }
     
@@ -368,14 +370,23 @@ function Get-NextRestartTime {
     # Check if next restart will be skipped
     $skipStatus = $false
     try {
-        # Import scheduling module to access skip functions - use absolute path
-        Write-Log "Attempting to import scheduling module..." -Level "Debug"
-        $schedulingModulePath = Join-Path $PSScriptRoot "..\..\automation\scheduling\scheduling.psm1"
-        Write-Log "Using scheduling module path: $schedulingModulePath" -Level "Debug"
+        # MEMORY LEAK FIX: Check if scheduling module already loaded before importing
+        Write-Log "Checking for scheduling module..." -Level "Debug"
         
-        # Import with Global scope to ensure functions are available
-        Import-Module $schedulingModulePath -Force -Global -ErrorAction Stop
-        Write-Log "Scheduling module imported successfully" -Level "Debug"
+        if (-not (Get-Command "Get-RestartSkipStatus" -ErrorAction SilentlyContinue)) {
+            # Only import if command not available
+            $schedulingModulePath = Join-Path $PSScriptRoot "..\..\..\automation\scheduling\scheduling.psm1"
+            Write-Log "Importing scheduling module from: $schedulingModulePath" -Level "Debug"
+            
+            if (Test-Path $schedulingModulePath) {
+                Import-Module $schedulingModulePath -Global -ErrorAction Stop
+                Write-Log "Scheduling module imported successfully" -Level "Debug"
+            } else {
+                Write-Log "Scheduling module not found at: $schedulingModulePath" -Level "Debug"
+            }
+        } else {
+            Write-Log "Scheduling module already available" -Level "Debug"
+        }
         
         if (Get-Command "Get-RestartSkipStatus" -ErrorAction SilentlyContinue) {
             Write-Log "Get-RestartSkipStatus command found, calling it..." -Level "Debug"
@@ -396,17 +407,16 @@ function Get-NextRestartTime {
         # Try multiple sources for restart times, prioritize config file
         $configLoaded = $false
         
-        # Source 1: Direct config file (highest priority)
-        if (Test-Path "SCUM-Server-Automation.config.json") {
+        # Source 1: Global config (highest priority)
+        if ($global:config) {
             try {
-                $configContent = Get-Content "SCUM-Server-Automation.config.json" -Raw | ConvertFrom-Json
-                if ($configContent.restartTimes -and $configContent.restartTimes.Count -gt 0) {
-                    $restartTimes = $configContent.restartTimes
+                if ($global:config.restartTimes -and $global:config.restartTimes.Count -gt 0) {
+                    $restartTimes = $global:config.restartTimes
                     $configLoaded = $true
-                    Write-Log "Loaded restart times from config file: $($restartTimes -join ', ')" -Level "Debug"
+                    Write-Log "Loaded restart times from global config: $($restartTimes -join ', ')" -Level "Debug"
                 }
             } catch {
-                Write-Log "Failed to read config file: $($_.Exception.Message)" -Level "Debug"
+                Write-Log "Failed to read global config: $($_.Exception.Message)" -Level "Debug"
             }
         }
         

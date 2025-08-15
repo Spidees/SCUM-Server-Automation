@@ -7,9 +7,12 @@
 
 # Standard import of common module
 try {
-    $helperPath = Join-Path $PSScriptRoot "..\..\core\module-helper.psm1"
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
     if (Test-Path $helperPath) {
-        Import-Module $helperPath -Force -ErrorAction SilentlyContinue
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
         Import-CommonModule | Out-Null
     }
 } catch {
@@ -257,7 +260,20 @@ function Process-CommandMessage {
         }
         
         # Update cooldown
+                # Update command cooldown timestamp
         $script:CommandCooldowns[$cooldownKey] = Get-Date
+        
+        # Prevent memory leak - clean old cooldown entries (keep only last hour)
+        $cutoffTime = (Get-Date).AddHours(-1)
+        $keysToRemove = @()
+        foreach ($key in $script:CommandCooldowns.Keys) {
+            if ($script:CommandCooldowns[$key] -lt $cutoffTime) {
+                $keysToRemove += $key
+            }
+        }
+        foreach ($key in $keysToRemove) {
+            $script:CommandCooldowns.Remove($key)
+        }
         
         # Execute the command
         Execute-TextCommand -CommandName $commandName -Arguments $arguments -ResponseChannelId $ChannelId -UserId $Message.author.id -CommandType $CommandType
