@@ -103,7 +103,7 @@ function Initialize-MonitoringModule {
         
         # Check Discord integration availability
         if (Get-Command "Update-DiscordServerStatus" -ErrorAction SilentlyContinue) {
-            Write-Verbose "[Monitoring] Discord integration available"
+            Write-Log "[Monitoring] Discord integration available" -Level Debug
         } else {
             Write-Log "[Monitoring] Discord Gateway functions not available - Discord notifications may be limited" -Level Warning
         }
@@ -139,15 +139,15 @@ function Update-ServerState {
         $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
         $serviceStatus = if ($service) { $service.Status.ToString() } else { 'Not Found' }
         
-        Write-Verbose "[Monitoring] Service '$script:ServiceName' status: $serviceStatus"
+        Write-Log "[Monitoring] Service '$script:ServiceName' status: $serviceStatus" -Level Debug
         
         # Get process information
         $processInfo = Get-ServiceProcess -ServiceName $script:ServiceName
-        Write-Verbose "[Monitoring] Process info: PID=$($processInfo.ProcessId), Name=$($processInfo.ProcessName)"
+        Write-Log "[Monitoring] Process info: PID=$($processInfo.ProcessId), Name=$($processInfo.ProcessName)" -Level Debug
         
         # Get max players from config
         $maxPlayers = Get-MaxPlayersFromConfig
-        Write-Verbose "[Monitoring] MaxPlayers read from config: $maxPlayers"
+        Write-Log "[Monitoring] MaxPlayers read from config: $maxPlayers" -Level Debug
         
         # Get current player count from database
         $currentPlayers = Get-CurrentPlayerCount
@@ -167,7 +167,7 @@ function Update-ServerState {
                 # ENHANCED: Even if logs say "Online", double-check service status
                 # If service is stopped, server CANNOT be online
                 if ($serviceStatus -eq 'Stopped') {
-                    Write-Verbose "[Monitoring] Logs say Online but service is STOPPED - overriding to IsRunning=false"
+                    Write-Log "[Monitoring] Logs say Online but service is STOPPED - overriding to IsRunning=false" -Level Debug
                     $false
                 } else {
                     $true
@@ -181,18 +181,18 @@ function Update-ServerState {
                 # ENHANCED: If server state is unknown from logs, use service status as reliable fallback
                 # If service is stopped and no process exists, server is definitely offline
                 if ($serviceStatus -eq 'Stopped' -or $null -eq $processInfo.ProcessId) {
-                    Write-Verbose "[Monitoring] Server state unknown from logs but service stopped or no process - IsRunning=false"
+                    Write-Log "[Monitoring] Server state unknown from logs but service stopped or no process - IsRunning=false" -Level Debug
                     $false
                 } else {
                     # Service running but no log confirmation - conservative approach: assume NOT ready
-                    Write-Verbose "[Monitoring] Server state unknown from logs, service running - conservatively assuming NOT ready (IsRunning=false)"
+                    Write-Log "[Monitoring] Server state unknown from logs, service running - conservatively assuming NOT ready (IsRunning=false)" -Level Debug
                     $false
                 }
             }
             default { $false }
         }
         
-        Write-Verbose "[Monitoring] Status: Service='$serviceStatus' (Running=$serviceRunning), Server='$actualServerState' (Online=$isRunning)"
+        Write-Log "[Monitoring] Status: Service='$serviceStatus' (Running=$serviceRunning), Server='$actualServerState' (Online=$isRunning)" -Level Debug
         
         # Update state
         $script:ServerState.ServiceStatus = $serviceStatus
@@ -226,17 +226,17 @@ function Update-ServerState {
                             $defaultPerformance.Entities = $entityTotal
                         }
                         
-                        Write-Verbose "[Monitoring] Using cached performance data (no process): FPS=$($defaultPerformance.FPS), Entities=$($defaultPerformance.Entities), CPU=0 (no process)"
+                        Write-Log "[Monitoring] Using cached performance data (no process): FPS=$($defaultPerformance.FPS), Entities=$($defaultPerformance.Entities), CPU=0 (no process)" -Level Debug
                     }
                 } catch {
-                    Write-Verbose "[Monitoring] Failed to get cached performance data: $($_.Exception.Message)"
+                    Write-Log "[Monitoring] Failed to get cached performance data: $($_.Exception.Message)" -Level Debug
                 }
             }
             
             $script:ServerState.Performance = $defaultPerformance
         }
         
-        Write-Verbose "[Monitoring] State updated: IsOnline=$($script:ServerState.IsRunning), Players=$($script:ServerState.OnlinePlayers)/$($script:ServerState.MaxPlayers)"
+        Write-Log "[Monitoring] State updated: IsOnline=$($script:ServerState.IsRunning), Players=$($script:ServerState.OnlinePlayers)/$($script:ServerState.MaxPlayers)" -Level Debug
         
     } catch {
         Write-Log "[Monitoring] Error updating server state: $($_.Exception.Message)" -Level Error
@@ -276,7 +276,7 @@ function Get-ActualServerStateFromLogs {
                         # Check how recent this offline event is
                         $eventAge = (Get-Date) - $lastOfflineEvent.Timestamp
                         if ($eventAge.TotalMinutes -le 10) {
-                            Write-Verbose "[Monitoring] Server state from logs: 'Offline' (recent ServerOffline event found, age: $([Math]::Round($eventAge.TotalSeconds, 0))s)"
+                            Write-Log "[Monitoring] Server state from logs: 'Offline' (recent ServerOffline event found, age: $([Math]::Round($eventAge.TotalSeconds, 0))s)" -Level Debug
                             return "Offline"
                         }
                     }
@@ -287,7 +287,7 @@ function Get-ActualServerStateFromLogs {
                         $lastShutdownEvent = $shutdownEvents | Sort-Object Timestamp -Descending | Select-Object -First 1
                         $eventAge = (Get-Date) - $lastShutdownEvent.Timestamp
                         if ($eventAge.TotalMinutes -le 10) {
-                            Write-Verbose "[Monitoring] Server state from logs: 'ShuttingDown' (recent shutdown event found, age: $([Math]::Round($eventAge.TotalSeconds, 0))s)"
+                            Write-Log "[Monitoring] Server state from logs: 'ShuttingDown' (recent shutdown event found, age: $([Math]::Round($eventAge.TotalSeconds, 0))s)" -Level Debug
                             return "ShuttingDown"
                         }
                     }
@@ -323,23 +323,23 @@ function Get-ActualServerStateFromLogs {
                         # Check how recent this event is
                         $eventAge = (Get-Date) - $lastStateEvent.Timestamp
                         if ($eventAge.TotalMinutes -le 10) {  # Increased from 5 to 10 minutes
-                            Write-Verbose "[Monitoring] Server state from logs: '$state' (event: $($lastStateEvent.EventType), age: $([Math]::Round($eventAge.TotalSeconds, 0))s)"
+                            Write-Log "[Monitoring] Server state from logs: '$state' (event: $($lastStateEvent.EventType), age: $([Math]::Round($eventAge.TotalSeconds, 0))s)" -Level Debug
                             return $state
                         } else {
-                            Write-Verbose "[Monitoring] Last log event too old ($([Math]::Round($eventAge.TotalMinutes, 1)) min ago): $($lastStateEvent.EventType)"
+                            Write-Log "[Monitoring] Last log event too old ($([Math]::Round($eventAge.TotalMinutes, 1)) min ago): $($lastStateEvent.EventType)" -Level Debug
                             # Continue to fallback logic below only if event is too old
                         }
                     } else {
-                        Write-Verbose "[Monitoring] No state-changing events found in recent logs"
+                        Write-Log "[Monitoring] No state-changing events found in recent logs" -Level Debug
                     }
                 } else {
-                    Write-Verbose "[Monitoring] No state-changing events found"
+                    Write-Log "[Monitoring] No state-changing events found" -Level Debug
                 }
             } else {
-                Write-Verbose "[Monitoring] No recent events found from parser"
+                Write-Log "[Monitoring] No recent events found from parser" -Level Debug
             }
         } else {
-            Write-Verbose "[Monitoring] Get-ParsedEvents command not available"
+            Write-Log "[Monitoring] Get-ParsedEvents command not available" -Level Debug
         }
         
         # Fallback: Check if we have recent Global Stats (performance stats)
@@ -347,7 +347,7 @@ function Get-ActualServerStateFromLogs {
         if (Get-Command "Get-LatestPerformanceStats" -ErrorAction SilentlyContinue) {
             $perfStats = Get-LatestPerformanceStats
             if ($perfStats) {
-                Write-Verbose "[Monitoring] Found recent performance stats - fallback suggests Online"
+                Write-Log "[Monitoring] Found recent performance stats - fallback suggests Online" -Level Debug
                 return "Online"
             }
         }
@@ -358,23 +358,23 @@ function Get-ActualServerStateFromLogs {
             $scumProcess = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
             
             if ($service -and $service.Status -eq 'Running' -and $scumProcess) {
-                Write-Verbose "[Monitoring] No recent log data but service running and process exists - returning Unknown (could be starting)"
+                Write-Log "[Monitoring] No recent log data but service running and process exists - returning Unknown (could be starting)" -Level Debug
                 return "Unknown"
             } elseif ($service -and $service.Status -eq 'Stopped') {
-                Write-Verbose "[Monitoring] No recent log data and service is STOPPED - definitely Offline"
+                Write-Log "[Monitoring] No recent log data and service is STOPPED - definitely Offline" -Level Debug
                 return "Offline"
             } elseif (-not $scumProcess) {
-                Write-Verbose "[Monitoring] No recent log data and no SCUMServer process - definitely Offline"
+                Write-Log "[Monitoring] No recent log data and no SCUMServer process - definitely Offline" -Level Debug
                 return "Offline"
             } else {
-                Write-Verbose "[Monitoring] No recent log data and service is $($service.Status) - returning Offline"
+                Write-Log "[Monitoring] No recent log data and service is $($service.Status) - returning Offline" -Level Debug
                 return "Offline"
             }
         } catch {
-            Write-Verbose "[Monitoring] Error checking service status for final fallback: $($_.Exception.Message)"
+            Write-Log "[Monitoring] Error checking service status for final fallback: $($_.Exception.Message)" -Level Debug
         }
         
-        Write-Verbose "[Monitoring] No recent log data available for server state detection - assuming Offline"
+        Write-Log "[Monitoring] No recent log data available for server state detection - assuming Offline" -Level Debug
         return "Offline"
         
     } catch {
@@ -398,24 +398,24 @@ function Get-ServiceProcess {
         $service = Get-WmiObject -Class Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
         
         if (-not $service) {
-            Write-Verbose "[Monitoring] Service '$ServiceName' not found via WMI"
+            Write-Log -Level Debug -Message "[Monitoring] Service '$ServiceName' not found via WMI"
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
         # Only log service details if there's an issue or change
         if ($service.State -ne 'Running' -or -not $service.ProcessId -or $service.ProcessId -eq 0) {
-            Write-Verbose "[Monitoring] Service '$ServiceName' issue: State=$($service.State), ProcessId=$($service.ProcessId)"
+            Write-Log -Level Debug -Message "[Monitoring] Service '$ServiceName' issue: State=$($service.State), ProcessId=$($service.ProcessId)"
         }
         
         if (-not $service.ProcessId -or $service.ProcessId -eq 0) {
-            Write-Verbose "[Monitoring] Service '$ServiceName' has no ProcessId or ProcessId is 0"
+            Write-Log -Level Debug -Message "[Monitoring] Service '$ServiceName' has no ProcessId or ProcessId is 0"
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
         # Get the service process (could be nssm.exe or direct)
         $serviceProcess = Get-Process -Id $service.ProcessId -ErrorAction SilentlyContinue
         if (-not $serviceProcess) {
-            Write-Verbose "[Monitoring] Process with ID $($service.ProcessId) not found"
+            Write-Log -Level Debug -Message "[Monitoring] Process with ID $($service.ProcessId) not found"
             return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
         }
         
@@ -429,7 +429,7 @@ function Get-ServiceProcess {
                 
                 # Store previous process ID to detect changes
                 if (-not $script:LastKnownProcessId -or $script:LastKnownProcessId -ne $mainProcess.Id) {
-                    Write-Verbose "[Monitoring] SCUM server process detected: PID=$($mainProcess.Id), Memory=$([Math]::Round($mainProcess.WorkingSet64 / 1MB, 0))MB"
+                    Write-Log -Level Debug -Message "[Monitoring] SCUM server process detected: PID=$($mainProcess.Id), Memory=$([Math]::Round($mainProcess.WorkingSet64 / 1MB, 0))MB"
                     $script:LastKnownProcessId = $mainProcess.Id
                 }
                 
@@ -439,13 +439,13 @@ function Get-ServiceProcess {
                     StartTime = $mainProcess.StartTime
                 }
             } else {
-                Write-Verbose "[Monitoring] No SCUMServer child process found"
+                Write-Log -Level Debug -Message "[Monitoring] No SCUMServer child process found"
                 return @{ ProcessId = $null; ProcessName = $null; StartTime = $null }
             }
         } else {
             # Direct service process (not using nssm) - only log if PID changed
             if (-not $script:LastKnownProcessId -or $script:LastKnownProcessId -ne $serviceProcess.Id) {
-                Write-Verbose "[Monitoring] Direct service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName), Memory=$([Math]::Round($serviceProcess.WorkingSet64 / 1MB, 0))MB"
+                Write-Log -Level Debug -Message "[Monitoring] Direct service process: PID=$($serviceProcess.Id), Name=$($serviceProcess.ProcessName), Memory=$([Math]::Round($serviceProcess.WorkingSet64 / 1MB, 0))MB"
                 $script:LastKnownProcessId = $serviceProcess.Id
             }
             
@@ -470,7 +470,7 @@ function Get-MaxPlayersFromConfig {
     
     try {
         if (-not (Test-Path $script:ServerSettingsPath)) {
-            Write-Verbose "[Monitoring] ServerSettings.ini not found, using default MaxPlayers=64"
+            Write-Log -Level Debug -Message "[Monitoring] ServerSettings.ini not found, using default MaxPlayers=64"
             return 64
         }
         
@@ -487,13 +487,13 @@ function Get-MaxPlayersFromConfig {
                 $line = $streamReader.ReadLine()
                 if ($line -ne $null -and $line -match "MaxPlayers\s*=\s*(\d+)") {
                     $maxPlayers = [int]$matches[1]
-                    Write-Verbose "[Monitoring] Found MaxPlayers: $maxPlayers"
+                    Write-Log -Level Debug -Message "[Monitoring] Found MaxPlayers: $maxPlayers"
                     return $maxPlayers
                 }
             }
             
         } catch {
-            Write-Verbose "[Monitoring] Error reading ServerSettings.ini, using default MaxPlayers=64"
+            Write-Log -Level Debug -Message "[Monitoring] Error reading ServerSettings.ini, using default MaxPlayers=64"
             return 64
         } finally {
             if ($streamReader) { $streamReader.Close(); $streamReader.Dispose() }
@@ -501,7 +501,7 @@ function Get-MaxPlayersFromConfig {
         }
         
         # If MaxPlayers not found, return default
-        Write-Verbose "[Monitoring] MaxPlayers not found in config, using default: 64"
+        Write-Log -Level Debug -Message "[Monitoring] MaxPlayers not found in config, using default: 64"
         return 64
         
     } catch {
@@ -574,8 +574,8 @@ function Get-ProcessPerformance {
             foreach ($key in $keysToRemoveList) {
                 $script:ProcessCache.Remove($key)
             }
-            if ($keysToRemove.Count -gt 0) {
-                Write-Verbose "[Monitoring] Cleaned $($keysToRemove.Count) old cache entries"
+            if ($keysToRemoveList.Count -gt 0) {
+                Write-Log -Level Debug -Message "[Monitoring] Cleaned $($keysToRemoveList.Count) old cache entries"
             }
         }
         
@@ -585,7 +585,7 @@ function Get-ProcessPerformance {
             
             $performance.Memory = $cachedProcess.Memory
             $performance.CPU = $cachedProcess.CPU
-            Write-Verbose "[Monitoring] Using cached process performance data"
+            Write-Log "[Monitoring] Using cached process performance data" -Level Debug
         } else {
             # Get fresh data
             $process = $null
@@ -601,12 +601,12 @@ function Get-ProcessPerformance {
                             $cpuValue = $cpuCounter.CounterSamples[0].CookedValue
                             # Convert to percentage and round
                             $performance.CPU = [Math]::Round($cpuValue, 0)
-                            Write-Verbose "[Monitoring] Real CPU usage: $($performance.CPU)%"
+                            Write-Log "[Monitoring] Real CPU usage: $($performance.CPU)%" -Level Debug
                         } else {
-                            Write-Verbose "[Monitoring] CPU counter not available, keeping CPU at 0"
+                            Write-Log "[Monitoring] CPU counter not available, keeping CPU at 0" -Level Debug
                         }
                     } catch {
-                        Write-Verbose "[Monitoring] Failed to get CPU counter: $($_.Exception.Message)"
+                        Write-Log "[Monitoring] Failed to get CPU counter: $($_.Exception.Message)" -Level Debug
                     }
                     
                     # Update cache
@@ -649,7 +649,7 @@ function Get-ProcessPerformance {
                 if (-not $perfStats -and (Get-Command "Get-LatestPerformanceStats" -ErrorAction SilentlyContinue)) {
                     $perfStats = Get-LatestPerformanceStats
                     if ($perfStats) {
-                        Write-Verbose "[Monitoring] Using cached performance stats (no new events)"
+                        Write-Log "[Monitoring] Using cached performance stats (no new events)" -Level Debug
                     }
                 }
                 
@@ -666,12 +666,12 @@ function Get-ProcessPerformance {
                         $performance.Entities = $entityTotal
                     }
                     
-                    Write-Verbose "[Monitoring] Performance data applied: FPS=$($performance.FPS), Entities=$($performance.Entities), CPU=$($performance.CPU)% (real)"
+                    Write-Log "[Monitoring] Performance data applied: FPS=$($performance.FPS), Entities=$($performance.Entities), CPU=$($performance.CPU)% (real)" -Level Debug
                 } else {
-                    Write-Verbose "[Monitoring] No performance data available from parser"
+                    Write-Log "[Monitoring] No performance data available from parser" -Level Debug
                 }
             } catch {
-                Write-Verbose "[Monitoring] Failed to get performance from parsed events: $($_.Exception.Message)"
+                Write-Log "[Monitoring] Failed to get performance from parsed events: $($_.Exception.Message)" -Level Debug
             }
         }
         
@@ -682,9 +682,9 @@ function Get-ProcessPerformance {
                 if ($dbStats -and $dbStats.ContainsKey('EntityCount') -and $dbStats.EntityCount) {
                     $performance.Entities = $dbStats.EntityCount
                 }
-                Write-Verbose "[Monitoring] Using centralized database service for entity count: $($performance.Entities)"
+                Write-Log "[Monitoring] Using centralized database service for entity count: $($performance.Entities)" -Level Debug
             } catch {
-                Write-Verbose "[Monitoring] Failed to get centralized database stats: $($_.Exception.Message)"
+                Write-Log "[Monitoring] Failed to get centralized database stats: $($_.Exception.Message)" -Level Debug
             }
         }
         
@@ -800,7 +800,7 @@ function Update-ServerMonitoring {
             ServiceStatus = $script:ServerState.ServiceStatus
         }
         
-        Write-Verbose "[Monitoring] Update-ServerMonitoring called - Previous state: IsRunning=$($previousState.IsRunning)"
+        Write-Log "[Monitoring] Update-ServerMonitoring called - Previous state: IsRunning=$($previousState.IsRunning)" -Level Debug
         
         # NEW: Check for crashed server process (service running but process dead)
         $healthCheckResult = $null
@@ -882,7 +882,7 @@ function Update-ServerMonitoring {
                     }
                 }
             } else {
-                Write-Verbose "[Monitoring] Server health check PASSED: $($healthCheckResult.Reason)"
+                Write-Log -Level Debug -Message "[Monitoring] Server health check PASSED: $($healthCheckResult.Reason)"
             }
         }
         
@@ -891,12 +891,12 @@ function Update-ServerMonitoring {
         if (Get-Command "Read-GameLogs" -ErrorAction SilentlyContinue) {
             try {
                 $newLogEvents = Read-GameLogs
-                foreach ($event in $newLogEvents) {
-                    if ($event.IsStateChange -and $event.EventType -in @("ServerOnline", "ServerOffline", "ServerShuttingDown", "ServerStarting", "ServerLoading")) {
-                        Write-Verbose "[Monitoring] Log parser detected SERVER state change: $($event.EventType)"
+                foreach ($logEvent in $newLogEvents) {
+                    if ($logEvent.IsStateChange -and $logEvent.EventType -in @("ServerOnline", "ServerOffline", "ServerShuttingDown", "ServerStarting", "ServerLoading")) {
+                        Write-Log "[Monitoring] Log parser detected SERVER state change: $($logEvent.EventType)" -Level Info
                         
                         # Send notification based on log parser event (these are ACCURATE server states)
-                        $notificationType = switch ($event.EventType) {
+                        $notificationType = switch ($logEvent.EventType) {
                             "ServerOnline" { 
                                 # Server truly online - Global Stats detected - READY FOR PLAYERS
                                 'server.online' 
@@ -927,12 +927,12 @@ function Update-ServerMonitoring {
                             # Normal sequence: shutting_down → offline is ALLOWED
                             # Only skip TRUE DUPLICATES (same notification type)
                             if ($notificationType -eq $script:ServerState.LastNotificationType) {
-                                Write-Verbose "[Monitoring] Skipping duplicate $notificationType notification"
+                                Write-Log -Level Debug -Message "[Monitoring] Skipping duplicate $notificationType notification"
                                 $shouldSkip = $true
                             }
                             # Don't send offline during startup sequence (false positive)
                             elseif ($notificationType -eq 'server.offline' -and $script:ServerState.LastNotificationType -in @('server.starting', 'service.started')) {
-                                Write-Verbose "[Monitoring] Skipping server.offline during startup sequence - likely false positive"
+                                Write-Log -Level Debug -Message "[Monitoring] Skipping server.offline during startup sequence - likely false positive"
                                 $shouldSkip = $true
                             }
                             # EXTRA: Don't send server.offline immediately after server.online during restart sequence
@@ -943,20 +943,20 @@ function Update-ServerMonitoring {
                                     [TimeSpan]::FromMinutes(10) 
                                 }
                                 if ($timeSinceLastNotification.TotalSeconds -lt 30) {
-                                    Write-Verbose "[Monitoring] Skipping server.offline too soon after server.online ($([Math]::Round($timeSinceLastNotification.TotalSeconds, 1))s) - likely restart artifacts"
+                                    Write-Log -Level Debug -Message "[Monitoring] Skipping server.offline too soon after server.online ($([Math]::Round($timeSinceLastNotification.TotalSeconds, 1))s) - likely restart artifacts"
                                     $shouldSkip = $true
                                 }
                             }
                             
                             if (-not $shouldSkip) {
                                 # Update our internal state immediately based on log event
-                                $script:ServerState.IsRunning = ($event.EventType -eq "ServerOnline")
+                                $script:ServerState.IsRunning = ($logEvent.EventType -eq "ServerOnline")
                                 
                                 Send-StateNotification -Type $notificationType
                                 $stateChangedViaLogs = $true
                             }
                         } else {
-                            Write-Verbose "[Monitoring] Server state event $($event.EventType) detected but no notification sent (transitional state)"
+                            Write-Log "[Monitoring] Server state event $($logEvent.EventType) detected but no notification sent (transitional state)" -Level Debug
                         }
                     }
                 }
@@ -968,21 +968,21 @@ function Update-ServerMonitoring {
         # Update current state (combines service + log data)
         Update-ServerState
         
-        Write-Verbose "[Monitoring] Update-ServerMonitoring - Current state: IsRunning=$($script:ServerState.IsRunning)"
+        Write-Log "[Monitoring] Update-ServerMonitoring - Current state: IsRunning=$($script:ServerState.IsRunning)" -Level Debug
         
         # Only check for service-based state changes if logs didn't already handle it
         # AND avoid duplicate notifications when server state changes were already handled by logs
         if (-not $stateChangedViaLogs -and $previousState.IsRunning -ne $script:ServerState.IsRunning) {
-            Write-Verbose "[Monitoring] Service-based state change detected: $($previousState.IsRunning) -> $($script:ServerState.IsRunning)"
+            Write-Log -Level Debug -Message "[Monitoring] Service-based state change detected: $($previousState.IsRunning) -> $($script:ServerState.IsRunning)"
             
             # Double-check: Don't send server.online if we just sent it via logs
             # Don't send duplicate or inappropriate notifications 
             $skipNotification = $false
             if ($script:ServerState.IsRunning -and $script:ServerState.LastNotificationType -eq 'server.online') {
-                Write-Verbose "[Monitoring] Skipping duplicate server.online notification (already sent via logs)"
+                Write-Log -Level Debug -Message "[Monitoring] Skipping duplicate server.online notification (already sent via logs)"
                 $skipNotification = $true
             } elseif (-not $script:ServerState.IsRunning -and $script:ServerState.LastNotificationType -in @('service.stopped')) {
-                Write-Verbose "[Monitoring] Skipping redundant server.offline notification (service already stopped)"
+                Write-Log -Level Debug -Message "[Monitoring] Skipping redundant server.offline notification (service already stopped)"
                 $skipNotification = $true
             }
             
@@ -992,12 +992,12 @@ function Update-ServerMonitoring {
             }
         } elseif (-not $stateChangedViaLogs) {
             # Only log this in verbose mode to reduce spam
-            Write-Verbose "[Monitoring] No state change detected (IsRunning=$($script:ServerState.IsRunning))"
+            Write-Log -Level Debug -Message "[Monitoring] No state change detected (IsRunning=$($script:ServerState.IsRunning))"
         }
         
         # Check for Windows service status changes (admin notifications)
         if ($previousState.ServiceStatus -ne $script:ServerState.ServiceStatus) {
-            Write-Verbose "[Monitoring] Windows service status changed: $($previousState.ServiceStatus) -> $($script:ServerState.ServiceStatus)"
+            Write-Log -Level Debug -Message "[Monitoring] Windows service status changed: $($previousState.ServiceStatus) -> $($script:ServerState.ServiceStatus)"
             
             $serviceNotificationType = switch ($script:ServerState.ServiceStatus) {
                 'Running' { 'service.started' }
@@ -1109,10 +1109,10 @@ function Send-StateNotification {
                 if ($processWMI -and $processWMI.PercentProcessorTime) {
                     # This is a raw counter, we would need two samples to calculate percentage
                     # For now, use cached value or 0
-                    Write-Verbose "[Monitoring] WMI process data found but raw counter calculation complex"
+                    Write-Log -Level Debug -Message "[Monitoring] WMI process data found but raw counter calculation complex"
                 }
             } catch {
-                Write-Verbose "[Monitoring] Could not get WMI data for CPU"
+                Write-Log -Level Debug -Message "[Monitoring] Could not get WMI data for CPU"
             } finally {
                 if ($processWMI) {
                     $processWMI = $null
@@ -1139,10 +1139,10 @@ function Send-StateNotification {
                 $dbStats = Get-DatabaseServiceStats
                 if ($dbStats.TotalPlayers -and $dbStats.TotalPlayers -gt 0) {
                     $currentPlayers = [int]$dbStats.TotalPlayers
-                    Write-Verbose "[Monitoring] Got fresh player count from centralized service: $currentPlayers"
+                    Write-Log -Level Debug -Message "[Monitoring] Got fresh player count from centralized service: $currentPlayers"
                 }
             } catch {
-                Write-Verbose "[Monitoring] Could not get player count from centralized service"
+                Write-Log -Level Debug -Message "[Monitoring] Could not get player count from centralized service"
                 $currentPlayers = 0
             }
         }
@@ -1160,10 +1160,10 @@ function Send-StateNotification {
         
         # Send to Discord via unified notification system
         if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-            Write-Verbose "[Monitoring] Sending $Type notification..."
+            Write-Log -Level Debug -Message "[Monitoring] Sending $Type notification..."
             $result = Send-DiscordNotification -Type $Type -Data $data
             if ($result.Success) {
-                Write-Verbose "[Monitoring] $Type notification sent successfully"
+                Write-Log -Level Debug -Message "[Monitoring] $Type notification sent successfully"
                 $script:ServerState.LastNotificationType = $Type  # Track last sent notification
                 $script:ServerState.LastNotificationTime = $now   # Track notification time for anti-spam logic
             } else {
@@ -1187,28 +1187,28 @@ function Test-PerformanceAlerts {
     try {
         # FIRST: Check if server is actually running (multiple checks)
         if (-not $script:ServerState.IsRunning) {
-            Write-Verbose "[Monitoring] Skipping performance alerts - ServerState.IsRunning=false"
+            Write-Log -Level Debug -Message "[Monitoring] Skipping performance alerts - ServerState.IsRunning=false"
             return
         }
         
         # SECOND: Double-check with actual service and process status
         $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
         if (-not $service -or $service.Status -ne 'Running') {
-            Write-Verbose "[Monitoring] Skipping performance alerts - Service not running: $($service.Status)"
+            Write-Log -Level Debug -Message "[Monitoring] Skipping performance alerts - Service not running: $($service.Status)"
             return
         }
         
         # THIRD: Verify process exists
         $process = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
         if (-not $process) {
-            Write-Verbose "[Monitoring] Skipping performance alerts - SCUMServer process not found"
+            Write-Log -Level Debug -Message "[Monitoring] Skipping performance alerts - SCUMServer process not found"
             return
         }
         
         # FOURTH: Check actual server state from logs
         $actualServerState = Get-ActualServerStateFromLogs
         if ($actualServerState -ne "Online") {
-            Write-Verbose "[Monitoring] Skipping performance alerts - Server state from logs: $actualServerState (not Online)"
+            Write-Log -Level Debug -Message "[Monitoring] Skipping performance alerts - Server state from logs: $actualServerState (not Online)"
             return
         }
         
@@ -1224,7 +1224,7 @@ function Test-PerformanceAlerts {
                         $currentPlayers = [int]$dbStats.TotalPlayers
                     }
                 } catch {
-                    Write-Verbose "[Monitoring] Could not get player count from centralized service"
+                    Write-Log -Level Debug -Message "[Monitoring] Could not get player count from centralized service"
                     $currentPlayers = 0
                 }
             }
@@ -1233,13 +1233,13 @@ function Test-PerformanceAlerts {
         # Default behavior: Only monitor performance when players are connected
         # Empty server naturally reduces FPS for power saving - this is normal and expected
         if ($currentPlayers -le 0) {
-            Write-Verbose "[Monitoring] Skipping performance alerts - no players connected ($currentPlayers). Server naturally reduces FPS when empty to save resources."
+            Write-Log -Level Debug -Message "[Monitoring] Skipping performance alerts - no players connected ($currentPlayers). Server naturally reduces FPS when empty to save resources."
             return
         } else {
-            Write-Verbose "[Monitoring] Players connected ($currentPlayers), performance monitoring active"
+            Write-Log -Level Debug -Message "[Monitoring] Players connected ($currentPlayers), performance monitoring active"
         }
         
-        Write-Verbose "[Monitoring] Performance alert checks passed - server is truly online, proceeding with performance monitoring"
+        Write-Log -Level Debug -Message "[Monitoring] Performance alert checks passed - server is truly online, proceeding with performance monitoring"
         
         # Skip if we don't have config
         if (-not $script:Config) {
@@ -1249,7 +1249,7 @@ function Test-PerformanceAlerts {
         # Get performance thresholds from config
         $thresholds = $script:Config.performanceThresholds
         if (-not $thresholds) {
-            Write-Verbose "[Monitoring] No performance thresholds configured, skipping alerts"
+            Write-Log -Level Debug -Message "[Monitoring] No performance thresholds configured, skipping alerts"
             return
         }
         
@@ -1271,7 +1271,7 @@ function Test-PerformanceAlerts {
         if ($script:ServerState.LastPerformanceAlert) {
             $timeSinceLastAlert = (Get-Date) - $script:ServerState.LastPerformanceAlert
             if ($timeSinceLastAlert.TotalMinutes -lt $cooldownMinutes) {
-                Write-Verbose "[Monitoring] Performance alert in cooldown (remaining: $([Math]::Round($cooldownMinutes - $timeSinceLastAlert.TotalMinutes, 1)) min)"
+                Write-Log -Level Debug -Message "[Monitoring] Performance alert in cooldown (remaining: $([Math]::Round($cooldownMinutes - $timeSinceLastAlert.TotalMinutes, 1)) min)"
                 return
             }
         }
@@ -1281,7 +1281,7 @@ function Test-PerformanceAlerts {
         
         # Only send alerts if FPS data is available (> 0)
         if ($currentFPS -le 0) {
-            Write-Verbose "[Monitoring] No FPS data available, skipping performance alerts"
+            Write-Log -Level Debug -Message "[Monitoring] No FPS data available, skipping performance alerts"
             return
         }
         
@@ -1294,7 +1294,7 @@ function Test-PerformanceAlerts {
         } elseif ($currentFPS -le $thresholds.fair -and $alertThreshold -eq 'fair') {
             # Only send 'fair' alerts if threshold is specifically set to 'fair'
             # For now, we'll skip 'fair' as it's not in our notification types
-            Write-Verbose "[Monitoring] Fair performance detected (FPS: $currentFPS), but no 'fair' alert type configured"
+            Write-Log -Level Debug -Message "[Monitoring] Fair performance detected (FPS: $currentFPS), but no 'fair' alert type configured"
         }
         
         # Send performance alert if needed
@@ -1313,7 +1313,7 @@ function Test-PerformanceAlerts {
                 $scumProcess = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
                 if ($scumProcess) {
                     $currentMemory = [Math]::Round($scumProcess.WorkingSet64 / 1MB, 0)
-                    Write-Verbose "[Monitoring] Fresh memory data: $currentMemory MB"
+                    Write-Log -Level Debug -Message "[Monitoring] Fresh memory data: $currentMemory MB"
                 }
             } finally {
                 if ($scumProcess) { 
@@ -1337,11 +1337,11 @@ function Test-PerformanceAlerts {
                         $timeDiff = ($time2 - $time1).TotalMilliseconds
                         $cpuTimeDiff = ($cpu2.TotalProcessorTime - $cpu1.TotalProcessorTime).TotalMilliseconds
                         $currentCPU = [Math]::Round(($cpuTimeDiff / $timeDiff) * 100 / [Environment]::ProcessorCount, 1)
-                        Write-Verbose "[Monitoring] Real CPU calculation: $currentCPU% (time diff: $timeDiff ms, cpu diff: $cpuTimeDiff ms)"
+                        Write-Log -Level Debug -Message "[Monitoring] Real CPU calculation: $currentCPU% (time diff: $timeDiff ms, cpu diff: $cpuTimeDiff ms)"
                     }
                 }
             } catch {
-                Write-Verbose "[Monitoring] CPU calculation failed: $($_.Exception.Message)"
+                Write-Log -Level Debug -Message "[Monitoring] CPU calculation failed: $($_.Exception.Message)"
                 # If we can't get real CPU, don't show fake data
                 $currentCPU = 0
             } finally {
@@ -1352,7 +1352,7 @@ function Test-PerformanceAlerts {
             # Get ONLINE player count only - not total registered players
             if ($script:ServerState.OnlinePlayers) {
                 $currentPlayers = $script:ServerState.OnlinePlayers
-                Write-Verbose "[Monitoring] Using cached online players: $currentPlayers"
+                Write-Log -Level Debug -Message "[Monitoring] Using cached online players: $currentPlayers"
             } else {
                 # Try to get ONLINE players from centralized service first
                 if (Get-Command "Get-DatabaseServiceStats" -ErrorAction SilentlyContinue) {
@@ -1360,10 +1360,10 @@ function Test-PerformanceAlerts {
                         $dbStats = Get-DatabaseServiceStats
                         if ($dbStats.TotalPlayers -and $dbStats.TotalPlayers -ge 0) {
                             $currentPlayers = [int]$dbStats.TotalPlayers
-                            Write-Verbose "[Monitoring] Fresh player count from centralized service: $currentPlayers"
+                            Write-Log -Level Debug -Message "[Monitoring] Fresh player count from centralized service: $currentPlayers"
                         }
                     } catch {
-                        Write-Verbose "[Monitoring] Could not get player count from centralized service"
+                        Write-Log -Level Debug -Message "[Monitoring] Could not get player count from centralized service"
                         $currentPlayers = 0
                     }
                 } else {
@@ -1393,10 +1393,10 @@ function Test-PerformanceAlerts {
             
             # Send to Discord
             if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-                Write-Verbose "[Monitoring] Sending $alertType notification with fresh data..."
+                Write-Log -Level Debug -Message "[Monitoring] Sending $alertType notification with fresh data..."
                 $result = Send-DiscordNotification -Type $alertType -Data $alertData
                 if ($result -and $result.Success) {
-                    Write-Verbose "[Monitoring] $alertType notification sent successfully"
+                    Write-Log -Level Debug -Message "[Monitoring] $alertType notification sent successfully"
                 } else {
                     Write-Log "[Monitoring] Failed to send $alertType notification: $($result.Error)" -Level Warning
                 }
@@ -1407,7 +1407,7 @@ function Test-PerformanceAlerts {
             # Update last alert time to start cooldown
             $script:ServerState.LastPerformanceAlert = Get-Date
         } else {
-            Write-Verbose "[Monitoring] Performance OK: FPS=$currentFPS (Threshold: $alertThreshold)"
+            Write-Log -Level Debug -Message "[Monitoring] Performance OK: FPS=$currentFPS (Threshold: $alertThreshold)"
         }
         
     } catch {
@@ -1461,7 +1461,7 @@ function Initialize-PerformanceCache {
     try {
         # Check if parser functions are available
         if (-not (Get-Command "Parse-LogLine" -ErrorAction SilentlyContinue)) {
-            Write-Verbose "[Monitoring] Parser functions not available for performance cache initialization"
+            Write-Log -Level Debug -Message "[Monitoring] Parser functions not available for performance cache initialization"
             return
         }
         
@@ -1474,11 +1474,11 @@ function Initialize-PerformanceCache {
         }
         
         if (-not (Test-Path $logPath)) {
-            Write-Verbose "[Monitoring] Log file not found at $logPath - skipping performance cache initialization"
+            Write-Log -Level Debug -Message "[Monitoring] Log file not found at $logPath - skipping performance cache initialization"
             return
         }
         
-        Write-Verbose "[Monitoring] Initializing performance cache from recent log data..."
+        Write-Log -Level Debug -Message "[Monitoring] Initializing performance cache from recent log data..."
         
         # MEMORY LEAK FIX: Use streaming approach for reading recent log lines
         $recentLines = @()
@@ -1530,20 +1530,20 @@ function Initialize-PerformanceCache {
                         # Process a few recent entries to get current data
                         if ($globalStatsProcessed -ge 3) { break }
                     } catch {
-                        Write-Verbose "[Monitoring] Error parsing log line: $($_.Exception.Message)"
+                        Write-Log -Level Debug -Message "[Monitoring] Error parsing log line: $($_.Exception.Message)"
                     }
                 }
             }
             
             if ($globalStatsProcessed -gt 0) {
-                Write-Verbose "[Monitoring] Processed $globalStatsProcessed Global Stats entries for performance cache"
+                Write-Log -Level Debug -Message "[Monitoring] Processed $globalStatsProcessed Global Stats entries for performance cache"
             } else {
-                Write-Verbose "[Monitoring] No recent Global Stats entries found in log"
+                Write-Log -Level Debug -Message "[Monitoring] No recent Global Stats entries found in log"
             }
         }
         
     } catch {
-        Write-Verbose "[Monitoring] Error initializing performance cache: $($_.Exception.Message)"
+        Write-Log -Level Debug -Message "[Monitoring] Error initializing performance cache: $($_.Exception.Message)"
     }
 }
 
@@ -1569,7 +1569,7 @@ function Update-DiscordIntegration {
         
         # If bot not connected, try to reconnect
         if (-not $botConnected) {
-            Write-Verbose "[Monitoring] Discord bot disconnected, attempting reconnect..."
+            Write-Log -Level Debug -Message "[Monitoring] Discord bot disconnected, attempting reconnect..."
             
             # Try to reinitialize Discord integration if config is available
             if ($script:Config -and $script:Config.Discord) {
@@ -1582,10 +1582,10 @@ function Update-DiscordIntegration {
                     # Initialize full Discord integration  
                     if (Get-Command "Initialize-DiscordIntegration" -ErrorAction SilentlyContinue) {
                         Initialize-DiscordIntegration -Config $script:Config | Out-Null
-                        Write-Verbose "[Monitoring] Discord integration reconnected"
+                        Write-Log -Level Debug -Message "[Monitoring] Discord integration reconnected"
                     }
                 } catch {
-                    Write-Verbose "[Monitoring] Failed to reconnect Discord: $($_.Exception.Message)"
+                    Write-Log -Level Debug -Message "[Monitoring] Failed to reconnect Discord: $($_.Exception.Message)"
                 }
             }
         }
@@ -1595,7 +1595,7 @@ function Update-DiscordIntegration {
             $currentStatus = Get-ServerStatus
             if ($currentStatus) {
                 Update-BotActivity -ServerStatus $currentStatus | Out-Null
-                Write-Verbose "[Monitoring] Discord bot activity updated"
+                Write-Log -Level Debug -Message "[Monitoring] Discord bot activity updated"
             }
         }
         
@@ -1604,12 +1604,12 @@ function Update-DiscordIntegration {
             $currentStatus = Get-ServerStatus  
             if ($currentStatus) {
                 Update-DiscordServerStatus -ServerStatus $currentStatus | Out-Null
-                Write-Verbose "[Monitoring] Discord server status embed updated"
+                Write-Log -Level Debug -Message "[Monitoring] Discord server status embed updated"
             }
         }
         
     } catch {
-        Write-Verbose "[Monitoring] Error updating Discord integration: $($_.Exception.Message)"
+        Write-Log -Level Debug -Message "[Monitoring] Error updating Discord integration: $($_.Exception.Message)"
     }
 }
 
