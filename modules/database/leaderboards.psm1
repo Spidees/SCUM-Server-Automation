@@ -318,13 +318,22 @@ function Invoke-WeeklyDatabaseQuery {
             
             $process = New-Object System.Diagnostics.Process
             $process.StartInfo = $processInfo
-            $process.Start() | Out-Null
             
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
-            $process.WaitForExit()
-            
-            if ($process.ExitCode -ne 0) {
+            try {
+                $process.Start() | Out-Null
+
+                $stdout = $process.StandardOutput.ReadToEnd()
+                $stderr = $process.StandardError.ReadToEnd()
+                $process.WaitForExit()
+                $exitCode = $process.ExitCode
+            } finally {
+                # Dispose of process object to prevent memory leak
+                if ($process) {
+                    $process.Dispose()
+                }
+            }
+
+            if ($exitCode -ne 0) {
                 throw "SQLite error: $stderr"
             }
             

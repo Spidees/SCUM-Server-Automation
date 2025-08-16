@@ -486,21 +486,22 @@ function New-AllTimeLeaderboardsEmbed {
     #>
     
     try {
-        $fields = @()
+        # MEMORY LEAK FIX: Use ArrayList instead of array += operations
+        $fields = New-Object System.Collections.ArrayList
         
         # Get all-time leaderboard data for 12 categories in 2 columns
-        $fields += Format-LeaderboardField -Title ":busts_in_silhouette: TOP SQUADS" -Data (Get-TopSquads -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":stopwatch: TOP SURVIVORS" -Data (Get-TopSurvivors -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":star: TOP FAME POINTS" -Data (Get-TopFame -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":moneybag: TOP MONEY" -Data (Get-TopMoney -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":zombie: TOP PUPPET KILLERS" -Data (Get-TopPuppetKills -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":deer: TOP ANIMAL HUNTERS" -Data (Get-TopAnimalKills -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":crossed_swords: TOP MELEE WARRIORS" -Data (Get-TopMeleeWarriors -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":bow_and_arrow: TOP ARCHERS" -Data (Get-TopArchers -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":gun: TOP SNIPER" -Data (Get-TopSniper -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":dart: TOP HEADSHOT MASTERS" -Data (Get-TopHeadshots -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":unlock: TOP LOCKPICKERS" -Data (Get-TopLockpickers -Limit 5) -Inline $false
-        $fields += Format-LeaderboardField -Title ":package: TOP LOOTERS" -Data (Get-TopLooters -Limit 5) -Inline $false
+        $null = $fields.Add((Format-LeaderboardField -Title ":busts_in_silhouette: TOP SQUADS" -Data (Get-TopSquads -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":stopwatch: TOP SURVIVORS" -Data (Get-TopSurvivors -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":star: TOP FAME POINTS" -Data (Get-TopFame -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":moneybag: TOP MONEY" -Data (Get-TopMoney -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":zombie: TOP PUPPET KILLERS" -Data (Get-TopPuppetKills -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":deer: TOP ANIMAL HUNTERS" -Data (Get-TopAnimalKills -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":crossed_swords: TOP MELEE WARRIORS" -Data (Get-TopMeleeWarriors -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":bow_and_arrow: TOP ARCHERS" -Data (Get-TopArchers -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":gun: TOP SNIPER" -Data (Get-TopSniper -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":dart: TOP HEADSHOT MASTERS" -Data (Get-TopHeadshots -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":unlock: TOP LOCKPICKERS" -Data (Get-TopLockpickers -Limit 5) -Inline $false))
+        $null = $fields.Add((Format-LeaderboardField -Title ":package: TOP LOOTERS" -Data (Get-TopLooters -Limit 5) -Inline $false))
         
         $footer = @{
             text = "SCUM Server Automation - All-time server statistics"
