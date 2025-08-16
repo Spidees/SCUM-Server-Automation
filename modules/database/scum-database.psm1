@@ -442,21 +442,30 @@ function Invoke-ExternalSQLiteQuery {
             
             $process = New-Object System.Diagnostics.Process
             $process.StartInfo = $processInfo
-            $process.Start() | Out-Null
             
-            # Wait for process completion with timeout
-            $completed = $process.WaitForExit($TimeoutSeconds * 1000)
-            $executionTime = (Get-Date) - $startTime
-            
-            if (-not $completed) {
-                try { $process.Kill() } catch { }
-                throw "Query timed out after $TimeoutSeconds seconds. Database may be locked by SCUM server."
+            try {
+                $process.Start() | Out-Null
+
+                # Wait for process completion with timeout
+                $completed = $process.WaitForExit($TimeoutSeconds * 1000)
+                $executionTime = (Get-Date) - $startTime
+
+                if (-not $completed) {
+                    try { $process.Kill() } catch { }
+                    throw "Query timed out after $TimeoutSeconds seconds. Database may be locked by SCUM server."
+                }
+
+                $stdout = $process.StandardOutput.ReadToEnd()
+                $stderr = $process.StandardError.ReadToEnd()
+                $exitCode = $process.ExitCode
+            } finally {
+                # Dispose of process object to prevent memory leak
+                if ($process) {
+                    $process.Dispose()
+                }
             }
             
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
-            
-            if ($process.ExitCode -ne 0) {
+            if ($exitCode -ne 0) {
                 # Check for specific SQLite errors related to locking
                 if ($stderr -match "database is locked|locked|busy|SQLITE_BUSY") {
                     if ($attempt -lt $maxRetries) {

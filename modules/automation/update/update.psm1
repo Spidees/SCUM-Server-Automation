@@ -596,6 +596,11 @@ function Invoke-ServerValidation {
                 $process = Start-Process -FilePath $resolvedSteamCmd -ArgumentList $steamCmdArgs -Wait -NoNewWindow -PassThru -WorkingDirectory $steamCmdDir
                 $lastExitCode = $process.ExitCode
                 
+                # Dispose of process object to prevent memory leak
+                if ($process) {
+                    $process.Dispose()
+                }
+                
                 if ($lastExitCode -eq 0 -or $lastExitCode -eq 7) {
                     $validationSuccessful = $true
                     break
@@ -824,6 +829,11 @@ function Update-GameServer {
                 Write-Log "[Update] Executing SteamCMD (attempt $attempt)"
                 $process = Start-Process -FilePath $resolvedSteamCmd -ArgumentList $steamCmdArgs -Wait -NoNewWindow -PassThru -WorkingDirectory $steamCmdDir
                 $lastExitCode = $process.ExitCode
+                
+                # Dispose of process object to prevent memory leak
+                if ($process) {
+                    $process.Dispose()
+                }
                 
                 if ($lastExitCode -eq 0 -or $lastExitCode -eq 7) {
                     $updateSuccessful = $true

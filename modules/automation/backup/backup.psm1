@@ -208,10 +208,16 @@ function Invoke-GameBackup {
                         }
                         Remove-Item -Path $tempBackupDir -Recurse -Force -ErrorAction SilentlyContinue
                         Write-Log "[Backup] Fallback backup completed successfully" -Level Info
-                    } else {
-                        throw "Robocopy failed with exit code: $($robocopyResult.ExitCode)"
-                    }
-                } catch {
+                } else {
+                    throw "Robocopy failed with exit code: $($robocopyResult.ExitCode)"
+                }
+                
+                # Dispose of process object to prevent memory leak
+                if ($robocopyResult) {
+                    $robocopyResult.Dispose()
+                }
+                
+            } catch {
                     # Final fallback: manual copy with error handling
                     Write-Log "[Backup] Robocopy fallback failed, trying manual copy" -Level Warning
                     
@@ -261,6 +267,11 @@ function Invoke-GameBackup {
                         Write-Log "[Backup] Manual fallback backup completed" -Level Info
                     } else {
                         throw "No files were successfully copied for backup"
+                    }
+                    
+                    # Dispose of process object to prevent memory leak
+                    if ($robocopyResult) {
+                        $robocopyResult.Dispose()
                     }
                 }
             }

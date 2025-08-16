@@ -509,6 +509,11 @@ function Start-FirstTimeServerGeneration {
             Write-Log "[Installation] Server process has already exited"
         }
         
+        # Dispose of process object to prevent memory leak
+        if ($proc) {
+            $proc.Dispose()
+        }
+        
     } catch {
         $result.Error = "Failed to start server for config generation: $($_.Exception.Message)"
     }
