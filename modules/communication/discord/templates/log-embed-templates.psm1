@@ -1991,6 +1991,93 @@ function Send-EventKillEmbed {
 }
 
 # ===============================================================
+# EVENT KILL SIMPLE EMBEDS (for players channel)
+# ===============================================================
+function Send-EventKillEmbedSimple {
+    param(
+        [hashtable]$EventKillAction
+    )
+    
+    # Get emoji, title and color based on event kill type - same as admin
+    $emoji = ":crossed_swords:"
+    $title = "Event Kill"
+    $color = $script:EmbedColors.EventKillGeneral  # Default
+    
+    switch ($EventKillAction.Type) {
+        "ranged" { 
+            $emoji = ":gun:"
+            $title = "Event Ranged Kill"
+            $color = $script:EmbedColors.EventKillRanged
+        }
+        "melee" { 
+            $emoji = ":dagger:"
+            $title = "Event Melee Kill"
+            $color = $script:EmbedColors.EventKillMelee
+        }
+        "event_kill" { 
+            $emoji = ":crossed_swords:"
+            $title = "Event Kill"
+            $color = $script:EmbedColors.EventKillGeneral
+        }
+        default { 
+            $emoji = ":skull:"
+            $title = "Event Kill"
+            $color = $script:EmbedColors.EventKillGeneral
+        }
+    }
+    
+    # Simplified fields - only essential info for players
+    $fields = @(
+        @{
+            name = "Killer"
+            value = "$($EventKillAction.KillerName)"
+            inline = $true
+        },
+        @{
+            name = "Victim"
+            value = "$($EventKillAction.VictimName)"
+            inline = $true
+        }
+    )
+
+    # Weapon information (simplified - no weapon ID)
+    if ($EventKillAction.WeaponName) {
+        # Convert weapon ID to display name if it's an item ID
+        $displayWeaponName = Get-ItemDisplayName -ItemId $EventKillAction.WeaponName
+        
+        $fields += @{
+            name = "Weapon"
+            value = "$displayWeaponName"
+            inline = $true
+        }
+    }
+
+    # Distance (if available) - but not for explosions since they occur at point of contact
+    if ($EventKillAction.Distance -and $EventKillAction.Distance -gt 0 -and $EventKillAction.WeaponType -ne "explosion") {
+        $fields += @{
+            name = "Distance"
+            value = "$($EventKillAction.Distance)m"
+            inline = $true
+        }
+    }
+
+    # Event marker
+    $fields += @{
+        name = "Event Type"
+        value = "Game Event Kill"
+        inline = $true
+    }
+
+    return @{
+        title = "$emoji $title"
+        color = $color
+        fields = $fields
+        footer = $script:StandardFooter
+        timestamp = Get-StandardTimestamp
+    }
+}
+
+# ===============================================================
 # KILL LOG EMBEDS
 # ===============================================================
 function Send-KillEmbed {
@@ -2187,6 +2274,115 @@ function Send-KillEmbed {
                 name = "Location"
                 value = "$($KillAction.Location)"
                 inline = $false
+            }
+        }
+
+        return @{
+            title = "$emoji $title"
+            color = $color
+            fields = $fields
+            footer = $script:StandardFooter
+            timestamp = Get-StandardTimestamp
+        }
+    }
+}
+
+# ===============================================================
+# KILL LOG SIMPLE EMBEDS (for players channel)
+# ===============================================================
+function Send-KillEmbedSimple {
+    param(
+        [hashtable]$KillAction
+    )
+    
+    # Handle suicide vs PvP kills differently - same structure as admin, less details
+    if ($KillAction.Type -eq "suicide") {
+        # Suicide embed
+        $emoji = ":skull:"
+        $title = "Suicide"
+        $color = $script:EmbedColors.KillSuicide
+        
+        $fields = @(
+            @{
+                name = "Player"
+                value = "$($KillAction.VictimName)"
+                inline = $true
+            }
+        )
+
+        # No additional fields for suicide in simple version
+
+        return @{
+            title = "$emoji $title"
+            color = $color
+            fields = $fields
+            footer = $script:StandardFooter
+            timestamp = Get-StandardTimestamp
+        }
+    } else {
+        # PvP Kill embed
+        $emoji = ":crossed_swords:"
+        $title = "PvP Kill"
+        $color = $script:EmbedColors.KillPvP  # Default
+        
+        # Determine color, emoji and title based on weapon type - same as admin
+        if ($KillAction.WeaponType) {
+            switch ($KillAction.WeaponType.ToLower()) {
+                "projectile" { 
+                    $emoji = ":gun:"
+                    $title = "Ranged Kill"
+                    $color = $script:EmbedColors.KillRanged
+                }
+                "melee" { 
+                    $emoji = ":dagger:"
+                    $title = "Melee Kill"
+                    $color = $script:EmbedColors.KillMelee
+                }
+                "explosion" { 
+                    $emoji = ":boom:"
+                    $title = "Explosive Kill"
+                    $color = $script:EmbedColors.KillExplosive
+                }
+                default { 
+                    $emoji = ":crossed_swords:"
+                    $title = "PvP Kill"
+                    $color = $script:EmbedColors.KillPvP
+                }
+            }
+        }
+        
+        # Simplified fields - only essential info for players
+        $fields = @(
+            @{
+                name = "Killer"
+                value = "$($KillAction.KillerName)"
+                inline = $true
+            },
+            @{
+                name = "Victim"
+                value = "$($KillAction.VictimName)"
+                inline = $true
+            }
+        )
+
+        # Weapon information (simplified - no weapon ID)
+        if ($KillAction.WeaponName) {
+            # Convert weapon ID to display name if it's an item ID
+            $displayWeaponName = Get-ItemDisplayName -ItemId $KillAction.WeaponName
+            
+            $fields += @{
+                name = "Weapon"
+                value = "$displayWeaponName"
+                inline = $true
+            }
+        }
+
+        # Distance (if available) - but not for explosions since they occur at point of contact
+        if ($KillAction.Distance -and $KillAction.Distance -gt 0 -and $KillAction.WeaponType -ne "explosion") {
+            $fields += @{
+                name = "Distance"
+                value = "$($KillAction.Distance)m"
+                inline = $true
             }
         }
 
@@ -2757,7 +2953,9 @@ Export-ModuleMember -Function @(
     'Send-GameplayEmbed',
     'Send-EconomyEmbed',
     'Send-EventKillEmbed',
+    'Send-EventKillEmbedSimple',
     'Send-KillEmbed',
+    'Send-KillEmbedSimple',
     'Send-QuestEmbed',
     'Send-RaidProtectionEmbed',
     'Send-VehicleEmbed',

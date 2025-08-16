@@ -69,7 +69,7 @@ function Initialize-EventKillLogModule {
             return $false
         }
         
-        if (-not $script:Config.Enabled) {
+        if (-not $script:Config.AdminEnabled -and -not $script:Config.PlayersEnabled) {
             Write-Log "Event kill log relay not enabled in configuration" -Level "Info"
             return $false
         }
@@ -83,6 +83,10 @@ function Initialize-EventKillLogModule {
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
         Write-Log "Event kill log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Admin channel: $($script:Config.AdminChannel)" -Level "Info"
+        if ($script:Config.PlayersEnabled) {
+            Write-Log "Players channel: $($script:Config.PlayersChannel)" -Level "Info"
+        }
         
         if (-not (Test-Path $script:LogDirectory)) {
             Write-Log "Event kill log directory not found: $script:LogDirectory" -Level "Info"
@@ -696,30 +700,58 @@ function Send-EventKillActionToDiscord {
             return
         }
         
-        # Create and send embed
-        if (Get-Command "Send-EventKillEmbed" -ErrorAction SilentlyContinue) {
-            try {
-                Write-Log "Creating event kill embed for $($Action.KillerName)" -Level "Debug"
-                $embedData = Send-EventKillEmbed -EventKillAction $Action
-                Write-Log "Event kill embed data created successfully" -Level "Debug"
+        # Send to admin channel (detailed embed)
+        if ($script:Config.AdminEnabled -and $script:Config.AdminChannel) {        
+            if (Get-Command "Send-EventKillEmbed" -ErrorAction SilentlyContinue) {
+                try {
+                    Write-Log "Creating Event kill embed for admin channel" -Level "Debug"
+                    $embedData = Send-EventKillEmbed -EventKillAction $Action
+                    Write-Log "Event kill embed data created successfully" -Level "Debug"
                 
-                if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending event kill embed to Discord..." -Level "Debug"
-                    $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
-                    if ($result -and $result.success) {
-                        Write-Log "Event kill action embed sent successfully" -Level "Info"
-                        return
+                    if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
+                        Write-Log "Sending event kill embed to admin channel..." -Level "Debug"
+                        $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.AdminChannel -Embed $embedData
+                        if ($result -and $result.success) {
+                            Write-Log "Event kill action embed sent to admin channel successfully" -Level "Info"
+                        } else {
+                            Write-Log "Event kill action embed failed to send to admin channel: $($result | ConvertTo-Json)" -Level "Warning"
+                        }
                     } else {
-                        Write-Log "Event kill action embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    }
+                } catch {
+                    Write-Log "Error creating event kill embed for admin channel: $($_.Exception.Message)" -Level "Warning"
+                }
+            } else {
+                Write-Log "Send-EventKillEmbed function not found" -Level "Warning"
+            }
+        }        
+        
+        # Send to players channel (simple embed) if enabled
+        if ($script:Config.PlayersEnabled -and $script:Config.PlayersChannel) {
+            try {
+                if (Get-Command "Send-EventKillEmbedSimple" -ErrorAction SilentlyContinue) {
+                    Write-Log "Creating simple event kill embed for players channel" -Level "Debug"
+                    $simpleEmbedData = Send-EventKillEmbedSimple -EventKillAction $Action
+                    Write-Log "Simple event kill embed data created successfully" -Level "Debug"
+                    
+                    if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
+                        Write-Log "Sending simple event kill embed to players channel..." -Level "Debug"
+                        $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.PlayersChannel -Embed $simpleEmbedData
+                        if ($result -and $result.success) {
+                            Write-Log "Simple event kill embed sent to players channel" -Level "Info"
+                        } else {
+                            Write-Log "Failed to send simple event kill embed to players channel" -Level "Warning"
+                        }
+                    } else {
+                        Write-Log "Send-DiscordMessage command not found" -Level "Warning"
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-EventKillEmbedSimple function not found" -Level "Warning"
                 }
             } catch {
-                Write-Log "Error creating event kill embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error sending simple event kill embed to players channel: $($_.Exception.Message)" -Level "Warning"
             }
-        } else {
-            Write-Log "Send-EventKillEmbed function not found" -Level "Warning"
         }
         
     } catch {

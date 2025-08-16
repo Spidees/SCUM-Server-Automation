@@ -266,13 +266,19 @@
   "SCUMLogFeatures": {
     "//": "Kill log system",
     "KillFeed": {
-      "Enabled": true,
-      "Channel": "EDIT_CHANNEL_ID_FOR_KILL_LOG"
+      "AdminEnabled": true,
+      "AdminChannel": "EDIT_CHANNEL_ID_FOR_ADMIN_KILL_LOG",
+      "PlayersEnabled": true,
+      "PlayersChannel": "EDIT_CHANNEL_ID_FOR_PLAYERS_KILL_LOG",
+      "PlayersDelayEnabled": true,      
+      "PlayersDelaySeconds": 1800    
     },
     "//": "Event kill log system",
     "EventKillFeed": {
-      "Enabled": true,
-      "Channel": "EDIT_CHANNEL_ID_FOR_EVENT_KILL_LOG"
+      "AdminEnabled": true,
+      "AdminChannel": "EDIT_CHANNEL_ID_FOR_ADMIN_EVENT_KILL_LOG",
+      "PlayersEnabled": true,
+      "PlayersChannel": "EDIT_CHANNEL_ID_FOR_PLAYERS_EVENT_KILL_LOG"      
     },
     "//": "Admin command log system",
     "AdminFeed": {

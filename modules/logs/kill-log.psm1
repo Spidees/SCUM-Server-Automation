@@ -43,6 +43,8 @@ $script:IsMonitoring = $false
 $script:LastLineNumber = 0
 $script:StateFile = $null
 $script:IsRelayActive = $false
+$script:PlayersDelayQueue = @()
+$script:LastPlayersQueueCheck = (Get-Date)
 
 # ===============================================================
 # INITIALIZATION
@@ -69,7 +71,7 @@ function Initialize-KillLogModule {
             return $false
         }
         
-        if (-not $script:Config.Enabled) {
+        if (-not $script:Config.AdminEnabled -and -not $script:Config.PlayersEnabled) {
             Write-Log "Kill log relay not enabled in configuration" -Level "Info"
             return $false
         }
@@ -83,6 +85,10 @@ function Initialize-KillLogModule {
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
         Write-Log "Kill log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Admin channel: $($script:Config.AdminChannel)" -Level "Info"
+        if ($script:Config.PlayersEnabled) {
+            Write-Log "Players channel: $($script:Config.PlayersChannel)" -Level "Info"
+        }
         
         if (-not (Test-Path $script:LogDirectory)) {
             Write-Log "Kill log directory not found: $script:LogDirectory" -Level "Info"
@@ -119,6 +125,9 @@ function Update-KillLogProcessing {
     }
     
     try {
+        # Process delayed messages for players channel
+        Process-PlayersDelayQueue
+        
         $newKills = Get-NewKillEvents
         
         if (-not $newKills -or $newKills.Count -eq 0) {
@@ -280,6 +289,105 @@ function Load-KillState {
         Write-Log "Failed to load kill log state, starting fresh: $($_.Exception.Message)" -Level "Info"
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
+    }
+}
+
+# ===============================================================
+# DELAY QUEUE MANAGEMENT
+# ===============================================================
+function Process-PlayersDelayQueue {
+    # Only check every 30 seconds to avoid excessive processing
+    $currentTime = Get-Date
+    if (($currentTime - $script:LastPlayersQueueCheck).TotalSeconds -lt 30) {
+        return
+    }
+    $script:LastPlayersQueueCheck = $currentTime
+    
+    if (-not $script:Config.PlayersDelayEnabled -or -not $script:Config.PlayersDelaySeconds) {
+        return
+    }
+    
+    if (-not $script:PlayersDelayQueue -or $script:PlayersDelayQueue.Count -eq 0) {
+        return
+    }
+    
+    try {
+        # MEMORY LEAK FIX: Use ArrayList for removals
+        $itemsToRemove = New-Object System.Collections.ArrayList
+        
+        foreach ($queueItem in $script:PlayersDelayQueue) {
+            $delaySeconds = $script:Config.PlayersDelaySeconds
+            $timeDiff = ($currentTime - $queueItem.Timestamp).TotalSeconds
+            
+            if ($timeDiff -ge $delaySeconds) {
+                # Time to send this kill
+                try {
+                    if (Get-Command "Send-KillEmbedSimple" -ErrorAction SilentlyContinue) {
+                        $simpleEmbedData = Send-KillEmbedSimple -KillAction $queueItem.Kill
+                        
+                        if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
+                            $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.PlayersChannel -Embed $simpleEmbedData
+                            if ($result -and $result.success) {
+                                Write-Log "Delayed kill embed sent to players channel" -Level "Info"
+                            } else {
+                                Write-Log "Failed to send delayed kill embed to players channel" -Level "Warning"
+                            }
+                        }
+                    }
+                } catch {
+                    Write-Log "Error sending delayed kill to players channel: $($_.Exception.Message)" -Level "Warning"
+                }
+                
+                # Mark for removal
+                $null = $itemsToRemove.Add($queueItem)
+            }
+        }
+        
+        # Remove processed items
+        foreach ($item in $itemsToRemove) {
+            $script:PlayersDelayQueue = $script:PlayersDelayQueue | Where-Object { $_ -ne $item }
+        }
+        
+    } catch {
+        Write-Log "Error processing players delay queue: $($_.Exception.Message)" -Level "Warning"
+    }
+}
+
+function Add-KillToPlayersDelayQueue {
+    param([hashtable]$Kill)
+    
+    if (-not $script:Config.PlayersDelayEnabled) {
+        return
+    }
+    
+    try {
+        # MEMORY LEAK FIX: Initialize as ArrayList if needed
+        if (-not $script:PlayersDelayQueue) {
+            $script:PlayersDelayQueue = New-Object System.Collections.ArrayList
+        }
+        
+        $queueItem = @{
+            Timestamp = Get-Date
+            Kill = $Kill
+        }
+        
+        # Add to delay queue instead of sending immediately
+        if ($script:PlayersDelayQueue -is [System.Collections.ArrayList]) {
+            $null = $script:PlayersDelayQueue.Add($queueItem)
+        } else {
+            # Convert to ArrayList if it's still a regular array
+            $newQueue = New-Object System.Collections.ArrayList
+            foreach ($existingItem in $script:PlayersDelayQueue) {
+                $null = $newQueue.Add($existingItem)
+            }
+            $null = $newQueue.Add($queueItem)
+            $script:PlayersDelayQueue = $newQueue
+        }
+        
+        Write-Log "Kill added to players delay queue (${script:Config.PlayersDelaySeconds}s delay)" -Level "Debug"
+        
+    } catch {
+        Write-Log "Error adding kill to players delay queue: $($_.Exception.Message)" -Level "Warning"
     }
 }
 
@@ -684,30 +792,65 @@ function Send-KillEventToDiscord {
             return
         }
         
-        # Try to use embed format
-        if (Get-Command "Send-KillEmbed" -ErrorAction SilentlyContinue) {
-            try {
-                Write-Log "Creating kill embed for $($Kill.VictimName)" -Level "Debug"
-                $embedData = Send-KillEmbed -KillAction $Kill
-                Write-Log "Kill embed data created successfully" -Level "Debug"
-                
-                if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending kill embed to Discord..." -Level "Debug"
-                    $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
-                    if ($result -and $result.success) {
-                        Write-Log "Kill event embed sent successfully" -Level "Info"
-                        return
+        # Send to admin channel (detailed embed) if enabled
+        if ($script:Config.AdminEnabled -and $script:Config.AdminChannel) {
+            if (Get-Command "Send-KillEmbed" -ErrorAction SilentlyContinue) {
+                try {
+                    Write-Log "Creating kill embed for admin channel" -Level "Debug"
+                    $embedData = Send-KillEmbed -KillAction $Kill
+                    Write-Log "Kill embed data created successfully" -Level "Debug"
+                    
+                    if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
+                        Write-Log "Sending kill embed to admin channel..." -Level "Debug"
+                        $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.AdminChannel -Embed $embedData
+                        if ($result -and $result.success) {
+                            Write-Log "Kill event embed sent to admin channel successfully" -Level "Info"
+                        } else {
+                            Write-Log "Kill event embed failed to send to admin channel: $($result | ConvertTo-Json)" -Level "Warning"
+                        }
                     } else {
-                        Write-Log "Kill event embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Send-DiscordMessage command not found" -Level "Warning"
                     }
+                } catch {
+                    Write-Log "Error creating kill embed for admin channel: $($_.Exception.Message)" -Level "Warning"
+                }
+            } else {
+                Write-Log "Send-KillEmbed function not found" -Level "Warning"
+            }
+        }
+        
+        # Send to players channel (simple embed) if enabled
+        if ($script:Config.PlayersEnabled -and $script:Config.PlayersChannel) {
+            try {
+                # Check if delay is enabled
+                if ($script:Config.PlayersDelayEnabled -and $script:Config.PlayersDelaySeconds -gt 0) {
+                    # Add to delay queue instead of sending immediately
+                    Add-KillToPlayersDelayQueue -Kill $Kill
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    # Send immediately
+                    if (Get-Command "Send-KillEmbedSimple" -ErrorAction SilentlyContinue) {
+                        Write-Log "Creating simple kill embed for players channel" -Level "Debug"
+                        $simpleEmbedData = Send-KillEmbedSimple -KillAction $Kill
+                        Write-Log "Simple kill embed data created successfully" -Level "Debug"
+                        
+                        if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
+                            Write-Log "Sending simple kill embed to players channel..." -Level "Debug"
+                            $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.PlayersChannel -Embed $simpleEmbedData
+                            if ($result -and $result.success) {
+                                Write-Log "Simple kill embed sent to players channel" -Level "Info"
+                            } else {
+                                Write-Log "Failed to send simple kill embed to players channel" -Level "Warning"
+                            }
+                        } else {
+                            Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                        }
+                    } else {
+                        Write-Log "Send-KillEmbedSimple function not found" -Level "Warning"
+                    }
                 }
             } catch {
-                Write-Log "Error creating kill embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error handling players channel kill event: $($_.Exception.Message)" -Level "Warning"
             }
-        } else {
-            Write-Log "Send-KillEmbed function not found" -Level "Warning"
         }
         
     } catch {
@@ -761,7 +904,9 @@ Export-ModuleMember -Function @(
     'Send-KillEventToDiscord',
     'Apply-MessageFilter',
     'Save-KillState',
-    'Load-KillState'
+    'Load-KillState',
+    'Process-PlayersDelayQueue',
+    'Add-KillToPlayersDelayQueue'
 )
 
 
