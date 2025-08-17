@@ -229,6 +229,12 @@ function Complete-DiscordHandshake {
                             $SequenceNumber = [int]$RecvObj.SequenceNumber 
                         }
 
+                        # Handle heartbeat ACK (opcode 11) - both during auth and after
+                        if ($RecvObj.Opcode -eq '11') {
+                            $script:LastHeartbeatAck = $true
+                            Write-Log "[HEARTBEAT] Received heartbeat ACK" -Level "Debug"
+                        }
+
                         # Handle first ACK and send auth
                         if ($RecvObj.Opcode -eq '11' -and $continueAuth -eq $true) {
                             $continueAuth = $false
@@ -265,6 +271,7 @@ function Complete-DiscordHandshake {
                             $script:HeartbeatInterval = $HeartbeatInterval
                             $script:SequenceNumber = $SequenceNumber
                             $script:NextHeartbeat = [int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds) + [int64]$HeartbeatInterval
+                            $script:LastHeartbeatAck = $true  # Initialize ACK state
                             
                             # Don't start background job - we'll handle heartbeats in a different way
                             $script:HeartbeatRunning = $true
@@ -336,20 +343,113 @@ function Stop-DiscordWebSocketBot {
         # Stop persistent heartbeat first
         Stop-PersistentHeartbeat
         
+        # Gracefully close WebSocket if possible
         if ($script:WebSocket -and $script:WebSocket.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
-            $script:WebSocket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Bot shutting down", [System.Threading.CancellationToken]::None).Wait()
+            try {
+                # Use timeout to prevent hanging on close
+                $closeTask = $script:WebSocket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Bot shutting down", [System.Threading.CancellationToken]::None)
+                $timeout = 3000  # 3 seconds
+                if (-not $closeTask.Wait($timeout)) {
+                    Write-Log "[STOP] WebSocket close timeout, forcing disposal" -Level Warning
+                }
+            } catch {
+                Write-Log "[STOP] Error during graceful close: $($_.Exception.Message)" -Level Warning
+            }
+        }
+        
+        # Force cleanup regardless of close result
+        try {
+            if ($script:WebSocket) {
+                $script:WebSocket.Dispose()
+            }
+        } catch {
+            Write-Log "[STOP] Error disposing WebSocket: $($_.Exception.Message)" -Level Debug
         }
         
         $script:IsConnected = $false
         $script:WebSocket = $null
         $script:AuthComplete = $false
         $script:HeartbeatRunning = $false
+        $script:LastHeartbeatAck = $true
+        $script:LastHeartbeatSent = 0
         
         Write-Log "[STOP] Discord bot disconnected" -Level Warning
         return $true
         
     } catch {
         Write-Log "Error stopping Discord bot: $($_.Exception.Message)" -Level Error
+        # Even if cleanup fails, reset connection state
+        $script:IsConnected = $false
+        $script:WebSocket = $null
+        $script:AuthComplete = $false
+        $script:HeartbeatRunning = $false
+        $script:LastHeartbeatAck = $true
+        $script:LastHeartbeatSent = 0
+        return $false
+    }
+}
+
+function Receive-PendingDiscordMessages {
+    <#
+    .SYNOPSIS
+    Check for pending Discord messages including heartbeat ACKs
+    .DESCRIPTION
+    Non-blocking check for any pending messages from Discord, particularly heartbeat ACKs
+    #>
+    try {
+        if (-not $script:WebSocket -or $script:WebSocket.State -ne [System.Net.WebSockets.WebSocketState]::Open) {
+            return $false
+        }
+        
+        $CT = New-Object System.Threading.CancellationToken
+        $receivedAck = $false
+        
+        # Non-blocking check for messages (very short timeout)
+        $Size = 8192  # Smaller buffer for quick checks
+        $Array = [byte[]] @(, 0) * $Size
+        $Recv = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
+        
+        $Conn = $script:WebSocket.ReceiveAsync($Recv, $CT) 
+        
+        # Very short timeout for non-blocking check
+        $timeout = 100  # 100ms
+        $startTime = Get-Date
+        while (!$Conn.IsCompleted -and ((Get-Date) - $startTime).TotalMilliseconds -lt $timeout) {
+            Start-Sleep -Milliseconds 10
+        }
+        
+        if ($Conn.IsCompleted) {
+            $BytesReceived = $Conn.Result.Count
+            if ($BytesReceived -gt 0) {
+                $DiscordData = [System.Text.Encoding]::utf8.GetString($Recv.array, 0, $BytesReceived)
+                
+                if ($DiscordData.Trim()) {
+                    try { 
+                        $jsonObj = $DiscordData | ConvertFrom-Json
+                        
+                        # Handle heartbeat ACK (opcode 11)
+                        if ($jsonObj.op -eq 11) {
+                            $script:LastHeartbeatAck = $true
+                            $receivedAck = $true
+                            Write-Log "[HEARTBEAT] Received heartbeat ACK" -Level "Debug"
+                        }
+                        
+                        # Update sequence number if provided
+                        if ($jsonObj.s -and [int]$jsonObj.s -gt [int]$script:SequenceNumber) {
+                            $script:SequenceNumber = [int]$jsonObj.s
+                        }
+                        
+                    } catch {
+                        Write-Log "Error parsing Discord message: $($_.Exception.Message)" -Level Debug
+                    }
+                }
+            }
+        }
+        
+        return $receivedAck
+        
+    } catch {
+        Write-Log "Error receiving Discord messages: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -360,11 +460,30 @@ function Maintain-DiscordHeartbeat {
             return $false
         }
         
-        # Check if we need to send a heartbeat
+        # First, try to receive any pending messages (including ACKs)
+        $receivedAck = Receive-PendingDiscordMessages
+        
+        # Check if we need to send a heartbeat first
         $CurrentEpochMS = [int64]((New-TimeSpan -Start (Get-Date "01/01/1970") -End (Get-Date)).TotalMilliseconds)
         
         if ($script:HeartbeatInterval -gt 0 -and $CurrentEpochMS -ge $script:NextHeartbeat) {
             Write-Log "[HEARTBEAT] Sending maintenance heartbeat..." -Level "Debug"
+            
+            # Check for missed heartbeat ACK (zombie connection detection) ONLY if we've sent at least one heartbeat
+            if (-not $script:LastHeartbeatAck -and $script:LastHeartbeatSent -gt 0) {
+                $timeSinceLastHeartbeat = $CurrentEpochMS - $script:LastHeartbeatSent
+                # Only consider it a zombie connection if we haven't received ACK for more than 2 heartbeat intervals
+                if ($timeSinceLastHeartbeat -gt ($script:HeartbeatInterval * 2)) {
+                    Write-Log "[HEARTBEAT] Missed heartbeat ACK - connection may be zombie, triggering reconnection" -Level Warning
+                    # Connection is zombied - trigger reconnection
+                    $script:IsConnected = $false
+                    return $false
+                }
+            }
+            
+            # Mark that we're waiting for ACK
+            $script:LastHeartbeatAck = $false
+            $script:LastHeartbeatSent = $CurrentEpochMS
             
             # Send heartbeat
             $HeartbeatProp = @{ 'op' = 1; 'd' = $script:SequenceNumber }
@@ -388,6 +507,8 @@ function Maintain-DiscordHeartbeat {
         
     } catch {
         Write-Log "[HEARTBEAT] Error in heartbeat maintenance: $($_.Exception.Message)" -Level Error
+        # On heartbeat error, mark connection as unhealthy
+        $script:IsConnected = $false
         return $false
     }
 }
@@ -602,5 +723,6 @@ Export-ModuleMember -Function @(
     'Start-PersistentHeartbeat',
     'Stop-PersistentHeartbeat',
     'Get-HeartbeatJobOutput',
-    'Maintain-DiscordHeartbeat'
+    'Maintain-DiscordHeartbeat',
+    'Receive-PendingDiscordMessages'
 )

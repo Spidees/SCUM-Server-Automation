@@ -92,12 +92,13 @@ function Initialize-DiscordIntegration {
             
             # Determine initial activity based on configuration
             $initialActivity = "OFFLINE"  # Default offline activity
-            $activityType = "Playing"  # Always use Playing type
+            $activityType = "Playing"  # Default type
             $status = "online"  # Bot is always online when manager is running
             
             if ($Config.Discord.Presence) {
                 $presence = $Config.Discord.Presence
-                $activityType = "Playing"  # Force Playing type for consistent display
+                # Use configured activity type if available, otherwise default to Playing
+                $activityType = if ($presence.Type) { $presence.Type } else { "Playing" }
                 $status = "online"  # Always online when manager is running
                 
                 if ($presence.DynamicActivity -eq $true) {
@@ -502,7 +503,13 @@ function Update-BotActivity {
         # Bot always has "online" status when manager is running
         # Only the activity changes based on server state
         $status = "online"
-        $activityType = "Playing"  # Always Playing
+        
+        # Use configured activity type if available, otherwise default to Playing
+        $activityType = if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.Type) {
+            $script:DiscordConfig.Presence.Type
+        } else { 
+            "Playing" 
+        }
         
         Write-Log "[ACTIVITY] Setting Discord activity: 'Playing $activity'" -Level "Debug"
         
