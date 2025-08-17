@@ -323,7 +323,7 @@ function Process-PlayersDelayQueue {
                 # Time to send this kill
                 try {
                     if (Get-Command "Send-KillEmbedSimple" -ErrorAction SilentlyContinue) {
-                        $simpleEmbedData = Send-KillEmbedSimple -KillAction $queueItem.Kill
+                        $simpleEmbedData = Send-KillEmbedSimple -KillAction $queueItem.Kill -DelayConfig $script:Config
                         
                         if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
                             $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.PlayersChannel -Embed $simpleEmbedData
@@ -830,7 +830,7 @@ function Send-KillEventToDiscord {
                     # Send immediately
                     if (Get-Command "Send-KillEmbedSimple" -ErrorAction SilentlyContinue) {
                         Write-Log "Creating simple kill embed for players channel" -Level "Debug"
-                        $simpleEmbedData = Send-KillEmbedSimple -KillAction $Kill
+                        $simpleEmbedData = Send-KillEmbedSimple -KillAction $Kill -DelayConfig $script:Config
                         Write-Log "Simple kill embed data created successfully" -Level "Debug"
                         
                         if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {

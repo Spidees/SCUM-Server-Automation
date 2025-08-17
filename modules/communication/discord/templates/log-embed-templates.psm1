@@ -115,6 +115,51 @@ function Get-StandardTimestamp {
     return (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
 }
 
+# Format delay time into human readable format
+function Format-DelayTime {
+    param([int]$DelaySeconds)
+    
+    if ($DelaySeconds -le 0) {
+        return "0 seconds"
+    }
+    
+    $hours = [math]::Floor($DelaySeconds / 3600)
+    $minutes = [math]::Floor(($DelaySeconds % 3600) / 60)
+    $seconds = $DelaySeconds % 60
+    
+    $parts = @()
+    
+    if ($hours -gt 0) {
+        if ($hours -eq 1) {
+            $parts += "$hours hour"
+        } else {
+            $parts += "$hours hours"
+        }
+    }
+    
+    if ($minutes -gt 0) {
+        if ($minutes -eq 1) {
+            $parts += "$minutes minute"
+        } else {
+            $parts += "$minutes minutes"
+        }
+    }
+    
+    if ($seconds -gt 0) {
+        if ($seconds -eq 1) {
+            $parts += "$seconds second"
+        } else {
+            $parts += "$seconds seconds"
+        }
+    }
+    
+    if ($parts.Count -eq 0) {
+        return "0 seconds"
+    }
+    
+    return $parts -join " "
+}
+
 # ===============================================================
 # LOGIN/LOGOUT EMBEDS
 # ===============================================================
@@ -2292,7 +2337,8 @@ function Send-KillEmbed {
 # ===============================================================
 function Send-KillEmbedSimple {
     param(
-        [hashtable]$KillAction
+        [hashtable]$KillAction,
+        [hashtable]$DelayConfig = $null
     )
     
     # Handle suicide vs PvP kills differently - same structure as admin, less details
@@ -2310,7 +2356,15 @@ function Send-KillEmbedSimple {
             }
         )
 
-        # No additional fields for suicide in simple version
+        # Add delay information if delay is enabled
+        if ($DelayConfig -and $DelayConfig.PlayersDelayEnabled -and $DelayConfig.PlayersDelaySeconds) {
+            $delayText = Format-DelayTime -DelaySeconds $DelayConfig.PlayersDelaySeconds
+            $fields += @{
+                name = "Delay Info"
+                value = ":clock3: Delayed by $delayText"
+                inline = $false
+            }
+        }
 
         return @{
             title = "$emoji $title"
@@ -2383,6 +2437,16 @@ function Send-KillEmbedSimple {
                 name = "Distance"
                 value = "$($KillAction.Distance)m"
                 inline = $true
+            }
+        }
+
+        # Add delay information if delay is enabled
+        if ($DelayConfig -and $DelayConfig.PlayersDelayEnabled -and $DelayConfig.PlayersDelaySeconds) {
+            $delayText = Format-DelayTime -DelaySeconds $DelayConfig.PlayersDelaySeconds
+            $fields += @{
+                name = "Delay Info"
+                value = ":clock3: Delayed by $delayText"
+                inline = $false
             }
         }
 
@@ -2960,5 +3024,6 @@ Export-ModuleMember -Function @(
     'Send-RaidProtectionEmbed',
     'Send-VehicleEmbed',
     'Send-ViolationsEmbed',
-    'Get-StandardTimestamp'
+    'Get-StandardTimestamp',
+    'Format-DelayTime'
 )
