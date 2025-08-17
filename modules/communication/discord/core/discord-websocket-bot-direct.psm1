@@ -36,6 +36,10 @@ $script:HeartbeatRunning = $false
 $script:LastHeartbeatAck = $true
 $script:HeartbeatJob = $null
 
+# Recovery rate limiting
+$script:LastRecoveryAttempt = $null
+$script:RecoveryAttempts = 0
+
 function Start-DiscordWebSocketBot {
     param(
         [Parameter(Mandatory=$true)]
@@ -276,6 +280,19 @@ function Complete-DiscordHandshake {
                             # Don't start background job - we'll handle heartbeats in a different way
                             $script:HeartbeatRunning = $true
                             
+                            # Set initial presence after successful authentication
+                            if ($Activity -and $Activity.Trim() -ne "") {
+                                Write-Log "[HANDSHAKE] Setting initial Discord presence: '$Activity'" -Level "Debug"
+                                # Use a small delay to ensure connection is fully ready
+                                Start-Sleep -Milliseconds 200
+                                $presenceResult = Set-DiscordBotStatus -Status $Status -Activity $Activity -ActivityType "Watching"
+                                if ($presenceResult) {
+                                    Write-Log "[HANDSHAKE] Initial Discord presence set successfully!" -Level "Debug"
+                                } else {
+                                    Write-Log "[HANDSHAKE] Failed to set initial Discord presence" -Level Warning
+                                }
+                            }
+                            
                             return $true
                         }
                         
@@ -294,14 +311,17 @@ function Complete-DiscordHandshake {
         }
         
         if ($script:AuthComplete) {
+            Write-Log "[HANDSHAKE] Discord authentication completed successfully" -Level "Debug"
             return $true
         } else {
-            Write-Log "Authentication timeout or failed after $attempts attempts" -Level Error
+            Write-Log "[HANDSHAKE] Authentication timeout or failed after $attempts attempts - this may be due to Discord API rate limiting or network issues" -Level Warning
+            # Don't throw error immediately - let recovery handle it
             return $false
         }
         
     } catch {
-        Write-Error "Handshake error: $($_.Exception.Message)"
+        Write-Log "[HANDSHAKE] Handshake error: $($_.Exception.Message)" -Level Error
+        # Don't throw error - return false to let recovery handle it
         return $false
     }
 }
@@ -409,40 +429,66 @@ function Receive-PendingDiscordMessages {
         $Array = [byte[]] @(, 0) * $Size
         $Recv = New-Object System.ArraySegment[byte] -ArgumentList @(, $Array)
         
-        $Conn = $script:WebSocket.ReceiveAsync($Recv, $CT) 
-        
-        # Very short timeout for non-blocking check
-        $timeout = 100  # 100ms
-        $startTime = Get-Date
-        while (!$Conn.IsCompleted -and ((Get-Date) - $startTime).TotalMilliseconds -lt $timeout) {
-            Start-Sleep -Milliseconds 10
-        }
-        
-        if ($Conn.IsCompleted) {
-            $BytesReceived = $Conn.Result.Count
-            if ($BytesReceived -gt 0) {
-                $DiscordData = [System.Text.Encoding]::utf8.GetString($Recv.array, 0, $BytesReceived)
-                
-                if ($DiscordData.Trim()) {
-                    try { 
-                        $jsonObj = $DiscordData | ConvertFrom-Json
-                        
-                        # Handle heartbeat ACK (opcode 11)
-                        if ($jsonObj.op -eq 11) {
-                            $script:LastHeartbeatAck = $true
-                            $receivedAck = $true
-                            Write-Log "[HEARTBEAT] Received heartbeat ACK" -Level "Debug"
+        try {
+            $Conn = $script:WebSocket.ReceiveAsync($Recv, $CT) 
+            
+            # Very short timeout for non-blocking check
+            $timeout = 100  # 100ms
+            $startTime = Get-Date
+            while (!$Conn.IsCompleted -and ((Get-Date) - $startTime).TotalMilliseconds -lt $timeout) {
+                Start-Sleep -Milliseconds 10
+            }
+            
+            if ($Conn.IsCompleted) {
+                $BytesReceived = $Conn.Result.Count
+                if ($BytesReceived -gt 0) {
+                    $DiscordData = [System.Text.Encoding]::utf8.GetString($Recv.array, 0, $BytesReceived)
+                    
+                    if ($DiscordData.Trim()) {
+                        try { 
+                            # Check if JSON string appears complete before parsing
+                            if ($DiscordData.Contains('{') -and $DiscordData.TrimEnd().EndsWith('}')) {
+                                $jsonObj = $DiscordData | ConvertFrom-Json
+                                
+                                # Handle heartbeat ACK (opcode 11)
+                                if ($jsonObj.op -eq 11) {
+                                    $script:LastHeartbeatAck = $true
+                                    $receivedAck = $true
+                                    Write-Log "[HEARTBEAT] Received heartbeat ACK" -Level "Debug"
+                                }
+                                
+                                # Update sequence number if provided
+                                if ($jsonObj.s -and [int]$jsonObj.s -gt [int]$script:SequenceNumber) {
+                                    $script:SequenceNumber = [int]$jsonObj.s
+                                }
+                            } else {
+                                # Incomplete or malformed JSON - log but don't crash
+                                Write-Log "[JSON] Incomplete Discord message received (likely due to rate limiting), skipping..." -Level "Debug"
+                            }
+                            
+                        } catch {
+                            # Check if it's the common rate limiting errors - these are normal and expected
+                            if ($_.Exception.Message -like "*Unterminated string*" -or 
+                                $_.Exception.Message -like "*Invalid JSON*" -or 
+                                $_.Exception.Message -like "*ConvertFrom-Json*" -or
+                                $_.Exception.Message -like "*primitive*") {
+                                # All of these are normal during Discord rate limiting - don't log
+                                # Connection is healthy, just delayed message processing
+                            } else {
+                                # Only log truly unexpected errors that aren't rate limiting related
+                                Write-Log "Unexpected Discord message error: $($_.Exception.Message)" -Level Debug
+                            }
                         }
-                        
-                        # Update sequence number if provided
-                        if ($jsonObj.s -and [int]$jsonObj.s -gt [int]$script:SequenceNumber) {
-                            $script:SequenceNumber = [int]$jsonObj.s
-                        }
-                        
-                    } catch {
-                        Write-Log "Error parsing Discord message: $($_.Exception.Message)" -Level Debug
                     }
                 }
+            }
+        } catch {
+            # WebSocket receive error - this might indicate connection problems
+            if ($_.Exception.Message -like "*WebSocket*" -and ($_.Exception.Message -like "*closed*" -or $_.Exception.Message -like "*aborted*")) {
+                Write-Log "[WEBSOCKET] Connection lost during message receive: $($_.Exception.Message)" -Level Warning
+            } else {
+                # Other errors are less critical
+                Write-Log "[WEBSOCKET] Temporary receive error: $($_.Exception.Message)" -Level Debug
             }
         }
         
@@ -472,8 +518,8 @@ function Maintain-DiscordHeartbeat {
             # Check for missed heartbeat ACK (zombie connection detection) ONLY if we've sent at least one heartbeat
             if (-not $script:LastHeartbeatAck -and $script:LastHeartbeatSent -gt 0) {
                 $timeSinceLastHeartbeat = $CurrentEpochMS - $script:LastHeartbeatSent
-                # Only consider it a zombie connection if we haven't received ACK for more than 2 heartbeat intervals
-                if ($timeSinceLastHeartbeat -gt ($script:HeartbeatInterval * 2)) {
+                # Only consider it a zombie connection if we haven't received ACK for more than 3 heartbeat intervals (more tolerant)
+                if ($timeSinceLastHeartbeat -gt ($script:HeartbeatInterval * 3)) {
                     Write-Log "[HEARTBEAT] Missed heartbeat ACK - connection may be zombie, triggering reconnection" -Level Warning
                     # Connection is zombied - trigger reconnection
                     $script:IsConnected = $false
@@ -489,26 +535,40 @@ function Maintain-DiscordHeartbeat {
             $HeartbeatProp = @{ 'op' = 1; 'd' = $script:SequenceNumber }
             $Message = $HeartbeatProp | ConvertTo-Json
             
-            # MEMORY LEAK FIX: Use efficient byte conversion
-            $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
-            $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
-            $CT = New-Object System.Threading.CancellationToken
-            $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
-            while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
-            
-            # Update next heartbeat time
-            $script:NextHeartbeat = $CurrentEpochMS + [int64]$script:HeartbeatInterval
-            Write-Log "[HEARTBEAT] Heartbeat sent, next due at: $($script:NextHeartbeat)" -Level "Debug"
-            
-            return $true
+            try {
+                # MEMORY LEAK FIX: Use efficient byte conversion
+                $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+                $Message = New-Object System.ArraySegment[byte] -ArgumentList @(, $Bytes)
+                $CT = New-Object System.Threading.CancellationToken
+                $Conn = $script:WebSocket.SendAsync($Message, [System.Net.WebSockets.WebSocketMessageType]::Text, [System.Boolean]::TrueString, $CT)
+                while (!$Conn.IsCompleted) { Start-Sleep -Milliseconds 50 }
+                
+                # Update next heartbeat time
+                $script:NextHeartbeat = $CurrentEpochMS + [int64]$script:HeartbeatInterval
+                Write-Log "[HEARTBEAT] Heartbeat sent, next due at: $($script:NextHeartbeat)" -Level "Debug"
+                
+                return $true
+            } catch {
+                Write-Log "[HEARTBEAT] Failed to send heartbeat: $($_.Exception.Message)" -Level Warning
+                # Failed to send heartbeat - might indicate connection problems
+                if ($_.Exception.Message -like "*WebSocket*" -and ($_.Exception.Message -like "*closed*" -or $_.Exception.Message -like "*aborted*")) {
+                    Write-Log "[HEARTBEAT] Critical send failure - connection lost" -Level Error
+                    $script:IsConnected = $false
+                }
+                return $false
+            }
         }
         
         return $false  # No heartbeat needed yet
         
     } catch {
-        Write-Log "[HEARTBEAT] Error in heartbeat maintenance: $($_.Exception.Message)" -Level Error
-        # On heartbeat error, mark connection as unhealthy
-        $script:IsConnected = $false
+        Write-Log "[HEARTBEAT] Error in heartbeat maintenance: $($_.Exception.Message)" -Level Warning
+        # Don't immediately disconnect on heartbeat errors - they might be temporary
+        # Only disconnect if it's a critical WebSocket error
+        if ($_.Exception.Message -like "*WebSocket*" -and $_.Exception.Message -like "*closed*") {
+            Write-Log "[HEARTBEAT] Critical WebSocket error - marking connection as unhealthy" -Level Error
+            $script:IsConnected = $false
+        }
         return $false
     }
 }
@@ -605,23 +665,40 @@ function Test-DiscordConnectionHealth {
     Tests the Discord bot connection and attempts automatic reconnection if the connection is lost
     #>
     try {
+        # Rate limiting for recovery attempts - only try once per 30 seconds
+        if ($script:LastRecoveryAttempt) {
+            $timeSinceLastRecovery = (Get-Date) - $script:LastRecoveryAttempt
+            if ($timeSinceLastRecovery.TotalSeconds -lt 30) {
+                Write-Log "[CONNECTION-HEALTH] Recovery rate limit active - skipping health check ($([math]::Round($timeSinceLastRecovery.TotalSeconds))s < 30s)" -Level "Debug"
+                return $false  # Don't claim to be healthy, but don't attempt recovery
+            }
+        }
+        
         # Check basic connection status
         $isHealthy = Test-DiscordBotConnection
         
         if ($isHealthy) {
-            # MEMORY LEAK FIX: No job to check - just check running flag
-            if (-not $script:HeartbeatRunning) {
-                Write-Log "[CONNECTION-HEALTH] Heartbeat is not running, connection may be unhealthy" -Level Warning
-                $isHealthy = $false
-            }
+            # Reset recovery attempts counter on successful health check
+            $script:RecoveryAttempts = 0
+            return $true
         }
         
-        if (-not $isHealthy) {
-            Write-Log "[CONNECTION-HEALTH] Discord connection is unhealthy, attempting recovery..." -Level Warning
-            return Restore-DiscordConnection
+        # Connection is unhealthy - check if we should attempt recovery
+        if ($script:RecoveryAttempts -ge 3) {
+            Write-Log "[CONNECTION-HEALTH] Maximum recovery attempts reached ($($script:RecoveryAttempts)), skipping automatic recovery" -Level Warning
+            return $false
         }
         
-        return $true
+        Write-Log "[CONNECTION-HEALTH] Discord connection is unhealthy, attempting recovery (attempt $($script:RecoveryAttempts + 1)/3)..." -Level Warning
+        $script:LastRecoveryAttempt = Get-Date
+        $script:RecoveryAttempts++
+        
+        $recoveryResult = Restore-DiscordConnection
+        if ($recoveryResult) {
+            $script:RecoveryAttempts = 0  # Reset on successful recovery
+        }
+        
+        return $recoveryResult
         
     } catch {
         Write-Log "[CONNECTION-HEALTH] Error checking Discord connection health: $($_.Exception.Message)" -Level Error
@@ -645,16 +722,21 @@ function Restore-DiscordConnection {
         $savedStatus = $script:CurrentStatus
         
         if (-not $savedToken) {
-            Write-Error "[RECOVERY] No saved bot token available for reconnection"
+            Write-Log "[RECOVERY] No saved bot token available for reconnection" -Level Error
             return $false
         }
         
         # Clean up existing connection
         Write-Log "[RECOVERY] Cleaning up existing connection..." -Level "Debug"
-        Stop-DiscordWebSocketBot | Out-Null
+        try {
+            Stop-DiscordWebSocketBot | Out-Null
+        } catch {
+            Write-Log "[RECOVERY] Error during cleanup (continuing): $($_.Exception.Message)" -Level Warning
+        }
         
-        # Wait a moment before reconnecting
-        Start-Sleep -Seconds 3
+        # Wait longer before reconnecting to avoid rate limits
+        Write-Log "[RECOVERY] Waiting before reconnection attempt..." -Level "Debug"
+        Start-Sleep -Seconds 5
         
         # Attempt reconnection
         Write-Log "[RECOVERY] Attempting to reconnect..." -Level "Debug"
@@ -667,6 +749,19 @@ function Restore-DiscordConnection {
             if (-not $script:HeartbeatRunning) {
                 Write-Log "[RECOVERY] Starting heartbeat mechanism..." -Level "Debug"
                 Start-PersistentHeartbeat
+            }
+            
+            # Restore bot activity after successful reconnection
+            if ($savedActivity -and $savedActivity.Trim() -ne "") {
+                Write-Log "[RECOVERY] Restoring Discord activity: '$savedActivity'" -Level "Debug"
+                # Use a small delay to ensure connection is fully established
+                Start-Sleep -Milliseconds 500
+                $activityResult = Set-DiscordBotStatus -Status $savedStatus -Activity $savedActivity -ActivityType "Watching"
+                if ($activityResult) {
+                    Write-Log "[RECOVERY] Discord activity restored successfully!" -Level "Debug"
+                } else {
+                    Write-Log "[RECOVERY] Failed to restore Discord activity" -Level Warning
+                }
             }
             
             return $true

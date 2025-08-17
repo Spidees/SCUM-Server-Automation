@@ -91,7 +91,7 @@ function Initialize-DiscordIntegration {
             # Start Discord WebSocket bot (message handled by core module)
             
             # Determine initial activity based on configuration
-            $initialActivity = "OFFLINE"  # Default offline activity
+            $initialActivity = "SCUM Server Automation"  # Default activity
             $activityType = "Playing"  # Default type
             $status = "online"  # Bot is always online when manager is running
             
@@ -101,11 +101,8 @@ function Initialize-DiscordIntegration {
                 $activityType = if ($presence.Type) { $presence.Type } else { "Playing" }
                 $status = "online"  # Always online when manager is running
                 
-                if ($presence.DynamicActivity -eq $true) {
-                    $initialActivity = if ($presence.OfflineActivity) { $presence.OfflineActivity } else { "OFFLINE" }
-                } else {
-                    $initialActivity = if ($presence.Activity) { $presence.Activity } else { "OFFLINE" }
-                }
+                # Always use the configured Activity as initial activity
+                $initialActivity = if ($presence.Activity) { $presence.Activity } else { "SCUM Server Automation" }
             }
             
             # Check if Discord bot function is available
