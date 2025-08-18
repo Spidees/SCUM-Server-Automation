@@ -63,7 +63,7 @@
   "maxLogFileSizeMB": 100,
   "logRotationEnabled": true,
   "consoleLogLevel": "Info",
-  "monitoringIntervalSeconds": 30,
+  "monitoringIntervalSeconds": 1,
   "logMonitoringEnabled": true,
   "logMonitoringIntervalSeconds": 1,
   "preventStatusRegression": true,

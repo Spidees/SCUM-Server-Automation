@@ -469,10 +469,7 @@ function Start-GameService {
         Start-Service -Name $ServiceName -ErrorAction Stop
         
         if (-not $SkipStartupMonitoring) {
-            # Set global startup tracking
-            $global:ServiceStartInitiated = $true
-            $global:ServiceStartContext = $Context
-            $global:ServiceStartTime = Get-Date
+            Write-Log "[Service] Startup monitoring enabled for service '$ServiceName'" -Level Debug
         }
         
         Write-Log "[Service] Service '$ServiceName' start command sent successfully"

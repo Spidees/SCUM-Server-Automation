@@ -86,7 +86,7 @@ function Initialize-DiscordIntegration {
         }
         
         if ($notificationsOk) {
-            Write-Log "Discord integration initialized successfully" -Level "Debug"
+            Write-Log "Discord integration initialized successfully" -Level Debug
             
             # Start Discord WebSocket bot (message handled by core module)
             
@@ -107,7 +107,7 @@ function Initialize-DiscordIntegration {
             
             # Check if Discord bot function is available
             if (Get-Command "Start-DiscordWebSocketBot" -ErrorAction SilentlyContinue) {
-                Write-Log "Discord bot function available, starting bot..." -Level "Debug"
+                Write-Log "Discord bot function available, starting bot..." -Level Debug
                 # Bot always starts with "online" status when manager is running
                 $botStarted = Start-DiscordWebSocketBot -Token $Config.Discord.Token -Status "online" -Activity $initialActivity -ActivityType $activityType
             } else {
@@ -119,19 +119,12 @@ function Initialize-DiscordIntegration {
             
             if ($botStarted) {
                 $script:BotStarted = $true
-                
-                # Start persistent heartbeat mechanism immediately after authentication
-                Write-Log "Starting persistent heartbeat mechanism..." -Level "Debug"
-                if (Get-Command "Start-PersistentHeartbeat" -ErrorAction SilentlyContinue) {
-                    Start-PersistentHeartbeat
-                } else {
-                    Write-Log "Persistent heartbeat function not available" -Level Warning
-                }
+                Write-Log "Discord bot started successfully!" -Level Info
                 
                 # Set initial bot activity based on current server status if dynamic activity is enabled
                 if ($Config.Discord.Presence.DynamicActivity -eq $true) {
                     # Wait for bot to be fully ready after authentication
-                    Write-Log "Waiting for bot to be fully ready before setting activity..." -Level "Debug"
+                    Write-Log "Waiting for bot to be fully ready before setting activity..." -Level Debug
                     Start-Sleep -Seconds 5
                     
                     # Get initial server status from monitoring module if available
@@ -149,10 +142,10 @@ function Initialize-DiscordIntegration {
                                 $initialServerStatus.IsRunning = $monitoringStatus.IsRunning
                                 $initialServerStatus.OnlinePlayers = $monitoringStatus.OnlinePlayers
                                 $initialServerStatus.MaxPlayers = $monitoringStatus.MaxPlayers
-                                Write-Log "Using actual server status from monitoring: IsRunning=$($initialServerStatus.IsRunning)" -Level "Debug"
+                                Write-Log "Using actual server status from monitoring: IsRunning=$($initialServerStatus.IsRunning)" -Level Debug
                             }
                         } catch {
-                            Write-Log "Failed to get monitoring status, using fallback" -Level "Debug"
+                            Write-Log "Failed to get monitoring status, using fallback" -Level Debug
                         }
                     }
                     # Fallback to service check if monitoring not available
@@ -165,7 +158,7 @@ function Initialize-DiscordIntegration {
                         }
                     }
                     
-                    Write-Log "Setting initial bot activity after authentication..." -Level "Debug"
+                    Write-Log "Setting initial bot activity after authentication..." -Level Debug
                     Update-BotActivity -ServerStatus $initialServerStatus
                 }
                 
@@ -182,7 +175,7 @@ function Initialize-DiscordIntegration {
                         Write-Log "Failed to initialize Discord text commands: $($_.Exception.Message)" -Level Error
                     }
                 } else {
-                    Write-Log "Discord text commands module not available" -Level "Debug"
+                    Write-Log "Discord text commands module not available" -Level Debug
                 }
             } else {
                 Write-Log "Failed to start Discord WebSocket bot" -Level Error
@@ -219,7 +212,7 @@ function Send-NotificationMessage {
     try {
         # Call notification manager directly
         Send-DiscordNotification -Type $Type -Data $Data
-        Write-Log "Notification sent: $Type" -Level "Debug"
+        Write-Log "Notification sent: $Type" -Level Debug
         return @{ Success = $true }
         
     } catch {
@@ -240,7 +233,7 @@ function Update-DiscordLeaderboards {
     )
     
     try {
-        Write-Log "Updating Discord leaderboards: $Type" -Level "Debug"
+        Write-Log "Updating Discord leaderboards: $Type" -Level Debug
         
         # Get leaderboard data from database
         $leaderboardData = @{
@@ -284,7 +277,7 @@ function Update-DiscordLeaderboards {
         # Update live leaderboards embed
         if (Get-Command "Update-LiveLeaderboards" -ErrorAction SilentlyContinue) {
             Update-LiveLeaderboards -LeaderboardData $leaderboardData | Out-Null
-            Write-Log "Leaderboard embed updated successfully" -Level "Debug"
+            Write-Log "Leaderboard embed updated successfully" -Level Debug
             return @{ Success = $true }
         } else {
             Write-Log "Live leaderboards system not available" -Level Warning
@@ -446,7 +439,7 @@ function Update-BotActivity {
     
     try {
         if (-not $script:BotStarted) {
-            Write-Log "Discord bot not started, skipping activity update" -Level "Debug"
+            Write-Log "Discord bot not started, skipping activity update" -Level Debug
             return
         }
         
@@ -462,7 +455,7 @@ function Update-BotActivity {
         
         $timeSinceLastUpdate = (Get-Date) - $script:LastActivityUpdate
         if ($timeSinceLastUpdate.TotalSeconds -lt $activityUpdateIntervalSeconds) {
-            Write-Log "[ACTIVITY] Rate limit active - skipping update ($([math]::Round($timeSinceLastUpdate.TotalSeconds))s < $activityUpdateIntervalSeconds s)" -Level "Debug"
+            Write-Log "[ACTIVITY] Rate limit active - skipping update ($([math]::Round($timeSinceLastUpdate.TotalSeconds))s < $activityUpdateIntervalSeconds s)" -Level Debug
             return
         }
         
@@ -508,12 +501,12 @@ function Update-BotActivity {
             "Playing" 
         }
         
-        Write-Log "[ACTIVITY] Setting Discord activity: 'Playing $activity'" -Level "Debug"
+        Write-Log "[ACTIVITY] Setting Discord activity: 'Playing $activity'" -Level Debug
         
         if (Get-Command "Set-BotActivity" -ErrorAction SilentlyContinue) {
             $result = Set-BotActivity -Activity $activity -Type $activityType -Status $status
             if ($result) {
-                Write-Log "[SUCCESS] Discord activity updated -> Playing '$activity'" -Level "Debug"
+                Write-Log "[SUCCESS] Discord activity updated -> Playing '$activity'" -Level Debug
             } else {
                 Write-Log "[FAILED] Discord activity update failed" -Level Error
             }
@@ -552,13 +545,8 @@ function Update-DiscordServerStatus {
         } else { 30 }
         $embedUpdateNeeded = $timeSinceLastEmbedUpdate.TotalSeconds -ge $updateIntervalSeconds
         
-        # Check Discord connection health first and attempt recovery if needed
-        if (Get-Command "Test-DiscordConnectionHealth" -ErrorAction SilentlyContinue) {
-            $connectionHealthy = Test-DiscordConnectionHealth
-            if (-not $connectionHealthy) {
-                Write-Log "Discord connection health check failed - some Discord features may not work" -Level Warning
-            }
-        }
+        # Discord bot connection health monitoring disabled for stability
+        # Auto-recovery can cause unnecessary reconnections
         
         # Update live status embed (with rate limiting)
         if (Get-Command "Update-LiveServerStatus" -ErrorAction SilentlyContinue) {
@@ -571,10 +559,10 @@ function Update-DiscordServerStatus {
                 Update-LiveServerStatus -ServerStatus $ServerStatus | Out-Null
                 $script:LastEmbedUpdate = Get-Date
             } else {
-                Write-Log "[EMBED] Rate limit active - skipping update ($([math]::Round($timeSinceLastEmbedUpdate.TotalSeconds))s < $updateIntervalSeconds s)" -Level "Debug"
+                Write-Log "[EMBED] Rate limit active - skipping update ($([math]::Round($timeSinceLastEmbedUpdate.TotalSeconds))s < $updateIntervalSeconds s)" -Level Debug
             }
         } else {
-            Write-Log "Live server status update not available" -Level "Debug"
+            Write-Log "Live server status update not available" -Level Debug
         }
 
         # Update bot activity - has its own rate limiting and will get ServerStatus if needed
@@ -586,29 +574,56 @@ function Update-DiscordServerStatus {
 function Maintenance-DiscordConnection {
     <#
     .SYNOPSIS
-    Perform Discord connection maintenance
+    Perform Discord connection maintenance - CONSERVATIVE APPROACH
     .DESCRIPTION
-    This function should be called periodically to check Discord connection health
-    and attempt automatic recovery if the connection is lost
+    Only restarts when WebSocket is truly disconnected. HTTP API tests disabled to prevent false positives.
     #>
+    
     try {
-        if (Get-Command "Test-DiscordConnectionHealth" -ErrorAction SilentlyContinue) {
-            $healthStatus = Test-DiscordConnectionHealth
-            
-            if ($healthStatus) {
-                Write-Log "[MAINTENANCE] Discord connection health check passed" -Level "Debug"
-            } else {
-                Write-Log "[MAINTENANCE] Discord connection health check failed - recovery attempted" -Level Warning
-            }
-            
-            return $healthStatus
-        } else {
-            Write-Log "[MAINTENANCE] Discord health check function not available" -Level "Debug"
-            return $false
+        # Only check WebSocket connection health - no HTTP API tests
+        $wsStatus = $false
+        if (Get-Command "Test-DiscordBotStatus" -ErrorAction SilentlyContinue) {
+            $wsStatus = Test-DiscordBotStatus
         }
         
+        # Log current status for debugging
+        Write-Log "[MAINTENANCE] Discord WebSocket status: $wsStatus" -Level Debug
+        
+        # Only restart if WebSocket is completely disconnected AND we have token
+        if (-not $wsStatus -and $script:DiscordConfig -and $script:DiscordConfig.Token) {
+            Write-Log "[MAINTENANCE] Discord WebSocket truly disconnected - attempting restart..." -Level Warning
+            
+            # Stop existing connection
+            if (Get-Command "Stop-DiscordBotConnection" -ErrorAction SilentlyContinue) {
+                Stop-DiscordBotConnection | Out-Null
+            }
+            
+            # Wait 2 seconds before reconnecting
+            Start-Sleep -Seconds 2
+            
+            # Restart bot
+            if (Get-Command "Start-DiscordBotConnection" -ErrorAction SilentlyContinue) {
+                $restartResult = Start-DiscordBotConnection -Token $script:DiscordConfig.Token
+                if ($restartResult) {
+                    Write-Log "[MAINTENANCE] Discord bot restarted successfully" -Level Info
+                    $script:BotStarted = $true
+                } else {
+                    Write-Log "[MAINTENANCE] Failed to restart Discord bot" -Level Error
+                }
+            }
+        } else {
+            # Connection is healthy or we don't have config
+            if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
+                Write-Log "[MAINTENANCE] Discord configuration not available" -Level Debug
+            } else {
+                Write-Log "[MAINTENANCE] Discord connection healthy - no action needed" -Level Debug
+            }
+        }
+        
+        return $true
+        
     } catch {
-        Write-Log "[MAINTENANCE] Error during Discord connection maintenance: $($_.Exception.Message)" -Level Error
+        Write-Log "[MAINTENANCE] Discord maintenance error: $($_.Exception.Message)" -Level Warning
         return $false
     }
 }

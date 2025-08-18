@@ -1803,6 +1803,20 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Server: $status | Players: $($serverStatus.OnlinePlayers)/$($serverStatus.MaxPlayers) | Last Backup: $($script:State.LastBackup.ToString('HH:mm:ss'))" -Level Info
             }
             
+            # Maintain Discord heartbeat for stable connection
+            if (Get-Command "Maintain-DiscordHeartbeat" -ErrorAction SilentlyContinue) {
+                try {
+                    Maintain-DiscordHeartbeat | Out-Null
+                } catch {
+                    # Ignore heartbeat errors to prevent loop disruption
+                }
+            }
+            
+            # Discord connection maintenance DISABLED - heartbeats handle connectivity
+            # Maintenance causes unnecessary restarts due to HTTP API rate limits
+            # Uncomment below line only if WebSocket issues persist:
+            # if ($loopCount % 1200 -eq 0) { Maintenance-DiscordConnection | Out-Null }
+            
             # Sleep for configured monitoring interval
             Start-Sleep -Seconds $monitoringInterval
             
