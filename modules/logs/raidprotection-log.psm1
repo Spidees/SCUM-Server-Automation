@@ -30,6 +30,14 @@ try {
             Import-Module $embedPath -ErrorAction SilentlyContinue
         }
     }
+
+    # MEMORY LEAK FIX: Import server database module - check if already loaded
+    $serverDbPath = Join-Path $PSScriptRoot "..\database\server-database.psm1"
+    if (Test-Path $serverDbPath) {
+        if (-not (Get-Module "server-database" -ErrorAction SilentlyContinue)) {
+            Import-Module $serverDbPath -ErrorAction SilentlyContinue
+        }
+    }    
 } catch {
     Write-Host "[WARNING] Common module not available for raidprotection-log module" -ForegroundColor Yellow
 }
@@ -43,6 +51,8 @@ $script:IsMonitoring = $false
 $script:LastLineNumber = 0
 $script:StateFile = $null
 $script:IsRelayActive = $false
+$script:ServerDbPath = $null
+$script:SqlitePath = $null
 
 # ===============================================================
 # INITIALIZATION
@@ -89,6 +99,17 @@ function Initialize-RaidProtectionLogModule {
             return $false
         }
         
+        # Initialize database paths
+        if ($Config.dataDir) {
+            $script:ServerDbPath = Join-Path $Config.dataDir "server_database.db"
+            Write-Log "Server database path: $script:ServerDbPath" -Level "Debug"
+        }
+        
+        if ($Config.rootDir) {
+            $script:SqlitePath = Join-Path $Config.rootDir "sqlite-tools\sqlite3.exe"
+            Write-Log "SQLite executable path: $script:SqlitePath" -Level "Debug"
+        }
+        
         # Initialize state persistence
         $stateDir = ".\state"
         if (-not (Test-Path $stateDir)) {
@@ -128,6 +149,11 @@ function Update-RaidProtectionLogProcessing {
         foreach ($raidEvent in $newEvents) {
             # Clean format: RAID [EventType] Flag: Action
             Write-Log "RAID [$($raidEvent.EventType)] Flag $($raidEvent.FlagId): $($raidEvent.Action)" -Level "Info"
+            
+            # Save to database
+            Save-RaidProtectionEventToDatabase -RaidEvent $raidEvent
+            
+            # Send to Discord
             Send-RaidProtectionEventToDiscord -Event $raidEvent
         }
         
@@ -395,6 +421,180 @@ function ConvertFrom-RaidProtectionLine {
 }
 
 # ===============================================================
+# DATABASE INTEGRATION
+# ===============================================================
+function Save-RaidProtectionEventToDatabase {
+    param(
+        [hashtable]$RaidEvent
+    )
+    
+    try {
+        # Check if database is available
+        if (-not $script:ServerDbPath -or -not (Test-Path $script:ServerDbPath)) {
+            Write-Log "Server database not available for raid protection events" -Level "Debug"
+            return
+        }
+        
+        if (-not $script:SqlitePath -or -not (Test-Path $script:SqlitePath)) {
+            Write-Log "SQLite executable not available for raid protection events" -Level "Debug"
+            return
+        }
+        
+        # Validate event data
+        if (-not $RaidEvent -or -not $RaidEvent.FlagId) {
+            Write-Log "Invalid raid protection event data for database save" -Level "Debug"
+            return
+        }
+        
+        # Convert timestamp to proper format
+        $eventTime = $null
+        try {
+            if ($RaidEvent.Timestamp) {
+                $eventTime = $RaidEvent.Timestamp.ToString('yyyy-MM-dd HH:mm:ss')
+            } else {
+                $eventTime = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+            }
+        } catch {
+            $eventTime = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        }
+        
+        # Map event types to protection_type values for a_raid_protection table
+        $protectionType = switch ($RaidEvent.EventType) {
+            "ProtectionScheduled" { "set" }
+            "ProtectionActivated" { "started" }
+            "ProtectionEnded" { "finished" }
+            "ProtectionExpired" { "finished" }
+            default { "unknown" }
+        }
+        
+        # Get additional fields with defaults - handle NULLs properly for SQL
+        $flagId = $RaidEvent.FlagId
+        $ownerUserId = if ($RaidEvent.OwnerId) { $RaidEvent.OwnerId } else { "NULL" }
+        $locationX = if ($RaidEvent.LocationX) { $RaidEvent.LocationX } else { "NULL" }
+        $locationY = if ($RaidEvent.LocationY) { $RaidEvent.LocationY } else { "NULL" }
+        $locationZ = if ($RaidEvent.LocationZ) { $RaidEvent.LocationZ } else { "NULL" }
+        $protectionDuration = if ($RaidEvent.Duration) { $RaidEvent.Duration } else { "NULL" }
+        $startDelay = if ($RaidEvent.StartDelay) { $RaidEvent.StartDelay } else { "NULL" }
+        $lastLoggedInUserId = if ($RaidEvent.UserId) { $RaidEvent.UserId } else { "NULL" }
+        $reason = if ($RaidEvent.Reason) { $RaidEvent.Reason } else { "" }
+        
+        # Try UPDATE first, then INSERT if no rows affected (similar to login-log)
+        $updateSql = @"
+-- Try to update existing record first
+UPDATE a_raid_protection 
+SET owner_user_id = $ownerUserId,
+    location_x = $locationX,
+    location_y = $locationY,
+    location_z = $locationZ,
+    protection_type = '$protectionType',
+    protection_duration = $protectionDuration,
+    start_delay = $startDelay,
+    last_logged_in_user_id = $lastLoggedInUserId,
+    reason = '$($reason -replace "'", "''")',
+    last_update = '$eventTime'
+WHERE flag_id = $flagId;
+
+-- Insert new record only if UPDATE didn't affect any rows
+INSERT INTO a_raid_protection (
+    flag_id,
+    owner_user_id,
+    location_x,
+    location_y,
+    location_z,
+    protection_type,
+    protection_duration,
+    start_delay,
+    last_logged_in_user_id,
+    reason,
+    last_update
+) 
+SELECT 
+    $flagId,
+    $ownerUserId,
+    $locationX,
+    $locationY,
+    $locationZ,
+    '$protectionType',
+    $protectionDuration,
+    $startDelay,
+    $lastLoggedInUserId,
+    '$($reason -replace "'", "''")',
+    '$eventTime'
+WHERE changes() = 0;
+"@
+        
+        # Execute SQL command
+        $tempSqlFile = [System.IO.Path]::GetTempFileName() + ".sql"
+        Set-Content -Path $tempSqlFile -Value $updateSql -Encoding UTF8
+        
+        try {
+            $result = & $script:SqlitePath $script:ServerDbPath ".read $tempSqlFile" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "Raid protection event saved to database: Flag $($RaidEvent.FlagId) $($RaidEvent.EventType)" -Level "Debug"
+                
+                # Update flag_id in a_user_profile for the user who logged in (if applicable)
+                if ($RaidEvent.UserId -and $RaidEvent.FlagId) {
+                    Update-UserProfileFlagId -UserId $RaidEvent.UserId -FlagId $RaidEvent.FlagId
+                }
+            } else {
+                Write-Log "Failed to save raid protection event to database (exit code: $LASTEXITCODE): $result" -Level "Warning"
+            }
+        } finally {
+            # Clean up temp file
+            if (Test-Path $tempSqlFile) {
+                Remove-Item $tempSqlFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+        
+    } catch {
+        Write-Log "Error saving raid protection event to database: $($_.Exception.Message)" -Level "Warning"
+    }
+}
+
+function Update-UserProfileFlagId {
+    param(
+        [string]$UserId,
+        [string]$FlagId
+    )
+    
+    try {
+        if (-not $UserId -or -not $FlagId) {
+            Write-Log "Invalid parameters for flag_id update: UserId='$UserId', FlagId='$FlagId'" -Level "Debug"
+            return
+        }
+        
+        # Update flag_id in a_user_profile for the user
+        $updateUserSql = @"
+UPDATE a_user_profile 
+SET flag_id = $FlagId,
+    last_update = CURRENT_TIMESTAMP
+WHERE user_id = '$UserId';
+"@
+        
+        # Execute SQL command
+        $tempUserSqlFile = [System.IO.Path]::GetTempFileName() + ".sql"
+        Set-Content -Path $tempUserSqlFile -Value $updateUserSql -Encoding UTF8
+        
+        try {
+            $userResult = & $script:SqlitePath $script:ServerDbPath ".read $tempUserSqlFile" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "Updated flag_id=$FlagId for user_id=$UserId in a_user_profile" -Level "Debug"
+            } else {
+                Write-Log "Failed to update flag_id for user (exit code: $LASTEXITCODE): $userResult" -Level "Warning"
+            }
+        } finally {
+            # Clean up temp file
+            if (Test-Path $tempUserSqlFile) {
+                Remove-Item $tempUserSqlFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+        
+    } catch {
+        Write-Log "Error updating flag_id in user profile: $($_.Exception.Message)" -Level "Warning"
+    }
+}
+
+# ===============================================================
 # DISCORD INTEGRATION
 # ===============================================================
 function Send-RaidProtectionEventToDiscord {
@@ -482,6 +682,8 @@ Export-ModuleMember -Function @(
     'Get-NewRaidProtectionEvents',
     'Get-LatestRaidProtectionLogFile',
     'Send-RaidProtectionEventToDiscord',
+    'Save-RaidProtectionEventToDatabase',
+    'Update-UserProfileFlagId',
     'Apply-MessageFilter',
     'Save-RaidProtectionState',
     'Load-RaidProtectionState'

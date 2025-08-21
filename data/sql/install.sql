@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS a_notification_preferences (
 CREATE TABLE a_user_profile (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 	user_id						TEXT,
+	steam_id						TEXT,    
 	user_name						TEXT,
 	user_ip				TEXT,
     flag_id INTEGER,    
@@ -117,5 +118,31 @@ CREATE INDEX idx_chest_ownership_owner_user_id ON a_chest_ownership(owner_user_i
 CREATE INDEX idx_bunker_lock_bunker_name ON a_bunker_lock(bunker_name);
 CREATE INDEX idx_bunker_lock_last_update ON a_bunker_lock(last_update);
 CREATE INDEX idx_bunker_lock_status ON a_bunker_lock(status);
+
+-- Copy data from user_profile to a_user_profile with column mapping
+INSERT OR IGNORE INTO a_user_profile (
+    user_id,           -- maps to user_profile.id
+    steam_id,          -- maps to user_profile.user_id
+    user_name,         -- maps to user_profile.name
+    user_ip,           -- maps to user_profile.authority_ip
+    flag_id,           -- maps to user_profile.type
+    last_login_time,   -- maps to user_profile.last_login_time
+    last_logout_time,  -- maps to user_profile.last_logout_time
+    user_is_online,    -- set to 0 (offline) for initial data
+    last_update        -- set to current timestamp
+)
+SELECT 
+    up.id,             -- user_profile.id -> a_user_profile.user_id
+    up.user_id,        -- user_profile.user_id -> a_user_profile.steam_id
+    up.name,           -- user_profile.name -> a_user_profile.user_name
+    up.authority_ip,   -- user_profile.authority_ip -> a_user_profile.user_ip
+    NULL,           -- user_profile.type -> a_user_profile.flag_id
+    up.last_login_time,    -- user_profile.last_login_time -> a_user_profile.last_login_time
+    up.last_logout_time,   -- user_profile.last_logout_time -> a_user_profile.last_logout_time
+    0,  -- user_is_online = 0 (all offline initially)
+    CURRENT_TIMESTAMP  -- last_update
+FROM user_profile up
+WHERE up.user_id IS NOT NULL 
+  AND up.user_id != '';
 
 

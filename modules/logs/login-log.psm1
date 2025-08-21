@@ -441,6 +441,7 @@ function Save-LoginEventToDatabase {
 -- Try to update existing user first
 UPDATE a_user_profile 
 SET user_name = '$($LoginEvent.PlayerName -replace "'", "''")' ,
+    steam_id = '$($LoginEvent.SteamId)',
     user_ip = '$($LoginEvent.IpAddress)',
     last_login_time = '$loginTime',
     user_is_online = 1,
@@ -450,6 +451,7 @@ WHERE user_id = '$userId';
 -- Insert new user only if UPDATE didn't affect any rows
 INSERT INTO a_user_profile (
     user_id, 
+    steam_id,
     user_name, 
     user_ip, 
     flag_id,
@@ -460,6 +462,7 @@ INSERT INTO a_user_profile (
 ) 
 SELECT 
     '$userId',
+    '$($LoginEvent.SteamId)',
     '$($LoginEvent.PlayerName -replace "'", "''")',
     '$($LoginEvent.IpAddress)',
     NULL,
@@ -474,7 +477,8 @@ WHERE changes() = 0;
             $updateSql = @"
 -- Try to update existing user first
 UPDATE a_user_profile 
-SET last_logout_time = '$logoutTime',
+SET steam_id = '$($LoginEvent.SteamId)',
+    last_logout_time = '$logoutTime',
     user_is_online = 0,
     last_update = CURRENT_TIMESTAMP
 WHERE user_id = '$userId';
@@ -482,6 +486,7 @@ WHERE user_id = '$userId';
 -- Insert new user only if UPDATE didn't affect any rows
 INSERT INTO a_user_profile (
     user_id, 
+    steam_id,
     user_name, 
     user_ip, 
     flag_id,
@@ -492,6 +497,7 @@ INSERT INTO a_user_profile (
 ) 
 SELECT 
     '$userId',
+    '$($LoginEvent.SteamId)',
     '$($LoginEvent.PlayerName -replace "'", "''")',
     '$($LoginEvent.IpAddress)',
     NULL,
