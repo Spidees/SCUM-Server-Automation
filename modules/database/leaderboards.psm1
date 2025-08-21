@@ -33,7 +33,7 @@ function Initialize-LeaderboardsModule {
         $script:WeeklyDbPath = ".\data\weekly_leaderboards.db"
         
         Write-Log "[Leaderboards] Module initialized successfully"
-        Write-Log "[Leaderboards] Main Database: $DatabasePath"
+        Write-Log "[Leaderboards] Main Database (for snapshots): $DatabasePath"
         Write-Log "[Leaderboards] Weekly Database: $script:WeeklyDbPath"
         
         return @{ Success = $true }
@@ -484,6 +484,7 @@ CREATE TABLE IF NOT EXISTS current_week_info (
         $weekEndStr = $weekEndDate.ToString('yyyy-MM-dd')
         
         Write-Log "[Leaderboards] Taking weekly snapshot for week starting: $weekStartStr" -Level Info
+        Write-Log "[Leaderboards] Snapshot source database: $script:DatabasePath" -Level Info
         
         # Check if we already have a snapshot for this week
         $checkQuery = "SELECT COUNT(*) as count FROM weekly_snapshots WHERE week_start_date = '$weekStartStr'"
@@ -802,6 +803,53 @@ function Reset-WeeklyLeaderboards {
     }
 }
 
+function Update-SnapshotOnRestart {
+    <#
+    .SYNOPSIS
+    Update weekly snapshot after server restart when fresh data is available
+    .DESCRIPTION
+    This function should be called after server restart to ensure leaderboards
+    have the most recent data, since database updates only happen during restarts.
+    This forces a refresh of the current week's snapshot with latest data.
+    #>
+    
+    try {
+        Write-Log "[Leaderboards] Updating snapshot after server restart..." -Level Info
+        
+        # Get current week start
+        $currentWeekStart = Get-CurrentWeekStart
+        $weekStartStr = $currentWeekStart.ToString('yyyy-MM-dd')
+        
+        Write-Log "[Leaderboards] Force refreshing snapshot for week: $weekStartStr" -Level Info
+        Write-Log "[Leaderboards] Snapshot source database: $script:DatabasePath" -Level Info
+        
+        # Delete existing snapshot for current week to force refresh
+        $deleteQuery = "DELETE FROM weekly_snapshots WHERE week_start_date = '$weekStartStr'"
+        $deleteResult = Invoke-WeeklyDatabaseQuery -Query $deleteQuery -DatabasePath $script:WeeklyDbPath
+        
+        if ($deleteResult.Success) {
+            Write-Log "[Leaderboards] Existing snapshot cleared for refresh" -Level Info
+        } else {
+            Write-Log "[Leaderboards] No existing snapshot to clear (or error): $($deleteResult.Error)" -Level Debug
+        }
+        
+        # Take fresh snapshot with current data
+        $snapshotResult = Update-WeeklySnapshot -WeekStartDate $currentWeekStart
+        
+        if ($snapshotResult) {
+            Write-Log "[Leaderboards] Weekly snapshot updated successfully after restart" -Level Info
+            return $true
+        } else {
+            Write-Log "[Leaderboards] Weekly snapshot update failed" -Level Warning
+            return $false
+        }
+        
+    } catch {
+        Write-Log "[Leaderboards] Error updating snapshot on restart: $($_.Exception.Message)" -Level Error
+        return $false
+    }
+}
+
 # Export functions
 Export-ModuleMember -Function @(
     'Initialize-LeaderboardsModule',
@@ -813,6 +861,7 @@ Export-ModuleMember -Function @(
     'Format-WeeklyValue',
     'Invoke-WeeklyDatabaseQuery',
     'Update-WeeklySnapshot',
+    'Update-SnapshotOnRestart',
     'Test-WeeklyResetNeeded',
     'Invoke-WeeklyReset',
     'Reset-WeeklyLeaderboards'

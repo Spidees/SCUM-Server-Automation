@@ -466,7 +466,70 @@ function Start-GameService {
             return $true
         }
         
+        # Update server database before starting service (only when server is stopped)
+        if (Get-Command "Update-ServerDatabase" -ErrorAction SilentlyContinue) {
+            try {
+                Write-Log "[Service] Updating server database before start..." -Level Info
+                $updateResult = Update-ServerDatabase
+                if ($updateResult) {
+                    Write-Log "[Service] Server database updated successfully" -Level Info
+                } else {
+                    Write-Log "[Service] Server database update failed, continuing with start..." -Level Warning
+                }
+            } catch {
+                Write-Log "[Service] Error updating server database: $($_.Exception.Message)" -Level Warning
+                Write-Log "[Service] Continuing with service start despite database update error..." -Level Warning
+            }
+        } else {
+            Write-Log "[Service] Update-ServerDatabase not available, skipping database update" -Level Debug
+        }
+        
+        # Set all players offline before starting server (restart disconnects everyone)
+        if (Get-Command "Set-AllPlayersOffline" -ErrorAction SilentlyContinue) {
+            try {
+                $offlineResult = Set-AllPlayersOffline
+                if (-not $offlineResult) {
+                    Write-Log "[Service] Failed to set players offline, continuing with start..." -Level Warning
+                }
+            } catch {
+                Write-Log "[Service] Error setting players offline: $($_.Exception.Message)" -Level Warning
+            }
+        } else {
+            Write-Log "[Service] Set-AllPlayersOffline not available" -Level Debug
+        }
+        
         Start-Service -Name $ServiceName -ErrorAction Stop
+        
+        # Update leaderboards after successful start (when fresh data is available)
+        # Only do this for manual starts, not for restart context
+        if (-not $SkipNotifications -and $Context -notlike "*restart*") {
+            try {
+                Write-Log "[Service] Updating leaderboards and snapshots after start..." -Level Info
+                
+                # Update weekly snapshot with fresh data
+                if (Get-Command "Update-SnapshotOnRestart" -ErrorAction SilentlyContinue) {
+                    $snapshotResult = Update-SnapshotOnRestart
+                    if ($snapshotResult) {
+                        Write-Log "[Service] Weekly snapshot updated successfully" -Level Info
+                    } else {
+                        Write-Log "[Service] Weekly snapshot update failed" -Level Warning
+                    }
+                } else {
+                    Write-Log "[Service] Update-SnapshotOnRestart not available" -Level Debug
+                }
+                
+                # Update Discord leaderboards embeds with fresh data
+                if (Get-Command "Update-LeaderboardsOnRestart" -ErrorAction SilentlyContinue) {
+                    Update-LeaderboardsOnRestart
+                    Write-Log "[Service] Discord leaderboards updated successfully" -Level Info
+                } else {
+                    Write-Log "[Service] Update-LeaderboardsOnRestart not available" -Level Debug
+                }
+                
+            } catch {
+                Write-Log "[Service] Error updating leaderboards after start: $($_.Exception.Message)" -Level Warning
+            }
+        }
         
         if (-not $SkipStartupMonitoring) {
             Write-Log "[Service] Startup monitoring enabled for service '$ServiceName'" -Level Debug
@@ -523,7 +586,39 @@ function Restart-GameService {
     try {
         if (Stop-GameService -ServiceName $ServiceName -Reason $Reason) {
             Start-Sleep -Seconds 5
-            return Start-GameService -ServiceName $ServiceName -Context $Reason
+            $startResult = Start-GameService -ServiceName $ServiceName -Context $Reason -SkipNotifications:$SkipNotifications
+            
+            # Update leaderboards after successful restart (when fresh data is available)
+            if ($startResult -and -not $SkipNotifications) {
+                try {
+                    Write-Log "[Service] Updating leaderboards and snapshots after restart..." -Level Info
+                    
+                    # Update weekly snapshot with fresh data
+                    if (Get-Command "Update-SnapshotOnRestart" -ErrorAction SilentlyContinue) {
+                        $snapshotResult = Update-SnapshotOnRestart
+                        if ($snapshotResult) {
+                            Write-Log "[Service] Weekly snapshot updated successfully" -Level Info
+                        } else {
+                            Write-Log "[Service] Weekly snapshot update failed" -Level Warning
+                        }
+                    } else {
+                        Write-Log "[Service] Update-SnapshotOnRestart not available" -Level Debug
+                    }
+                    
+                    # Update Discord leaderboards embeds with fresh data
+                    if (Get-Command "Update-LeaderboardsOnRestart" -ErrorAction SilentlyContinue) {
+                        Update-LeaderboardsOnRestart
+                        Write-Log "[Service] Discord leaderboards updated successfully" -Level Info
+                    } else {
+                        Write-Log "[Service] Update-LeaderboardsOnRestart not available" -Level Debug
+                    }
+                    
+                } catch {
+                    Write-Log "[Service] Error updating leaderboards after restart: $($_.Exception.Message)" -Level Warning
+                }
+            }
+            
+            return $startResult
         }
         return $false
     }

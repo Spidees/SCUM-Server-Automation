@@ -353,7 +353,13 @@ function Update-DiscordMessage {
                 continue
             }
             
-            # For non-rate-limit errors, show detailed response
+            # Check if it's a 404 (message not found) - this is expected for missing embeds
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 404) {
+                # Message not found (deleted/doesn't exist) - return null silently
+                return $null
+            }
+            
+            # For other non-rate-limit errors, show detailed response
             $errorDetails = "Unknown error"
             try {
                 if ($_.Exception.Response) {

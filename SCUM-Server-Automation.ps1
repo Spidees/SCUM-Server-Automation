@@ -154,6 +154,7 @@ $modules = @(
     "automation\backup\backup.psm1",
     "automation\update\update.psm1",
     "automation\scheduling\scheduling.psm1",
+    "database\server-database.psm1",    
     "database\scum-database.psm1",
     "communication\discord\live-embeds\leaderboards-embed.psm1",
     "communication\discord\discord-integration.psm1"
@@ -450,10 +451,33 @@ if (Get-Command "Initialize-LogReaderModule" -ErrorAction SilentlyContinue) {
     Write-Log "[WARN] Log parser module not available" -Level Warning
 }
 
-# Initialize database
-if (Get-Command "Initialize-DatabaseModule" -ErrorAction SilentlyContinue) {
+# Initialize server database first
+$serverDbSuccess = $false
+if (Get-Command "Initialize-ServerDatabase" -ErrorAction SilentlyContinue) {
     try {
-        $databasePath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\SaveFiles\SCUM.db" } else { $null }
+        $serverDbResult = Initialize-ServerDatabase -Config $configHash
+        if ($serverDbResult) {
+            Write-Log "[OK] Server database initialized" -Level Info
+            $serverDbSuccess = $true
+        } else {
+            Write-Log "[WARN] Server database initialization failed" -Level Warning
+        }
+    } catch {
+        Write-Log "[WARN] Server database failed: $($_.Exception.Message)" -Level Warning
+    }
+} else {
+    Write-Log "[WARN] Server database module not available" -Level Warning
+}
+
+# Initialize main database module (using server_database.db) only if server DB is ready
+if ($serverDbSuccess -and (Get-Command "Initialize-DatabaseModule" -ErrorAction SilentlyContinue)) {
+    try {
+        # Use server_database.db path instead of SCUM.db
+        $databasePath = if (Get-Command "Get-ServerDatabasePath" -ErrorAction SilentlyContinue) { 
+            Get-ServerDatabasePath 
+        } else { 
+            Join-Path $configHash.dataDir "server_database.db"
+        }
         $dbResult = Initialize-DatabaseModule -Config $configHash -DatabasePath $databasePath
         if ($dbResult.Success) {
             Write-Log "[OK] Database connection" -Level Info
@@ -469,17 +493,22 @@ if (Get-Command "Initialize-DatabaseModule" -ErrorAction SilentlyContinue) {
         Write-Log "[WARN] Database failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Log "[WARN] Database module not available" -Level Warning
+    if (-not $serverDbSuccess) {
+        Write-Log "[WARN] Database module skipped - server database not ready" -Level Warning
+    } else {
+        Write-Log "[WARN] Database module not available" -Level Warning
+    }
 }
 
 # Initialize leaderboards module
 if (Get-Command "Initialize-LeaderboardsModule" -ErrorAction SilentlyContinue) {
     try {
-        $databasePath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\SaveFiles\SCUM.db" } else { $null }
+        # Use server_database.db instead of SCUM.db for consistent data access
+        $databasePath = if ($configHash.dataDir) { Join-Path $configHash.dataDir "server_database.db" } else { ".\data\server_database.db" }
         $sqlitePath = ".\sqlite-tools\sqlite3.exe"
         $lbResult = Initialize-LeaderboardsModule -DatabasePath $databasePath -SqliteExePath $sqlitePath
         if ($lbResult.Success) {
-            Write-Log "[OK] Leaderboards module" -Level Info
+            Write-Log "[OK] Leaderboards module (using server_database.db)" -Level Info
         } else {
             Write-Log "[WARN] Leaderboards limited: $($lbResult.Error)" -Level Warning
         }
@@ -512,21 +541,6 @@ if (Get-Command "Initialize-SchedulingModule" -ErrorAction SilentlyContinue) {
     }
 } else {
     Write-Log "[WARN] Scheduling module not available" -Level Warning
-}
-
-# Function to update Discord leaderboards
-function Update-ManagerDiscordLeaderboards {
-    try {
-        # Call the Discord integration leaderboard update function
-        if (Get-Command "Update-DiscordLeaderboards" -ErrorAction SilentlyContinue) {
-            $result = Update-DiscordLeaderboards -Type "player_stats"
-            # Only log completion, not start
-        } else {
-            Write-Log "Discord leaderboards function not available" -Level Debug
-        }
-    } catch {
-        Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level Warning
-    }
 }
 
 # Initialize Discord integration
@@ -1579,13 +1593,6 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
         # MEMORY LEAK FIX: Increased default monitoring interval from 2s to 10s to reduce frequency
         $monitoringInterval = if ($configHash.monitoringIntervalSeconds) { $configHash.monitoringIntervalSeconds } else { 10 }
         
-        # Get leaderboard update interval from Discord LiveEmbeds config (in seconds)
-        $leaderboardIntervalSeconds = if ($configHash.Discord.LiveEmbeds.LeaderboardUpdateInterval) { 
-            $configHash.Discord.LiveEmbeds.LeaderboardUpdateInterval # Already in seconds
-        } else { 600 } # Default 10 minutes
-        $leaderboardInterval = [math]::Round($leaderboardIntervalSeconds / 60) # Convert to minutes for display
-        $leaderboardLoops = [math]::Max(1, [math]::Round($leaderboardIntervalSeconds / $monitoringInterval))
-        
         # Get Discord status update interval from Discord LiveEmbeds config (in seconds)
         $discordStatusIntervalSeconds = if ($configHash.Discord.LiveEmbeds.UpdateInterval) { 
             $configHash.Discord.LiveEmbeds.UpdateInterval # Already in seconds
@@ -1593,10 +1600,10 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
         
         Write-Log "Monitoring interval: $monitoringInterval seconds" -Level Info
         Write-Log "Discord status updates: every $discordStatusIntervalSeconds seconds" -Level Info
-        Write-Log "Leaderboard updates: every $leaderboardInterval minutes ($leaderboardLoops loops)" -Level Info
+        Write-Log "Leaderboard updates: DISABLED (restart-only mode)" -Level Info
         
         # MEMORY LEAK FIX: Calculate log processing interval to reduce overhead
-        $logProcessingIntervalSeconds = 30 # Process logs every 30 seconds instead of every 2 seconds
+        $logProcessingIntervalSeconds = 1 # Process logs every 30 seconds instead of every 2 seconds
         $logProcessingLoops = [math]::Max(1, [math]::Round($logProcessingIntervalSeconds / $monitoringInterval))
         Write-Log "Log processing: every $logProcessingIntervalSeconds seconds ($logProcessingLoops loops)" -Level Info
         
@@ -1757,39 +1764,6 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                         Maintenance-DiscordConnection | Out-Null
                     } catch {
                         Write-Log "Discord connection maintenance failed: $($_.Exception.Message)" -Level Warning
-                    }
-                }
-            }
-            
-            # Update Discord leaderboards based on config interval
-            # First update after 30 seconds, then every normal interval from config
-            if (($loopCount -eq 30) -or ($loopCount -gt 30 -and ($loopCount - 30) % $leaderboardLoops -eq 0)) {
-                Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Updating leaderboards..." -Level Info
-                try {
-                    Update-ManagerDiscordLeaderboards
-                } catch {
-                    Write-Log "Discord leaderboards update failed: $($_.Exception.Message)" -Level Warning
-                }
-                
-                # Also show server status embed update (happens automatically every 15s, but we show message every 5 min)
-                Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Updating server status embed..." -Level Info
-                
-                # Check for weekly leaderboard reset (every 5 minutes)
-                if (Get-Command "Test-WeeklyResetNeeded" -ErrorAction SilentlyContinue) {
-                    try {
-                        if (Test-WeeklyResetNeeded) {
-                            Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset triggered" -Level Warning
-                            if (Get-Command "Invoke-WeeklyReset" -ErrorAction SilentlyContinue) {
-                                $resetResult = Invoke-WeeklyReset
-                                if ($resetResult.Success) {
-                                    Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Weekly reset completed" -Level Info
-                                } else {
-                                    Write-Log "Weekly leaderboard reset failed: $($resetResult.Error)" -Level Warning
-                                }
-                            }
-                        }
-                    } catch {
-                        Write-Log "Weekly reset check failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
             }

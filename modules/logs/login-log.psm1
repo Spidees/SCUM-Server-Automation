@@ -30,6 +30,14 @@ try {
             Import-Module $embedPath -ErrorAction SilentlyContinue
         }
     }
+    
+    # MEMORY LEAK FIX: Import server database module - check if already loaded
+    $serverDbPath = Join-Path $PSScriptRoot "..\database\server-database.psm1"
+    if (Test-Path $serverDbPath) {
+        if (-not (Get-Module "server-database" -ErrorAction SilentlyContinue)) {
+            Import-Module $serverDbPath -ErrorAction SilentlyContinue
+        }
+    }
 } catch {
     Write-Host "[WARNING] Common module not available for login-log module" -ForegroundColor Yellow
 }
@@ -43,6 +51,8 @@ $script:IsMonitoring = $false
 $script:LastLineNumber = 0
 $script:StateFile = $null
 $script:IsRelayActive = $false
+$script:ServerDbPath = $null
+$script:SqlitePath = $null
 
 # ===============================================================
 # INITIALIZATION
@@ -89,6 +99,17 @@ function Initialize-LoginLogModule {
             return $false
         }
         
+        # Initialize database paths
+        if ($Config.dataDir) {
+            $script:ServerDbPath = Join-Path $Config.dataDir "server_database.db"
+            Write-Log "Server database path: $script:ServerDbPath" -Level "Debug"
+        }
+        
+        if ($Config.rootDir) {
+            $script:SqlitePath = Join-Path $Config.rootDir "sqlite-tools\sqlite3.exe"
+            Write-Log "SQLite executable path: $script:SqlitePath" -Level "Debug"
+        }
+        
         # Initialize state persistence
         $stateDir = ".\state"
         if (-not (Test-Path $stateDir)) {
@@ -129,6 +150,7 @@ function Update-LoginLogProcessing {
             # Clean format: LOGIN [Type] Name: Action
             Write-Log "LOGIN [$($event.Type)] $($event.PlayerName): $($event.Action)" -Level "Info"
             Send-LoginEventToDiscord -LoginEvent $event
+            Save-LoginEventToDatabase -LoginEvent $event
         }
         
         # Save state after processing
@@ -347,6 +369,164 @@ function ConvertFrom-LoginLine {
 }
 
 # ===============================================================
+# DATABASE INTEGRATION
+# ===============================================================
+function Save-LoginEventToDatabase {
+    param(
+        [hashtable]$LoginEvent
+    )
+    
+    try {
+        # Check if database is available
+        if (-not $script:ServerDbPath -or -not (Test-Path $script:ServerDbPath)) {
+            Write-Log "Server database not available, skipping database save" -Level "Debug"
+            return
+        }
+        
+        if (-not $script:SqlitePath -or -not (Test-Path $script:SqlitePath)) {
+            Write-Log "SQLite executable not available, skipping database save" -Level "Debug"
+            return
+        }
+        
+        # Validate event data
+        if (-not $LoginEvent -or -not $LoginEvent.PlayerName) {
+            Write-Log "Invalid login event data for database save (missing PlayerName)" -Level "Debug"
+            return
+        }
+        
+        # Determine which ID to use - prefer PlayerId (SCUM internal), fallback to SteamId
+        $userId = $null
+        if ($LoginEvent.PlayerId -and $null -ne $LoginEvent.PlayerId) {
+            $userId = $LoginEvent.PlayerId
+            Write-Log "Using SCUM PlayerId for database: $userId (Player: $($LoginEvent.PlayerName))" -Level "Info"
+        } elseif ($LoginEvent.SteamId) {
+            $userId = $LoginEvent.SteamId
+            Write-Log "Using SteamId as fallback for database: $userId (Player: $($LoginEvent.PlayerName))" -Level "Info"
+        } else {
+            Write-Log "No valid user ID found (neither PlayerId nor SteamId)" -Level "Debug"
+            return
+        }
+        
+        # Convert timestamp to proper format (SCUM uses format: 2025.07.19-10.01.13)
+        $loginTime = $null
+        $logoutTime = $null
+        
+        try {
+            # Parse SCUM timestamp format to DateTime
+            if ($LoginEvent.Timestamp -match "^(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2})$") {
+                $year = $matches[1]
+                $month = $matches[2]
+                $day = $matches[3]
+                $hour = $matches[4]
+                $minute = $matches[5]
+                $second = $matches[6]
+                
+                $dateTime = [DateTime]::new($year, $month, $day, $hour, $minute, $second)
+                $formattedTime = $dateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                
+                if ($LoginEvent.Type -eq "LOGIN") {
+                    $loginTime = $formattedTime
+                } else {
+                    $logoutTime = $formattedTime
+                }
+            }
+        } catch {
+            Write-Log "Failed to parse timestamp: $($LoginEvent.Timestamp)" -Level "Debug"
+        }
+        
+        # Update user profile in database
+        if ($LoginEvent.Type -eq "LOGIN") {
+            # Try UPDATE first, then INSERT if no rows affected
+            $updateSql = @"
+-- Try to update existing user first
+UPDATE a_user_profile 
+SET user_name = '$($LoginEvent.PlayerName -replace "'", "''")' ,
+    user_ip = '$($LoginEvent.IpAddress)',
+    last_login_time = '$loginTime',
+    user_is_online = 1,
+    last_update = CURRENT_TIMESTAMP
+WHERE user_id = '$userId';
+
+-- Insert new user only if UPDATE didn't affect any rows
+INSERT INTO a_user_profile (
+    user_id, 
+    user_name, 
+    user_ip, 
+    flag_id,
+    last_login_time, 
+    last_logout_time,
+    user_is_online,
+    last_update
+) 
+SELECT 
+    '$userId',
+    '$($LoginEvent.PlayerName -replace "'", "''")',
+    '$($LoginEvent.IpAddress)',
+    NULL,
+    '$loginTime',
+    NULL,
+    1,
+    CURRENT_TIMESTAMP
+WHERE changes() = 0;
+"@
+        } else {
+            # LOGOUT: Try UPDATE first, then INSERT if no rows affected
+            $updateSql = @"
+-- Try to update existing user first
+UPDATE a_user_profile 
+SET last_logout_time = '$logoutTime',
+    user_is_online = 0,
+    last_update = CURRENT_TIMESTAMP
+WHERE user_id = '$userId';
+
+-- Insert new user only if UPDATE didn't affect any rows
+INSERT INTO a_user_profile (
+    user_id, 
+    user_name, 
+    user_ip, 
+    flag_id,
+    last_login_time, 
+    last_logout_time,
+    user_is_online,
+    last_update
+) 
+SELECT 
+    '$userId',
+    '$($LoginEvent.PlayerName -replace "'", "''")',
+    '$($LoginEvent.IpAddress)',
+    NULL,
+    NULL,
+    '$logoutTime',
+    0,
+    CURRENT_TIMESTAMP
+WHERE changes() = 0;
+"@
+        }
+        
+        # Execute SQL command
+        $tempSqlFile = [System.IO.Path]::GetTempFileName() + ".sql"
+        Set-Content -Path $tempSqlFile -Value $updateSql -Encoding UTF8
+        
+        try {
+            $result = & $script:SqlitePath $script:ServerDbPath ".read $tempSqlFile" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "Login event saved to database: $($LoginEvent.PlayerName) $($LoginEvent.Type)" -Level "Debug"
+            } else {
+                Write-Log "Failed to save login event to database (exit code: $LASTEXITCODE): $result" -Level "Warning"
+            }
+        } finally {
+            # Clean up temp file
+            if (Test-Path $tempSqlFile) {
+                Remove-Item $tempSqlFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+        
+    } catch {
+        Write-Log "Error saving login event to database: $($_.Exception.Message)" -Level "Warning"
+    }
+}
+
+# ===============================================================
 # DISCORD INTEGRATION
 # ===============================================================
 function Send-LoginEventToDiscord {
@@ -436,6 +616,7 @@ Export-ModuleMember -Function @(
     'Get-NewLoginEvents',
     'Get-LatestLoginLogFile',
     'Send-LoginEventToDiscord',
+    'Save-LoginEventToDatabase',
     'Apply-MessageFilter',
     'Save-LoginState',
     'Load-LoginState'

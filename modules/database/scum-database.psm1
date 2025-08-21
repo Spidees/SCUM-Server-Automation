@@ -35,15 +35,14 @@ $script:CachedLastWrite = [DateTime]::MinValue
 
 # Sub-module paths
 $script:SubModules = @{
-    Prisoner = Join-Path $PSScriptRoot "prisoner.psm1"
-    Stats = Join-Path $PSScriptRoot "stats.psm1"
-    Squad = Join-Path $PSScriptRoot "squad.psm1"
-    World = Join-Path $PSScriptRoot "world.psm1"
-    Admin = Join-Path $PSScriptRoot "admin.psm1"
-    Events = Join-Path $PSScriptRoot "events.psm1"
-    Economy = Join-Path $PSScriptRoot "economy.psm1"
     BaseBuilding = Join-Path $PSScriptRoot "basebuilding.psm1"
-    Leaderboards = Join-Path $PSScriptRoot "leaderboards.psm1"
+    Economy = Join-Path $PSScriptRoot "economy.psm1"
+    Events = Join-Path $PSScriptRoot "events.psm1"    
+    Leaderboards = Join-Path $PSScriptRoot "leaderboards.psm1"    
+    Prisoner = Join-Path $PSScriptRoot "prisoner.psm1"
+    Squad = Join-Path $PSScriptRoot "squad.psm1"
+    Stats = Join-Path $PSScriptRoot "stats.psm1"
+    World = Join-Path $PSScriptRoot "world.psm1"
 }
 # ===============================================================
 # INITIALIZATION
@@ -69,17 +68,17 @@ function Initialize-DatabaseModule {
     try {
         $script:DatabaseConfig = $Config
         
-        # Auto-detect database path if not provided
+        # Auto-detect database path if not provided - use server_database.db instead of SCUM.db
         if (-not $DatabasePath) {
-            $serverDir = Get-SafeConfigValue $Config "serverDir" "./server"
-            $script:DatabasePath = Join-Path $serverDir "SCUM\Saved\SaveFiles\SCUM.db"
+            $dataDir = Get-SafeConfigValue $Config "dataDir" "./data"
+            $script:DatabasePath = Join-Path $dataDir "server_database.db"
         } else {
             $script:DatabasePath = $DatabasePath
         }
         
         # Verify database exists
         if (-not (Test-PathExists $script:DatabasePath)) {
-            throw "SCUM database not found at: $script:DatabasePath"
+            throw "Server database not found at: $script:DatabasePath. Make sure server database module is initialized first."
         }
         
         # Test SQLite availability (only external sqlite3.exe)
@@ -105,10 +104,10 @@ function Initialize-DatabaseModule {
         $initResults = Initialize-SubModules
         
         Write-Log "[Database] Main module initialized successfully"
-        Write-Log "[Database] Database path: $script:DatabasePath"
+        Write-Log "[Database] Server database path: $script:DatabasePath"
         # MEMORY LEAK FIX: Only get database size if logging is verbose to avoid frequent Get-Item calls
         if ($VerbosePreference -eq "Continue") {
-            Write-Log "[Database] Database size: $([math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)) MB"
+            Write-Log "[Database] Server database size: $([math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)) MB"
         }
         Write-Log "[Database] Sub-modules loaded: $($initResults.LoadedModules -join ', ')"
         
@@ -344,7 +343,7 @@ function Test-DatabaseConcurrentAccess {
 function Invoke-DatabaseQuery {
     <#
     .SYNOPSIS
-    Execute a read-only query against the SCUM database using external sqlite3.exe only
+    Execute a read-only query against the server database using external sqlite3.exe only
     .PARAMETER Query
     SQL query to execute
     .RETURNS
@@ -363,7 +362,7 @@ function Invoke-DatabaseQuery {
         
         # Check if database is available
         if (-not (Test-PathExists $script:DatabasePath)) {
-            throw "Database file not found at: $script:DatabasePath"
+            throw "Server database file not found at: $script:DatabasePath"
         }
         
         # Check if external SQLite is available
@@ -568,7 +567,7 @@ function Invoke-ExternalSQLiteQuery {
 function Get-DatabaseTables {
     <#
     .SYNOPSIS
-    Get list of tables in the SCUM database
+    Get list of tables in the server database
     .RETURNS
     Array of table names
     #>
@@ -593,7 +592,7 @@ function Get-DatabaseTables {
 function Get-ServerStatistics {
     <#
     .SYNOPSIS
-    Get basic server statistics from database
+    Get basic server statistics from server database
     .RETURNS
     Hashtable with server statistics
     #>
