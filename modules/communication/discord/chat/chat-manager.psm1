@@ -22,7 +22,15 @@ try {
         if (-not (Get-Module "log-streaming" -ErrorAction SilentlyContinue)) {
             Import-Module $streamingPath -ErrorAction SilentlyContinue
         }
-    }    
+    }
+    
+    # Import account linking module for connect command processing
+    $accountLinkingPath = Join-Path $PSScriptRoot "..\account-linking.psm1"
+    if (Test-Path $accountLinkingPath) {
+        if (-not (Get-Module "account-linking" -ErrorAction SilentlyContinue)) {
+            Import-Module $accountLinkingPath -ErrorAction SilentlyContinue
+        }
+    }
 
 } catch {
     Write-Host "[WARNING] Common module not available for chat-manager module" -ForegroundColor Yellow
@@ -141,6 +149,42 @@ function Parse-ChatLine {
 }
 
 # ===============================================================
+# CONNECT COMMAND PROCESSING
+# ===============================================================
+function Process-ChatMessage {
+    param([hashtable]$ChatMessage)
+    
+    try {
+        # Check if message is a connect command
+        if ($ChatMessage.Message -match "^connect:([A-Z0-9]{6})$") {
+            $registrationCode = $matches[1]
+            Write-Log "Connect command detected from player: $($ChatMessage.Nickname) with code: $registrationCode" -Level "Info"
+            
+            # Process connect command through account linking module
+            if (Get-Command "Process-ConnectCommand" -ErrorAction SilentlyContinue) {
+                $result = Process-ConnectCommand -SteamId $ChatMessage.SteamId -PlayerName $ChatMessage.Nickname -UserId $ChatMessage.PlayerId -RegistrationCode $registrationCode
+                
+                if ($result.Success) {
+                    Write-Log "Connect command successfully processed for player: $($ChatMessage.Nickname)" -Level "Info"
+                    # TODO: Send success message to player in game chat
+                    return $true
+                } else {
+                    Write-Log "Connect command failed for player: $($ChatMessage.Nickname) - $($result.Message)" -Level "Warning"
+                    # TODO: Send error message to player in game chat
+                }
+            } else {
+                Write-Log "Account linking module not available for connect command processing" -Level "Warning"
+            }
+        }
+        
+        return $false
+    } catch {
+        Write-Log "Error processing chat message for connect commands: $($_.Exception.Message)" -Level "Error"
+        return $false
+    }
+}
+
+# ===============================================================
 # CHAT MONITORING
 # ===============================================================
 function Update-ChatManager {
@@ -164,7 +208,14 @@ function Update-ChatManager {
         
         foreach ($message in $newMessages) {
             Write-Log "[$($message.Type)] $($message.Nickname): $($message.Message)" -Level "Info"
-            Send-ChatMessageToDiscord -Message $message
+            
+            # Process connect commands first
+            $isConnectCommand = Process-ChatMessage -ChatMessage $message
+            
+            # Only relay to Discord if it's not a connect command (to keep registration codes private)
+            if (-not $isConnectCommand) {
+                Send-ChatMessageToDiscord -Message $message
+            }
         }
         
         # Save state after processing

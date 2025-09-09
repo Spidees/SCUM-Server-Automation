@@ -30,6 +30,14 @@ try {
             Import-Module $embedPath -ErrorAction SilentlyContinue
         }
     }
+    
+    # MEMORY LEAK FIX: Import item manager - check if already loaded
+    $itemManagerPath = Join-Path $PSScriptRoot "..\core\item-manager.psm1"
+    if (Test-Path $itemManagerPath) {
+        if (-not (Get-Module "item-manager" -ErrorAction SilentlyContinue)) {
+            Import-Module $itemManagerPath -ErrorAction SilentlyContinue
+        }
+    }
 } catch {
     Write-Host "[WARNING] Common module not available for kill-log module" -ForegroundColor Yellow
 }
@@ -450,6 +458,7 @@ function ConvertFrom-KillLine {
                 KillerPlayerId = $null
                 WeaponName = "Suicide"
                 WeaponType = "suicide"
+                WeaponImage = $null
                 Distance = 0
                 Location = $location
                 RawLine = $LogLine
@@ -469,6 +478,9 @@ function ConvertFrom-KillLine {
             
             # Clean weapon name
             $cleanWeaponName = Format-WeaponName -WeaponName $weaponName
+            
+            # Get weapon image if available
+            $weaponImage = Get-WeaponImage -WeaponName $weaponName
             
             # Extract distance from server locations
             $distance = Extract-Distance -LocationString $serverLocs
@@ -498,6 +510,7 @@ function ConvertFrom-KillLine {
                 KillerPlayerId = $null
                 WeaponName = $cleanWeaponName
                 WeaponType = $weaponType.ToLower()
+                WeaponImage = $weaponImage
                 Distance = $distance
                 Location = $location
                 RawLine = $LogLine
@@ -540,6 +553,7 @@ function ConvertFrom-KillLine {
                 KillerPlayerId = $null
                 WeaponName = "Unknown Weapon"
                 WeaponType = "unknown"
+                WeaponImage = $null
                 Distance = $distance
                 Location = $location
                 RawLine = $LogLine
@@ -559,6 +573,9 @@ function ConvertFrom-KillLine {
             
             # Clean weapon name
             $cleanWeaponName = Format-WeaponName -WeaponName "$weaponName [$weaponType]"
+            
+            # Get weapon image if available
+            $weaponImage = Get-WeaponImage -WeaponName "$weaponName [$weaponType]"
             
             # Parse distance
             try {
@@ -591,6 +608,7 @@ function ConvertFrom-KillLine {
                 KillerPlayerId = $null
                 WeaponName = $cleanWeaponName
                 WeaponType = $weaponType.ToLower()
+                WeaponImage = $weaponImage
                 Distance = $distanceFloat
                 Location = $location
                 RawLine = $LogLine
@@ -620,6 +638,7 @@ function ConvertFrom-KillJSON {
         # Extract weapon information
         $weaponName = if ($killData.Weapon) { Format-WeaponName -WeaponName $killData.Weapon } else { "Unknown Weapon" }
         $weaponType = if ($killData.Weapon -match "\[(.*?)\]") { $matches[1].ToLower() } else { "unknown" }
+        $weaponImage = if ($killData.Weapon) { Get-WeaponImage -WeaponName $killData.Weapon } else { $null }
         
         # Calculate distance if locations available
         $distance = 0
@@ -690,6 +709,7 @@ function ConvertFrom-KillJSON {
             KillerPlayerId = $null
             WeaponName = if ($killType -eq "suicide") { "Suicide" } else { $weaponName }
             WeaponType = if ($killType -eq "suicide") { "suicide" } else { $weaponType }
+            WeaponImage = if ($killType -eq "suicide") { $null } else { $weaponImage }
             Distance = if ($killType -eq "suicide") { 0 } else { $distance }
             Location = $location
             RawLine = $JSONLine
@@ -708,7 +728,38 @@ function Format-WeaponName {
         return "Unknown Weapon"
     }
     
-    # Handle special weapon formats
+    # Try to get display name from item manager first
+    try {
+        # Clean up weapon name to get potential item ID
+        $cleanWeaponId = $WeaponName
+        
+        # Handle special weapon formats and extract base weapon ID
+        if ($WeaponName -match "^(.+?)_C_\d+\s+\[(.*?)\]$") {
+            # Format: StakePitTrap_C_2143653934 [Point]
+            $cleanWeaponId = $matches[1] + "_C"
+        } elseif ($WeaponName -match "^(.+?)\s+\[(.*?)\]$") {
+            # Format: Weapon_AK47_C [Projectile]
+            $cleanWeaponId = $matches[1]
+        }
+        
+        # Try to get item name from item manager
+        if (Get-Command "Get-ItemDisplayName" -ErrorAction SilentlyContinue) {
+            $itemName = Get-ItemDisplayName -ItemId $cleanWeaponId
+            if ($itemName -and $itemName -ne $cleanWeaponId) {
+                # Found proper name, add type if available from original format
+                if ($WeaponName -match "\[(.*?)\]$") {
+                    $weaponType = $matches[1]
+                    return "$itemName ($weaponType)"
+                } else {
+                    return $itemName
+                }
+            }
+        }
+    } catch {
+        # If item manager fails, continue with fallback logic
+    }
+    
+    # Fallback to original logic if item manager doesn't have the weapon
     if ($WeaponName -match "^(.+?)_C_\d+\s+\[(.*?)\]$") {
         # Format: StakePitTrap_C_2143653934 [Point]
         $baseName = $matches[1]
@@ -732,6 +783,40 @@ function Format-WeaponName {
     }
     
     return $cleanName
+}
+
+function Get-WeaponImage {
+    param([string]$WeaponName)
+    
+    if (-not $WeaponName -or $WeaponName -eq "") {
+        return $null
+    }
+    
+    try {
+        # Clean up weapon name to get potential item ID
+        $cleanWeaponId = $WeaponName
+        
+        # Handle special weapon formats and extract base weapon ID
+        if ($WeaponName -match "^(.+?)_C_\d+\s+\[(.*?)\]$") {
+            # Format: StakePitTrap_C_2143653934 [Point]
+            $cleanWeaponId = $matches[1] + "_C"
+        } elseif ($WeaponName -match "^(.+?)\s+\[(.*?)\]$") {
+            # Format: Weapon_AK47_C [Projectile]
+            $cleanWeaponId = $matches[1]
+        }
+        
+        # Try to get item image from item manager
+        if (Get-Command "Get-ItemImage" -ErrorAction SilentlyContinue) {
+            $itemImage = Get-ItemImage -ItemId $cleanWeaponId
+            if ($itemImage) {
+                return $itemImage
+            }
+        }
+    } catch {
+        # If item manager fails, return null
+    }
+    
+    return $null
 }
 
 function Extract-Distance {
@@ -906,7 +991,9 @@ Export-ModuleMember -Function @(
     'Save-KillState',
     'Load-KillState',
     'Process-PlayersDelayQueue',
-    'Add-KillToPlayersDelayQueue'
+    'Add-KillToPlayersDelayQueue',
+    'Format-WeaponName',
+    'Get-WeaponImage'
 )
 
 

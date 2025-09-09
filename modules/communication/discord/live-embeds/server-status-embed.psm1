@@ -5,8 +5,30 @@
 # Displays player count, performance, and server information
 # ===============================================================
 
-using module "..\core\discord-api.psm1"
-using module "..\templates\embed-styles.psm1"
+# Standard import of common module
+try {
+    $helperPath = Join-Path $PSScriptRoot "..\..\..\core\module-helper.psm1"
+    if (Test-Path $helperPath) {
+        # MEMORY LEAK FIX: Check if module already loaded before importing
+        if (-not (Get-Module "module-helper" -ErrorAction SilentlyContinue)) {
+            Import-Module $helperPath -ErrorAction SilentlyContinue
+        }
+        Import-CommonModule | Out-Null
+    }
+} catch {
+    Write-Host "[WARNING] Common module not available for server-status-embed module" -ForegroundColor Yellow
+}
+
+# Import required modules
+$moduleRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+
+# MEMORY LEAK FIX: Conditional imports instead of -Force
+if (-not (Get-Module "discord-integration" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "discord-integration.psm1") -Global -ErrorAction SilentlyContinue
+}
+if (-not (Get-Module "embed-persistence" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "embed-persistence.psm1") -Global -ErrorAction SilentlyContinue
+}
 
 # Global variables
 $script:ServerStatusEmbed = $null
@@ -94,37 +116,60 @@ function Initialize-ServerStatusEmbed {
     }
     
     try {
-        # Check if embed already exists in memory
-        if ($script:ServerStatusEmbed -and $script:ServerStatusEmbed.MessageId) {
-            Write-Log "Server status embed already exists (ID: $($script:ServerStatusEmbed.MessageId))" -Level "Info"
-            return $true
+        # Initialize persistence system if not already done
+        if (Get-Command "Initialize-EmbedPersistence" -ErrorAction SilentlyContinue) {
+            Initialize-EmbedPersistence | Out-Null
         }
         
-        # Try to find existing embed in channel
-        $existingEmbed = Find-ExistingServerStatusEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel
+        # Check if embed already exists in persistence
+        $storedEmbed = $null
+        if (Get-Command "Get-EmbedMessageId" -ErrorAction SilentlyContinue) {
+            $storedEmbed = Get-EmbedMessageId -EmbedType "server-status" -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel
+        }
         
-        if ($existingEmbed) {
-            Write-Log "Found existing server status embed (ID: $($existingEmbed.id))" -Level "Info"
-            $script:ServerStatusEmbed = @{
-                ChannelId = $script:DiscordConfig.LiveEmbeds.StatusChannel
-                MessageId = $existingEmbed.id
-                LastUpdate = Get-Date
+        if ($storedEmbed) {
+            Write-Log "Found stored server status embed (ID: $($storedEmbed.MessageId))" -Level "Info"
+            
+            # Verify the message still exists in Discord
+            $messageExists = $false
+            if (Get-Command "Test-EmbedMessageExists" -ErrorAction SilentlyContinue) {
+                $messageExists = Test-EmbedMessageExists -ChannelId $storedEmbed.ChannelId -MessageId $storedEmbed.MessageId
             }
-            return $true
+            
+            if ($messageExists) {
+                $script:ServerStatusEmbed = @{
+                    ChannelId = $storedEmbed.ChannelId
+                    MessageId = $storedEmbed.MessageId
+                    LastUpdate = Get-Date
+                }
+                Write-Log "✅ Using existing server status embed: $($storedEmbed.MessageId)" -Level "Info"
+                return $true
+            } else {
+                Write-Log "Stored message no longer exists, will create new one" -Level "Warning"
+                if (Get-Command "Remove-EmbedMessageId" -ErrorAction SilentlyContinue) {
+                    Remove-EmbedMessageId -EmbedType "server-status" -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel
+                }
+            }
         }
         
-        # Create new embed if none found
+        # Create new embed if none found or stored one doesn't exist
         Write-Log "Creating new server status embed..." -Level "Info"
         $embed = New-ServerStatusEmbed
-        $message = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel -Embed $embed
+        $message = Send-DiscordMessage -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel -Embeds @($embed)
         
-        if ($message) {
+        if ($message -and $message.Success) {
             $script:ServerStatusEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.StatusChannel
-                MessageId = $message.id
+                MessageId = $message.MessageId
                 LastUpdate = Get-Date
             }
-            Write-Log "âś… Server status embed created: $($message.id)" -Level "Info"
+            
+            # Store the new message ID in persistence
+            if (Get-Command "Set-EmbedMessageId" -ErrorAction SilentlyContinue) {
+                Set-EmbedMessageId -EmbedType "server-status" -MessageId $message.MessageId -ChannelId $script:DiscordConfig.LiveEmbeds.StatusChannel
+            }
+            
+            Write-Log "✅ Server status embed created: $($message.MessageId)" -Level "Info"
             return $true
         }
         
@@ -181,9 +226,9 @@ function Update-ServerStatusEmbed {
         # Update embed
         $embed = New-ServerStatusEmbed -ServerStatus $ServerStatus
         
-        $result = Update-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:ServerStatusEmbed.ChannelId -MessageId $script:ServerStatusEmbed.MessageId -Embed $embed
+        $result = Update-DiscordMessage -ChannelId $script:ServerStatusEmbed.ChannelId -MessageId $script:ServerStatusEmbed.MessageId -Embeds @($embed)
         
-        if ($result) {
+        if ($result -and $result.Success) {
             $script:LastUpdate = Get-Date
             Write-Log "Server status embed updated" -Level "Debug"
         }
@@ -566,10 +611,10 @@ function Reset-ServerStatusEmbed {
 function Find-ExistingServerStatusEmbed {
     <#
     .SYNOPSIS
-    Find existing server status embed in channel
+    Find existing server status embed in channel using Node.js API
     #>
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         [string]$Token,
         
         [Parameter(Mandatory=$true)]
@@ -577,28 +622,30 @@ function Find-ExistingServerStatusEmbed {
     )
     
     try {
-        $headers = @{
-            "Authorization" = "Bot $Token"
-            "Content-Type" = "application/json"
-            "User-Agent" = "SCUM-Server-Manager/1.0"
-        }
-        
-        # Get recent messages from channel
-        $uri = "https://discord.com/api/v10/channels/$ChannelId/messages?limit=20"
-        $messages = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers
-        
-        # Look for embed with server status characteristics
-        foreach ($message in $messages) {
-            if ($message.embeds -and $message.embeds.Count -gt 0) {
-                $embed = $message.embeds[0]
-                
-                # Check if this is a server status embed
-                if ($embed.title -like "*Server Status*" -or 
-                    ($embed.fields -and ($embed.fields | Where-Object { $_.name -like "*Status*" })) -or
-                    $embed.footer.text -like "*Server Status*") {
-                    
-                    Write-Log "Found existing server status embed: $($message.id)" -Level "Debug"
-                    return $message
+        # Use Node.js bot to search for existing server status embed
+        if (Get-Command "Invoke-NodeJsApiRequest" -ErrorAction SilentlyContinue) {
+            $searchData = @{
+                channelId = $ChannelId
+                searchText = "Server Status"
+                limit = 20
+            }
+            
+            $response = Invoke-NodeJsApiRequest -Endpoint "/api/search-messages" -Method "POST" -Body $searchData
+            
+            if ($response.success -and $response.messages) {
+                foreach ($message in $response.messages) {
+                    if ($message.embeds -and $message.embeds.Count -gt 0) {
+                        foreach ($embed in $message.embeds) {
+                            if ($embed.title -and $embed.title -match "Server Status") {
+                                Write-Log "Found existing server status embed: $($message.id)" -Level "Debug"
+                                return @{
+                                    MessageId = $message.id
+                                    ChannelId = $ChannelId
+                                    Embed = $embed
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

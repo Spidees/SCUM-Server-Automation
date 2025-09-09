@@ -926,6 +926,139 @@ function Install-SqliteTools {
     return $result
 }
 
+<#
+.SYNOPSIS
+    Installs Node.js LTS for Discord integration.
+
+.DESCRIPTION
+    Downloads and installs the latest Node.js LTS version if not already installed.
+    Similar to SteamCMD installation but for Node.js ecosystem.
+
+.PARAMETER NodePath
+    The path where Node.js should be installed.
+
+.EXAMPLE
+    Install-NodeJS -NodePath "C:\SCUMServer\nodejs"
+#>
+function Install-NodeJS {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$NodePath
+    )
+
+    $result = @{
+        Success = $false
+        Message = ""
+        Error = ""
+        NodeExecutable = ""
+        NPMExecutable = ""
+    }
+
+    try {
+        Write-Host "Checking Node.js installation..." -ForegroundColor Yellow
+
+        # Check if Node.js is already installed in the specified path
+        $nodeExe = Join-Path $NodePath "node.exe"
+        $npmExe = Join-Path $NodePath "npm.cmd"
+        
+        if (Test-Path $nodeExe) {
+            # Verify Node.js version
+            $nodeVersion = & $nodeExe --version 2>$null
+            if ($nodeVersion -and $nodeVersion -match "v(\d+)\.(\d+)\.(\d+)") {
+                $majorVersion = [int]$matches[1]
+                if ($majorVersion -ge 18) {
+                    Write-Host "Node.js $nodeVersion already installed and compatible." -ForegroundColor Green
+                    $result.Success = $true
+                    $result.Message = "Node.js $nodeVersion already installed"
+                    $result.NodeExecutable = $nodeExe
+                    $result.NPMExecutable = $npmExe
+                    return $result
+                }
+            }
+        }
+
+        # Create Node.js directory
+        if (-not (Test-Path $NodePath)) {
+            New-Item -ItemType Directory -Path $NodePath -Force | Out-Null
+        }
+
+        # Download latest LTS Node.js
+        Write-Host "Downloading Node.js LTS..." -ForegroundColor Yellow
+        
+        # Get latest LTS version info
+        $ltsPlatform = "win-x64"
+        $ltsApiUrl = "https://nodejs.org/dist/index.json"
+        
+        try {
+            $versionsData = Invoke-RestMethod -Uri $ltsApiUrl -UseBasicParsing
+            $ltsVersion = ($versionsData | Where-Object { $_.lts -ne $false } | Select-Object -First 1).version
+            
+            if (-not $ltsVersion) {
+                throw "Could not determine latest LTS version"
+            }
+            
+            Write-Host "Latest LTS version: $ltsVersion" -ForegroundColor Green
+            
+        } catch {
+            # Fallback to a known stable LTS version
+            $ltsVersion = "v20.11.0"
+            Write-Host "Using fallback LTS version: $ltsVersion" -ForegroundColor Yellow
+        }
+
+        $nodeArchive = "node-$ltsVersion-$ltsPlatform.zip"
+        $downloadUrl = "https://nodejs.org/dist/$ltsVersion/$nodeArchive"
+        $zipPath = Join-Path $NodePath $nodeArchive
+
+        # Download with progress
+        $webClient = New-Object System.Net.WebClient
+        $webClient.DownloadFile($downloadUrl, $zipPath)
+        
+        if (-not (Test-Path $zipPath)) {
+            throw "Failed to download Node.js archive"
+        }
+
+        Write-Host "Extracting Node.js..." -ForegroundColor Yellow
+
+        # Extract the archive
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $extractPath = Join-Path $NodePath "temp_extract"
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
+
+        # Move files from extracted folder to main Node.js path
+        $extractedFolder = Get-ChildItem $extractPath -Directory | Select-Object -First 1
+        if ($extractedFolder) {
+            $sourceFiles = Join-Path $extractedFolder.FullName "*"
+            Copy-Item $sourceFiles $NodePath -Recurse -Force
+        }
+
+        # Cleanup
+        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+
+        # Verify installation
+        $nodeExe = Join-Path $NodePath "node.exe"
+        $npmExe = Join-Path $NodePath "npm.cmd"
+        
+        if (Test-Path $nodeExe) {
+            $nodeVersion = & $nodeExe --version 2>$null
+            Write-Host "Node.js $nodeVersion installed successfully!" -ForegroundColor Green
+            
+            $result.Success = $true
+            $result.Message = "Node.js $nodeVersion installed successfully"
+            $result.NodeExecutable = $nodeExe
+            $result.NPMExecutable = $npmExe
+        } else {
+            throw "Node.js executable not found after installation"
+        }
+
+    } catch {
+        $result.Error = "Failed to install Node.js: $($_.Exception.Message)"
+        Write-Host "Error installing Node.js: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    return $result
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'Initialize-InstallationModule',
@@ -935,5 +1068,6 @@ Export-ModuleMember -Function @(
     'Start-FirstTimeServerGeneration',
     'Invoke-FirstInstall',
     'Invoke-InstallationUpdate',
-    'Install-SqliteTools'
+    'Install-SqliteTools',
+    'Install-NodeJS'
 )

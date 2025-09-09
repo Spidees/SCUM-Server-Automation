@@ -1,11 +1,23 @@
-# ===============================================================
-# SCUM Server Automation - Discord Integration
-# ===============================================================
-# Main Discord system coordinator and orchestrator
-# Manages all Discord functionality including bot, commands, and embeds
-# ===============================================================
-
 #Requires -Version 5.1
+
+<#
+.SYNOPSIS
+    Complete Discord Integration Module for SCUM Server Automation
+
+.DESCRIPTION
+    Universal Discord module that handles everything:
+    - Node.js Discord bot lifecycle management
+    - HTTP API communication with bot
+    - Message sending and embed creation
+    - Account linking system
+    - Chat relay and notifications
+    - All Discord functionality in one module
+
+.NOTES
+    Author: SCUM Server Automation
+    Requires: Node.js LTS, Discord.js v14
+    Replaces: discord-api.psm1, discord-websocket-bot-direct.psm1, and all other Discord modules
+#>
 
 # Standard import of common module
 try {
@@ -18,625 +30,950 @@ try {
         Import-CommonModule | Out-Null
     }
 } catch {
-    Write-Host "[WARNING] Common module not available for discord-integration module" -ForegroundColor Yellow
+    Write-Warning "[WARNING] Common module not available for discord-integration module"
 }
 
-# Import required modules
-$moduleRoot = $PSScriptRoot
-
-# MEMORY LEAK FIX: Conditional imports instead of -Force
-if (-not (Get-Module "notification-manager" -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $moduleRoot "notifications\notification-manager.psm1") -Global -ErrorAction Stop
-}
-if (-not (Get-Module "live-embeds-manager" -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $moduleRoot "live-embeds\live-embeds-manager.psm1") -Global -ErrorAction Stop
-}
-if (-not (Get-Module "discord-api" -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Global -ErrorAction Stop
-}
-
-# Import Discord WebSocket Bot - with detailed error reporting
-$botModulePath = Join-Path $moduleRoot "core\discord-websocket-bot-direct.psm1"
-
-# Initialize rate limiting variables
-$script:LastActivityUpdate = $null
-$script:LastEmbedUpdate = $null
-
-if (Test-Path $botModulePath) {
-    try {
-        # MEMORY LEAK FIX: Conditional import instead of -Force
-        if (-not (Get-Module "discord-websocket-bot-direct" -ErrorAction SilentlyContinue)) {
-            Import-Module $botModulePath -Global -WarningAction SilentlyContinue -ErrorAction Stop
-        }
-        Write-Host "  [OK] discord-websocket-bot" -ForegroundColor Green
-    } catch {
-        Write-Log "[ERROR] Failed to import Discord bot module: $($_.Exception.Message)" -Level Error
-        throw
-    }
-} else {
-    Write-Log "[ERROR] Discord bot module not found at: $botModulePath" -Level Error
-    throw "Discord bot module file missing"
+# Module variables
+$script:ModuleConfig = @{
+    Name = "DiscordIntegration"
+    Version = "2.0.0"
+    NodePath = ""
+    BotProcess = $null
+    BotScriptPath = ""
+    IsInitialized = $false
+    LastHeartbeat = $null
+    BotToken = $null
+    HttpApiPort = 3001
+    HttpApiHost = "localhost"
+    NodeBotApiUrl = "http://localhost:3001"
 }
 
-# Global state
-$script:BotStarted = $false
+# =============================================================================
+# CORE MODULE INITIALIZATION AND BOT MANAGEMENT
+# =============================================================================
 
-# Initialize Discord integration
-function Initialize-DiscordIntegration {
-    <#
-    .SYNOPSIS
-    Initialize complete Discord integration
-    #>
+<#
+.SYNOPSIS
+    Initializes the Discord integration module.
+#>
+function Initialize-DiscordIntegrationModule {
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [hashtable]$Config
     )
-    
+
     try {
-        # Store config for later use
-        $script:DiscordConfig = $Config.Discord
+        # Determine root path correctly - discord integration should use main automation root
+        $currentModulePath = $PSScriptRoot  # C:\SCUMServer\modules\communication\discord
+        $automationRoot = (Get-Item $currentModulePath).Parent.Parent.Parent.FullName  # C:\SCUMServer
         
-        # Initialize notifications
-        $notificationsOk = Initialize-NotificationManager -Config $Config
+        # Use automation root regardless of config
+        $rootPath = $automationRoot
         
-        # Initialize live embeds if configured
-        $liveEmbedsOk = $false
-        if ($Config.Discord.LiveEmbeds -and $Config.Discord.LiveEmbeds.StatusChannel) {
-            $liveEmbedsOk = Initialize-LiveEmbeds -Config $Config
+        $script:ModuleConfig.NodePath = Join-Path $rootPath "nodejs"
+        $script:ModuleConfig.BotScriptPath = Join-Path $rootPath "discord-bot"
+        
+        # Configure HTTP API settings from config
+        if ($Config.Discord -and $Config.Discord.HttpApi) {
+            $script:ModuleConfig.HttpApiPort = $Config.Discord.HttpApi.Port
+            $script:ModuleConfig.HttpApiHost = $Config.Discord.HttpApi.Host
+            $script:ModuleConfig.NodeBotApiUrl = "http://$($Config.Discord.HttpApi.Host):$($Config.Discord.HttpApi.Port)"
         }
         
-        if ($notificationsOk) {
-            Write-Log "Discord integration initialized successfully" -Level Debug
-            
-            # Start Discord WebSocket bot (message handled by core module)
-            
-            # Determine initial activity based on configuration
-            $initialActivity = "SCUM Server Automation"  # Default activity
-            $activityType = "Playing"  # Default type
-            $status = "online"  # Bot is always online when manager is running
-            
-            if ($Config.Discord.Presence) {
-                $presence = $Config.Discord.Presence
-                # Use configured activity type if available, otherwise default to Playing
-                $activityType = if ($presence.Type) { $presence.Type } else { "Playing" }
-                $status = "online"  # Always online when manager is running
-                
-                # Always use the configured Activity as initial activity
-                $initialActivity = if ($presence.Activity) { $presence.Activity } else { "SCUM Server Automation" }
-            }
-            
-            # Check if Discord bot function is available
-            if (Get-Command "Start-DiscordWebSocketBot" -ErrorAction SilentlyContinue) {
-                Write-Log "Discord bot function available, starting bot..." -Level Debug
-                # Bot always starts with "online" status when manager is running
-                $botStarted = Start-DiscordWebSocketBot -Token $Config.Discord.Token -Status "online" -Activity $initialActivity -ActivityType $activityType
-            } else {
-                Write-Log "Discord bot function 'Start-DiscordWebSocketBot' not found!" -Level Error
-                Write-Log "Available Discord functions:" -Level Warning
-                Get-Command "*Discord*" | Select-Object Name | Format-Table -AutoSize
-                throw "Discord bot function not available"
-            }
-            
-            if ($botStarted) {
-                $script:BotStarted = $true
-                Write-Log "Discord bot started successfully!" -Level Info
-                
-                # Set initial bot activity based on current server status if dynamic activity is enabled
-                if ($Config.Discord.Presence.DynamicActivity -eq $true) {
-                    # Wait for bot to be fully ready after authentication
-                    Write-Log "Waiting for bot to be fully ready before setting activity..." -Level Debug
-                    Start-Sleep -Seconds 5
-                    
-                    # Get initial server status from monitoring module if available
-                    $initialServerStatus = @{
-                        IsRunning = $false
-                        OnlinePlayers = "0"
-                        MaxPlayers = "64"
-                    }
-                    
-                    # Try to get actual server status from monitoring module (preferred)
-                    if (Get-Command "Get-ServerStatus" -ErrorAction SilentlyContinue) {
-                        try {
-                            $monitoringStatus = Get-ServerStatus
-                            if ($monitoringStatus) {
-                                $initialServerStatus.IsRunning = $monitoringStatus.IsRunning
-                                $initialServerStatus.OnlinePlayers = $monitoringStatus.OnlinePlayers
-                                $initialServerStatus.MaxPlayers = $monitoringStatus.MaxPlayers
-                                Write-Log "Using actual server status from monitoring: IsRunning=$($initialServerStatus.IsRunning)" -Level Debug
-                            }
-                        } catch {
-                            Write-Log "Failed to get monitoring status, using fallback" -Level Debug
-                        }
-                    }
-                    # Fallback to service check if monitoring not available
-                    elseif (Get-Command "Test-ServiceRunning" -ErrorAction SilentlyContinue) {
-                        try {
-                            $serviceName = if ($Config.serviceName) { $Config.serviceName } else { "SCUMSERVER" }
-                            $initialServerStatus.IsRunning = Test-ServiceRunning $serviceName
-                        } catch {
-                            # Use default offline status
-                        }
-                    }
-                    
-                    Write-Log "Setting initial bot activity after authentication..." -Level Debug
-                    Update-BotActivity -ServerStatus $initialServerStatus
+        Write-Log "[DiscordIntegration] Universal Discord module initialized" -Level "Info"
+        Write-Log "[DiscordIntegration] Root path: $rootPath" -Level "Debug"
+        Write-Log "[DiscordIntegration] Node path: $($script:ModuleConfig.NodePath)" -Level "Debug"
+        Write-Log "[DiscordIntegration] Bot path: $($script:ModuleConfig.BotScriptPath)" -Level "Debug"
+        Write-Log "[DiscordIntegration] HTTP API: $($script:ModuleConfig.NodeBotApiUrl)" -Level "Debug"
+        $script:ModuleConfig.IsInitialized = $true
+        
+        return @{ Success = $true; Message = "Discord integration module initialized" }
+    }
+    catch {
+        Write-Log "[DiscordIntegration] Initialization failed: $($_.Exception.Message)" -Level "Error"
+        return @{ Success = $false; Error = $_.Exception.Message }
+    }
+}
+
+<#
+.SYNOPSIS
+    Ensures Node.js is installed and ready for Discord bot.
+#>
+function Initialize-NodeJSForDiscord {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config
+    )
+
+    try {
+        # Import installation module - determine root path correctly
+        $currentModulePath = $PSScriptRoot  # C:\SCUMServer\modules\communication\discord
+        $rootPath = (Get-Item $currentModulePath).Parent.Parent.Parent.FullName  # C:\SCUMServer
+        $installationModule = Join-Path $rootPath "modules\server\installation\installation.psm1"
+        
+        Write-Log "[DiscordIntegration] Looking for installation module at: $installationModule" -Level "Debug"
+        
+        if (-not (Test-Path $installationModule)) {
+            throw "Installation module not found at: $installationModule"
+        }
+        
+        Import-Module $installationModule -Force
+
+        Write-Log "[DiscordIntegration] Checking Node.js installation..." -Level "Info"
+
+        # Install Node.js if needed
+        $nodeResult = Install-NodeJS -NodePath $script:ModuleConfig.NodePath
+        
+        if (-not $nodeResult.Success) {
+            throw "Node.js installation failed: $($nodeResult.Error)"
+        }
+
+        Write-Log "[DiscordIntegration] Node.js ready: $($nodeResult.Message)" -Level "Info"
+        return $nodeResult
+
+    } catch {
+        Write-Log "[DiscordIntegration] Node.js setup failed: $($_.Exception.Message)" -Level "Error"
+        throw
+    }
+}
+
+<#
+.SYNOPSIS
+    Initializes the Discord bot by ensuring package.json exists and bot.js is ready.
+#>
+function Initialize-DiscordBot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config
+    )
+
+    try {
+        $botPath = $script:ModuleConfig.BotScriptPath
+        
+        # Create bot directory
+        if (-not (Test-Path $botPath)) {
+            New-Item -ItemType Directory -Path $botPath -Force | Out-Null
+        }
+
+        # Check if our main bot-modular.js exists
+        $botScriptPath = Join-Path $botPath "bot-modular.js"
+        if (-not (Test-Path $botScriptPath)) {
+            Write-Log "[Discord] Bot script not found at: $botScriptPath" -Level "Error"
+            return @{ Success = $false; Error = "Bot script not found. Please ensure bot-modular.js exists in discord-bot directory." }
+        }
+
+        # Create package.json only if it doesn't exist
+        $packagePath = Join-Path $botPath "package.json"
+        if (-not (Test-Path $packagePath)) {
+            $packageJson = @{
+                name = "scum-discord-bot"
+                version = "1.0.0"
+                description = "SCUM Server Discord Integration Bot"
+                main = "bot-modular.js"
+                dependencies = @{
+                    "discord.js" = "^14.14.1"
+                    "sqlite3" = "^5.1.6"
+                    "express" = "^4.18.2"
                 }
-                
-                # Initialize Discord text commands
-                if (Get-Command "Initialize-DiscordTextCommands" -ErrorAction SilentlyContinue) {
-                    try {
-                        $textCommandsOk = Initialize-DiscordTextCommands -Config $Config
-                        if ($textCommandsOk) {
-                            Write-Log "[OK] Discord text commands initialized"
-                        } else {
-                            Write-Log "[SKIP] Discord text commands not configured" -Level Warning
-                        }
-                    } catch {
-                        Write-Log "Failed to initialize Discord text commands: $($_.Exception.Message)" -Level Error
-                    }
+            } | ConvertTo-Json -Depth 3
+
+            Set-Content -Path $packagePath -Value $packageJson -Encoding UTF8
+            Write-Log "[Discord] Package.json created" -Level "Info"
+        }
+
+        Write-Log "[Discord] Bot script verified successfully" -Level "Info"
+        return @{ Success = $true; Message = "Discord bot initialized" }
+
+    } catch {
+        Write-Log "[Discord] Bot initialization failed: $($_.Exception.Message)" -Level "Error"
+        return @{ Success = $false; Error = $_.Exception.Message }
+    }
+}
+
+<#
+.SYNOPSIS
+    Installs Node.js dependencies for the Discord bot.
+#>
+function Install-DiscordDependencies {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config
+    )
+
+    try {
+        $nodeExe = Join-Path $script:ModuleConfig.NodePath "node.exe"
+        $npmExe = Join-Path $script:ModuleConfig.NodePath "npm.cmd"
+        $botPath = $script:ModuleConfig.BotScriptPath
+
+        if (-not (Test-Path $nodeExe)) {
+            throw "Node.js executable not found: $nodeExe"
+        }
+
+        Write-Log "[Discord] Installing Node.js dependencies..." -Level "Info"
+
+        # Set up environment for npm (add Node.js to PATH)
+        $originalPath = $env:PATH
+        $nodePath = Split-Path $nodeExe -Parent
+        $env:PATH = "$nodePath;$originalPath"
+        
+        try {
+            # Install dependencies with environment setup
+            $npmArgs = @("install", "--production", "--no-audit", "--no-fund")
+            $npmProcess = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $botPath -WindowStyle Hidden -Wait -PassThru
+
+            if ($npmProcess.ExitCode -ne 0) {
+                throw "npm install failed with exit code: $($npmProcess.ExitCode)"
+            }
+
+            Write-Log "[Discord] Dependencies installed successfully" -Level "Info"
+            return @{ Success = $true; Message = "Dependencies installed" }
+            
+        } finally {
+            # Restore original PATH
+            $env:PATH = $originalPath
+        }
+
+    } catch {
+        Write-Log "[Discord] Dependency installation failed: $($_.Exception.Message)" -Level "Error"
+        return @{ Success = $false; Error = $_.Exception.Message }
+    }
+}
+
+<#
+.SYNOPSIS
+    Starts the Discord bot process.
+#>
+function Start-DiscordBot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config
+    )
+
+    try {
+        # First, check if our specific Discord bot is already running by testing the HTTP API
+        $ourBotRunning = $false
+        try {
+            $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 2 -ErrorAction SilentlyContinue
+            if ($response -and $response.status -eq "online") {
+                $ourBotRunning = $true
+                Write-Log "[Discord] Our Discord bot is already running on port $($script:ModuleConfig.HttpApiPort)" -Level "Info"
+            }
+        } catch {
+            # No bot running on our port, which is fine
+        }
+
+        # Only stop Node.js processes if our bot is running and we need to restart it
+        if ($ourBotRunning) {
+            # Find Node.js processes that are likely our Discord bot (listening on configured port)
+            $botProcesses = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
+                try {
+                    # Get network connections to check if this process is using our configured port
+                    $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
+                    $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
+                    return $processIds -contains $_.Id.ToString()
+                } catch {
+                    return $false
+                }
+            }
+            
+            if ($botProcesses) {
+                Write-Log "[Discord] Stopping existing Discord bot processes on port $($script:ModuleConfig.HttpApiPort)..." -Level "Info"
+                $botProcesses | Stop-Process -Force
+                Start-Sleep -Seconds 3  # Wait for processes to fully terminate
+            }
+        }
+
+        # If our bot was already running and healthy, we can reuse it
+        if ($ourBotRunning) {
+            # Store token for API functions
+            $script:ModuleConfig.BotToken = $Config.Discord.Token
+            
+            # Find the running process
+            $runningProcess = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
+                try {
+                    $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
+                    $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
+                    return $processIds -contains $_.Id.ToString()
+                } catch {
+                    return $false
+                }
+            } | Select-Object -First 1
+            
+            if ($runningProcess) {
+                $script:ModuleConfig.BotProcess = $runningProcess
+                Write-Log "[Discord] Using existing healthy bot process (PID: $($runningProcess.Id))" -Level "Info"
+                return @{ Success = $true; Message = "Bot already running"; ProcessId = $runningProcess.Id }
+            }
+        }
+
+        $nodeExe = Join-Path $script:ModuleConfig.NodePath "node.exe"
+        $botScript = Join-Path $script:ModuleConfig.BotScriptPath "bot-modular.js"
+        
+        # Create absolute path to database
+        if ([System.IO.Path]::IsPathRooted($Config.dataDir)) {
+            $databasePath = Join-Path $Config.dataDir "server_database.db"
+        } else {
+            # Convert relative path to absolute path from root directory
+            $rootPath = Split-Path $script:ModuleConfig.BotScriptPath -Parent
+            $absoluteDataDir = Join-Path $rootPath $Config.dataDir
+            $databasePath = Join-Path $absoluteDataDir "server_database.db"
+        }
+
+        if (-not (Test-Path $nodeExe)) {
+            throw "Node.js executable not found: $nodeExe"
+        }
+
+        if (-not (Test-Path $botScript)) {
+            throw "Bot script not found: $botScript"
+        }
+
+        # Check Discord configuration
+        if (-not $Config.Discord -or -not $Config.Discord.Token) {
+            throw "Discord bot token not configured"
+        }
+
+        Write-Log "[Discord] Starting Discord bot..." -Level "Info"
+        Write-Log "[Discord] Node.js executable: $nodeExe" -Level "Debug"
+        Write-Log "[Discord] Bot script: $botScript" -Level "Debug"
+        Write-Log "[Discord] Database: $databasePath" -Level "Debug"
+
+        # Store token for API functions
+        $script:ModuleConfig.BotToken = $Config.Discord.Token
+
+        # Get root directory for config
+        $configRootDir = if ($Global:Config -and $Global:Config.configPath) { 
+            Split-Path $Global:Config.configPath -Parent 
+        } else { 
+            $PWD.Path 
+        }
+        
+        # Determine config path
+        $configPath = if ($Global:Config -and $Global:Config.configPath) { 
+            $Global:Config.configPath 
+        } else { 
+            Join-Path $configRootDir "SCUM-Server-Automation.config.json" 
+        }
+        
+        # Create environment for the process
+        $processEnv = @{
+            'DISCORD_TOKEN' = $Config.Discord.Token
+            'DISCORD_GUILD_ID' = $Config.Discord.GuildId
+            'HTTP_PORT' = $script:ModuleConfig.HttpApiPort
+            'ROOT_DIR' = $configRootDir
+            'CONFIG_PATH' = $configPath
+            'DEBUG' = 'false'
+        }
+
+        Write-Log "[Discord] Environment variables set - ROOT_DIR: $configRootDir" -Level "Debug"
+        Write-Log "[Discord] Starting bot with config path: $($processEnv['CONFIG_PATH'])" -Level "Debug"
+
+        # Build PowerShell command to set environment and run bot
+        $envCommands = $processEnv.GetEnumerator() | ForEach-Object { "`$env:$($_.Key) = '$($_.Value)'" }
+        $envString = $envCommands -join '; '
+        $fullCommand = "$envString; & `"$nodeExe`" `"$botScript`""
+
+        Write-Log "[Discord] Starting with command: powershell -Command `"$fullCommand`"" -Level "Debug"
+
+        # Start the bot process using PowerShell to set environment variables
+        $startProcessParams = @{
+            FilePath = 'powershell'
+            ArgumentList = @('-NoProfile', '-Command', $fullCommand)
+            WorkingDirectory = $script:ModuleConfig.BotScriptPath
+            PassThru = $true
+        }
+
+        # Use Start-Process with NoNewWindow to avoid SIGINT propagation
+        $script:ModuleConfig.BotProcess = Start-Process @startProcessParams -NoNewWindow
+
+        if (-not $script:ModuleConfig.BotProcess) {
+            throw "Failed to create bot process"
+        }
+
+        Write-Log "[Discord] Bot process started with PID: $($script:ModuleConfig.BotProcess.Id)" -Level "Info"
+
+        # Wait longer for the bot to fully start
+        Start-Sleep -Seconds 5
+        
+        # Check if process is still alive
+        $processStillRunning = Get-Process -Id $script:ModuleConfig.BotProcess.Id -ErrorAction SilentlyContinue
+        if (-not $processStillRunning) {
+            throw "Bot process exited immediately with code: $($script:ModuleConfig.BotProcess.ExitCode)"
+        }
+
+        # Test HTTP API to confirm bot is working
+        $apiTestAttempts = 0
+        $maxAttempts = 10
+        $apiWorking = $false
+        
+        while ($apiTestAttempts -lt $maxAttempts -and -not $apiWorking) {
+            try {
+                Start-Sleep -Seconds 2
+                $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 3 -ErrorAction SilentlyContinue
+                if ($response -and $response.status -eq "online") {
+                    $apiWorking = $true
+                    Write-Log "[Discord] Bot started successfully (PID: $($script:ModuleConfig.BotProcess.Id)) and HTTP API is responding" -Level "Info"
+                    Write-Log "[Discord] API Status: $($response.status), Guilds: $($response.guilds), Users: $($response.users)" -Level "Info"
                 } else {
-                    Write-Log "Discord text commands module not available" -Level Debug
+                    $apiTestAttempts++
+                    Write-Log "[Discord] API test attempt $apiTestAttempts/$maxAttempts failed, retrying..." -Level "Debug"
                 }
-            } else {
-                Write-Log "Failed to start Discord WebSocket bot" -Level Error
-                # Still send notification manually
-                Send-DiscordNotification -Type "manager.started"
+            } catch {
+                $apiTestAttempts++
+                Write-Log "[Discord] API test attempt $apiTestAttempts/$maxAttempts failed: $($_.Exception.Message)" -Level "Debug"
             }
-            
-            return $true
-        } else {
-            Write-Log "Discord integration initialization failed" -Level Error
-            return $false
         }
-        
-    } catch {
-        Write-Log "Failed to initialize Discord integration: $($_.Exception.Message)" -Level Error
-        return $false
-    }
-}
 
-# Send Discord notification - delegate to notification manager
-function Send-NotificationMessage {
-    <#
-    .SYNOPSIS
-    Send a Discord notification with the specified type and data
-    #>
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Type,
-        
-        [Parameter()]
-        [hashtable]$Data = @{}
-    )
-    
-    try {
-        # Call notification manager directly
-        Send-DiscordNotification -Type $Type -Data $Data
-        Write-Log "Notification sent: $Type" -Level Debug
-        return @{ Success = $true }
-        
+        if (-not $apiWorking) {
+            Write-Log "[Discord] Bot process running but HTTP API not responding after $maxAttempts attempts" -Level "Warning"
+            # Don't fail completely, the bot might still work for some functions
+        }
+
+        $script:ModuleConfig.LastHeartbeat = Get-Date
+
+        return @{ Success = $true; Message = "Discord bot started"; ProcessId = $script:ModuleConfig.BotProcess.Id; ApiWorking = $apiWorking }
+
     } catch {
-        Write-Log "Failed to send Discord notification: $($_.Exception.Message)" -Level Error
+        Write-Log "[Discord] Failed to start bot: $($_.Exception.Message)" -Level "Error"
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
 
-# Update Discord leaderboards
-function Update-DiscordLeaderboards {
-    <#
-    .SYNOPSIS
-    Update Discord leaderboards with current database data
-    #>
-    param(
-        [Parameter()]
-        [string]$Type = "player_stats"
-    )
-    
+<#
+.SYNOPSIS
+    Stops the Discord bot process.
+#>
+function Stop-DiscordBot {
     try {
-        Write-Log "Updating Discord leaderboards: $Type" -Level Debug
-        
-        # Get leaderboard data from database
-        $leaderboardData = @{
-            TopPlayers = @()
-            TopKillers = @()
-            TopSurvivors = @()
-            ServerStats = @{
-                TotalKills = "N/A"
-                TotalDeaths = "N/A"
-                TotalPlayTime = "N/A"
-                ActiveClans = "N/A"
-                TotalEvents = "N/A"
+        if ($script:ModuleConfig.BotProcess -and -not $script:ModuleConfig.BotProcess.HasExited) {
+            Write-Log "[Discord] Stopping Discord bot..." -Level "Info"
+            
+            $script:ModuleConfig.BotProcess.CloseMainWindow()
+            if (-not $script:ModuleConfig.BotProcess.WaitForExit(5000)) {
+                $script:ModuleConfig.BotProcess.Kill()
             }
-            RecentActivity = @()
-            Achievements = @()
+            
+            Write-Log "[Discord] Bot stopped successfully" -Level "Info"
         }
         
-        # Get real leaderboard data from database
-        if (Get-Command "Get-LeaderboardData" -ErrorAction SilentlyContinue) {
-            $leaderboardData = Get-LeaderboardData -ErrorAction SilentlyContinue
-            if (-not $leaderboardData) {
-                Write-Log "Failed to get leaderboard data from database" -Level Warning
-                # Use empty structure as fallback
-                $leaderboardData = @{
-                    TopPlayers = @()
-                    TopKillers = @()
-                    TopSurvivors = @()
-                    ServerStats = @{
-                        TotalKills = "N/A"
-                        TotalDeaths = "N/A"
-                        TotalPlayTime = "N/A"
-                        ActiveClans = "N/A"
-                        TotalEvents = "N/A"
-                    }
-                    RecentActivity = @()
-                    Achievements = @()
-                }
-            }
-        }
-        
-        # Update live leaderboards embed
-        if (Get-Command "Update-LiveLeaderboards" -ErrorAction SilentlyContinue) {
-            Update-LiveLeaderboards -LeaderboardData $leaderboardData | Out-Null
-            Write-Log "Leaderboard embed updated successfully" -Level Debug
-            return @{ Success = $true }
-        } else {
-            Write-Log "Live leaderboards system not available" -Level Warning
-            return @{ Success = $false; Error = "Live embeds not available" }
-        }
-        
+        $script:ModuleConfig.BotProcess = $null
+        return @{ Success = $true; Message = "Discord bot stopped" }
+
     } catch {
-        Write-Log "Failed to update Discord leaderboards: $($_.Exception.Message)" -Level Error
+        Write-Log "[Discord] Failed to stop bot: $($_.Exception.Message)" -Level "Error"
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
 
-# Test Discord connection
-function Test-DiscordConnection {
-    <#
-    .SYNOPSIS
-    Test Discord API connectivity
-    #>
-    
+<#
+.SYNOPSIS
+    Finds Node.js processes that are running our Discord bot (listening on configured port).
+#>
+function Get-DiscordBotProcesses {
     try {
-        if (Get-Command "Test-DiscordAPI" -ErrorAction SilentlyContinue) {
-            return Test-DiscordAPI
-        } else {
-            Write-Log "Discord API test function not available" -Level Warning
-            return $false
-        }
-    } catch {
-        Write-Log "Discord connection test failed: $($_.Exception.Message)" -Level Error
-        return $false
-    }
-}
-
-# Start Discord bot connection
-function Start-DiscordBotConnection {
-    <#
-    .SYNOPSIS
-    Start Discord bot WebSocket connection
-    #>
-    param(
-        [Parameter()]
-        [string]$Token,
-        
-        [Parameter()]
-        [string]$Activity = "OFFLINE",
-        
-        [Parameter()]
-        [string]$ActivityType = "Playing"
-    )
-    
-    try {
-        if (Get-Command "Start-DiscordWebSocketBot" -ErrorAction SilentlyContinue) {
-            $result = Start-DiscordWebSocketBot -Token $Token -Activity $Activity -ActivityType $ActivityType
-            if ($result) {
-                $script:BotStarted = $true
-                Write-Log "[ONLINE] Discord bot connection started"
+        $botProcesses = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
+            try {
+                # Get network connections to check if this process is using our configured port
+                $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
+                $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
+                return $processIds -contains $_.Id.ToString()
+            } catch {
+                return $false
             }
-            return $result
-        } else {
-            Write-Log "Discord WebSocket bot not available" -Level Warning
-            return $false
         }
-    } catch {
-        Write-Log "Failed to start Discord bot: $($_.Exception.Message)" -Level Error
-        return $false
-    }
-}
-
-# Stop Discord bot connection
-function Stop-DiscordBotConnection {
-    <#
-    .SYNOPSIS
-    Stop Discord bot WebSocket connection
-    #>
-    
-    try {
-        if (Get-Command "Stop-DiscordWebSocketBot" -ErrorAction SilentlyContinue) {
-            # Before stopping, set bot status to offline (invisible)
-            if (Get-Command "Set-BotActivity" -ErrorAction SilentlyContinue) {
-                Write-Log "[SETTING] Setting bot status to offline before shutdown..." -Level Warning
-                Set-BotActivity -Activity "Manager Offline" -Type "Playing" -Status "invisible"
-                Start-Sleep -Seconds 1  # Give time for status to update
-            }
-            
-            $result = Stop-DiscordWebSocketBot
-            $script:BotStarted = $false
-            Write-Log "[STOPPED] Discord bot connection stopped" -Level Warning
-            return $result
-        } else {
-            Write-Log "Discord WebSocket bot not available" -Level Warning
-            return $false
-        }
-    } catch {
-        Write-Log "Failed to stop Discord bot: $($_.Exception.Message)" -Level Error
-        return $false
-    }
-}
-
-# Test Discord bot status
-function Test-DiscordBotStatus {
-    <#
-    .SYNOPSIS
-    Test if Discord bot is running
-    #>
-    
-    try {
-        if (Get-Command "Test-DiscordBotConnection" -ErrorAction SilentlyContinue) {
-            return Test-DiscordBotConnection
-        } else {
-            return $script:BotStarted
-        }
-    } catch {
-        return $false
-    }
-}
-
-# Set Discord bot activity
-function Set-DiscordBotActivity {
-    <#
-    .SYNOPSIS
-    Set Discord bot activity/status - DEPRECATED! Use Update-BotActivity instead!
-    #>
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Activity,
         
-        [Parameter()]
-        [string]$Type = "Playing",
-        
-        [Parameter()]
-        [string]$Status = "online"
-    )
-    
-    Write-Log "[DEPRECATED] Set-DiscordBotActivity is deprecated! Use Update-BotActivity instead!" -Level Warning
-    Write-Log "This function bypasses the centralized activity management." -Level Warning
-    
-    try {
-        if (Get-Command "Set-BotActivity" -ErrorAction SilentlyContinue) {
-            return Set-BotActivity -Activity $Activity -Type $Type -Status $Status
-        } else {
-            Write-Log "Bot activity function not available" -Level Warning
-            return $false
-        }
+        return $botProcesses
     } catch {
-        Write-Log "Failed to set bot activity: $($_.Exception.Message)" -Level Error
-        return $false
+        Write-Log "[Discord] Error finding bot processes: $($_.Exception.Message)" -Level "Warning"
+        return @()
     }
 }
 
-# Update bot activity based on server status
-function Update-BotActivity {
-    <#
-    .SYNOPSIS
-    Update Discord bot activity based on server status - ONLY FUNCTION THAT CHANGES ACTIVITY!
-    #>
+# =============================================================================
+# DISCORD API FUNCTIONS (HTTP API COMMUNICATION WITH NODE.JS BOT)
+# =============================================================================
+
+<#
+.SYNOPSIS
+<#
+.SYNOPSIS
+    Send message to Discord channel via Node.js bot HTTP API
+#>
+function Send-DiscordMessage {
     param(
         [Parameter(Mandatory=$false)]
-        [hashtable]$ServerStatus = $null
+        [string]$Token,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$ChannelId,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Content = "",
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable[]]$Embeds = @(),
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable[]]$Components = @(),
+        
+        [Parameter(Mandatory=$false)]
+        [string]$UpdateMessageId = "",
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable[]]$Files = @()
+    )
+
+    try {
+        # Prepare request body for Node.js bot
+        $body = @{
+            channelId = $ChannelId
+            content = $Content
+            embeds = $Embeds
+            components = $Components
+            files = $Files
+        }
+
+        if ($UpdateMessageId) {
+            $body.updateMessageId = $UpdateMessageId
+        }
+
+        # Convert to JSON and send to Node.js bot
+        $jsonBody = $body | ConvertTo-Json -Depth 10 -Compress
+        
+        # Make HTTP request to Node.js bot
+        $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/send-message" -Method POST -Body $jsonBody -ContentType "application/json" -TimeoutSec 30
+
+        if ($response.success) {
+            Write-Log "[DISCORD-API] Message sent successfully to channel $ChannelId" -Level "Debug"
+            return @{
+                Success = $true
+                MessageId = $response.messageId
+                StatusCode = 200
+            }
+        } else {
+            throw "Bot returned error: $($response.error)"
+        }
+
+    } catch {
+        $errorMessage = $_.Exception.Message
+        Write-Log "[DISCORD-API] Failed to send message: $errorMessage" -Level "Error"
+        
+        return @{
+            Success = $false
+            Error = $errorMessage
+            StatusCode = 500
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Send an embed to Discord channel via Node.js bot
+#>
+<#
+.SYNOPSIS
+    Update an existing Discord message via Node.js bot
+#>
+function Update-DiscordMessage {
+    param(
+        [Parameter(Mandatory=$false)]
+        [string]$Token,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$ChannelId,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MessageId,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Content = "",
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable[]]$Embeds = @(),
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable[]]$Components = @()
+    )
+
+    return Send-DiscordMessage -ChannelId $ChannelId -Content $Content -Embeds $Embeds -Components $Components -UpdateMessageId $MessageId
+}
+
+<#
+.SYNOPSIS
+    Set Discord bot activity/presence (handled by Node.js bot based on config)
+#>
+<#
+.SYNOPSIS
+    Test if Node.js Discord bot is running and accessible
+#>
+function Test-DiscordBotConnection {
+    param()
+
+    try {
+        $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 5
+        
+        if ($response.status -eq "online") {
+            Write-Log "[DISCORD-API] Node.js bot is online and healthy" -Level "Debug"
+            return @{
+                Success = $true
+                Status = "online"
+                Uptime = $response.uptime
+                Guilds = $response.guilds
+                Users = $response.users
+                Ping = $response.ping
+            }
+        } else {
+            throw "Bot status: $($response.status)"
+        }
+
+    } catch {
+        Write-Log "[DISCORD-API] Node.js bot connection failed: $($_.Exception.Message)" -Level "Warning"
+        return @{
+            Success = $false
+            Error = $_.Exception.Message
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Set Discord bot activity/presence via Node.js bot
+#>
+function Set-DiscordBotActivity {
+    param(
+        [Parameter(Mandatory=$false)]
+        [string]$Token,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Activity = "",
+        
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("online", "idle", "dnd", "invisible")]
+        [string]$Status = "online",
+        
+        [Parameter(Mandatory=$false)]
+        [ValidateSet(0, 1, 2, 3, 4, 5)]
+        [int]$Type = 3
+    )
+
+    try {
+        # Prepare request body for Node.js bot
+        $body = @{
+            activity = $Activity
+            status = $Status
+            type = $Type
+        }
+
+        # Convert to JSON and send to Node.js bot
+        $jsonBody = $body | ConvertTo-Json -Depth 10 -Compress
+        
+        # Make HTTP request to Node.js bot
+        $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/set-activity" -Method POST -Body $jsonBody -ContentType "application/json" -TimeoutSec 10
+
+        if ($response.success) {
+            Write-Log "[DISCORD-API] Bot activity set successfully: $Activity ($Status)" -Level "Debug"
+            return @{
+                Success = $true
+                Message = "Bot activity updated"
+                Activity = $Activity
+                Status = $Status
+                Type = $Type
+            }
+        } else {
+            throw "Bot returned error: $($response.error)"
+        }
+
+    } catch {
+        $errorMessage = $_.Exception.Message
+        Write-Log "[DISCORD-API] Failed to set bot activity: $errorMessage" -Level "Error"
+        
+        return @{
+            Success = $false
+            Error = $errorMessage
+        }
+    }
+}
+
+# =============================================================================
+# BOT HEALTH AND MONITORING
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Checks if the Discord bot is running and healthy using HTTP API.
+#>
+function Test-DiscordBotHealth {
+    try {
+        # First check if we have a valid process
+        $processRunning = $false
+        if ($script:ModuleConfig.BotProcess -and -not $script:ModuleConfig.BotProcess.HasExited) {
+            $processRunning = $true
+        }
+
+        # Test HTTP API health - this is the primary health check
+        try {
+            $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 5
+            
+            if ($response.status -eq "online") {
+                return @{ 
+                    Success = $true; 
+                    Message = "Bot is healthy and responding"; 
+                    IsHealthy = $true;
+                    ProcessRunning = $processRunning;
+                    HeartbeatOk = $true;
+                    ApiStatus = $response.status;
+                    Uptime = $response.uptime;
+                    Guilds = $response.guilds;
+                    Users = $response.users;
+                    Ping = $response.ping
+                }
+            } else {
+                return @{ 
+                    Success = $false; 
+                    Message = "Bot API returned unhealthy status: $($response.status)"; 
+                    IsHealthy = $false;
+                    ProcessRunning = $processRunning;
+                    HeartbeatOk = $false
+                }
+            }
+        } catch {
+            # If API is not responding, bot is considered unhealthy
+            return @{ 
+                Success = $false; 
+                Message = "Bot API not responding: $($_.Exception.Message)"; 
+                IsHealthy = $false;
+                ProcessRunning = $processRunning;
+                HeartbeatOk = $false
+            }
+        }
+
+    } catch {
+        return @{ 
+            Success = $false; 
+            Error = $_.Exception.Message;
+            IsHealthy = $false;
+            ProcessRunning = $false;
+            HeartbeatOk = $false
+        }
+    }
+}
+
+# =============================================================================
+# ACCOUNT LINKING SYSTEM
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Creates account linking embed with buttons.
+#>
+function New-AccountLinkingEmbed {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ChannelId
+    )
+
+    $embed = @{
+        title = ":link: Account Linking"
+        description = "Link your Discord account with your SCUM server profile.\n\n**Benefits of linking:**\n• :gift: Access to exclusive rewards\n• :bar_chart: Statistics tracking\n• :trophy: Participation in competitions\n• :loudspeaker: Game event notifications"
+        color = 3447003
+        footer = @{
+            text = "SCUM Server Automation"
+            icon_url = "https://playhub.cz/scum/manager/server_automation_discord.png"
+        }
+        timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    }
+
+    $buttons = @{
+        type = 1
+        components = @(
+            @{
+                type = 2
+                style = 1
+                label = ":link: Link Account"
+                custom_id = "link_account"
+            },
+            @{
+                type = 2
+                style = 2
+                label = ":bar_chart: Check Status"
+                custom_id = "check_status"
+            }
+        )
+    }
+
+    return Send-DiscordMessage -ChannelId $ChannelId -Embeds @($embed) -Components @($buttons)
+}
+
+# =============================================================================
+# =============================================================================
+# HTTP API HELPER FUNCTIONS
+# =============================================================================
+
+function Invoke-NodeJsApiRequest {
+    <#
+    .SYNOPSIS
+        Makes HTTP requests to the Node.js Discord bot API
+    .DESCRIPTION
+        Universal function for communicating with the Node.js bot HTTP API
+    .PARAMETER Endpoint
+        API endpoint (e.g., "/send-message", "/account-linking/process-connect")
+    .PARAMETER Method
+        HTTP method (GET, POST, PUT, DELETE)
+    .PARAMETER Body
+        Request body as hashtable (will be converted to JSON)
+    .PARAMETER Headers
+        Additional headers as hashtable
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Endpoint,
+        
+        [Parameter(Mandatory=$false)]
+        [ValidateSet("GET", "POST", "PUT", "DELETE")]
+        [string]$Method = "GET",
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable]$Body = @{},
+        
+        [Parameter(Mandatory=$false)]
+        [hashtable]$Headers = @{}
     )
     
     try {
-        if (-not $script:BotStarted) {
-            Write-Log "Discord bot not started, skipping activity update" -Level Debug
-            return
+        # Build URL
+        $url = "$($script:ModuleConfig.NodeBotApiUrl)$Endpoint"
+        
+        # Prepare request parameters
+        $requestParams = @{
+            Uri = $url
+            Method = $Method
+            ContentType = "application/json"
+            Headers = $Headers
+            TimeoutSec = 30
         }
         
-        # Rate limiting - read ActivityUpdateInterval from config, default to 30 seconds if not configured
-        if (-not $script:LastActivityUpdate) {
-            $script:LastActivityUpdate = (Get-Date).AddSeconds(-31) # Initialize to force first update
+        # Add body for POST/PUT requests
+        if ($Method -in @("POST", "PUT") -and $Body.Count -gt 0) {
+            $requestParams.Body = ($Body | ConvertTo-Json -Depth 10)
         }
         
-        # Get activity update interval from config
-        $activityUpdateIntervalSeconds = if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.ActivityUpdateInterval) {
-            $script:DiscordConfig.Presence.ActivityUpdateInterval
-        } else { 30 }
+        Write-Log "[DiscordAPI] Making $Method request to: $url" -Level "Debug"
         
-        $timeSinceLastUpdate = (Get-Date) - $script:LastActivityUpdate
-        if ($timeSinceLastUpdate.TotalSeconds -lt $activityUpdateIntervalSeconds) {
-            Write-Log "[ACTIVITY] Rate limit active - skipping update ($([math]::Round($timeSinceLastUpdate.TotalSeconds))s < $activityUpdateIntervalSeconds s)" -Level Debug
-            return
-        }
+        # Make the request
+        $response = Invoke-RestMethod @requestParams
         
-        $script:LastActivityUpdate = Get-Date
-        
-        # Get server status only if we passed rate limiting check
-        if ($null -eq $ServerStatus -and (Get-Command "Get-ServerStatus" -ErrorAction SilentlyContinue)) {
-            $ServerStatus = Get-ServerStatus
-        }
-        
-        # HEARTBEAT MAINTENANCE - Ensure bot stays connected
-        if (Get-Command "Maintain-DiscordHeartbeat" -ErrorAction SilentlyContinue) {
-            Maintain-DiscordHeartbeat | Out-Null
-        }
-        
-        # Create activity string based on server status
-        $activity = if ($ServerStatus.IsRunning) {
-            # Use OnlineActivityFormat from config if available
-            if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.OnlineActivityFormat) {
-                $format = $script:DiscordConfig.Presence.OnlineActivityFormat
-                $format -replace '\{players\}', $ServerStatus.OnlinePlayers -replace '\{maxPlayers\}', $ServerStatus.MaxPlayers
-            } else {
-                # Fallback to default format
-                "$($ServerStatus.OnlinePlayers) / $($ServerStatus.MaxPlayers) players"
-            }
-        } else {
-            # Use OfflineActivity from config if available
-            if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.OfflineActivity) {
-                $script:DiscordConfig.Presence.OfflineActivity
-            } else {
-                "OFFLINE"
-            }
-        }
-        
-        # Bot always has "online" status when manager is running
-        # Only the activity changes based on server state
-        $status = "online"
-        
-        # Use configured activity type if available, otherwise default to Playing
-        $activityType = if ($script:DiscordConfig -and $script:DiscordConfig.Presence -and $script:DiscordConfig.Presence.Type) {
-            $script:DiscordConfig.Presence.Type
-        } else { 
-            "Playing" 
-        }
-        
-        Write-Log "[ACTIVITY] Setting Discord activity: 'Playing $activity'" -Level Debug
-        
-        if (Get-Command "Set-BotActivity" -ErrorAction SilentlyContinue) {
-            $result = Set-BotActivity -Activity $activity -Type $activityType -Status $status
-            if ($result) {
-                Write-Log "[SUCCESS] Discord activity updated -> Playing '$activity'" -Level Debug
-            } else {
-                Write-Log "[FAILED] Discord activity update failed" -Level Error
-            }
-            return $result
-        } else {
-            Write-Log "Bot activity function not available" -Level Warning
-            return $false
+        Write-Log "[DiscordAPI] Request successful" -Level "Debug"
+        return @{
+            Success = $true
+            Data = $response
+            StatusCode = 200
         }
         
     } catch {
-        Write-Log "Failed to update bot activity: $($_.Exception.Message)" -Level Error
-        return $false
+        $errorMessage = $_.Exception.Message
+        Write-Log "[DiscordAPI] Request failed: $errorMessage" -Level "Warning"
+        
+        # Try to extract more details from the response
+        $statusCode = $null
+        $responseBody = $null
+        
+        if ($_.Exception -is [System.Net.WebException]) {
+            $response = $_.Exception.Response
+            if ($response) {
+                $statusCode = [int]$response.StatusCode
+                try {
+                    $stream = $response.GetResponseStream()
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $responseBody = $reader.ReadToEnd()
+                    $reader.Close()
+                    $stream.Close()
+                } catch {
+                    # Ignore errors reading response body
+                }
+            }
+        }
+        
+        return @{
+            Success = $false
+            Error = $errorMessage
+            StatusCode = $statusCode
+            ResponseBody = $responseBody
+        }
     }
 }
+
+# =============================================================================
+# MODULE EXPORTS
+# =============================================================================
+
+# ===============================================================
+# DISCORD LIVE EMBEDS HELPERS
+# ===============================================================
 
 function Update-DiscordServerStatus {
     <#
     .SYNOPSIS
-    Update Discord server status embeds and bot activity
+    Update server status embed if module is available
     #>
     param(
-        [Parameter(Mandatory=$false)]
-        [hashtable]$ServerStatus = $null
+        [hashtable]$ServerStatus = @{}
     )
     
     try {
-        # Rate limiting for embed updates - only update every 30 seconds to reduce database queries
-        if (-not $script:LastEmbedUpdate) {
-            $script:LastEmbedUpdate = (Get-Date).AddSeconds(-31) # Initialize to force first update
-        }
-        
-        $timeSinceLastEmbedUpdate = (Get-Date) - $script:LastEmbedUpdate
-        # Use StatusUpdateInterval from config, default to 30 seconds if not configured
-        $updateIntervalSeconds = if ($script:DiscordConfig -and $script:DiscordConfig.LiveEmbeds -and $script:DiscordConfig.LiveEmbeds.StatusUpdateInterval) {
-            $script:DiscordConfig.LiveEmbeds.StatusUpdateInterval
-        } else { 30 }
-        $embedUpdateNeeded = $timeSinceLastEmbedUpdate.TotalSeconds -ge $updateIntervalSeconds
-        
-        # Discord bot connection health monitoring disabled for stability
-        # Auto-recovery can cause unnecessary reconnections
-        
-        # Update live status embed (with rate limiting)
-        if (Get-Command "Update-LiveServerStatus" -ErrorAction SilentlyContinue) {
-            if ($embedUpdateNeeded) {
-                # Get server status only if we need to update embed
-                if ($null -eq $ServerStatus -and (Get-Command "Get-ServerStatus" -ErrorAction SilentlyContinue)) {
-                    $ServerStatus = Get-ServerStatus
-                }
-                # Update server status embed (silently)
-                Update-LiveServerStatus -ServerStatus $ServerStatus | Out-Null
-                $script:LastEmbedUpdate = Get-Date
-            } else {
-                Write-Log "[EMBED] Rate limit active - skipping update ($([math]::Round($timeSinceLastEmbedUpdate.TotalSeconds))s < $updateIntervalSeconds s)" -Level Debug
-            }
+        if (Get-Command "Update-ServerStatusEmbed" -ErrorAction SilentlyContinue) {
+            Update-ServerStatusEmbed -ServerStatus $ServerStatus
+            Write-Log "[Discord] Server status embed updated" -Level Debug
         } else {
-            Write-Log "Live server status update not available" -Level Debug
+            Write-Log "[Discord] Server status embed module not available" -Level Debug
         }
-
-        # Update bot activity - has its own rate limiting and will get ServerStatus if needed
-        Update-BotActivity | Out-Null    } catch {
-        Write-Log "Failed to update Discord server status: $($_.Exception.Message)" -Level Error
+    } catch {
+        Write-Log "[Discord] Failed to update server status embed: $($_.Exception.Message)" -Level Warning
     }
 }
 
-function Maintenance-DiscordConnection {
+function Update-DiscordLeaderboards {
     <#
     .SYNOPSIS
-    Perform Discord connection maintenance - CONSERVATIVE APPROACH
-    .DESCRIPTION
-    Only restarts when WebSocket is truly disconnected. HTTP API tests disabled to prevent false positives.
+    Update leaderboards embeds on server restart
     #>
     
     try {
-        # Only check WebSocket connection health - no HTTP API tests
-        $wsStatus = $false
-        if (Get-Command "Test-DiscordBotStatus" -ErrorAction SilentlyContinue) {
-            $wsStatus = Test-DiscordBotStatus
-        }
-        
-        # Log current status for debugging
-        Write-Log "[MAINTENANCE] Discord WebSocket status: $wsStatus" -Level Debug
-        
-        # Only restart if WebSocket is completely disconnected AND we have token
-        if (-not $wsStatus -and $script:DiscordConfig -and $script:DiscordConfig.Token) {
-            Write-Log "[MAINTENANCE] Discord WebSocket truly disconnected - attempting restart..." -Level Warning
-            
-            # Stop existing connection
-            if (Get-Command "Stop-DiscordBotConnection" -ErrorAction SilentlyContinue) {
-                Stop-DiscordBotConnection | Out-Null
-            }
-            
-            # Wait 2 seconds before reconnecting
-            Start-Sleep -Seconds 2
-            
-            # Restart bot
-            if (Get-Command "Start-DiscordBotConnection" -ErrorAction SilentlyContinue) {
-                $restartResult = Start-DiscordBotConnection -Token $script:DiscordConfig.Token
-                if ($restartResult) {
-                    Write-Log "[MAINTENANCE] Discord bot restarted successfully" -Level Info
-                    $script:BotStarted = $true
-                } else {
-                    Write-Log "[MAINTENANCE] Failed to restart Discord bot" -Level Error
-                }
-            }
+        if (Get-Command "Update-LeaderboardsOnRestart" -ErrorAction SilentlyContinue) {
+            Update-LeaderboardsOnRestart
+            Write-Log "[Discord] Leaderboards embeds updated" -Level Info
         } else {
-            # Connection is healthy or we don't have config
-            if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-                Write-Log "[MAINTENANCE] Discord configuration not available" -Level Debug
-            } else {
-                Write-Log "[MAINTENANCE] Discord connection healthy - no action needed" -Level Debug
-            }
+            Write-Log "[Discord] Leaderboards embed module not available" -Level Debug
         }
-        
-        return $true
-        
     } catch {
-        Write-Log "[MAINTENANCE] Discord maintenance error: $($_.Exception.Message)" -Level Warning
-        return $false
+        Write-Log "[Discord] Failed to update leaderboards embeds: $($_.Exception.Message)" -Level Warning
     }
 }
 
+# ===============================================================
+# EXPORTS
+# ===============================================================
+
 Export-ModuleMember -Function @(
-    'Initialize-DiscordIntegration',
-    'Send-NotificationMessage',
+    # Core module functions
+    'Initialize-DiscordIntegrationModule',
+    'Initialize-NodeJSForDiscord',
+    'Initialize-DiscordBot',
+    'Install-DiscordDependencies',
+    'Start-DiscordBot',
+    'Stop-DiscordBot',
+    'Test-DiscordBotHealth',
+    'Test-DiscordBotConnection',
+    'Get-DiscordBotProcesses',
+    
+    # Node.js HTTP API communication
+    'Invoke-NodeJsApiRequest',
+    'Send-DiscordMessage',
+    'Update-DiscordMessage',
+    'Set-DiscordBotActivity',
+    
+    # Live embeds helpers
     'Update-DiscordServerStatus',
     'Update-DiscordLeaderboards',
-    'Update-BotActivity',
-    'Test-DiscordConnection',
-    'Start-DiscordBotConnection',
-    'Stop-DiscordBotConnection',
-    'Test-DiscordBotStatus',
-    'Maintenance-DiscordConnection'
+    
+    # Account linking
+    'New-AccountLinkingEmbed'
 )

@@ -167,15 +167,15 @@ function Initialize-MultipleLeaderboardsEmbeds {
                     }
                     
                     # Send the embed to Discord
-                    $message = Send-DiscordMessage -Token $token -ChannelId $channelId -Embed $embedData
-                    if ($message -and $message.id) {
+                    $message = Send-DiscordMessage -ChannelId $channelId -Embeds @($embedData)
+                    if ($message -and $message.Success -and $message.MessageId) {
                         $script:MultipleLeaderboardsEmbeds[$category] = @{
-                            MessageId = $message.id
+                            MessageId = $message.MessageId
                             ChannelId = $channelId
                             LastUpdate = Get-Date
                             Function = $functionName
                         }
-                        Write-Log "Created $category leaderboard embed (ID: $($message.id))" -Level Info
+                        Write-Log "Created $category leaderboard embed (ID: $($message.MessageId))" -Level Info
                         $successCount++
                     } else {
                         Write-Log "Failed to send $category leaderboard embed to Discord" -Level Error
@@ -273,13 +273,8 @@ function Update-MultipleLeaderboardsEmbeds {
                 }
                 
                 # Update the embed in Discord
-                if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-                    Write-Log "Discord config or token not available for updating $category embed" -Level Warning
-                    continue
-                }
-                
-                $updated = Update-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $embedInfo.ChannelId -MessageId $embedInfo.MessageId -Embed $embedData
-                if ($updated) {
+                $updated = Update-DiscordMessage -ChannelId $embedInfo.ChannelId -MessageId $embedInfo.MessageId -Embeds @($embedData)
+                if ($updated -and $updated.Success) {
                     $script:MultipleLeaderboardsEmbeds[$category].LastUpdate = Get-Date
                     $updateCount++
                     Write-Verbose "Updated $category leaderboard embed"

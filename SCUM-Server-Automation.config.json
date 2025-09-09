@@ -212,6 +212,13 @@
       "UpdateInterval": 5
     },
     
+    "//": "Account linking system",
+    "AccountLinking": {
+      "Enabled": true,
+      "Channel": "EDIT_CHANNEL_ID_FOR_ACCOUNT_LINKING",
+      "Image": "https://playhub.cz/scum/14.gif"
+    },
+        
     "//": "Discord command system",
     "Commands": {
       "Enabled": true,

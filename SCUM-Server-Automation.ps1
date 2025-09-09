@@ -6,7 +6,13 @@
 # ===============================================================
 
 param(
-    [string]$ConfigPath = "SCUM-Server-Automation.config.json"
+    [string]$ConfigPath = "SCUM-Server-Automation.config.json",
+    [switch]$StartServer,
+    [switch]$StopServer,
+    [switch]$RestartServer,
+    [switch]$UpdateServer,
+    [switch]$ValidateServer,
+    [switch]$CreateBackup
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -16,30 +22,32 @@ Write-Host "=== SCUM Server Automation - Starting ===" -ForegroundColor Green
 Write-Host "Loading complete system with all modules..." -ForegroundColor Cyan
 
 # ===============================================================
+# DISCORD BOT INTEGRATION - HANDLED BY DISCORD-INTEGRATION MODULE
+# ===============================================================
+# Discord bot management is now handled by the discord-integration.psm1 module
+# No inline functions needed - everything is modularized
+
+# ===============================================================
 # CLEANUP HANDLER
 # ===============================================================
 $CleanupHandler = {
     Write-Log "Shutting down gracefully..." -Level Warning
     
-    # Send shutdown notification
-    if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-        try {
-            $null = Send-DiscordNotification -Type "manager.stopped" -Data @{}
-        } catch { }
-    }
+    # Send shutdown notification via integrated Discord bot
+    try {
+        if (Get-Command "Send-DiscordHttpNotification" -ErrorAction SilentlyContinue) {
+            Send-DiscordHttpNotification -Type "manager.stopped" -Data @{}
+        }
+    } catch { }
     
-    # Stop chat manager
-    if (Get-Command "Stop-ChatManager" -ErrorAction SilentlyContinue) {
-        try {
-            Stop-ChatManager
-        } catch { }
-    }
-    
-    # Stop Discord bot
-    if (Get-Command "Stop-DiscordBotConnection" -ErrorAction SilentlyContinue) {
-        try {
-            Stop-DiscordBotConnection
-        } catch { }
+    # Stop integrated Discord bot via module
+    try {
+        if (Get-Command "Stop-DiscordBot" -ErrorAction SilentlyContinue) {
+            Stop-DiscordBot | Out-Null
+            Write-Host "Integrated Discord bot stopped successfully"
+        }
+    } catch { 
+        Write-Host "Error stopping integrated Discord bot: $($_.Exception.Message)"
     }
     
     exit 0
@@ -57,6 +65,12 @@ Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $CleanupHandle
 # CONFIGURATION LOADING
 # ===============================================================
 Write-Host "Loading configuration..." -ForegroundColor Yellow
+
+# Store ConfigPath in script scope for functions
+$script:ConfigPath = $ConfigPath
+
+# Store root directory in script scope for functions
+$script:RootDir = $PSScriptRoot
 
 if (-not (Test-Path $ConfigPath)) {
     Write-Host "Configuration file not found: $ConfigPath" -ForegroundColor Red
@@ -132,13 +146,8 @@ $modules = @(
     "server\service\service.psm1",
     "server\monitoring\monitoring.psm1",
     "server\installation\installation.psm1",
-    "communication\discord\core\discord-api.psm1",
-    "communication\discord\commands\discord-text-commands.psm1",
-    "communication\discord\commands\discord-admin-commands.psm1",
-    "communication\discord\commands\discord-player-commands.psm1",
-    "communication\discord\commands\discord-scheduled-tasks.psm1",
-    "communication\discord\notifications\notification-manager.psm1",
     "communication\discord\chat\chat-manager.psm1",
+    "communication\discord\account-linking.psm1",
     "logs\kill-log.psm1",
     "logs\eventkill-log.psm1",
     "logs\admin-log.psm1",
@@ -156,8 +165,11 @@ $modules = @(
     "automation\scheduling\scheduling.psm1",
     "database\server-database.psm1",    
     "database\scum-database.psm1",
+    "communication\discord\live-embeds\server-status-embed.psm1",
     "communication\discord\live-embeds\leaderboards-embed.psm1",
-    "communication\discord\discord-integration.psm1"
+    "communication\discord\discord-integration.psm1",
+    "communication\discord\embed-persistence.psm1",
+    "communication\discord\notifications\notification-manager.psm1"
 )
 
 $loadedModules = @()
@@ -543,59 +555,125 @@ if (Get-Command "Initialize-SchedulingModule" -ErrorAction SilentlyContinue) {
     Write-Log "[WARN] Scheduling module not available" -Level Warning
 }
 
-# Initialize Discord integration
-if (Get-Command "Initialize-DiscordIntegration" -ErrorAction SilentlyContinue) {
-    try {
-        $null = Initialize-DiscordIntegration -Config $configHash
-        Write-Log "[OK] Discord integration initialized successfully" -Level Info
-        
-        # Note: Leaderboard updates will start after monitoring begins
-        
-    } catch {
-        Write-Log "[WARN] Discord failed: $($_.Exception.Message)" -Level Warning
-    }
-} else {
-    Write-Log "[WARN] Discord integration not available" -Level Warning
-}
-
-# Initialize Discord notification manager
-if (Get-Command "Initialize-NotificationManager" -ErrorAction SilentlyContinue) {
-    try {
-        $null = Initialize-NotificationManager -Config $configHash
-        Write-Log "[OK] Discord notification manager initialized successfully" -Level Info
-    } catch {
-        Write-Log "[WARN] Discord notification manager failed: $($_.Exception.Message)" -Level Warning
-    }
-} else {
-    Write-Log "[WARN] Discord notification manager not available" -Level Warning
-}
-
-# Initialize Discord scheduled tasks module
-if (Get-Command "Initialize-ScheduledTasksModule" -ErrorAction SilentlyContinue) {
-    try {
-        Initialize-ScheduledTasksModule -Config $configHash
-        Write-Log "[OK] Discord scheduled tasks initialized successfully" -Level Info
-    } catch {
-        Write-Log "[WARN] Discord scheduled tasks failed: $($_.Exception.Message)" -Level Warning
-    }
-} else {
-    Write-Log "[WARN] Discord scheduled tasks not available" -Level Warning
-}
-
-# Initialize Discord chat relay
-if (Get-Command "Initialize-ChatManager" -ErrorAction SilentlyContinue) {
-    try {
-        $chatManagerResult = Initialize-ChatManager -Config $configHash
-        if ($chatManagerResult) {
-            Write-Log "[OK] Discord chat manager initialized successfully" -Level Info
+# Initialize integrated Discord bot system via discord-integration module
+try {
+    Write-Log "[INFO] Starting integrated Discord bot system..." -Level Info
+    
+    # Initialize Discord integration module first
+    if (Get-Command "Initialize-DiscordIntegrationModule" -ErrorAction SilentlyContinue) {
+        $moduleInitResult = Initialize-DiscordIntegrationModule -Config $configHash
+        if ($moduleInitResult.Success) {
+            Write-Log "[OK] Discord integration module initialized" -Level Info
+            
+            # Initialize Node.js environment
+            if (Get-Command "Initialize-NodeJSForDiscord" -ErrorAction SilentlyContinue) {
+                $nodeResult = Initialize-NodeJSForDiscord -Config $configHash
+                if ($nodeResult.Success) {
+                    Write-Log "[OK] Node.js environment ready" -Level Info
+                } else {
+                    Write-Log "[WARN] Node.js initialization failed: $($nodeResult.Error)" -Level Warning
+                }
+            }
+            
+            # Initialize Discord bot
+            if (Get-Command "Initialize-DiscordBot" -ErrorAction SilentlyContinue) {
+                $botInitResult = Initialize-DiscordBot -Config $configHash
+                if ($botInitResult.Success) {
+                    Write-Log "[OK] Discord bot initialized" -Level Info
+                } else {
+                    Write-Log "[WARN] Discord bot initialization failed: $($botInitResult.Error)" -Level Warning
+                }
+            }
+            
+            # Start the Discord bot
+            if (Get-Command "Start-DiscordBot" -ErrorAction SilentlyContinue) {
+                $botResult = Start-DiscordBot -Config $configHash
+                if ($botResult.Success) {
+                    Write-Log "[OK] Integrated Discord bot started successfully (PID: $($botResult.ProcessId))" -Level Info
+                } else {
+                    Write-Log "[WARN] Failed to start integrated Discord bot: $($botResult.Error)" -Level Warning
+                }
+            } else {
+                Write-Log "[WARN] Start-DiscordBot function not available" -Level Warning
+            }
         } else {
-            Write-Log "[INFO] Discord chat manager not enabled or configured" -Level Info
+            Write-Log "[WARN] Discord integration module initialization failed: $($moduleInitResult.Error)" -Level Warning
+        }
+    } else {
+        Write-Log "[WARN] Discord integration module not loaded" -Level Warning
+    }
+    
+} catch {
+    Write-Log "[WARN] Integrated Discord bot system failed: $($_.Exception.Message)" -Level Warning
+}
+
+# Initialize Discord notification functions (via notification-manager module)
+try {
+    Write-Log "[INFO] Initializing Discord notification functions..." -Level Info
+    
+    # Initialize notification manager with clean Node.js system
+    if (Get-Command "Initialize-NotificationManager" -ErrorAction SilentlyContinue) {
+        Initialize-NotificationManager -Config $configHash
+        Write-Log "[OK] Discord notification system ready (Node.js)" -Level Info
+    } else {
+        Write-Log "[WARN] Discord notification manager not available" -Level Warning
+    }
+    
+} catch {
+    Write-Log "[WARN] Discord notification functions failed: $($_.Exception.Message)" -Level Warning
+}
+
+# Legacy alias removed - using proper Send-DiscordNotification from notification-manager
+
+# Discord chat relay and other features are handled by the Node.js bot
+Write-Log "[INFO] Discord features (chat relay, commands, etc.) handled by integrated Node.js bot" -Level Info
+
+# Initialize Discord account linking system
+if (Get-Command "Initialize-AccountLinking" -ErrorAction SilentlyContinue) {
+    try {
+        $accountLinkingResult = Initialize-AccountLinking -Configuration $configHash -DiscordConfiguration $configHash.Discord
+        if ($accountLinkingResult) {
+            Write-Log "[OK] Discord account linking system initialized successfully" -Level Info
+        } else {
+            Write-Log "[INFO] Discord account linking system not enabled or configured" -Level Info
         }
     } catch {
-        Write-Log "[WARN] Discord chat manager failed: $($_.Exception.Message)" -Level Warning
+        Write-Log "[WARN] Discord account linking system failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Log "[WARN] Discord chat manager not available" -Level Warning
+    Write-Log "[WARN] Discord account linking system not available" -Level Warning
+}
+
+# Initialize Discord live embeds
+try {
+    Write-Log "[INFO] Initializing Discord live embeds..." -Level Info
+    
+    # Initialize server status embed
+    if (Get-Command "Initialize-ServerStatusEmbed" -ErrorAction SilentlyContinue) {
+        $statusEmbedResult = Initialize-ServerStatusEmbed -Config $configHash
+        if ($statusEmbedResult) {
+            Write-Log "[OK] Server status embed initialized" -Level Info
+        } else {
+            Write-Log "[INFO] Server status embed not configured or disabled" -Level Info
+        }
+    } else {
+        Write-Log "[INFO] Server status embed module not available" -Level Info
+    }
+    
+    # Initialize leaderboards embeds
+    if (Get-Command "Initialize-LeaderboardsEmbed" -ErrorAction SilentlyContinue) {
+        $leaderboardsEmbedResult = Initialize-LeaderboardsEmbed -Config $configHash
+        if ($leaderboardsEmbedResult) {
+            Write-Log "[OK] Leaderboards embeds initialized" -Level Info
+        } else {
+            Write-Log "[INFO] Leaderboards embeds not configured or disabled" -Level Info
+        }
+    } else {
+        Write-Log "[INFO] Leaderboards embed module not available" -Level Info
+    }
+    
+} catch {
+    Write-Log "[WARN] Discord live embeds initialization failed: $($_.Exception.Message)" -Level Warning
 }
 
 # ===============================================================
@@ -922,34 +1000,25 @@ function Update-ServiceMonitoring {
                     Write-Log "Server state changed: $($event.EventType)" -Level Info
                     
                     # Send Discord notification based on event type
-                    if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                        try {
-                            $eventType = switch ($event.EventType) {
-                                'ServerOnline' { 'server.online' }
-                                'ServerOffline' { 'server.offline' }
-                                'ServerStarting' { 'server.starting' }
-                                'ServerLoading' { 'server.loading' }
-                                default { $null }
-                            }
-                            
-                            if ($eventType) {
-                                Write-Log "Sending Discord notification: $eventType" -Level Info
-                                $result = Send-DiscordNotification -Type $eventType -Data @{
-                                    service_name = $script:ServiceName
-                                    timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-                                }
-                                
-                                if ($result.Success) {
-                                    Write-Log "Discord notification sent successfully: $eventType" -Level Info
-                                } else {
-                                    Write-Log "Discord notification failed: $($result.Error)" -Level Warning
-                                }
-                            }
-                        } catch {
-                            Write-Log "Discord notification error: $($_.Exception.Message)" -Level Warning
+                    try {
+                        $eventType = switch ($event.EventType) {
+                            'ServerOnline' { 'server.online' }
+                            'ServerOffline' { 'server.offline' }
+                            'ServerStarting' { 'server.starting' }
+                            'ServerLoading' { 'server.loading' }
+                            default { $null }
                         }
-                    } else {
-                        Write-Log "Discord notification function not available" -Level Warning
+                        
+                        if ($eventType) {
+                            Write-Log "Sending Discord notification: $eventType" -Level Info
+                            $null = Send-DiscordNotification -Type $eventType -Data @{
+                                service_name = $script:ServiceName
+                                timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                            }
+                            Write-Log "Discord notification sent: $eventType" -Level Info
+                        }
+                    } catch {
+                        Write-Log "Discord notification failed: $($_.Exception.Message)" -Level Warning
                     }
                     
                     # IMMEDIATE Discord status update on state change
@@ -1001,6 +1070,10 @@ function Update-ServiceMonitoring {
                 # Pass null - let Update-DiscordServerStatus get status only if needed
                 Write-Log "Sending Discord update..." -Level Debug
                 Update-DiscordServerStatus -ServerStatus $null
+                
+                # Update bot activity based on server status
+                Update-DiscordBotActivity
+                
                 $script:State.LastDiscordUpdate = Get-Date
                 Write-Log "Discord status updated (periodic)" -Level Debug
             } catch {
@@ -1027,19 +1100,11 @@ function Update-ServiceMonitoringBasic {
         Write-Log "Service status changed: $status"
         
         # Send Discord notification
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            try {
-                $eventType = if ($script:State.IsRunning) { "server.started" } else { "server.stopped" }
-                $null = Send-DiscordNotification -Type $eventType -Data @{}
-                
-                # Update Discord server status immediately on change
-                if (Get-Command "Update-DiscordServerStatus" -ErrorAction SilentlyContinue) {
-                    $serverStatus = Get-CompleteServerStatus
-                    Update-DiscordServerStatus -ServerStatus $serverStatus
-                }
-            } catch {
-                Write-Log "Discord notification failed: $($_.Exception.Message)" -Level Warning
-            }
+        try {
+            $eventType = if ($script:State.IsRunning) { "server.started" } else { "server.stopped" }
+            $null = Send-DiscordNotification -Type $eventType -Data @{}
+        } catch {
+            Write-Log "Discord notification failed: $($_.Exception.Message)" -Level Warning
         }
     }
 }
@@ -1065,11 +1130,9 @@ function Update-UpdateManager {
         if (Test-ManagerUpdateAvailable) {
             Write-Log "Server update available!"
             
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                try {
-                    $null = Send-DiscordNotification -Type "update.available" -Data @{}
-                } catch { }
-            }
+            try {
+                $null = Send-DiscordNotification -Type "update.available" -Data @{}
+            } catch { }
         }
         
         $script:State.LastUpdateCheck = Get-Date
@@ -1192,11 +1255,9 @@ function Update-ScheduleManager {
                     # Fallback to manual restart execution
                     Write-Log "Scheduling module restart function not available, using fallback" -Level Warning
                     
-                    if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                        try {
-                            $null = Send-DiscordNotification -Type "scheduled.restart" -Data @{ time = $now.ToString("HH:mm") }
-                        } catch { }
-                    }
+                    try {
+                        $null = Send-DiscordNotification -Type "scheduled.restart" -Data @{ time = $now.ToString("HH:mm") }
+                    } catch { }
                     
                     Invoke-Backup "pre-restart"
                     Restart-ServerService
@@ -1342,24 +1403,22 @@ function Update-UpdateManager {
                 
                 # Send update available notification only if we haven't already started an update
                 if (-not $script:State.UpdateInProgress) {
-                    if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                        try {
-                            $updateParams = @{
-                                SteamCmdPath = if ($steamCmd) { Split-Path $steamCmd -Parent } else { ".\steamcmd" }
-                                ServerDirectory = if ($serverDir) { $serverDir } else { ".\server" }
-                                AppId = if ($configHash.appId) { $configHash.appId } else { "3792580" }
-                                ScriptRoot = $PSScriptRoot
-                            }
-                            
-                            $updateInfo = Test-UpdateAvailable @updateParams
-                            
-                            $null = Send-DiscordNotification -Type 'update.available' -Data @{
-                                currentVersion = $updateInfo.InstalledBuild
-                                version = $updateInfo.LatestBuild
-                            }
-                        } catch {
-                            Write-Log "Failed to send update notification: $($_.Exception.Message)" -Level Warning
+                    try {
+                        $updateParams = @{
+                            SteamCmdPath = if ($steamCmd) { Split-Path $steamCmd -Parent } else { ".\steamcmd" }
+                            ServerDirectory = if ($serverDir) { $serverDir } else { ".\server" }
+                            AppId = if ($configHash.appId) { $configHash.appId } else { "3792580" }
+                            ScriptRoot = $PSScriptRoot
                         }
+                        
+                        $updateInfo = Test-UpdateAvailable @updateParams
+                        
+                        $null = Send-DiscordNotification -Type 'update.available' -Data @{
+                            currentVersion = $updateInfo.InstalledBuild
+                            version = $updateInfo.LatestBuild
+                        }
+                    } catch {
+                        Write-Log "Failed to send update notification: $($_.Exception.Message)" -Level Warning
                     }
                     
                     # Start automatic update process
@@ -1504,16 +1563,175 @@ Update-ServiceMonitoring
 Show-Status
 
 # Send startup notification
-if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
+try {
+    $null = Send-DiscordNotification -Type "manager.started" -Data @{ version = "2.1" }
+    Write-Log "Startup notification sent" -Level Info
+} catch {
+    Write-Log "Startup notification failed: $($_.Exception.Message)" -Level Warning
+}
+
+# ===============================================================
+# DISCORD BOT ACTIVITY MANAGEMENT
+# ===============================================================
+
+function Update-DiscordBotActivity {
+    <#
+    .SYNOPSIS
+    Update Discord bot activity based on server status and player count
+    #>
+    
     try {
-        $result = Send-DiscordNotification -Type "manager.started" -Data @{ version = "2.0" }
-        if ($result.Success) {
-            Write-Log "Startup notification sent"
-        } else {
-            Write-Log "Startup notification failed: $($result.Error)" -Level Warning
+        if (-not (Get-Command "Set-DiscordBotActivity" -ErrorAction SilentlyContinue)) {
+            return
         }
+        
+        # Get current server status
+        $serverStatus = Get-CompleteServerStatus
+        $isRunning = Test-ServiceStatus
+        
+        if ($isRunning -and $serverStatus -and $serverStatus.OnlinePlayers -ne $null) {
+            # Server is running - show player count
+            $playerCount = $serverStatus.OnlinePlayers
+            $maxPlayers = if ($serverStatus.MaxPlayers) { $serverStatus.MaxPlayers } else { "∞" }
+            $activity = "🎮 $playerCount/$maxPlayers players online"
+            $status = "online"
+        } elseif ($isRunning) {
+            # Server is running but no player data
+            $activity = "🎮 SCUM Server Online"
+            $status = "online"
+        } else {
+            # Server is offline
+            $activity = "🛑 Server Offline"
+            $status = "idle"
+        }
+        
+        # Update bot activity
+        $result = Set-DiscordBotActivity -Activity $activity -Status $status -Type 3
+        if ($result.Success) {
+            Write-Log "Bot activity updated: $activity ($status)" -Level Debug
+        } else {
+            Write-Log "Failed to update bot activity: $($result.Error)" -Level Warning
+        }
+        
     } catch {
-        Write-Log "Startup notification failed: $($_.Exception.Message)" -Level Warning
+        Write-Log "Error updating Discord bot activity: $($_.Exception.Message)" -Level Warning
+    }
+}
+
+# ===============================================================
+# SINGLE ACTION EXECUTION MODE
+# ===============================================================
+
+# Handle single action parameters (for Discord API calls)
+if ($StartServer -or $StopServer -or $RestartServer -or $UpdateServer -or $ValidateServer -or $CreateBackup) {
+    try {
+        if ($StartServer) {
+            Write-Log "Executing server start command..." -Level Info
+            if (Get-Command "Start-GameService" -ErrorAction SilentlyContinue) {
+                $result = Start-GameService
+                if ($result) {
+                    Write-Log "Server start command executed successfully" -Level Info
+                } else {
+                    Write-Log "Server start command failed" -Level Error
+                }
+            } else {
+                Write-Log "Start-GameService function not available" -Level Error
+            }
+        }
+        
+        if ($StopServer) {
+            Write-Log "Executing server stop command..." -Level Info
+            if (Get-Command "Stop-GameService" -ErrorAction SilentlyContinue) {
+                $result = Stop-GameService
+                if ($result) {
+                    Write-Log "Server stop command executed successfully" -Level Info
+                } else {
+                    Write-Log "Server stop command failed" -Level Error
+                }
+            } else {
+                Write-Log "Stop-GameService function not available" -Level Error
+            }
+        }
+        
+        if ($RestartServer) {
+            Write-Log "Executing server restart command..." -Level Info
+            if (Get-Command "Restart-GameService" -ErrorAction SilentlyContinue) {
+                $result = Restart-GameService
+                if ($result) {
+                    Write-Log "Server restart command executed successfully" -Level Info
+                } else {
+                    Write-Log "Server restart command failed" -Level Error
+                }
+            } else {
+                Write-Log "Restart-GameService function not available" -Level Error
+            }
+        }
+        
+        if ($UpdateServer) {
+            Write-Log "Executing server update command..." -Level Info
+            if (Get-Command "Update-ServerInstallation" -ErrorAction SilentlyContinue) {
+                $result = Update-ServerInstallation
+                if ($result) {
+                    Write-Log "Server update command executed successfully" -Level Info
+                } else {
+                    Write-Log "Server update command failed" -Level Error
+                }
+            } else {
+                Write-Log "Update-ServerInstallation function not available" -Level Error
+            }
+        }
+        
+        if ($ValidateServer) {
+            Write-Log "Executing server validation command..." -Level Info
+            if (Get-Command "Invoke-ServerValidation" -ErrorAction SilentlyContinue) {
+                $serviceName = $configHash.serviceName
+                $steamCmdPath = $configHash.steamCmd
+                $serverDir = $configHash.serverDir
+                $appId = $configHash.appId
+                
+                $result = Invoke-ServerValidation -SteamCmdPath $steamCmdPath -ServerDirectory $serverDir -AppId $appId -ServiceName $serviceName
+                if ($result -and $result.Success) {
+                    Write-Log "Server validation command executed successfully" -Level Info
+                } else {
+                    Write-Log "Server validation command failed" -Level Error
+                }
+            } else {
+                Write-Log "Invoke-ServerValidation function not available" -Level Error
+            }
+        }
+        
+        if ($CreateBackup) {
+            Write-Log "Executing server backup command..." -Level Info
+            if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) {
+                $savedDir = $configHash.savedDir
+                $backupRoot = $configHash.backupRoot
+                
+                # Resolve relative paths
+                if (-not [System.IO.Path]::IsPathRooted($savedDir)) {
+                    $savedDir = Join-Path (Get-Location) $savedDir
+                }
+                if (-not [System.IO.Path]::IsPathRooted($backupRoot)) {
+                    $backupRoot = Join-Path (Get-Location) $backupRoot
+                }
+                
+                $result = Invoke-GameBackup -SourcePath $savedDir -BackupRoot $backupRoot
+                if ($result) {
+                    Write-Log "Server backup command executed successfully" -Level Info
+                } else {
+                    Write-Log "Server backup command failed" -Level Error
+                }
+            } else {
+                Write-Log "Invoke-GameBackup function not available" -Level Error
+            }
+        }
+        
+        # Exit after executing single action
+        Write-Log "Single action completed, exiting..." -Level Info
+        exit 0
+        
+    } catch {
+        Write-Log "Error executing single action: $($_.Exception.Message)" -Level Error
+        exit 1
     }
 }
 
@@ -1568,8 +1786,7 @@ if ($configHash.restartTimes -and $configHash.restartTimes.Count -gt 0) {
 
 Write-Log "[OK] Update Checking" -Level Info
 
-$discordStatus = if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) { "[OK] Available" } else { "[SKIP] Module not loaded" }
-Write-Log "$discordStatus Discord Integration" -Level Info
+Write-Log "[OK] Integrated Discord Bot System" -Level Info
 
 $databaseStatus = if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) { "[OK] Connected" } else { "[SKIP] Not available" }
 Write-Log "$databaseStatus Database Access" -Level Info
@@ -1757,13 +1974,42 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 }
             }
             
-            # Perform Discord connection maintenance (every 10 loops to avoid spam)
+            # Monitor Discord bot health and restart if needed (every 10 loops to avoid spam)
             if ($loopCount % 10 -eq 0) {
+                if (Get-Command "Test-DiscordBotHealth" -ErrorAction SilentlyContinue) {
+                    try {
+                        $botHealth = Test-DiscordBotHealth
+                        if (-not $botHealth.IsHealthy) {
+                            Write-Log "[WARN] Discord bot health check failed: $($botHealth.Message)" -Level Warning
+                            
+                            # Try to restart the bot
+                            if (Get-Command "Stop-DiscordBot" -ErrorAction SilentlyContinue -and Get-Command "Start-DiscordBot" -ErrorAction SilentlyContinue) {
+                                Write-Log "[INFO] Attempting to restart Discord bot..." -Level Info
+                                
+                                $stopResult = Stop-DiscordBot
+                                Start-Sleep -Seconds 2
+                                $startResult = Start-DiscordBot -Config $configHash
+                                
+                                if ($startResult.Success) {
+                                    Write-Log "[OK] Discord bot restarted successfully" -Level Info
+                                } else {
+                                    Write-Log "[ERROR] Failed to restart Discord bot: $($startResult.Error)" -Level Error
+                                }
+                            }
+                        } else {
+                            Write-Log "[DEBUG] Discord bot health: OK (PID: $($botHealth.ProcessId))" -Level Debug
+                        }
+                    } catch {
+                        Write-Log "Discord bot health check failed: $($_.Exception.Message)" -Level Warning
+                    }
+                }
+                
+                # Legacy Discord connection maintenance (fallback for old system)
                 if (Get-Command "Maintenance-DiscordConnection" -ErrorAction SilentlyContinue) {
                     try {
                         Maintenance-DiscordConnection | Out-Null
                     } catch {
-                        Write-Log "Discord connection maintenance failed: $($_.Exception.Message)" -Level Warning
+                        Write-Log "Legacy Discord connection maintenance failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
             }

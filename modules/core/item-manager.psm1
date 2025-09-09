@@ -39,8 +39,12 @@ function Initialize-ItemsData {
                 # Convert array to hashtable for faster lookup  
                 $script:ItemsData = @{}
                 foreach ($item in $itemsArray) {
-                    if ($item.id -and $item.name) {
-                        $script:ItemsData[$item.id] = $item.name
+                    if ($item.id) {
+                        $script:ItemsData[$item.id] = @{
+                            name = $item.name
+                            category = $item.category
+                            image = $item.image
+                        }
                     }
                 }
                 
@@ -83,13 +87,13 @@ function Get-ItemDisplayName {
     
     # Return readable name if found, otherwise return original ID
     if ($script:ItemsData -and $script:ItemsData.ContainsKey($cleanItemId)) {
-        return $script:ItemsData[$cleanItemId]
+        return $script:ItemsData[$cleanItemId].name
     } else {
         # Try without _C suffix (common in SCUM blueprints)
         if ($cleanItemId -match "(.+)_C$") {
             $withoutC = $matches[1]
             if ($script:ItemsData.ContainsKey($withoutC)) {
-                return $script:ItemsData[$withoutC]
+                return $script:ItemsData[$withoutC].name
             }
         }
         
@@ -99,6 +103,57 @@ function Get-ItemDisplayName {
         $readable = $readable -replace "^Weapon\s+", ""  # Remove Weapon prefix
         return $readable.Trim()
     }
+}
+
+function Get-ItemImage {
+    <#
+    .SYNOPSIS
+        Gets item image full path from SCUM item database
+    
+    .PARAMETER ItemId
+        The SCUM internal item ID
+    
+    .RETURNS
+        Full path to image file or null if not found
+    #>
+    param(
+        [string]$ItemId
+    )
+    
+    # Initialize items data if not loaded
+    Initialize-ItemsData
+    
+    # Clean up the ItemId (remove quantity info)
+    $cleanItemId = $ItemId -replace " \(x\d+\)", ""
+    
+    # Return image if found
+    if ($script:ItemsData -and $script:ItemsData.ContainsKey($cleanItemId)) {
+        $imageFileName = $script:ItemsData[$cleanItemId].image
+        if ($imageFileName) {
+            # Return full path to image file
+            $imagePath = Join-Path $PSScriptRoot "..\..\data\scum_images\$imageFileName"
+            if (Test-Path $imagePath) {
+                return $imagePath
+            }
+        }
+    } else {
+        # Try without _C suffix (common in SCUM blueprints)
+        if ($cleanItemId -match "(.+)_C$") {
+            $withoutC = $matches[1]
+            if ($script:ItemsData.ContainsKey($withoutC)) {
+                $imageFileName = $script:ItemsData[$withoutC].image
+                if ($imageFileName) {
+                    # Return full path to image file
+                    $imagePath = Join-Path $PSScriptRoot "..\..\data\scum_images\$imageFileName"
+                    if (Test-Path $imagePath) {
+                        return $imagePath
+                    }
+                }
+            }
+        }
+    }
+    
+    return $null
 }
 
 function Get-ItemInfo {
@@ -164,7 +219,8 @@ function Get-ItemsCount {
 # Export functions
 Export-ModuleMember -Function @(
     'Initialize-ItemsData',
-    'Get-ItemDisplayName', 
+    'Get-ItemDisplayName',
+    'Get-ItemImage',
     'Get-ItemInfo',
     'Test-ItemExists',
     'Get-ItemsCount'

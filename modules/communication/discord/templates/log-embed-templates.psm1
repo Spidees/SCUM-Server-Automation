@@ -2366,13 +2366,23 @@ function Send-KillEmbedSimple {
             }
         }
 
-        return @{
+        # Create embed object with optional thumbnail
+        $embedObject = @{
             title = "$emoji $title"
             color = $color
             fields = $fields
             footer = $script:StandardFooter
             timestamp = Get-StandardTimestamp
         }
+        
+        # Add thumbnail if weapon image is available
+        if ($KillAction.WeaponImage) {
+            $embedObject.thumbnail = @{
+                url = "attachment://$($KillAction.WeaponImage)"
+            }
+        }
+        
+        return $embedObject
     } else {
         # PvP Kill embed
         $emoji = ":crossed_swords:"
@@ -2450,13 +2460,23 @@ function Send-KillEmbedSimple {
             }
         }
 
-        return @{
+        # Create embed object with optional thumbnail
+        $embedObject = @{
             title = "$emoji $title"
             color = $color
             fields = $fields
             footer = $script:StandardFooter
             timestamp = Get-StandardTimestamp
         }
+        
+        # Add thumbnail if weapon image is available
+        if ($KillAction.WeaponImage) {
+            $embedObject.thumbnail = @{
+                url = "attachment://$($KillAction.WeaponImage)"
+            }
+        }
+        
+        return $embedObject
     }
 }
 

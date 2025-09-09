@@ -23,8 +23,8 @@ try {
 $moduleRoot = Split-Path $PSScriptRoot -Parent
 
 # MEMORY LEAK FIX: Conditional imports instead of -Force
-if (-not (Get-Module "discord-api" -ErrorAction SilentlyContinue)) {
-    Import-Module (Join-Path $moduleRoot "core\discord-api.psm1") -Global -ErrorAction SilentlyContinue
+if (-not (Get-Module "discord-integration" -ErrorAction SilentlyContinue)) {
+    Import-Module (Join-Path $moduleRoot "discord-integration.psm1") -Global -ErrorAction SilentlyContinue
 }
 if (-not (Get-Module "embed-styles" -ErrorAction SilentlyContinue)) {
     Import-Module (Join-Path $moduleRoot "templates\embed-styles.psm1") -Global -ErrorAction SilentlyContinue
@@ -182,6 +182,7 @@ function Send-DiscordNotification {
             }
             $channelResult = $null
             
+            # Use clean Node.js Discord system
             if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
                 try {
                     Write-Log "Sending Discord notification: Type=$Type, ChannelId=$channelId, HasContent=$($messageContent -ne $null)" -Level "Debug"
@@ -189,13 +190,14 @@ function Send-DiscordNotification {
                         Write-Log "Message content: $messageContent" -Level "Debug"
                     }
                     
+                    # Send using clean Node.js system (no token needed)
                     if ($messageContent) {
-                        $channelResult = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $channelId -Embed $embed -Content $messageContent
+                        $channelResult = Send-DiscordMessage -ChannelId $channelId -Embeds @($embed) -Content $messageContent
                     } else {
-                        $channelResult = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $channelId -Embed $embed
+                        $channelResult = Send-DiscordMessage -ChannelId $channelId -Embeds @($embed)
                     }
                     
-                    if ($channelResult) {
+                    if ($channelResult -and $channelResult.Success) {
                         $successCount++
                         [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $true; Result = $channelResult })
                     } else {
@@ -210,8 +212,8 @@ function Send-DiscordNotification {
                     if ($messageContent) {
                         Write-Log "Retrying without role mentions..." -Level "Debug"
                         try {
-                            $channelResult = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $channelId -Embed $embed
-                            if ($channelResult) {
+                            $channelResult = Send-DiscordMessage -ChannelId $channelId -Embeds @($embed)
+                            if ($channelResult -and $channelResult.Success) {
                                 Write-Log "Fallback send successful" -Level "Debug"
                                 $successCount++
                                 # Update the last added result in ArrayList
@@ -223,8 +225,8 @@ function Send-DiscordNotification {
                     }
                 }
             } else {
-                Write-Log "Discord API module not available" -Level Warning
-                [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $false; Error = "Discord API module not available" })
+                Write-Log "Discord integration module not available" -Level Warning
+                [void]$resultsList.Add(@{ ChannelId = $channelId; Success = $false; Error = "Discord integration module not available" })
             }
         }
         
