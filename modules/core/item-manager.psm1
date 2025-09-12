@@ -130,11 +130,8 @@ function Get-ItemImage {
     if ($script:ItemsData -and $script:ItemsData.ContainsKey($cleanItemId)) {
         $imageFileName = $script:ItemsData[$cleanItemId].image
         if ($imageFileName) {
-            # Return full path to image file
-            $imagePath = Join-Path $PSScriptRoot "..\..\data\scum_images\$imageFileName"
-            if (Test-Path $imagePath) {
-                return $imagePath
-            }
+            # Return full URL to image file
+            return "https://playhub.cz/scum/items/scum_images/$imageFileName"
         }
     } else {
         # Try without _C suffix (common in SCUM blueprints)
@@ -143,11 +140,8 @@ function Get-ItemImage {
             if ($script:ItemsData.ContainsKey($withoutC)) {
                 $imageFileName = $script:ItemsData[$withoutC].image
                 if ($imageFileName) {
-                    # Return full path to image file
-                    $imagePath = Join-Path $PSScriptRoot "..\..\data\scum_images\$imageFileName"
-                    if (Test-Path $imagePath) {
-                        return $imagePath
-                    }
+                    # Return full URL to image file
+                    return "https://playhub.cz/scum/items/scum_images/$imageFileName"
                 }
             }
         }

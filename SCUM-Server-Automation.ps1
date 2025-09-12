@@ -22,6 +22,9 @@ param(
 # Global variable for quiet mode control
 $script:QuietMode = $Quiet
 
+# Initialize log path for early logging (before modules are loaded)
+$script:LogPath = Join-Path $PSScriptRoot "SCUM-Server-Automation.log"
+
 # ===============================================================
 # PHASE-BASED INITIALIZATION SYSTEM
 # ===============================================================
@@ -63,8 +66,8 @@ function Write-PhaseStatus {
     $statusText = "[$Status]"
     if ($Message) { $statusText += " $Message" }
     
-    # Always log to file
-    if ($script:LogPath) {
+    # Always log to file if Write-Log is available
+    if ($script:LogPath -and (Get-Command "Write-Log" -ErrorAction SilentlyContinue)) {
         Write-Log "Phase $Phase - $phaseName : $statusText" -Level Info
     }
     
@@ -98,8 +101,10 @@ function Write-QuietOutput {
         try {
             Add-Content -Path $script:LogPath -Value $logLine -Encoding UTF8
         } catch {
-            # Fallback to Write-Log if file access fails
-            Write-Log $Message -Level Info
+            # Fallback to Write-Log if file access fails AND Write-Log is available
+            if (Get-Command "Write-Log" -ErrorAction SilentlyContinue) {
+                Write-Log $Message -Level Info
+            }
         }
     }
     
@@ -603,8 +608,9 @@ Write-PhaseStatus -Phase 10 -Status "Starting"
 # Initialize log parser
 if (Get-Command "Initialize-LogReaderModule" -ErrorAction SilentlyContinue) {
     try {
-        $logPath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\Logs\SCUM.log" } else { $null }
-        $null = Initialize-LogReaderModule -Config $configHash -LogPath $logPath
+        # Log parser reads from SCUM server main log file
+        $serverLogPath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\Logs\SCUM.log" } else { $null }
+        $null = Initialize-LogReaderModule -Config $configHash -LogPath $serverLogPath
         Write-Log "[OK] Log parser system" -Level Info
         Write-PhaseStatus -Phase 10 -Status "Success" -Message "Log parser system initialized"
     } catch {
