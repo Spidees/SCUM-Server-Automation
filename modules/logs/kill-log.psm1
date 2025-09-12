@@ -61,12 +61,12 @@ function Initialize-KillLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing kill log management system..." -Level "Info"
+        Write-Log "Initializing kill log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, kill log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, kill log relay disabled" -Level Debug
             return $false
         }
         
@@ -75,31 +75,31 @@ function Initialize-KillLogModule {
             $script:Config = $Config.SCUMLogFeatures.KillFeed
         }
         else {
-            Write-Log "Kill log relay not enabled in configuration" -Level "Info"
+            Write-Log "Kill log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.AdminEnabled -and -not $script:Config.PlayersEnabled) {
-            Write-Log "Kill log relay not enabled in configuration" -Level "Info"
+            Write-Log "Kill log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize kill log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Kill log directory: $script:LogDirectory" -Level "Info"
-        Write-Log "Admin channel: $($script:Config.AdminChannel)" -Level "Info"
+        Write-Log "Kill log directory: $script:LogDirectory" -Level Debug
+        Write-Log "Admin channel: $($script:Config.AdminChannel)" -Level Debug
         if ($script:Config.PlayersEnabled) {
-            Write-Log "Players channel: $($script:Config.PlayersChannel)" -Level "Info"
+            Write-Log "Players channel: $($script:Config.PlayersChannel)" -Level Debug
         }
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Kill log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Kill log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -119,7 +119,7 @@ function Initialize-KillLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize kill log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize kill log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -145,9 +145,9 @@ function Update-KillLogProcessing {
         foreach ($kill in $newKills) {
             # Clean format: KILL [Type] Event description
             if ($kill.Type -eq "suicide") {
-                Write-Log "KILL [SUICIDE] $($kill.VictimName) committed suicide" -Level "Info"
+                Write-Log "KILL [SUICIDE] $($kill.VictimName) committed suicide" -Level Debug
             } else {
-                Write-Log "KILL [PVP] $($kill.KillerName) killed $($kill.VictimName) with $($kill.WeaponName)" -Level "Info"
+                Write-Log "KILL [PVP] $($kill.KillerName) killed $($kill.VictimName) with $($kill.WeaponName)" -Level Debug
             }
             Send-KillEventToDiscord -Kill $kill
         }
@@ -156,7 +156,7 @@ function Update-KillLogProcessing {
         Save-KillState
         
     } catch {
-        Write-Log "Error during kill log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during kill log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -169,13 +169,13 @@ function Get-NewKillEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new kill log file" -Level "Debug"
+        Write-Log "Switched to new kill log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Kill log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Kill log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -214,7 +214,7 @@ function Get-NewKillEvents {
         return $newKills
         
     } catch {
-        Write-Log "Error reading kill log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading kill log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -225,7 +225,7 @@ function Get-LatestKillLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "kill_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No kill log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No kill log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -234,7 +234,7 @@ function Get-LatestKillLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest kill log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest kill log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -254,7 +254,7 @@ function Save-KillState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save kill log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save kill log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -269,14 +269,14 @@ function Load-KillState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous kill log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous kill log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded kill log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded kill log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous kill log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous kill log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestKillLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -284,7 +284,7 @@ function Load-KillState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -294,7 +294,7 @@ function Load-KillState {
             }
         }
     } catch {
-        Write-Log "Failed to load kill log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load kill log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -336,14 +336,14 @@ function Process-PlayersDelayQueue {
                         if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
                             $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.PlayersChannel -Embed $simpleEmbedData
                             if ($result -and $result.success) {
-                                Write-Log "Delayed kill embed sent to players channel" -Level "Info"
+                                Write-Log "Delayed kill embed sent to players channel" -Level Debug
                             } else {
-                                Write-Log "Failed to send delayed kill embed to players channel" -Level "Warning"
+                                Write-Log "Failed to send delayed kill embed to players channel" -Level Warning
                             }
                         }
                     }
                 } catch {
-                    Write-Log "Error sending delayed kill to players channel: $($_.Exception.Message)" -Level "Warning"
+                    Write-Log "Error sending delayed kill to players channel: $($_.Exception.Message)" -Level Warning
                 }
                 
                 # Mark for removal
@@ -357,7 +357,7 @@ function Process-PlayersDelayQueue {
         }
         
     } catch {
-        Write-Log "Error processing players delay queue: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error processing players delay queue: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -392,10 +392,10 @@ function Add-KillToPlayersDelayQueue {
             $script:PlayersDelayQueue = $newQueue
         }
         
-        Write-Log "Kill added to players delay queue (${script:Config.PlayersDelaySeconds}s delay)" -Level "Debug"
+        Write-Log "Kill added to players delay queue (${script:Config.PlayersDelaySeconds}s delay)" -Level Debug
         
     } catch {
-        Write-Log "Error adding kill to players delay queue: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error adding kill to players delay queue: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -716,7 +716,7 @@ function ConvertFrom-KillJSON {
         }
         
     } catch {
-        Write-Log "Error parsing JSON kill data: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error parsing JSON kill data: $($_.Exception.Message)" -Level Warning
         return $null
     }
 }
@@ -873,7 +873,7 @@ function Send-KillEventToDiscord {
     try {
         # Validate kill data
         if (-not $Kill -or -not $Kill.Type) {
-            Write-Log "Invalid kill data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid kill data, skipping processing" -Level Debug
             return
         }
         
@@ -881,26 +881,26 @@ function Send-KillEventToDiscord {
         if ($script:Config.AdminEnabled -and $script:Config.AdminChannel) {
             if (Get-Command "Send-KillEmbed" -ErrorAction SilentlyContinue) {
                 try {
-                    Write-Log "Creating kill embed for admin channel" -Level "Debug"
+                    Write-Log "Creating kill embed for admin channel" -Level Debug
                     $embedData = Send-KillEmbed -KillAction $Kill
-                    Write-Log "Kill embed data created successfully" -Level "Debug"
+                    Write-Log "Kill embed data created successfully" -Level Debug
                     
                     if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                        Write-Log "Sending kill embed to admin channel..." -Level "Debug"
+                        Write-Log "Sending kill embed to admin channel..." -Level Debug
                         $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.AdminChannel -Embed $embedData
                         if ($result -and $result.success) {
-                            Write-Log "Kill event embed sent to admin channel successfully" -Level "Info"
+                            Write-Log "Kill event embed sent to admin channel successfully" -Level Debug
                         } else {
-                            Write-Log "Kill event embed failed to send to admin channel: $($result | ConvertTo-Json)" -Level "Warning"
+                            Write-Log "Kill event embed failed to send to admin channel: $($result | ConvertTo-Json)" -Level Warning
                         }
                     } else {
-                        Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                        Write-Log "Send-DiscordMessage command not found" -Level Warning
                     }
                 } catch {
-                    Write-Log "Error creating kill embed for admin channel: $($_.Exception.Message)" -Level "Warning"
+                    Write-Log "Error creating kill embed for admin channel: $($_.Exception.Message)" -Level Warning
                 }
             } else {
-                Write-Log "Send-KillEmbed function not found" -Level "Warning"
+                Write-Log "Send-KillEmbed function not found" -Level Warning
             }
         }
         
@@ -914,32 +914,32 @@ function Send-KillEventToDiscord {
                 } else {
                     # Send immediately
                     if (Get-Command "Send-KillEmbedSimple" -ErrorAction SilentlyContinue) {
-                        Write-Log "Creating simple kill embed for players channel" -Level "Debug"
+                        Write-Log "Creating simple kill embed for players channel" -Level Debug
                         $simpleEmbedData = Send-KillEmbedSimple -KillAction $Kill -DelayConfig $script:Config
-                        Write-Log "Simple kill embed data created successfully" -Level "Debug"
+                        Write-Log "Simple kill embed data created successfully" -Level Debug
                         
                         if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                            Write-Log "Sending simple kill embed to players channel..." -Level "Debug"
+                            Write-Log "Sending simple kill embed to players channel..." -Level Debug
                             $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.PlayersChannel -Embed $simpleEmbedData
                             if ($result -and $result.success) {
-                                Write-Log "Simple kill embed sent to players channel" -Level "Info"
+                                Write-Log "Simple kill embed sent to players channel" -Level Debug
                             } else {
-                                Write-Log "Failed to send simple kill embed to players channel" -Level "Warning"
+                                Write-Log "Failed to send simple kill embed to players channel" -Level Warning
                             }
                         } else {
-                            Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                            Write-Log "Send-DiscordMessage command not found" -Level Warning
                         }
                     } else {
-                        Write-Log "Send-KillEmbedSimple function not found" -Level "Warning"
+                        Write-Log "Send-KillEmbedSimple function not found" -Level Warning
                     }
                 }
             } catch {
-                Write-Log "Error handling players channel kill event: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error handling players channel kill event: $($_.Exception.Message)" -Level Warning
             }
         }
         
     } catch {
-        Write-Log "Error in Send-KillEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-KillEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

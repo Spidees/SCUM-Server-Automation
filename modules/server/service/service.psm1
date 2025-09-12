@@ -209,15 +209,15 @@ function Repair-GameService {
         [switch]$SkipNotifications
     )
     
-    Write-Log "[Service] Repairing service '$ServiceName' - $Reason"
+    Write-Log "[Service] Repairing service '$ServiceName' - $Reason" -Level Debug
     
     try {
         # First try to stop gracefully
-        Write-Log "[Service] Attempting graceful service stop..."
+        Write-Log "[Service] Attempting graceful service stop..." -Level Debug
         $stopResult = Stop-GameService -ServiceName $ServiceName -Reason $Reason -SkipNotifications:$SkipNotifications
         
         if (-not $stopResult) {
-            Write-Log "[Service] Graceful stop failed, forcing process termination..."
+            Write-Log "[Service] Graceful stop failed, forcing process termination..." -Level Debug
             
             # Get the actual process from the service and kill it
             $serviceWmi = $null
@@ -234,7 +234,7 @@ function Repair-GameService {
                         foreach ($child in $childProcesses) {
                             $childProc = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
                             if ($childProc) {
-                                Write-Log "[Service] Force stopping child process '$($childProc.ProcessName)' PID $($childProc.Id)"
+                                Write-Log "[Service] Force stopping child process '$($childProc.ProcessName)' PID $($childProc.Id)" -Level Debug
                                 try {
                                     $childProc.Kill()
                                 } finally {
@@ -245,7 +245,7 @@ function Repair-GameService {
                         Start-Sleep -Seconds 2
                         
                         # Then kill NSSM itself
-                        Write-Log "[Service] Force stopping NSSM service process PID $($serviceProcess.Id)"
+                        Write-Log "[Service] Force stopping NSSM service process PID $($serviceProcess.Id)" -Level Debug
                         try {
                             $serviceProcess.Kill()
                         } finally {
@@ -253,7 +253,7 @@ function Repair-GameService {
                         }
                     } else {
                         # Direct service process
-                        Write-Log "[Service] Force stopping service process '$($serviceProcess.ProcessName)' PID $($serviceProcess.Id)"
+                        Write-Log "[Service] Force stopping service process '$($serviceProcess.ProcessName)' PID $($serviceProcess.Id)" -Level Debug
                         try {
                             $serviceProcess.Kill()
                         } finally {
@@ -279,7 +279,7 @@ function Repair-GameService {
             # Force stop the service
             try {
                 Stop-Service -Name $ServiceName -Force -ErrorAction Stop
-                Write-Log "[Service] Service force stopped"
+                Write-Log "[Service] Service force stopped" -Level Debug
             } catch {
                 Write-Log "[Service] Failed to force stop service: $($_.Exception.Message)" -Level Error
             }
@@ -289,11 +289,11 @@ function Repair-GameService {
         Start-Sleep -Seconds 5
         
         # Start the service again
-        Write-Log "[Service] Starting service after repair..."
+        Write-Log "[Service] Starting service after repair..." -Level Debug
         $startResult = Start-GameService -ServiceName $ServiceName -Context "repair restart" -SkipNotifications:$SkipNotifications
         
         if ($startResult) {
-            Write-Log "[Service] Service repair completed successfully"
+            Write-Log "[Service] Service repair completed successfully" -Level Debug
             return $true
         } else {
             Write-Log "[Service] Service repair failed - could not restart" -Level Error
@@ -328,18 +328,18 @@ function Stop-GameService {
         [switch]$SkipNotifications
     )
     
-    Write-Log "[Service] Stopping service '$ServiceName' ($Reason)"
+    Write-Log "[Service] Stopping service '$ServiceName' ($Reason)" -Level Debug
     
     try {
         $service = Get-Service -Name $ServiceName -ErrorAction Stop
         
         if ($service.Status -eq 'Stopped') {
-            Write-Log "[Service] Service '$ServiceName' is already stopped"
+            Write-Log "[Service] Service '$ServiceName' is already stopped" -Level Debug
             return $true
         }
         
         Stop-Service -Name $ServiceName -Force -ErrorAction Stop
-        Write-Log "[Service] Service '$ServiceName' stopped successfully"
+        Write-Log "[Service] Service '$ServiceName' stopped successfully" -Level Debug
         return $true
     }
     catch {
@@ -368,7 +368,7 @@ function Initialize-ServiceModule {
     )
     
     $script:serviceConfig = $Config
-    Write-Log "[Service] Module initialized"
+    Write-Log "[Service] Module initialized" -Level Debug
 }
 
 function Test-ServiceExists {
@@ -456,23 +456,23 @@ function Start-GameService {
         [switch]$SkipNotifications
     )
     
-    Write-Log "[Service] Starting service '$ServiceName' ($Context)"
+    Write-Log "[Service] Starting service '$ServiceName' ($Context)" -Level Debug
     
     try {
         $service = Get-Service -Name $ServiceName -ErrorAction Stop
         
         if ($service.Status -eq 'Running') {
-            Write-Log "[Service] Service '$ServiceName' is already running"
+            Write-Log "[Service] Service '$ServiceName' is already running" -Level Debug
             return $true
         }
         
         # Update server database before starting service (only when server is stopped)
         if (Get-Command "Update-ServerDatabase" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "[Service] Updating server database before start..." -Level Info
+                Write-Log "[Service] Updating server database before start..." -Level Debug
                 $updateResult = Update-ServerDatabase
                 if ($updateResult) {
-                    Write-Log "[Service] Server database updated successfully" -Level Info
+                    Write-Log "[Service] Server database updated successfully" -Level Debug
                 } else {
                     Write-Log "[Service] Server database update failed, continuing with start..." -Level Warning
                 }
@@ -504,13 +504,13 @@ function Start-GameService {
         # Only do this for manual starts, not for restart context
         if (-not $SkipNotifications -and $Context -notlike "*restart*") {
             try {
-                Write-Log "[Service] Updating leaderboards and snapshots after start..." -Level Info
+                Write-Log "[Service] Updating leaderboards and snapshots after start..." -Level Debug
                 
                 # Update weekly snapshot with fresh data
                 if (Get-Command "Update-SnapshotOnRestart" -ErrorAction SilentlyContinue) {
                     $snapshotResult = Update-SnapshotOnRestart
                     if ($snapshotResult) {
-                        Write-Log "[Service] Weekly snapshot updated successfully" -Level Info
+                        Write-Log "[Service] Weekly snapshot updated successfully" -Level Debug
                     } else {
                         Write-Log "[Service] Weekly snapshot update failed" -Level Warning
                     }
@@ -521,7 +521,7 @@ function Start-GameService {
                 # Update Discord leaderboards embeds with fresh data
                 if (Get-Command "Update-LeaderboardsOnRestart" -ErrorAction SilentlyContinue) {
                     Update-LeaderboardsOnRestart
-                    Write-Log "[Service] Discord leaderboards updated successfully" -Level Info
+                    Write-Log "[Service] Discord leaderboards updated successfully" -Level Debug
                 } else {
                     Write-Log "[Service] Update-LeaderboardsOnRestart not available" -Level Debug
                 }
@@ -535,7 +535,7 @@ function Start-GameService {
             Write-Log "[Service] Startup monitoring enabled for service '$ServiceName'" -Level Debug
         }
         
-        Write-Log "[Service] Service '$ServiceName' start command sent successfully"
+        Write-Log "[Service] Service '$ServiceName' start command sent successfully" -Level Debug
         return $true
     }
     catch [System.ComponentModel.Win32Exception] {
@@ -581,7 +581,7 @@ function Restart-GameService {
         [switch]$SkipNotifications
     )
     
-    Write-Log "[Service] Restarting service '$ServiceName' ($Reason)"
+    Write-Log "[Service] Restarting service '$ServiceName' ($Reason)" -Level Debug
     
     try {
         if (Stop-GameService -ServiceName $ServiceName -Reason $Reason) {
@@ -591,13 +591,13 @@ function Restart-GameService {
             # Update leaderboards after successful restart (when fresh data is available)
             if ($startResult -and -not $SkipNotifications) {
                 try {
-                    Write-Log "[Service] Updating leaderboards and snapshots after restart..." -Level Info
+                    Write-Log "[Service] Updating leaderboards and snapshots after restart..." -Level Debug
                     
                     # Update weekly snapshot with fresh data
                     if (Get-Command "Update-SnapshotOnRestart" -ErrorAction SilentlyContinue) {
                         $snapshotResult = Update-SnapshotOnRestart
                         if ($snapshotResult) {
-                            Write-Log "[Service] Weekly snapshot updated successfully" -Level Info
+                            Write-Log "[Service] Weekly snapshot updated successfully" -Level Debug
                         } else {
                             Write-Log "[Service] Weekly snapshot update failed" -Level Warning
                         }
@@ -608,7 +608,7 @@ function Restart-GameService {
                     # Update Discord leaderboards embeds with fresh data
                     if (Get-Command "Update-LeaderboardsOnRestart" -ErrorAction SilentlyContinue) {
                         Update-LeaderboardsOnRestart
-                        Write-Log "[Service] Discord leaderboards updated successfully" -Level Info
+                        Write-Log "[Service] Discord leaderboards updated successfully" -Level Debug
                     } else {
                         Write-Log "[Service] Update-LeaderboardsOnRestart not available" -Level Debug
                     }
@@ -686,14 +686,14 @@ function Watch-ServiceStartup {
     $startTime = Get-Date
     $timeoutTime = $startTime.AddMinutes($TimeoutMinutes)
     
-    Write-Log "[Service] Monitoring startup of '$ServiceName' (timeout: $TimeoutMinutes min)"
+    Write-Log "[Service] Monitoring startup of '$ServiceName' (timeout: $TimeoutMinutes min)" -Level Debug
     
     while ((Get-Date) -lt $timeoutTime) {
         $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         
         if ($service -and $service.Status -eq 'Running') {
             $elapsed = ((Get-Date) - $startTime).TotalMinutes
-            Write-Log "[Service] Service '$ServiceName' started successfully after $([Math]::Round($elapsed, 1)) minutes"
+            Write-Log "[Service] Service '$ServiceName' started successfully after $([Math]::Round($elapsed, 1)) minutes" -Level Debug
             return $true
         }
         
@@ -744,7 +744,7 @@ function Test-IntentionalStop {
         }
         
         if ($serviceEvents) {
-            Write-Log "[Service] Application log shows service control event - likely intentional stop"
+            Write-Log "[Service] Application log shows service control event - likely intentional stop" -Level Debug
             return $true
         }
         
@@ -758,7 +758,7 @@ function Test-IntentionalStop {
         }
         
         if ($systemEvents) {
-            Write-Log "[Service] System log shows service stop event - likely intentional stop"
+            Write-Log "[Service] System log shows service stop event - likely intentional stop" -Level Debug
             return $true
         }
         
@@ -806,7 +806,7 @@ function Test-IntentionalStop {
             foreach ($pattern in $cleanShutdownPatterns) {
                 $matches = $recentLines | Where-Object { $_ -match $pattern }
                 if ($matches) {
-                    Write-Log "[Service] Clean shutdown pattern found in log - intentional stop"
+                    Write-Log "[Service] Clean shutdown pattern found in log - intentional stop" -Level Debug
                     return $true
                 }
             }
@@ -815,7 +815,7 @@ function Test-IntentionalStop {
         # Method 4: Time-based heuristic
         $currentHour = (Get-Date).Hour
         if ($currentHour -ge 8 -and $currentHour -le 22) {
-            Write-Log "[Service] Service stopped during normal hours - more likely intentional"
+            Write-Log "[Service] Service stopped during normal hours - more likely intentional" -Level Debug
             # Don't return true based on timing alone, but it's a hint
         }
         
@@ -824,7 +824,7 @@ function Test-IntentionalStop {
     }
     
     # Default to false - treat as unintentional unless clear evidence
-    Write-Log "[Service] No clear evidence of intentional stop - treating as crash"
+    Write-Log "[Service] No clear evidence of intentional stop - treating as crash" -Level Debug
     return $false
 }
 

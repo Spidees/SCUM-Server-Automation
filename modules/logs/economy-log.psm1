@@ -51,12 +51,12 @@ function Initialize-EconomyLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing economy log management system..." -Level "Info"
+        Write-Log "Initializing economy log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, economy log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, economy log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-EconomyLogModule {
             $script:Config = $Config.SCUMLogFeatures.EconomyFeed
         }
         else {
-            Write-Log "Economy log relay not enabled in configuration" -Level "Info"
+            Write-Log "Economy log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Economy log relay not enabled in configuration" -Level "Info"
+            Write-Log "Economy log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize economy log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Economy log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Economy log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Economy log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Economy log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-EconomyLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize economy log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize economy log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -134,7 +134,7 @@ function Update-EconomyLogProcessing {
             if ($actions.Count -eq 1) {
                 # Single action - send normally
                 $action = $actions[0]
-                Write-Log "ECONOMY [$($action.Type)] $($action.PlayerName): $($action.Action)" -Level "Info"
+                Write-Log "ECONOMY [$($action.Type)] $($action.PlayerName): $($action.Action)" -Level Debug
                 Send-EconomyActionToDiscord -Action $action
             } else {
                 # Multiple actions - combine them
@@ -182,7 +182,7 @@ function Update-EconomyLogProcessing {
                     $combinedAction.Action = "bought $itemList from $($firstAction.Trader) for total $($combinedAction.TotalAmount) credits"
                 }
                 
-                Write-Log "ECONOMY [$($combinedAction.Type)] $($combinedAction.PlayerName): $($combinedAction.Action)" -Level "Info"
+                Write-Log "ECONOMY [$($combinedAction.Type)] $($combinedAction.PlayerName): $($combinedAction.Action)" -Level Debug
                 Send-EconomyActionToDiscord -Action $combinedAction
             }
         }
@@ -191,7 +191,7 @@ function Update-EconomyLogProcessing {
         Save-EconomyState
         
     } catch {
-        Write-Log "Error during economy log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during economy log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -209,7 +209,7 @@ function Get-NewEconomyActions {
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Economy log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Economy log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -283,7 +283,7 @@ function Get-NewEconomyActions {
         return $newActions
         
     } catch {
-        Write-Log "Error reading economy log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading economy log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -294,7 +294,7 @@ function Get-LatestEconomyLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "economy_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No economy log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No economy log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -303,7 +303,7 @@ function Get-LatestEconomyLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest economy log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest economy log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -323,7 +323,7 @@ function Save-EconomyState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save economy log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save economy log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -338,14 +338,14 @@ function Load-EconomyState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous economy log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous economy log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded economy log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded economy log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous economy log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous economy log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestEconomyLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -353,7 +353,7 @@ function Load-EconomyState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized economy log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized economy log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -363,7 +363,7 @@ function Load-EconomyState {
             }
         }
     } catch {
-        Write-Log "Failed to load economy log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load economy log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -634,37 +634,37 @@ function Send-EconomyActionToDiscord {
     try {
         # Validate action data
         if (-not $Action -or -not $Action.Action) {
-            Write-Log "Invalid economy action data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid economy action data, skipping processing" -Level Debug
             return
         }
         
         if (Get-Command "Send-EconomyEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating economy embed for $($Action.PlayerName)" -Level "Debug"
+                Write-Log "Creating economy embed for $($Action.PlayerName)" -Level Debug
                 $embedData = Send-EconomyEmbed -EconomyAction $Action
-                Write-Log "Economy embed data created successfully" -Level "Debug"
+                Write-Log "Economy embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending economy embed to Discord..." -Level "Debug"
+                    Write-Log "Sending economy embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Economy embed sent successfully" -Level "Debug"
+                        Write-Log "Economy embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Economy action embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Economy action embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage function not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage function not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating economy embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating economy embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-EconomyEmbed function not found" -Level "Warning"
+            Write-Log "Send-EconomyEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-EconomyActionToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-EconomyActionToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

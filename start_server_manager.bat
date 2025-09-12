@@ -26,7 +26,7 @@ echo.
 cd /d "%~dp0"
 
 :: Run the PowerShell script with ExecutionPolicy Bypass
-powershell.exe -ExecutionPolicy Bypass -File "SCUM-Server-Automation.ps1"
+powershell -ExecutionPolicy Bypass -Command "& '.\SCUM-Server-Automation.ps1' -Quiet"
 
 echo.
 echo ================================================================

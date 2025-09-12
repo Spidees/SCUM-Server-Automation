@@ -80,17 +80,17 @@ function Initialize-DiscordIntegrationModule {
             $script:ModuleConfig.NodeBotApiUrl = "http://$($Config.Discord.HttpApi.Host):$($Config.Discord.HttpApi.Port)"
         }
         
-        Write-Log "[DiscordIntegration] Universal Discord module initialized" -Level "Info"
-        Write-Log "[DiscordIntegration] Root path: $rootPath" -Level "Debug"
-        Write-Log "[DiscordIntegration] Node path: $($script:ModuleConfig.NodePath)" -Level "Debug"
-        Write-Log "[DiscordIntegration] Bot path: $($script:ModuleConfig.BotScriptPath)" -Level "Debug"
-        Write-Log "[DiscordIntegration] HTTP API: $($script:ModuleConfig.NodeBotApiUrl)" -Level "Debug"
+        Write-Log "[DiscordIntegration] Universal Discord module initialized" -Level Debug
+        Write-Log "[DiscordIntegration] Root path: $rootPath" -Level Debug
+        Write-Log "[DiscordIntegration] Node path: $($script:ModuleConfig.NodePath)" -Level Debug
+        Write-Log "[DiscordIntegration] Bot path: $($script:ModuleConfig.BotScriptPath)" -Level Debug
+        Write-Log "[DiscordIntegration] HTTP API: $($script:ModuleConfig.NodeBotApiUrl)" -Level Debug
         $script:ModuleConfig.IsInitialized = $true
         
         return @{ Success = $true; Message = "Discord integration module initialized" }
     }
     catch {
-        Write-Log "[DiscordIntegration] Initialization failed: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[DiscordIntegration] Initialization failed: $($_.Exception.Message)" -Level Error
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
@@ -111,7 +111,7 @@ function Initialize-NodeJSForDiscord {
         $rootPath = (Get-Item $currentModulePath).Parent.Parent.Parent.FullName  # C:\SCUMServer
         $installationModule = Join-Path $rootPath "modules\server\installation\installation.psm1"
         
-        Write-Log "[DiscordIntegration] Looking for installation module at: $installationModule" -Level "Debug"
+        Write-Log "[DiscordIntegration] Looking for installation module at: $installationModule" -Level Debug
         
         if (-not (Test-Path $installationModule)) {
             throw "Installation module not found at: $installationModule"
@@ -119,7 +119,7 @@ function Initialize-NodeJSForDiscord {
         
         Import-Module $installationModule -Force
 
-        Write-Log "[DiscordIntegration] Checking Node.js installation..." -Level "Info"
+        Write-Log "[DiscordIntegration] Checking Node.js installation..." -Level Debug
 
         # Install Node.js if needed
         $nodeResult = Install-NodeJS -NodePath $script:ModuleConfig.NodePath
@@ -128,11 +128,11 @@ function Initialize-NodeJSForDiscord {
             throw "Node.js installation failed: $($nodeResult.Error)"
         }
 
-        Write-Log "[DiscordIntegration] Node.js ready: $($nodeResult.Message)" -Level "Info"
+        Write-Log "[DiscordIntegration] Node.js ready: $($nodeResult.Message)" -Level Debug
         return $nodeResult
 
     } catch {
-        Write-Log "[DiscordIntegration] Node.js setup failed: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[DiscordIntegration] Node.js setup failed: $($_.Exception.Message)" -Level Error
         throw
     }
 }
@@ -158,7 +158,7 @@ function Initialize-DiscordBot {
         # Check if our main bot-modular.js exists
         $botScriptPath = Join-Path $botPath "bot-modular.js"
         if (-not (Test-Path $botScriptPath)) {
-            Write-Log "[Discord] Bot script not found at: $botScriptPath" -Level "Error"
+            Write-Log "[Discord] Bot script not found at: $botScriptPath" -Level Error
             return @{ Success = $false; Error = "Bot script not found. Please ensure bot-modular.js exists in discord-bot directory." }
         }
 
@@ -178,14 +178,14 @@ function Initialize-DiscordBot {
             } | ConvertTo-Json -Depth 3
 
             Set-Content -Path $packagePath -Value $packageJson -Encoding UTF8
-            Write-Log "[Discord] Package.json created" -Level "Info"
+            Write-Log "[Discord] Package.json created" -Level Debug
         }
 
-        Write-Log "[Discord] Bot script verified successfully" -Level "Info"
+        Write-Log "[Discord] Bot script verified successfully" -Level Debug
         return @{ Success = $true; Message = "Discord bot initialized" }
 
     } catch {
-        Write-Log "[Discord] Bot initialization failed: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[Discord] Bot initialization failed: $($_.Exception.Message)" -Level Error
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
@@ -209,7 +209,7 @@ function Install-DiscordDependencies {
             throw "Node.js executable not found: $nodeExe"
         }
 
-        Write-Log "[Discord] Installing Node.js dependencies..." -Level "Info"
+        Write-Log "[Discord] Installing Node.js dependencies..." -Level Debug
 
         # Set up environment for npm (add Node.js to PATH)
         $originalPath = $env:PATH
@@ -225,7 +225,7 @@ function Install-DiscordDependencies {
                 throw "npm install failed with exit code: $($npmProcess.ExitCode)"
             }
 
-            Write-Log "[Discord] Dependencies installed successfully" -Level "Info"
+            Write-Log "[Discord] Dependencies installed successfully" -Level Debug
             return @{ Success = $true; Message = "Dependencies installed" }
             
         } finally {
@@ -234,7 +234,7 @@ function Install-DiscordDependencies {
         }
 
     } catch {
-        Write-Log "[Discord] Dependency installation failed: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[Discord] Dependency installation failed: $($_.Exception.Message)" -Level Error
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
@@ -256,7 +256,7 @@ function Start-DiscordBot {
             $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 2 -ErrorAction SilentlyContinue
             if ($response -and $response.status -eq "online") {
                 $ourBotRunning = $true
-                Write-Log "[Discord] Our Discord bot is already running on port $($script:ModuleConfig.HttpApiPort)" -Level "Info"
+                Write-Log "[Discord] Our Discord bot is already running on port $($script:ModuleConfig.HttpApiPort)" -Level Debug
             }
         } catch {
             # No bot running on our port, which is fine
@@ -277,7 +277,7 @@ function Start-DiscordBot {
             }
             
             if ($botProcesses) {
-                Write-Log "[Discord] Stopping existing Discord bot processes on port $($script:ModuleConfig.HttpApiPort)..." -Level "Info"
+                Write-Log "[Discord] Stopping existing Discord bot processes on port $($script:ModuleConfig.HttpApiPort)..." -Level Debug
                 $botProcesses | Stop-Process -Force
                 Start-Sleep -Seconds 3  # Wait for processes to fully terminate
             }
@@ -301,7 +301,7 @@ function Start-DiscordBot {
             
             if ($runningProcess) {
                 $script:ModuleConfig.BotProcess = $runningProcess
-                Write-Log "[Discord] Using existing healthy bot process (PID: $($runningProcess.Id))" -Level "Info"
+                Write-Log "[Discord] Using existing healthy bot process (PID: $($runningProcess.Id))" -Level Debug
                 return @{ Success = $true; Message = "Bot already running"; ProcessId = $runningProcess.Id }
             }
         }
@@ -332,10 +332,10 @@ function Start-DiscordBot {
             throw "Discord bot token not configured"
         }
 
-        Write-Log "[Discord] Starting Discord bot..." -Level "Info"
-        Write-Log "[Discord] Node.js executable: $nodeExe" -Level "Debug"
-        Write-Log "[Discord] Bot script: $botScript" -Level "Debug"
-        Write-Log "[Discord] Database: $databasePath" -Level "Debug"
+        Write-Log "[Discord] Starting Discord bot..." -Level Debug
+        Write-Log "[Discord] Node.js executable: $nodeExe" -Level Debug
+        Write-Log "[Discord] Bot script: $botScript" -Level Debug
+        Write-Log "[Discord] Database: $databasePath" -Level Debug
 
         # Store token for API functions
         $script:ModuleConfig.BotToken = $Config.Discord.Token
@@ -364,15 +364,15 @@ function Start-DiscordBot {
             'DEBUG' = 'false'
         }
 
-        Write-Log "[Discord] Environment variables set - ROOT_DIR: $configRootDir" -Level "Debug"
-        Write-Log "[Discord] Starting bot with config path: $($processEnv['CONFIG_PATH'])" -Level "Debug"
+        Write-Log "[Discord] Environment variables set - ROOT_DIR: $configRootDir" -Level Debug
+        Write-Log "[Discord] Starting bot with config path: $($processEnv['CONFIG_PATH'])" -Level Debug
 
         # Build PowerShell command to set environment and run bot
         $envCommands = $processEnv.GetEnumerator() | ForEach-Object { "`$env:$($_.Key) = '$($_.Value)'" }
         $envString = $envCommands -join '; '
         $fullCommand = "$envString; & `"$nodeExe`" `"$botScript`""
 
-        Write-Log "[Discord] Starting with command: powershell -Command `"$fullCommand`"" -Level "Debug"
+        Write-Log "[Discord] Starting with command: powershell -Command `"$fullCommand`"" -Level Debug
 
         # Start the bot process using PowerShell to set environment variables
         $startProcessParams = @{
@@ -389,7 +389,7 @@ function Start-DiscordBot {
             throw "Failed to create bot process"
         }
 
-        Write-Log "[Discord] Bot process started with PID: $($script:ModuleConfig.BotProcess.Id)" -Level "Info"
+        Write-Log "[Discord] Bot process started with PID: $($script:ModuleConfig.BotProcess.Id)" -Level Debug
 
         # Wait longer for the bot to fully start
         Start-Sleep -Seconds 5
@@ -411,20 +411,20 @@ function Start-DiscordBot {
                 $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 3 -ErrorAction SilentlyContinue
                 if ($response -and $response.status -eq "online") {
                     $apiWorking = $true
-                    Write-Log "[Discord] Bot started successfully (PID: $($script:ModuleConfig.BotProcess.Id)) and HTTP API is responding" -Level "Info"
-                    Write-Log "[Discord] API Status: $($response.status), Guilds: $($response.guilds), Users: $($response.users)" -Level "Info"
+                    Write-Log "[Discord] Bot started successfully (PID: $($script:ModuleConfig.BotProcess.Id)) and HTTP API is responding" -Level Debug
+                    Write-Log "[Discord] API Status: $($response.status), Guilds: $($response.guilds), Users: $($response.users)" -Level Debug
                 } else {
                     $apiTestAttempts++
-                    Write-Log "[Discord] API test attempt $apiTestAttempts/$maxAttempts failed, retrying..." -Level "Debug"
+                    Write-Log "[Discord] API test attempt $apiTestAttempts/$maxAttempts failed, retrying..." -Level Debug
                 }
             } catch {
                 $apiTestAttempts++
-                Write-Log "[Discord] API test attempt $apiTestAttempts/$maxAttempts failed: $($_.Exception.Message)" -Level "Debug"
+                Write-Log "[Discord] API test attempt $apiTestAttempts/$maxAttempts failed: $($_.Exception.Message)" -Level Debug
             }
         }
 
         if (-not $apiWorking) {
-            Write-Log "[Discord] Bot process running but HTTP API not responding after $maxAttempts attempts" -Level "Warning"
+            Write-Log "[Discord] Bot process running but HTTP API not responding after $maxAttempts attempts" -Level Warning
             # Don't fail completely, the bot might still work for some functions
         }
 
@@ -433,7 +433,7 @@ function Start-DiscordBot {
         return @{ Success = $true; Message = "Discord bot started"; ProcessId = $script:ModuleConfig.BotProcess.Id; ApiWorking = $apiWorking }
 
     } catch {
-        Write-Log "[Discord] Failed to start bot: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[Discord] Failed to start bot: $($_.Exception.Message)" -Level Error
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
@@ -445,21 +445,21 @@ function Start-DiscordBot {
 function Stop-DiscordBot {
     try {
         if ($script:ModuleConfig.BotProcess -and -not $script:ModuleConfig.BotProcess.HasExited) {
-            Write-Log "[Discord] Stopping Discord bot..." -Level "Info"
+            Write-Log "[Discord] Stopping Discord bot..." -Level Debug
             
             $script:ModuleConfig.BotProcess.CloseMainWindow()
             if (-not $script:ModuleConfig.BotProcess.WaitForExit(5000)) {
                 $script:ModuleConfig.BotProcess.Kill()
             }
             
-            Write-Log "[Discord] Bot stopped successfully" -Level "Info"
+            Write-Log "[Discord] Bot stopped successfully" -Level Debug
         }
         
         $script:ModuleConfig.BotProcess = $null
         return @{ Success = $true; Message = "Discord bot stopped" }
 
     } catch {
-        Write-Log "[Discord] Failed to stop bot: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[Discord] Failed to stop bot: $($_.Exception.Message)" -Level Error
         return @{ Success = $false; Error = $_.Exception.Message }
     }
 }
@@ -483,7 +483,7 @@ function Get-DiscordBotProcesses {
         
         return $botProcesses
     } catch {
-        Write-Log "[Discord] Error finding bot processes: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "[Discord] Error finding bot processes: $($_.Exception.Message)" -Level Warning
         return @()
     }
 }
@@ -492,8 +492,6 @@ function Get-DiscordBotProcesses {
 # DISCORD API FUNCTIONS (HTTP API COMMUNICATION WITH NODE.JS BOT)
 # =============================================================================
 
-<#
-.SYNOPSIS
 <#
 .SYNOPSIS
     Send message to Discord channel via Node.js bot HTTP API
@@ -543,7 +541,7 @@ function Send-DiscordMessage {
         $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/send-message" -Method POST -Body $jsonBody -ContentType "application/json" -TimeoutSec 30
 
         if ($response.success) {
-            Write-Log "[DISCORD-API] Message sent successfully to channel $ChannelId" -Level "Debug"
+            Write-Log "[DISCORD-API] Message sent successfully to channel $ChannelId" -Level Debug
             return @{
                 Success = $true
                 MessageId = $response.messageId
@@ -555,7 +553,7 @@ function Send-DiscordMessage {
 
     } catch {
         $errorMessage = $_.Exception.Message
-        Write-Log "[DISCORD-API] Failed to send message: $errorMessage" -Level "Error"
+        Write-Log "[DISCORD-API] Failed to send message: $errorMessage" -Level Error
         
         return @{
             Success = $false
@@ -565,10 +563,6 @@ function Send-DiscordMessage {
     }
 }
 
-<#
-.SYNOPSIS
-    Send an embed to Discord channel via Node.js bot
-#>
 <#
 .SYNOPSIS
     Update an existing Discord message via Node.js bot
@@ -597,104 +591,8 @@ function Update-DiscordMessage {
     return Send-DiscordMessage -ChannelId $ChannelId -Content $Content -Embeds $Embeds -Components $Components -UpdateMessageId $MessageId
 }
 
-<#
-.SYNOPSIS
-    Set Discord bot activity/presence (handled by Node.js bot based on config)
-#>
-<#
-.SYNOPSIS
-    Test if Node.js Discord bot is running and accessible
-#>
-function Test-DiscordBotConnection {
-    param()
-
-    try {
-        $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 5
-        
-        if ($response.status -eq "online") {
-            Write-Log "[DISCORD-API] Node.js bot is online and healthy" -Level "Debug"
-            return @{
-                Success = $true
-                Status = "online"
-                Uptime = $response.uptime
-                Guilds = $response.guilds
-                Users = $response.users
-                Ping = $response.ping
-            }
-        } else {
-            throw "Bot status: $($response.status)"
-        }
-
-    } catch {
-        Write-Log "[DISCORD-API] Node.js bot connection failed: $($_.Exception.Message)" -Level "Warning"
-        return @{
-            Success = $false
-            Error = $_.Exception.Message
-        }
-    }
-}
-
-<#
-.SYNOPSIS
-    Set Discord bot activity/presence via Node.js bot
-#>
-function Set-DiscordBotActivity {
-    param(
-        [Parameter(Mandatory=$false)]
-        [string]$Token,
-        
-        [Parameter(Mandatory=$false)]
-        [string]$Activity = "",
-        
-        [Parameter(Mandatory=$false)]
-        [ValidateSet("online", "idle", "dnd", "invisible")]
-        [string]$Status = "online",
-        
-        [Parameter(Mandatory=$false)]
-        [ValidateSet(0, 1, 2, 3, 4, 5)]
-        [int]$Type = 3
-    )
-
-    try {
-        # Prepare request body for Node.js bot
-        $body = @{
-            activity = $Activity
-            status = $Status
-            type = $Type
-        }
-
-        # Convert to JSON and send to Node.js bot
-        $jsonBody = $body | ConvertTo-Json -Depth 10 -Compress
-        
-        # Make HTTP request to Node.js bot
-        $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/set-activity" -Method POST -Body $jsonBody -ContentType "application/json" -TimeoutSec 10
-
-        if ($response.success) {
-            Write-Log "[DISCORD-API] Bot activity set successfully: $Activity ($Status)" -Level "Debug"
-            return @{
-                Success = $true
-                Message = "Bot activity updated"
-                Activity = $Activity
-                Status = $Status
-                Type = $Type
-            }
-        } else {
-            throw "Bot returned error: $($response.error)"
-        }
-
-    } catch {
-        $errorMessage = $_.Exception.Message
-        Write-Log "[DISCORD-API] Failed to set bot activity: $errorMessage" -Level "Error"
-        
-        return @{
-            Success = $false
-            Error = $errorMessage
-        }
-    }
-}
-
 # =============================================================================
-# BOT HEALTH AND MONITORING
+# HTTP API HELPER FUNCTIONS
 # =============================================================================
 
 <#
@@ -763,7 +661,7 @@ function Test-DiscordBotHealth {
 
 <#
 .SYNOPSIS
-    Creates account linking embed with buttons.
+    Creates account linking embed with buttons using Node.js API.
 #>
 function New-AccountLinkingEmbed {
     param(
@@ -771,36 +669,33 @@ function New-AccountLinkingEmbed {
         [string]$ChannelId
     )
 
-    $embed = @{
-        title = ":link: Account Linking"
-        description = "Link your Discord account with your SCUM server profile.\n\n**Benefits of linking:**\n• :gift: Access to exclusive rewards\n• :bar_chart: Statistics tracking\n• :trophy: Participation in competitions\n• :loudspeaker: Game event notifications"
-        color = 3447003
-        footer = @{
-            text = "SCUM Server Automation"
-            icon_url = "https://playhub.cz/scum/manager/server_automation_discord.png"
+    try {
+        # Use dedicated Node.js API endpoint for account linking embed
+        $body = @{
+            channelId = $ChannelId
         }
-        timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-    }
 
-    $buttons = @{
-        type = 1
-        components = @(
-            @{
-                type = 2
-                style = 1
-                label = ":link: Link Account"
-                custom_id = "link_account"
-            },
-            @{
-                type = 2
-                style = 2
-                label = ":bar_chart: Check Status"
-                custom_id = "check_status"
+        $response = Invoke-NodeJsApiRequest -Endpoint "/api/account-linking/embed" -Method "POST" -Body $body
+
+        if ($response.Success -and $response.Data.success) {
+            Write-Log "[Discord] Account linking embed created successfully in channel $ChannelId" -Level Debug
+            return @{
+                Success = $true
+                MessageId = $response.Data.messageId
+                ChannelId = $response.Data.channelId
+                Message = $response.Data.message
             }
-        )
-    }
+        } else {
+            throw "Failed to create account linking embed: $($response.Data.error)"
+        }
 
-    return Send-DiscordMessage -ChannelId $ChannelId -Embeds @($embed) -Components @($buttons)
+    } catch {
+        Write-Log "[Discord] Failed to create account linking embed: $($_.Exception.Message)" -Level Error
+        return @{
+            Success = $false
+            Error = $_.Exception.Message
+        }
+    }
 }
 
 # =============================================================================
@@ -856,12 +751,12 @@ function Invoke-NodeJsApiRequest {
             $requestParams.Body = ($Body | ConvertTo-Json -Depth 10)
         }
         
-        Write-Log "[DiscordAPI] Making $Method request to: $url" -Level "Debug"
+        Write-Log "[DiscordAPI] Making $Method request to: $url" -Level Debug
         
         # Make the request
         $response = Invoke-RestMethod @requestParams
         
-        Write-Log "[DiscordAPI] Request successful" -Level "Debug"
+        Write-Log "[DiscordAPI] Request successful" -Level Debug
         return @{
             Success = $true
             Data = $response
@@ -870,7 +765,7 @@ function Invoke-NodeJsApiRequest {
         
     } catch {
         $errorMessage = $_.Exception.Message
-        Write-Log "[DiscordAPI] Request failed: $errorMessage" -Level "Warning"
+        Write-Log "[DiscordAPI] Request failed: $errorMessage" -Level Warning
         
         # Try to extract more details from the response
         $statusCode = $null
@@ -900,10 +795,6 @@ function Invoke-NodeJsApiRequest {
         }
     }
 }
-
-# =============================================================================
-# MODULE EXPORTS
-# =============================================================================
 
 # ===============================================================
 # DISCORD LIVE EMBEDS HELPERS
@@ -939,7 +830,7 @@ function Update-DiscordLeaderboards {
     try {
         if (Get-Command "Update-LeaderboardsOnRestart" -ErrorAction SilentlyContinue) {
             Update-LeaderboardsOnRestart
-            Write-Log "[Discord] Leaderboards embeds updated" -Level Info
+            Write-Log "[Discord] Leaderboards embeds updated" -Level Debug
         } else {
             Write-Log "[Discord] Leaderboards embed module not available" -Level Debug
         }
@@ -968,7 +859,6 @@ Export-ModuleMember -Function @(
     'Invoke-NodeJsApiRequest',
     'Send-DiscordMessage',
     'Update-DiscordMessage',
-    'Set-DiscordBotActivity',
     
     # Live embeds helpers
     'Update-DiscordServerStatus',

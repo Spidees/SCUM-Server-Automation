@@ -30,8 +30,8 @@ function Initialize-WorldModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[World] Module initialized successfully"
-        Write-Log "[World] Database: $DatabasePath"
+        Write-Log "[World] Module initialized successfully" -Level Debug
+        Write-Log "[World] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[World] Failed to initialize: $($_.Exception.Message)" -Level Error

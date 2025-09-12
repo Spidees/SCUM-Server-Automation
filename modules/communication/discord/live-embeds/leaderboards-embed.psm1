@@ -84,7 +84,7 @@ function Load-EmbedState {
                     ChannelId = $state.AllTimeEmbed.ChannelId
                 }
             }
-            Write-Log "[Leaderboards] Embed state loaded from: $($state.LastSaved)" -Level Info
+            Write-Log "[Leaderboards] Embed state loaded from: $($state.LastSaved)" -Level Debug
         }
     } catch {
         Write-Log "[Leaderboards] Failed to load embed state: $($_.Exception.Message)" -Level Warning
@@ -104,7 +104,7 @@ function Initialize-LeaderboardsEmbed {
     $script:DiscordConfig = $Config.Discord
     
     if (-not $script:DiscordConfig.LiveEmbeds -or -not $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel) {
-        Write-Log "[WARN] Leaderboards embed not configured properly" -Level "Info"
+        Write-Log "[WARN] Leaderboards embed not configured properly" -Level Debug
         return $false
     }
     
@@ -116,11 +116,11 @@ function Initialize-LeaderboardsEmbed {
         
         # Check for weekly reset first
         if (Test-WeeklyResetNeeded) {
-            Write-Log "Weekly reset needed - performing reset..." -Level "Info"
+            Write-Log "Weekly reset needed - performing reset..." -Level Debug
             Invoke-WeeklyReset
         }
         
-        Write-Log "Initializing leaderboard embeds with persistence system..." -Level "Info"
+        Write-Log "Initializing leaderboard embeds with persistence system..." -Level Debug
         
         # Initialize Weekly Leaderboards Embed
         $weeklyStored = $null
@@ -141,9 +141,9 @@ function Initialize-LeaderboardsEmbed {
                     MessageId = $weeklyStored.MessageId
                     LastUpdate = Get-Date
                 }
-                Write-Log "✅ Using existing weekly leaderboards embed: $($weeklyStored.MessageId)" -Level "Info"
+                Write-Log "Using existing weekly leaderboards embed: $($weeklyStored.MessageId)" -Level Debug
             } else {
-                Write-Log "Stored weekly message no longer exists, will create new one" -Level "Warning"
+                Write-Log "Stored weekly message no longer exists, will create new one" -Level Warning
                 if (Get-Command "Remove-EmbedMessageId" -ErrorAction SilentlyContinue) {
                     Remove-EmbedMessageId -EmbedType "leaderboards-weekly" -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 }
@@ -152,7 +152,7 @@ function Initialize-LeaderboardsEmbed {
         
         # Create weekly embed if none found
         if (-not $script:WeeklyEmbed) {
-            Write-Log "Creating new weekly leaderboards embed..." -Level "Info"
+            Write-Log "Creating new weekly leaderboards embed..." -Level Debug
             $weeklyEmbedData = New-WeeklyLeaderboardsEmbed
             $weeklyMessage = Send-DiscordMessage -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -Embeds @($weeklyEmbedData)
             
@@ -168,7 +168,7 @@ function Initialize-LeaderboardsEmbed {
                     Set-EmbedMessageId -EmbedType "leaderboards-weekly" -MessageId $weeklyMessage.MessageId -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 }
                 
-                Write-Log "✅ Weekly leaderboards embed created: $($weeklyMessage.MessageId)" -Level "Info"
+                Write-Log "Weekly leaderboards embed created: $($weeklyMessage.MessageId)" -Level Debug
             }
         }
         
@@ -191,9 +191,9 @@ function Initialize-LeaderboardsEmbed {
                     MessageId = $allTimeStored.MessageId
                     LastUpdate = Get-Date
                 }
-                Write-Log "✅ Using existing all-time leaderboards embed: $($allTimeStored.MessageId)" -Level "Info"
+                Write-Log "Using existing all-time leaderboards embed: $($allTimeStored.MessageId)" -Level Debug
             } else {
-                Write-Log "Stored all-time message no longer exists, will create new one" -Level "Warning"
+                Write-Log "Stored all-time message no longer exists, will create new one" -Level Warning
                 if (Get-Command "Remove-EmbedMessageId" -ErrorAction SilentlyContinue) {
                     Remove-EmbedMessageId -EmbedType "leaderboards-alltime" -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 }
@@ -202,7 +202,7 @@ function Initialize-LeaderboardsEmbed {
         
         # Create all-time embed if none found
         if (-not $script:AllTimeEmbed) {
-            Write-Log "Creating new all-time leaderboards embed..." -Level "Info"
+            Write-Log "Creating new all-time leaderboards embed..." -Level Debug
             $allTimeEmbedData = New-AllTimeLeaderboardsEmbed
             $allTimeMessage = Send-DiscordMessage -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -Embeds @($allTimeEmbedData)
             
@@ -218,16 +218,12 @@ function Initialize-LeaderboardsEmbed {
                     Set-EmbedMessageId -EmbedType "leaderboards-alltime" -MessageId $allTimeMessage.MessageId -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 }
                 
-                Write-Log "✅ All-time leaderboards embed created: $($allTimeMessage.MessageId)" -Level "Info"
+                Write-Log "All-time leaderboards embed created: $($allTimeMessage.MessageId)" -Level Debug
             }
         }
         
         # Always return success - embeds will be created/updated during monitoring
-        Write-Log "[OK] Leaderboard system initialized successfully" -Level "Info"
-        Write-Log "   Weekly embed: $($existingWeekly -ne $null)" -Level "Info"
-        Write-Log "   All-time embed: $($existingAllTime -ne $null)" -Level "Info"
-        Write-Log "   Missing embeds will be created during first update cycle" -Level "Info"
-        
+        Write-Log "[OK] Leaderboard system initialized successfully" -Level Debug        
         return $true
         
     } catch {
@@ -245,7 +241,7 @@ function Initialize-WeeklyEmbed {
     try {
         # Check if embed already exists in memory
         if ($script:WeeklyEmbed -and $script:WeeklyEmbed.MessageId) {
-            Write-Log "Weekly leaderboards embed already exists (ID: $($script:WeeklyEmbed.MessageId))" -Level "Info"
+            Write-Log "Weekly leaderboards embed already exists (ID: $($script:WeeklyEmbed.MessageId))" -Level Debug
             return $true
         }
         
@@ -253,7 +249,7 @@ function Initialize-WeeklyEmbed {
         $existingEmbed = Find-ExistingEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -EmbedType "Weekly"
         
         if ($existingEmbed) {
-            Write-Log "Found existing weekly leaderboards embed (ID: $($existingEmbed.id))" -Level "Info"
+            Write-Log "Found existing weekly leaderboards embed (ID: $($existingEmbed.id))" -Level Debug
             $script:WeeklyEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 MessageId = $existingEmbed.id
@@ -263,7 +259,7 @@ function Initialize-WeeklyEmbed {
         }
         
         # Create new weekly embed
-        Write-Log "Creating new weekly leaderboards embed..." -Level "Info"
+        Write-Log "Creating new weekly leaderboards embed..." -Level Debug
         $embed = New-WeeklyLeaderboardsEmbed
         
         if (-not $embed) {
@@ -287,7 +283,7 @@ function Initialize-WeeklyEmbed {
                 MessageId = $message.MessageId
                 LastUpdate = Get-Date
             }
-            Write-Log "Weekly leaderboards embed created: $($message.MessageId)" -Level "Info"
+            Write-Log "Weekly leaderboards embed created: $($message.MessageId)" -Level Debug
             Save-EmbedState  # Save state after creating new embed
             return $true
         }
@@ -311,7 +307,7 @@ function Initialize-AllTimeEmbed {
         $existingEmbed = Find-ExistingEmbed -Token $script:DiscordConfig.Token -ChannelId $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel -EmbedType "All-Time"
         
         if ($existingEmbed) {
-            Write-Log "Found existing all-time leaderboards embed (ID: $($existingEmbed.id))" -Level "Info"
+            Write-Log "Found existing all-time leaderboards embed (ID: $($existingEmbed.id))" -Level Debug
             $script:AllTimeEmbed = @{
                 ChannelId = $script:DiscordConfig.LiveEmbeds.LeaderboardsChannel
                 MessageId = $existingEmbed.id
@@ -321,7 +317,7 @@ function Initialize-AllTimeEmbed {
         }
         
         # Create new all-time embed
-        Write-Log "Creating new all-time leaderboards embed..." -Level "Info"
+        Write-Log "Creating new all-time leaderboards embed..." -Level Debug
         
         # Add small delay to avoid rate limiting
         Start-Sleep -Seconds 2
@@ -349,7 +345,7 @@ function Initialize-AllTimeEmbed {
                 MessageId = $message.MessageId
                 LastUpdate = Get-Date
             }
-            Write-Log "All-time leaderboards embed created: $($message.MessageId)" -Level "Info"
+            Write-Log "All-time leaderboards embed created: $($message.MessageId)" -Level Debug
             Save-EmbedState  # Save state after creating new embed
             return $true
         }
@@ -372,18 +368,18 @@ function Update-LeaderboardsEmbed {
     Use Update-LeaderboardsOnRestart for restart-based updates instead.
     #>
     
-    Write-Log "[Leaderboards] Time-based updates disabled - use Update-LeaderboardsOnRestart for restart-based updates" -Level Info
+    Write-Log "[Leaderboards] Time-based updates disabled - use Update-LeaderboardsOnRestart for restart-based updates" -Level Debug
     
     # Only create missing embeds if needed, but don't update based on time
     try {
         # Create missing embeds if needed
         if (-not $script:WeeklyEmbed -or -not $script:WeeklyEmbed.MessageId) {
-            Write-Log "Creating missing weekly leaderboard embed..." -Level "Info"
+            Write-Log "Creating missing weekly leaderboard embed..." -Level Debug
             Initialize-WeeklyEmbed
         }
         
         if (-not $script:AllTimeEmbed -or -not $script:AllTimeEmbed.MessageId) {
-            Write-Log "Creating missing all-time leaderboard embed..." -Level "Info"
+            Write-Log "Creating missing all-time leaderboard embed..." -Level Debug
             Initialize-AllTimeEmbed
         }
         
@@ -402,36 +398,36 @@ function Update-LeaderboardsOnRestart {
     #>
     
     try {
-        Write-Log "[Leaderboards] Updating leaderboards after server restart..." -Level Info
+        Write-Log "[Leaderboards] Updating leaderboards after server restart..." -Level Debug
         
         # Check for weekly reset first
         if (Test-WeeklyResetNeeded) {
-            Write-Log "Weekly reset needed - performing reset..." -Level "Info"
+            Write-Log "Weekly reset needed - performing reset..." -Level Debug
             Invoke-WeeklyReset
         }
         
         # Create missing embeds if needed
         if (-not $script:WeeklyEmbed -or -not $script:WeeklyEmbed.MessageId) {
-            Write-Log "Creating missing weekly leaderboard embed..." -Level "Info"
+            Write-Log "Creating missing weekly leaderboard embed..." -Level Debug
             Initialize-WeeklyEmbed
         }
         
         if (-not $script:AllTimeEmbed -or -not $script:AllTimeEmbed.MessageId) {
-            Write-Log "Creating missing all-time leaderboard embed..." -Level "Info"
+            Write-Log "Creating missing all-time leaderboard embed..." -Level Debug
             Initialize-AllTimeEmbed
         }
         
         # Force update both embeds (ignore time intervals)
-        Write-Log "[Leaderboards] Force updating weekly embed..." -Level Info
+        Write-Log "[Leaderboards] Force updating weekly embed..." -Level Debug
         Update-WeeklyEmbed
         
         # Small delay between updates to avoid Discord rate limiting
         Start-Sleep -Seconds 2
         
-        Write-Log "[Leaderboards] Force updating all-time embed..." -Level Info
+        Write-Log "[Leaderboards] Force updating all-time embed..." -Level Debug
         Update-AllTimeEmbed
         
-        Write-Log "[Leaderboards] Leaderboard update completed successfully" -Level Info
+        Write-Log "[Leaderboards] Leaderboard update completed successfully" -Level Debug
         
     } catch {
         Write-Log "Failed to update leaderboards embeds on restart: $($_.Exception.Message)" -Level Error
@@ -446,7 +442,7 @@ function Update-WeeklyEmbed {
     
     try {
         if (-not $script:WeeklyEmbed -or -not $script:WeeklyEmbed.MessageId) {
-            Write-Log "Weekly embed not initialized, creating new one..." -Level "Info"
+            Write-Log "Weekly embed not initialized, creating new one..." -Level Debug
             Initialize-WeeklyEmbed
             return
         }
@@ -468,7 +464,7 @@ function Update-WeeklyEmbed {
         
         if ($result -and $result.Success) {
             $script:LastWeeklyUpdate = Get-Date
-            Write-Log "Weekly leaderboards embed updated" -Level "Debug"
+            Write-Log "Weekly leaderboards embed updated" -Level Debug
         } else {
             # Message might not exist (404), try to create new one
             Write-Log "Creating new weekly embed (previous not found)" -Level Debug
@@ -501,7 +497,7 @@ function Update-AllTimeEmbed {
     
     try {
         if (-not $script:AllTimeEmbed -or -not $script:AllTimeEmbed.MessageId) {
-            Write-Log "All-time embed not initialized, creating new one..." -Level "Info"
+            Write-Log "All-time embed not initialized, creating new one..." -Level Debug
             Initialize-AllTimeEmbed
             return
         }
@@ -523,7 +519,7 @@ function Update-AllTimeEmbed {
         
         if ($result -and $result.Success) {
             $script:LastAllTimeUpdate = Get-Date
-            Write-Log "All-time leaderboards embed updated" -Level "Debug"
+            Write-Log "All-time leaderboards embed updated" -Level Debug
         } else {
             # Message might not exist (404), try to create new one
             Write-Log "Creating new all-time embed (previous not found)" -Level Debug
@@ -882,7 +878,7 @@ function Find-ExistingEmbed {
                     if ($message.embeds -and $message.embeds.Count -gt 0) {
                         foreach ($embed in $message.embeds) {
                             if ($embed.title -and $embed.title -match $EmbedType) {
-                                Write-Log "Found existing $EmbedType leaderboard embed: $($message.id)" -Level "Debug"
+                                Write-Log "Found existing $EmbedType leaderboard embed: $($message.id)" -Level Debug
                                 return @{
                                     id = $message.id
                                     embed = $embed
@@ -894,7 +890,7 @@ function Find-ExistingEmbed {
             }
         }
         
-        Write-Log "No existing $EmbedType leaderboard embed found" -Level "Debug"
+        Write-Log "No existing $EmbedType leaderboard embed found" -Level Debug
         return $null
         
     } catch {
@@ -946,7 +942,7 @@ function Test-WeeklyResetNeeded {
         
         return $lastReset -lt $lastMonday
     } catch {
-        Write-Log "Error checking weekly reset: $($_.Exception.Message)" -Level "Debug"
+        Write-Log "Error checking weekly reset: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -971,7 +967,7 @@ function Get-LastWeeklyReset {
             return $lastMonday
         }
     } catch {
-        Write-Log "Error getting last reset: $($_.Exception.Message)" -Level "Debug"
+        Write-Log "Error getting last reset: $($_.Exception.Message)" -Level Debug
         return (Get-Date).AddDays(-7) # Default to week ago
     }
 }

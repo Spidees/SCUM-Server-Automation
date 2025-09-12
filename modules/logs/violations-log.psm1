@@ -51,12 +51,12 @@ function Initialize-ViolationsLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing violations log management system..." -Level "Info"
+        Write-Log "Initializing violations log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, violations log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, violations log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-ViolationsLogModule {
             $script:Config = $Config.SCUMLogFeatures.ViolationsFeed
         }
         else {
-            Write-Log "Violations log relay not enabled in configuration" -Level "Info"
+            Write-Log "Violations log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Violations log relay not enabled in configuration" -Level "Info"
+            Write-Log "Violations log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize violations log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Violations log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Violations log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Violations log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Violations log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-ViolationsLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize violations log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize violations log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -127,7 +127,7 @@ function Update-ViolationsLogProcessing {
         
         foreach ($violation in $newViolations) {
             # Clean format: VIOLATION [Reason] SteamID: Action
-            Write-Log "VIOLATION [$($violation.Reason)] $($violation.SteamId): $($violation.Action)" -Level "Info"
+            Write-Log "VIOLATION [$($violation.Reason)] $($violation.SteamId): $($violation.Action)" -Level Debug
             Send-ViolationEventToDiscord -Event $violation
         }
         
@@ -135,7 +135,7 @@ function Update-ViolationsLogProcessing {
         Save-ViolationsState
         
     } catch {
-        Write-Log "Error during violations log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during violations log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -148,13 +148,13 @@ function Get-NewViolationsEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new violations log file" -Level "Debug"
+        Write-Log "Switched to new violations log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Violations log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Violations log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -193,7 +193,7 @@ function Get-NewViolationsEvents {
         return $newViolations
         
     } catch {
-        Write-Log "Error reading violations log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading violations log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -204,7 +204,7 @@ function Get-LatestViolationsLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "violations_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No violations log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No violations log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -213,7 +213,7 @@ function Get-LatestViolationsLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest violations log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest violations log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -233,7 +233,7 @@ function Save-ViolationsState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save violations log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save violations log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -248,14 +248,14 @@ function Load-ViolationsState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous violations log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous violations log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded violations log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded violations log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous violations log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous violations log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestViolationsLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -263,7 +263,7 @@ function Load-ViolationsState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -273,7 +273,7 @@ function Load-ViolationsState {
             }
         }
     } catch {
-        Write-Log "Failed to load violations log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load violations log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -303,7 +303,7 @@ function ConvertFrom-ViolationsLine {
                 $timestamp = [DateTime]::ParseExact($dateStr, "yyyy.MM.dd-HH.mm.ss", $null)
             } catch {
                 $timestamp = Get-Date
-                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level "Debug"
+                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level Debug
             }
             
             # Determine action based on reason
@@ -344,7 +344,7 @@ function ConvertFrom-ViolationsLine {
                 $timestamp = [DateTime]::ParseExact($dateStr, "yyyy.MM.dd-HH.mm.ss", $null)
             } catch {
                 $timestamp = Get-Date
-                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level "Debug"
+                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level Debug
             }
             
             return @{
@@ -381,7 +381,7 @@ function ConvertFrom-ViolationsLine {
                 $timestamp = [DateTime]::ParseExact($dateStr, "yyyy.MM.dd-HH.mm.ss", $null)
             } catch {
                 $timestamp = Get-Date
-                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level "Debug"
+                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level Debug
             }
             
             # Clean weapon name
@@ -429,7 +429,7 @@ function ConvertFrom-ViolationsLine {
                 $timestamp = [DateTime]::ParseExact($dateStr, "yyyy.MM.dd-HH.mm.ss", $null)
             } catch {
                 $timestamp = Get-Date
-                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level "Debug"
+                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level Debug
             }
             
             # Format distance
@@ -461,7 +461,7 @@ function ConvertFrom-ViolationsLine {
         return $null
         
     } catch {
-        Write-Log "Error parsing violations line: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error parsing violations line: $($_.Exception.Message)" -Level Error
         return $null
     }
 }    
@@ -474,38 +474,38 @@ function Send-ViolationEventToDiscord {
     try {
         # Validate event data
         if (-not $Event -or -not $Event.Action) {
-            Write-Log "Invalid violation event data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid violation event data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-ViolationsEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating violations embed for $($Event.PlayerName)" -Level "Debug"
+                Write-Log "Creating violations embed for $($Event.PlayerName)" -Level Debug
                 $embedData = Send-ViolationsEmbed -ViolationAction $Event
-                Write-Log "Violations embed data created successfully" -Level "Debug"
+                Write-Log "Violations embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending violations embed to Discord..." -Level "Debug"
+                    Write-Log "Sending violations embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Violation event embed sent successfully" -Level "Info"
+                        Write-Log "Violation event embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Violation event embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Violation event embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating violations embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating violations embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-ViolationsEmbed function not found" -Level "Warning"
+            Write-Log "Send-ViolationsEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-ViolationEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-ViolationEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

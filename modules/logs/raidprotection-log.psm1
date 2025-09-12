@@ -61,12 +61,12 @@ function Initialize-RaidProtectionLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing raid protection log management system..." -Level "Info"
+        Write-Log "Initializing raid protection log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, raid protection log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, raid protection log relay disabled" -Level Debug
             return $false
         }
         
@@ -75,39 +75,39 @@ function Initialize-RaidProtectionLogModule {
             $script:Config = $Config.SCUMLogFeatures.RaidProtectionFeed
         }
         else {
-            Write-Log "Raid protection log relay not enabled in configuration" -Level "Info"
+            Write-Log "Raid protection log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Raid protection log relay not enabled in configuration" -Level "Info"
+            Write-Log "Raid protection log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize raid protection log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Raid protection log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Raid protection log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Raid protection log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Raid protection log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
         # Initialize database paths
         if ($Config.dataDir) {
             $script:ServerDbPath = Join-Path $Config.dataDir "server_database.db"
-            Write-Log "Server database path: $script:ServerDbPath" -Level "Debug"
+            Write-Log "Server database path: $script:ServerDbPath" -Level Debug
         }
         
         if ($Config.rootDir) {
             $script:SqlitePath = Join-Path $Config.rootDir "sqlite-tools\sqlite3.exe"
-            Write-Log "SQLite executable path: $script:SqlitePath" -Level "Debug"
+            Write-Log "SQLite executable path: $script:SqlitePath" -Level Debug
         }
         
         # Initialize state persistence
@@ -126,7 +126,7 @@ function Initialize-RaidProtectionLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize raid protection log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize raid protection log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -148,7 +148,7 @@ function Update-RaidProtectionLogProcessing {
         
         foreach ($raidEvent in $newEvents) {
             # Clean format: RAID [EventType] Flag: Action
-            Write-Log "RAID [$($raidEvent.EventType)] Flag $($raidEvent.FlagId): $($raidEvent.Action)" -Level "Info"
+            Write-Log "RAID [$($raidEvent.EventType)] Flag $($raidEvent.FlagId): $($raidEvent.Action)" -Level Debug
             
             # Save to database
             Save-RaidProtectionEventToDatabase -RaidEvent $raidEvent
@@ -161,7 +161,7 @@ function Update-RaidProtectionLogProcessing {
         Save-RaidProtectionState
         
     } catch {
-        Write-Log "Error during raid protection log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during raid protection log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -174,13 +174,13 @@ function Get-NewRaidProtectionEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new raid protection log file" -Level "Debug"
+        Write-Log "Switched to new raid protection log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Raid protection log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Raid protection log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -219,7 +219,7 @@ function Get-NewRaidProtectionEvents {
         return $newEvents
         
     } catch {
-        Write-Log "Error reading raid protection log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading raid protection log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -230,7 +230,7 @@ function Get-LatestRaidProtectionLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "raid_protection_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No raid protection log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No raid protection log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -239,7 +239,7 @@ function Get-LatestRaidProtectionLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest raid protection log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest raid protection log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -259,7 +259,7 @@ function Save-RaidProtectionState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save raid protection log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save raid protection log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -274,14 +274,14 @@ function Load-RaidProtectionState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous raid protection log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous raid protection log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded raid protection log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded raid protection log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous raid protection log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous raid protection log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestRaidProtectionLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -289,7 +289,7 @@ function Load-RaidProtectionState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -299,7 +299,7 @@ function Load-RaidProtectionState {
             }
         }
     } catch {
-        Write-Log "Failed to load raid protection log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load raid protection log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -327,7 +327,7 @@ function ConvertFrom-RaidProtectionLine {
                 $timestamp = [DateTime]::ParseExact($dateStr, "yyyy.MM.dd-HH.mm.ss", $null)
             } catch {
                 $timestamp = Get-Date
-                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level "Debug"
+                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level Debug
             }
             
             # Parse different event types with enhanced patterns
@@ -415,7 +415,7 @@ function ConvertFrom-RaidProtectionLine {
         return $null
         
     } catch {
-        Write-Log "Error parsing raid protection line: $($_.Exception.Message)" -Level "Debug"
+        Write-Log "Error parsing raid protection line: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -431,18 +431,18 @@ function Save-RaidProtectionEventToDatabase {
     try {
         # Check if database is available
         if (-not $script:ServerDbPath -or -not (Test-Path $script:ServerDbPath)) {
-            Write-Log "Server database not available for raid protection events" -Level "Debug"
+            Write-Log "Server database not available for raid protection events" -Level Debug
             return
         }
         
         if (-not $script:SqlitePath -or -not (Test-Path $script:SqlitePath)) {
-            Write-Log "SQLite executable not available for raid protection events" -Level "Debug"
+            Write-Log "SQLite executable not available for raid protection events" -Level Debug
             return
         }
         
         # Validate event data
         if (-not $RaidEvent -or -not $RaidEvent.FlagId) {
-            Write-Log "Invalid raid protection event data for database save" -Level "Debug"
+            Write-Log "Invalid raid protection event data for database save" -Level Debug
             return
         }
         
@@ -530,14 +530,14 @@ WHERE changes() = 0;
         try {
             $result = & $script:SqlitePath $script:ServerDbPath ".read $tempSqlFile" 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Log "Raid protection event saved to database: Flag $($RaidEvent.FlagId) $($RaidEvent.EventType)" -Level "Debug"
+                Write-Log "Raid protection event saved to database: Flag $($RaidEvent.FlagId) $($RaidEvent.EventType)" -Level Debug
                 
                 # Update flag_id in a_user_profile for the user who logged in (if applicable)
                 if ($RaidEvent.UserId -and $RaidEvent.FlagId) {
                     Update-UserProfileFlagId -UserId $RaidEvent.UserId -FlagId $RaidEvent.FlagId
                 }
             } else {
-                Write-Log "Failed to save raid protection event to database (exit code: $LASTEXITCODE): $result" -Level "Warning"
+                Write-Log "Failed to save raid protection event to database (exit code: $LASTEXITCODE): $result" -Level Warning
             }
         } finally {
             # Clean up temp file
@@ -547,7 +547,7 @@ WHERE changes() = 0;
         }
         
     } catch {
-        Write-Log "Error saving raid protection event to database: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error saving raid protection event to database: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -559,7 +559,7 @@ function Update-UserProfileFlagId {
     
     try {
         if (-not $UserId -or -not $FlagId) {
-            Write-Log "Invalid parameters for flag_id update: UserId='$UserId', FlagId='$FlagId'" -Level "Debug"
+            Write-Log "Invalid parameters for flag_id update: UserId='$UserId', FlagId='$FlagId'" -Level Debug
             return
         }
         
@@ -578,9 +578,9 @@ WHERE user_id = '$UserId';
         try {
             $userResult = & $script:SqlitePath $script:ServerDbPath ".read $tempUserSqlFile" 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Log "Updated flag_id=$FlagId for user_id=$UserId in a_user_profile" -Level "Debug"
+                Write-Log "Updated flag_id=$FlagId for user_id=$UserId in a_user_profile" -Level Debug
             } else {
-                Write-Log "Failed to update flag_id for user (exit code: $LASTEXITCODE): $userResult" -Level "Warning"
+                Write-Log "Failed to update flag_id for user (exit code: $LASTEXITCODE): $userResult" -Level Warning
             }
         } finally {
             # Clean up temp file
@@ -590,7 +590,7 @@ WHERE user_id = '$UserId';
         }
         
     } catch {
-        Write-Log "Error updating flag_id in user profile: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error updating flag_id in user profile: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -603,38 +603,38 @@ function Send-RaidProtectionEventToDiscord {
     try {
         # Validate event data
         if (-not $Event -or -not $Event.Action) {
-            Write-Log "Invalid raid protection event data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid raid protection event data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-RaidProtectionEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating raid protection embed for Flag ID $($Event.FlagId)" -Level "Debug"
+                Write-Log "Creating raid protection embed for Flag ID $($Event.FlagId)" -Level Debug
                 $embedData = Send-RaidProtectionEmbed -RaidProtectionAction $Event
-                Write-Log "Raid protection embed data created successfully" -Level "Debug"
+                Write-Log "Raid protection embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending raid protection embed to Discord..." -Level "Debug"
+                    Write-Log "Sending raid protection embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Raid protection event embed sent successfully" -Level "Info"
+                        Write-Log "Raid protection event embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Raid protection event embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Raid protection event embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating raid protection embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating raid protection embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-RaidProtectionEmbed function not found" -Level "Warning"
+            Write-Log "Send-RaidProtectionEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-RaidProtectionEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-RaidProtectionEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

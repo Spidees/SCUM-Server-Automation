@@ -43,7 +43,7 @@ function Initialize-EmbedPersistence {
         $stateDir = Split-Path $StateFilePath -Parent
         if (-not (Test-Path $stateDir)) {
             New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-            Write-Log "[EmbedPersistence] Created state directory: $stateDir" -Level "Info"
+            Write-Log "[EmbedPersistence] Created state directory: $stateDir" -Level Debug
         }
         
         # Load existing state
@@ -53,17 +53,17 @@ function Initialize-EmbedPersistence {
             $stateContent.psobject.properties | ForEach-Object {
                 $script:EmbedState[$_.Name] = $_.Value
             }
-            Write-Log "[EmbedPersistence] Loaded embed state: $($script:EmbedState.Keys -join ', ')" -Level "Info"
+            Write-Log "[EmbedPersistence] Loaded embed state: $($script:EmbedState.Keys -join ', ')" -Level Debug
         } else {
             $script:EmbedState = @{}
-            Write-Log "[EmbedPersistence] No existing state found, starting fresh" -Level "Info"
+            Write-Log "[EmbedPersistence] No existing state found, starting fresh" -Level Debug
         }
         
-        Write-Log "[EmbedPersistence] Persistence system initialized" -Level "Info"
+        Write-Log "[EmbedPersistence] Persistence system initialized" -Level Debug
         return $true
         
     } catch {
-        Write-Log "[EmbedPersistence] Failed to initialize: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[EmbedPersistence] Failed to initialize: $($_.Exception.Message)" -Level Error
         return $false
     }
 }
@@ -90,7 +90,7 @@ function Get-EmbedMessageId {
     
     if ($script:EmbedState.ContainsKey($key)) {
         $embedInfo = $script:EmbedState[$key]
-        Write-Log "[EmbedPersistence] Found stored message ID for $key`: $($embedInfo.MessageId)" -Level "Debug"
+        Write-Log "[EmbedPersistence] Found stored message ID for $key`: $($embedInfo.MessageId)" -Level Debug
         return @{
             MessageId = $embedInfo.MessageId
             ChannelId = $embedInfo.ChannelId
@@ -99,7 +99,7 @@ function Get-EmbedMessageId {
         }
     }
     
-    Write-Log "[EmbedPersistence] No stored message ID for $key" -Level "Debug"
+    Write-Log "[EmbedPersistence] No stored message ID for $key" -Level Debug
     return $null
 }
 
@@ -130,7 +130,7 @@ function Set-EmbedMessageId {
     }
     
     Save-EmbedState
-    Write-Log "[EmbedPersistence] Stored message ID for $key`: $MessageId" -Level "Info"
+    Write-Log "[EmbedPersistence] Stored message ID for $key`: $MessageId" -Level Debug
 }
 
 function Remove-EmbedMessageId {
@@ -151,7 +151,7 @@ function Remove-EmbedMessageId {
     if ($script:EmbedState.ContainsKey($key)) {
         $script:EmbedState.Remove($key)
         Save-EmbedState
-        Write-Log "[EmbedPersistence] Removed stored message ID for $key" -Level "Info"
+        Write-Log "[EmbedPersistence] Removed stored message ID for $key" -Level Debug
     }
 }
 
@@ -170,7 +170,7 @@ function Clear-EmbedState {
     #>
     $script:EmbedState = @{}
     Save-EmbedState
-    Write-Log "[EmbedPersistence] Cleared all embed states" -Level "Info"
+    Write-Log "[EmbedPersistence] Cleared all embed states" -Level Debug
 }
 
 # ===============================================================
@@ -184,17 +184,17 @@ function Save-EmbedState {
     #>
     try {
         if (-not $script:PersistenceFile) {
-            Write-Log "[EmbedPersistence] Persistence not initialized" -Level "Warning"
+            Write-Log "[EmbedPersistence] Persistence not initialized" -Level Warning
             return
         }
         
         $stateJson = $script:EmbedState | ConvertTo-Json -Depth 10 -Compress
         Set-Content -Path $script:PersistenceFile -Value $stateJson -Encoding UTF8
         
-        Write-Log "[EmbedPersistence] State saved to: $script:PersistenceFile" -Level "Debug"
+        Write-Log "[EmbedPersistence] State saved to: $script:PersistenceFile" -Level Debug
         
     } catch {
-        Write-Log "[EmbedPersistence] Failed to save state: $($_.Exception.Message)" -Level "Error"
+        Write-Log "[EmbedPersistence] Failed to save state: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -223,16 +223,16 @@ function Test-EmbedMessageExists {
             $response = Invoke-NodeJsApiRequest -Endpoint "/api/search-messages" -Method "POST" -Body $body
             
             if ($response.Success -and $response.Data.success -and $response.Data.messages -and $response.Data.messages.Count -gt 0) {
-                Write-Log "[EmbedPersistence] Message $MessageId exists in channel $ChannelId" -Level "Debug"
+                Write-Log "[EmbedPersistence] Message $MessageId exists in channel $ChannelId" -Level Debug
                 return $true
             }
         }
         
-        Write-Log "[EmbedPersistence] Message $MessageId not found in channel $ChannelId" -Level "Debug"
+        Write-Log "[EmbedPersistence] Message $MessageId not found in channel $ChannelId" -Level Debug
         return $false
         
     } catch {
-        Write-Log "[EmbedPersistence] Failed to check message existence: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "[EmbedPersistence] Failed to check message existence: $($_.Exception.Message)" -Level Warning
         return $false
     }
 }

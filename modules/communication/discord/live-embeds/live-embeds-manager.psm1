@@ -113,7 +113,7 @@ function Initialize-MultipleLeaderboardsEmbeds {
     )
     
     try {
-        Write-Log "Initializing multiple leaderboard embeds..." -Level Info
+        Write-Log "Initializing multiple leaderboard embeds..." -Level Debug
         
         # Define leaderboard categories and their corresponding functions
         $categories = @{
@@ -156,7 +156,7 @@ function Initialize-MultipleLeaderboardsEmbeds {
                         LastUpdate = Get-Date
                         Function = $functionName
                     }
-                    Write-Log "Found existing $category leaderboard embed (ID: $($existingEmbed.id))" -Level Info
+                    Write-Log "Found existing $category leaderboard embed (ID: $($existingEmbed.id))" -Level Debug
                     $successCount++
                 } else {
                     # Create new embed with current data
@@ -175,7 +175,7 @@ function Initialize-MultipleLeaderboardsEmbeds {
                             LastUpdate = Get-Date
                             Function = $functionName
                         }
-                        Write-Log "Created $category leaderboard embed (ID: $($message.MessageId))" -Level Info
+                        Write-Log "Created $category leaderboard embed (ID: $($message.MessageId))" -Level Debug
                         $successCount++
                     } else {
                         Write-Log "Failed to send $category leaderboard embed to Discord" -Level Error
@@ -190,7 +190,7 @@ function Initialize-MultipleLeaderboardsEmbeds {
             }
         }
         
-        Write-Log "Successfully initialized $successCount leaderboard embeds" -Level Info
+        Write-Log "Successfully initialized $successCount leaderboard embeds" -Level Debug
         return ($successCount -gt 0)
         
     } catch {

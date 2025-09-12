@@ -48,7 +48,7 @@ function Initialize-SchedulingModule {
     )
     
     $script:SchedulingConfig = $Config
-    Write-Log "[Scheduling] Module initialized"
+    Write-Log "[Scheduling] Module initialized" -Level Debug
 }
 
 function Initialize-RestartWarningSystem {
@@ -97,9 +97,9 @@ function Initialize-RestartWarningSystem {
             $nextRestartTime = [DateTime]::ParseExact("$($tomorrow.ToString('yyyy-MM-dd')) $($sortedTimes[0])", "yyyy-MM-dd HH:mm", $null)
         }
         
-        Write-Log "[Scheduling] Next restart will be skipped, actual next restart: $($nextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        Write-Log "[Scheduling] Next restart will be skipped, actual next restart: $($nextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Debug
     } else {
-        Write-Log "[Scheduling] Next scheduled restart: $($nextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        Write-Log "[Scheduling] Next scheduled restart: $($nextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Debug
     }
     
     $initialState = @{
@@ -144,17 +144,19 @@ function Update-RestartWarnings {
             $CurrentTime -lt $warnTime.AddSeconds(30)) {
             
             $timeStr = $WarningState.NextRestartTime.ToString('HH:mm')
+            Write-Log "[Scheduling] Restart warning: $($def.key) for restart at $timeStr" -Level Debug
             
-            # Send Discord notification if available
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                try {
-                    Send-DiscordNotification -Type $def.key -Data @{ time = $timeStr }
-                    Write-Log "[Scheduling] Sent restart warning: $($def.key) for restart at $timeStr"
-                } catch {
-                    Write-Log "[Scheduling] Failed to send restart warning: $($_.Exception.Message)" -Level Warning
-                }
-            } else {
-                Write-Log "[Scheduling] Restart warning would be sent: $($def.key) for restart at $timeStr"
+            # Send restart warning notification via API
+            try {
+                $apiUrl = "http://localhost:3001/api/server/notification"
+                $body = @{
+                    type = $def.key
+                    data = @{ time = $timeStr }
+                } | ConvertTo-Json -Depth 2
+                
+                $null = Invoke-RestMethod -Uri $apiUrl -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5 -ErrorAction SilentlyContinue
+            } catch {
+                Write-Log "[Scheduling] Error sending restart warning notification: $($_.Exception.Message)" -Level Warning
             }
             
             $WarningState.WarningSent[$def.key] = $true
@@ -231,17 +233,23 @@ function Invoke-ScheduledRestart {
     $restartDue = Test-ScheduledRestartDue -WarningState $WarningState
     
     if ($shouldSkip -and $restartDue) {
-        Write-Log "[Scheduling] Skipping scheduled restart as requested (parameter: $SkipRestart, flag: $script:SkipNextRestart)"
+        Write-Log "[Scheduling] Skipping scheduled restart as requested (parameter: $SkipRestart, flag: $script:SkipNextRestart)" -Level Debug
         
-        # Send Discord notification about skipped restart
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            try {
-                $null = Send-DiscordNotification -Type "server.scheduledRestart" -Data @{ 
+        # Send notification about skipped restart via API
+        Write-Log "[Scheduling] Scheduled restart at $($WarningState.NextRestartTime.ToString('HH:mm:ss')) was skipped as requested" -Level Debug
+        
+        try {
+            $apiUrl = "http://localhost:3001/api/server/notification"
+            $body = @{
+                type = "server.scheduledRestart"
+                data = @{ 
                     event = ":fast_forward: Scheduled restart at $($WarningState.NextRestartTime.ToString('HH:mm:ss')) was skipped as requested" 
                 }
-            } catch {
-                Write-Log "[Scheduling] Failed to send skip notification: $($_.Exception.Message)" -Level Warning
-            }
+            } | ConvertTo-Json -Depth 2
+            
+            $null = Invoke-RestMethod -Uri $apiUrl -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5 -ErrorAction SilentlyContinue
+        } catch {
+            Write-Log "[Scheduling] Error sending skip notification: $($_.Exception.Message)" -Level Warning
         }
         
         # Note: In-game notification was already sent immediately when skip was requested
@@ -257,7 +265,7 @@ function Invoke-ScheduledRestart {
         
         # Clear warnings for the new restart time
         $WarningState.WarningsSent = @{}
-        Write-Log "[Scheduling] Next scheduled restart: $($WarningState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        Write-Log "[Scheduling] Next scheduled restart: $($WarningState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Debug
         
         # Clear the skip flag ONLY after successfully processing the skip
         Clear-RestartSkip
@@ -267,14 +275,19 @@ function Invoke-ScheduledRestart {
         Write-Output $WarningState -NoEnumerate
         return
     } elseif ($restartDue) {
-        Write-Log "[Scheduling] Executing scheduled restart"
+        Write-Log "[Scheduling] Executing scheduled restart" -Level Debug
         
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            try {
-                Send-DiscordNotification -Type "server.scheduledRestart" -Data @{ time = $WarningState.NextRestartTime.ToString('HH:mm:ss') }
-            } catch {
-                Write-Log "[Scheduling] Failed to send restart notification: $($_.Exception.Message)" -Level Warning
-            }
+        # Send scheduled restart notification via API
+        try {
+            $apiUrl = "http://localhost:3001/api/server/notification"
+            $body = @{
+                type = "server.scheduledRestart"
+                data = @{ time = $WarningState.NextRestartTime.ToString('HH:mm:ss') }
+            } | ConvertTo-Json -Depth 2
+            
+            $null = Invoke-RestMethod -Uri $apiUrl -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5 -ErrorAction SilentlyContinue
+        } catch {
+            Write-Log "[Scheduling] Error sending restart notification: $($_.Exception.Message)" -Level Warning
         }
         
         # Create backup before restart (if enabled)
@@ -289,14 +302,14 @@ function Invoke-ScheduledRestart {
                 $compressBackups = Get-SafeConfigValue $script:SchedulingConfig "compressBackups" $true
                 
                 if ($savedDir -and $backupRoot -and (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue)) {
-                    Write-Log "[Scheduling] Creating backup: $savedDir -> $backupRoot" -Level Info
+                    Write-Log "[Scheduling] Creating backup: $savedDir -> $backupRoot" -Level Debug
                     $null = Invoke-GameBackup -SourcePath $savedDir -BackupRoot $backupRoot -MaxBackups $maxBackups -CompressBackups $compressBackups
-                    Write-Log "[Scheduling] Pre-restart backup completed"
+                    Write-Log "[Scheduling] Pre-restart backup completed" -Level Debug
                 } else {
                     Write-Log "[Scheduling] Backup skipped - savedDir: '$savedDir', backupRoot: '$backupRoot', function available: $(if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) { 'Yes' } else { 'No' })" -Level Warning
                 }
             } else {
-                Write-Log "[Scheduling] Pre-restart backup disabled by configuration" -Level Info
+                Write-Log "[Scheduling] Pre-restart backup disabled by configuration" -Level Debug
             }
         } catch {
             Write-Log "[Scheduling] Backup failed: $($_.Exception.Message)" -Level Warning
@@ -306,7 +319,7 @@ function Invoke-ScheduledRestart {
         try {
             if (Get-Command "Restart-GameService" -ErrorAction SilentlyContinue) {
                 $null = Restart-GameService -ServiceName $ServiceName -Reason "scheduled restart"
-                Write-Log "[Scheduling] Service restart command executed"
+                Write-Log "[Scheduling] Service restart command executed" -Level Debug
             } else {
                 Write-Log "[Scheduling] Restart-GameService function not available" -Level Warning
             }
@@ -327,7 +340,7 @@ function Invoke-ScheduledRestart {
             $WarningState.WarningSent[$def.key] = $false 
         }
         
-        Write-Log "[Scheduling] Next scheduled restart: $($WarningState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
+        Write-Log "[Scheduling] Next scheduled restart: $($WarningState.NextRestartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Debug
     } else {
         # Restart not due yet - just return current state
         Write-Log "[Scheduling] Restart not due yet, returning current state" -Level Debug
@@ -364,11 +377,11 @@ function Set-RestartSkip {
     try {
         Set-Content -Path $script:SkipFlagFile -Value "true" -Force
     } catch {
-        Write-Log "Failed to save skip flag to file: $($_.Exception.Message)" -Level Warning
+        Write-Log "[Scheduling] Failed to save skip flag to file: $($_.Exception.Message)" -Level Warning
     }
     
     # Log the skip action
-    Write-Log "[Scheduling] Next scheduled restart will be skipped" -Level Info
+    Write-Log "[Scheduling] Next scheduled restart will be skipped" -Level Debug
     
     return $true
 }
@@ -388,11 +401,11 @@ function Clear-RestartSkip {
             Remove-Item -Path $script:SkipFlagFile -Force
         }
     } catch {
-        Write-Log "Failed to remove skip flag file: $($_.Exception.Message)" -Level Warning
+        Write-Log "[Scheduling] Failed to remove skip flag file: $($_.Exception.Message)" -Level Warning
     }
     
     # Log the clear action
-    Write-Log "[Scheduling] Restart skip flag cleared" -Level Info
+    Write-Log "[Scheduling] Restart skip flag cleared" -Level Debug
     
     return $true
 }
@@ -416,7 +429,7 @@ function Get-RestartSkipStatus {
             $script:SkipNextRestart = $false
         }
     } catch {
-        Write-Log "Failed to read skip flag file: $($_.Exception.Message)" -Level Debug
+        Write-Log "[Scheduling] Failed to read skip flag file: $($_.Exception.Message)" -Level Debug
     }
     
     return $script:SkipNextRestart
@@ -435,7 +448,7 @@ function Set-RestartWarningDefinitions {
     )
     
     $script:RestartWarningDefs = $Definitions
-    Write-Log "[Scheduling] Updated restart warning definitions: $($Definitions.Count) warnings configured"
+    Write-Log "[Scheduling] Updated restart warning definitions: $($Definitions.Count) warnings configured" -Level Debug
 }
 
 function Get-SchedulingStats {
@@ -492,7 +505,7 @@ function Invoke-ManualRestart {
         [object]$Config = $null
     )
     
-    Write-Log "[Scheduling] Executing manual restart for service: $ServiceName"
+    Write-Log "[Scheduling] Executing manual restart for service: $ServiceName" -Level Debug
     
     # Use provided config or script config
     $configToUse = if ($Config) { $Config } else { $script:SchedulingConfig }
@@ -501,7 +514,7 @@ function Invoke-ManualRestart {
     try {
         # Check if config is available
         if (-not $configToUse) {
-            Write-Log "[Scheduling] Pre-restart backup disabled (config not available)" -Level Info
+            Write-Log "[Scheduling] Pre-restart backup disabled (config not available)" -Level Debug
         } else {
             $preRestartBackupEnabled = Get-SafeConfigValue $configToUse "preRestartBackupEnabled" $false
             
@@ -513,14 +526,14 @@ function Invoke-ManualRestart {
                 $compressBackups = Get-SafeConfigValue $configToUse "compressBackups" $true
                 
                 if ($savedDir -and $backupRoot -and (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue)) {
-                    Write-Log "[Scheduling] Creating backup: $savedDir -> $backupRoot" -Level Info
+                    Write-Log "[Scheduling] Creating backup: $savedDir -> $backupRoot" -Level Debug
                     $null = Invoke-GameBackup -SourcePath $savedDir -BackupRoot $backupRoot -MaxBackups $maxBackups -CompressBackups $compressBackups
-                    Write-Log "[Scheduling] Pre-restart backup completed"
+                    Write-Log "[Scheduling] Pre-restart backup completed" -Level Debug
                 } else {
                     Write-Log "[Scheduling] Backup skipped - savedDir: '$savedDir', backupRoot: '$backupRoot', function available: $(if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) { 'Yes' } else { 'No' })" -Level Warning
                 }
             } else {
-                Write-Log "[Scheduling] Pre-restart backup disabled by configuration" -Level Info
+                Write-Log "[Scheduling] Pre-restart backup disabled by configuration" -Level Debug
             }
         }
     } catch {
@@ -531,7 +544,7 @@ function Invoke-ManualRestart {
     try {
         if (Get-Command "Restart-GameService" -ErrorAction SilentlyContinue) {
             $null = Restart-GameService -ServiceName $ServiceName -Reason "manual restart"
-            Write-Log "[Scheduling] Service restart command executed"
+            Write-Log "[Scheduling] Service restart command executed" -Level Debug
         } else {
             Write-Log "[Scheduling] Restart-GameService function not available" -Level Warning
         }

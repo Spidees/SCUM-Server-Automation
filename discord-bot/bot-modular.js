@@ -8,6 +8,9 @@ const { initializeDatabase, closeDatabases } = require('./src/utils/database');
 const { writeLog } = require('./src/utils/utils');
 const { handleSlashCommand } = require('./src/handlers/commandHandler');
 const { handleButtonInteraction } = require('./src/handlers/buttonHandler');
+const activityManager = require('./src/utils/activityManager');
+const chatManager = require('./src/utils/chatManager');
+const notificationHandler = require('./src/utils/notificationHandler');
 
 // Import API routes
 const apiRoutes = require('./src/api/routes');
@@ -40,16 +43,23 @@ const { db, leaderboardsDb } = initializeDatabase();
 // Discord client event handlers
 client.once('clientReady', async () => {
     console.log(`✅ Discord bot logged in as ${client.user.tag}`);
-    writeLog(`Discord bot started as ${client.user.tag}`, 'Info');
+    writeLog(`Discord bot started as ${client.user.tag}`, 'Debug');
     
-    // Set bot activity
-    client.user.setActivity('SCUM Server', { type: ActivityType.Watching });
+    // Initialize activity manager
+    activityManager.initialize(client);
+    
+    // Initialize chat manager
+    chatManager.initialize(client);
+    
+    // Initialize notification handler
+    notificationHandler.initialize(client);
     
     // Make client available globally for API routes
     global.discordClient = client;
     
-    // Register slash commands
-    await registerSlashCommands();
+    // Skip automatic slash command registration to test command listing
+    console.log('⏭️ Skipping automatic slash command registration');
+    writeLog('Bot started without automatic slash command registration', 'Debug');
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -78,150 +88,236 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// Define commands array (shared between registration and refresh)
+const slashCommands = [
+    // Server management commands
+    {
+        name: 'server-info',
+        description: 'Get server information and statistics'
+    },
+    {
+        name: 'server-status',
+        description: 'Check current server status'
+    },
+    {
+        name: 'server-restart',
+        description: 'Restart the server (Admin only)',
+        options: [
+            {
+                name: 'action',
+                description: 'Action to perform',
+                type: 3, // STRING
+                required: false,
+                choices: [
+                    { name: 'Restart Now', value: 'now' },
+                    { name: 'Cancel Scheduled Restart', value: 'cancel' },
+                    { name: 'Skip Next Restart', value: 'skip' }
+                ]
+            },
+            {
+                name: 'minutes',
+                description: 'Delay in minutes (only for restart)',
+                type: 4, // INTEGER
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'server-stop',
+        description: 'Stop the server (Admin only)',
+        options: [
+            {
+                name: 'action',
+                description: 'Action to perform',
+                type: 3, // STRING
+                required: false,
+                choices: [
+                    { name: 'Stop Now', value: 'now' },
+                    { name: 'Cancel Scheduled Stop', value: 'cancel' }
+                ]
+            },
+            {
+                name: 'minutes',
+                description: 'Delay in minutes (only for stop)',
+                type: 4, // INTEGER
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'server-start',
+        description: 'Start the server (Admin only)'
+    },
+    {
+        name: 'server-update',
+        description: 'Update the server (Admin only)',
+        options: [
+            {
+                name: 'action',
+                description: 'Action to perform',
+                type: 3, // STRING
+                required: false,
+                choices: [
+                    { name: 'Update Now', value: 'now' },
+                    { name: 'Cancel Scheduled Update', value: 'cancel' }
+                ]
+            },
+            {
+                name: 'minutes',
+                description: 'Delay in minutes (only for update)',
+                type: 4, // INTEGER
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'server-validate',
+        description: 'Validate server files (Admin only)'
+    },
+    {
+        name: 'server-backup',
+        description: 'Create server backup (Admin only)'
+    },
+    {
+        name: 'server-cancel',
+        description: 'Cancel scheduled operations (Admin only)'
+    },
+    {
+        name: 'bot-status',
+        description: 'Get bot status information (Admin only)'
+    },
+    // Player commands
+    {
+        name: 'player-search',
+        description: 'Search for players (Admin only)',
+        options: [
+            {
+                name: 'steamid',
+                description: 'Steam ID to search for',
+                type: 3, // STRING
+                required: false
+            },
+            {
+                name: 'name',
+                description: 'Player name to search for',
+                type: 3, // STRING
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'player-online',
+        description: 'List online players (Admin only)'
+    },
+    // Account linking commands
+    {
+        name: 'link-account',
+        description: 'Link your Discord account to your SCUM character'
+    },
+    {
+        name: 'unlink-account',
+        description: 'Unlink your Discord account from your SCUM character'
+    }
+];
+
 // Register slash commands
 async function registerSlashCommands() {
-    const commands = [
-        // Server management commands
-        {
-            name: 'server-info',
-            description: 'Get server information and statistics'
-        },
-        {
-            name: 'server-status',
-            description: 'Check current server status'
-        },
-        {
-            name: 'server-restart',
-            description: 'Restart the server (Admin only)',
-            options: [
-                {
-                    name: 'action',
-                    description: 'Action to perform',
-                    type: 3, // STRING
-                    required: false,
-                    choices: [
-                        { name: 'Restart Now', value: 'now' },
-                        { name: 'Cancel Scheduled Restart', value: 'cancel' },
-                        { name: 'Skip Next Restart', value: 'skip' }
-                    ]
-                },
-                {
-                    name: 'minutes',
-                    description: 'Delay in minutes (only for restart)',
-                    type: 4, // INTEGER
-                    required: false
-                }
-            ]
-        },
-        {
-            name: 'server-stop',
-            description: 'Stop the server (Admin only)',
-            options: [
-                {
-                    name: 'action',
-                    description: 'Action to perform',
-                    type: 3, // STRING
-                    required: false,
-                    choices: [
-                        { name: 'Stop Now', value: 'now' },
-                        { name: 'Cancel Scheduled Stop', value: 'cancel' }
-                    ]
-                },
-                {
-                    name: 'minutes',
-                    description: 'Delay in minutes (only for stop)',
-                    type: 4, // INTEGER
-                    required: false
-                }
-            ]
-        },
-        {
-            name: 'server-start',
-            description: 'Start the server (Admin only)'
-        },
-        {
-            name: 'server-update',
-            description: 'Update the server (Admin only)',
-            options: [
-                {
-                    name: 'action',
-                    description: 'Action to perform',
-                    type: 3, // STRING
-                    required: false,
-                    choices: [
-                        { name: 'Update Now', value: 'now' },
-                        { name: 'Cancel Scheduled Update', value: 'cancel' }
-                    ]
-                },
-                {
-                    name: 'minutes',
-                    description: 'Delay in minutes (only for update)',
-                    type: 4, // INTEGER
-                    required: false
-                }
-            ]
-        },
-        {
-            name: 'server-validate',
-            description: 'Validate server files (Admin only)'
-        },
-        {
-            name: 'server-backup',
-            description: 'Create server backup (Admin only)'
-        },
-        {
-            name: 'server-cancel',
-            description: 'Cancel scheduled operations (Admin only)'
-        },
-        {
-            name: 'bot-status',
-            description: 'Get bot status information (Admin only)'
-        },
-        // Player commands
-        {
-            name: 'player-search',
-            description: 'Search for players (Admin only)',
-            options: [
-                {
-                    name: 'steamid',
-                    description: 'Steam ID to search for',
-                    type: 3, // STRING
-                    required: false
-                },
-                {
-                    name: 'name',
-                    description: 'Player name to search for',
-                    type: 3, // STRING
-                    required: false
-                }
-            ]
-        },
-        {
-            name: 'player-online',
-            description: 'List online players (Admin only)'
-        },
-        // Account linking commands
-        {
-            name: 'link-account',
-            description: 'Link your Discord account to your SCUM character'
-        }
-    ];
-
-    const rest = new REST({ version: '10' }).setToken(CONFIG.token);
+    const commands = slashCommands;
 
     try {
-        console.log('🔄 Registering slash commands...');
+        console.log('🔄 Clearing old slash commands...');
         
-        await rest.put(
-            Routes.applicationGuildCommands(client.user.id, CONFIG.guildId),
-            { body: commands }
-        );
+        // Use the client's application commands manager instead of REST API
+        try {
+            // Clear existing guild commands
+            await client.application.commands.set([], CONFIG.guildId);
+            console.log('✅ Old guild commands cleared');
+        } catch (clearError) {
+            console.error('❌ Failed to clear guild commands:', clearError.message);
+            writeLog(`Failed to clear guild commands: ${clearError.message}`, 'Error');
+        }
         
-        console.log('✅ Successfully registered slash commands');
-        writeLog('Slash commands registered successfully', 'Info');
+        console.log('🔄 Registering new slash commands...');
+        console.log(`📋 Commands to register: ${commands.map(cmd => cmd.name).join(', ')}`);
+        
+        // Register new commands using client's application commands manager
+        try {
+            await client.application.commands.set(commands, CONFIG.guildId);
+            
+            console.log('✅ Successfully registered slash commands');
+            console.log(`📋 Registered ${commands.length} commands: ${commands.map(cmd => cmd.name).join(', ')}`);
+            writeLog('Slash commands cleared and re-registered successfully', 'Debug');
+        } catch (registerError) {
+            console.error('❌ Failed to register slash commands:', registerError);
+            console.error('Full error details:', {
+                message: registerError.message,
+                status: registerError.status,
+                method: registerError.method,
+                url: registerError.url,
+                requestBody: registerError.requestBody
+            });
+            writeLog(`Slash command registration failed: ${registerError.message}`, 'Error');
+            
+            // Continue bot operation even if commands fail to register
+            console.log('⚠️ Bot will continue without slash commands');
+        }
     } catch (error) {
-        console.error('❌ Error registering slash commands:', error);
-        writeLog(`Slash command registration error: ${error.message}`, 'Error');
+        console.error('❌ Error managing slash commands:', error);
+        console.error('Full error details:', {
+            message: error.message,
+            stack: error.stack,
+            status: error.status
+        });
+        writeLog(`Slash command management error: ${error.message}`, 'Error');
+        
+        // Continue bot operation
+        console.log('⚠️ Bot will continue without slash commands');
+    }
+}
+
+// Function to refresh slash commands (for API endpoint)
+async function refreshSlashCommands() {
+    if (!client.isReady()) {
+        throw new Error('Discord client is not ready');
+    }
+    
+    const commands = slashCommands; // Use the same command array
+
+    try {
+        console.log('🔄 Refreshing slash commands...');
+        
+        // Clear existing guild commands using client's application commands manager
+        try {
+            await client.application.commands.set([], CONFIG.guildId);
+            console.log('✅ Old commands cleared');
+        } catch (clearError) {
+            console.error('❌ Failed to clear commands:', clearError.message);
+            return { success: false, error: `Failed to clear commands: ${clearError.message}` };
+        }
+        
+        // Register new commands using client's application commands manager
+        try {
+            await client.application.commands.set(commands, CONFIG.guildId);
+            
+            console.log('✅ Successfully refreshed slash commands');
+            console.log(`📋 Refreshed ${commands.length} commands: ${commands.map(cmd => cmd.name).join(', ')}`);
+            writeLog('Slash commands refreshed successfully', 'Debug');
+            return { success: true, message: 'Commands refreshed successfully', count: commands.length };
+        } catch (registerError) {
+            console.error('❌ Failed to register commands:', registerError);
+            console.error('Full error details:', {
+                message: registerError.message,
+                status: registerError.status,
+                method: registerError.method,
+                url: registerError.url
+            });
+            writeLog(`Slash command registration failed: ${registerError.message}`, 'Error');
+            return { success: false, error: `Failed to register commands: ${registerError.message}` };
+        }
+    } catch (error) {
+        console.error('❌ Error refreshing slash commands:', error);
+        writeLog(`Slash command refresh error: ${error.message}`, 'Error');
+        return { success: false, error: error.message };
     }
 }
 
@@ -230,6 +326,12 @@ process.on('SIGINT', () => {
     console.log('\n🔄 Gracefully shutting down...');
     
     try {
+        // Stop activity manager
+        activityManager.stop();
+        
+        // Stop chat manager
+        chatManager.stop();
+        
         // Close database connections
         closeDatabases();
         
@@ -247,6 +349,8 @@ process.on('SIGTERM', () => {
     console.log('\n🔄 Received SIGTERM, shutting down...');
     
     try {
+        activityManager.stop();
+        chatManager.stop();
         closeDatabases();
         client.destroy();
     } catch (error) {
@@ -256,10 +360,14 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
+// Make client and refresh function available globally for API
+global.discordClient = client;
+global.refreshSlashCommands = refreshSlashCommands;
+
 // Start HTTP server
 app.listen(CONFIG.httpPort, () => {
     console.log(`🌐 HTTP API listening on port ${CONFIG.httpPort}`);
-    writeLog(`HTTP API server started on port ${CONFIG.httpPort}`, 'Info');
+    writeLog(`HTTP API server started on port ${CONFIG.httpPort}`, 'Debug');
 });
 
 // Login to Discord

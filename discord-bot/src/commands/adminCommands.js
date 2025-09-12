@@ -73,7 +73,7 @@ async function handlePlayerSearchCommand(interaction) {
             });
             
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Player search completed by admin: ${interaction.user.tag}`, 'Info');
+            writeLog(`Player search completed by admin: ${interaction.user.tag}`, 'Debug');
         });
         
     } catch (error) {
@@ -133,7 +133,7 @@ async function handlePlayerOnlineCommand(interaction) {
             });
             
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Online players viewed by admin: ${interaction.user.tag}`, 'Info');
+            writeLog(`Online players viewed by admin: ${interaction.user.tag}`, 'Debug');
         });
         
     } catch (error) {

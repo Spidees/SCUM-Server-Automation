@@ -30,8 +30,8 @@ function Initialize-EventsModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[Events] Module initialized successfully"
-        Write-Log "[Events] Database: $DatabasePath"
+        Write-Log "[Events] Module initialized successfully" -Level Debug
+        Write-Log "[Events] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[Events] Failed to initialize: $($_.Exception.Message)" -Level Error

@@ -30,8 +30,8 @@ function Initialize-EconomyModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[Economy] Module initialized successfully"
-        Write-Log "[Economy] Database: $DatabasePath"
+        Write-Log "[Economy] Module initialized successfully" -Level Debug
+        Write-Log "[Economy] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[Economy] Failed to initialize: $($_.Exception.Message)" -Level Error

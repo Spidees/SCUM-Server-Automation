@@ -67,7 +67,7 @@ function Initialize-CommandCache {
     $global:DatabaseService.Commands.Checked = $true
     
     $availableCommands = @($global:DatabaseService.Commands.PSObject.Properties | Where-Object { $_.Value -and $_.Name -ne "Checked" }).Count
-    Write-Log "[DatabaseService] Command cache initialized: $availableCommands/5 database commands available" -Level Info
+    Write-Log "[DatabaseService] Command cache initialized: $availableCommands/5 database commands available" -Level Debug
 }
 
 function Initialize-DatabaseService {
@@ -82,13 +82,13 @@ function Initialize-DatabaseService {
     $global:DatabaseService.Config.CacheIntervalSeconds = $CacheIntervalSeconds
     $global:DatabaseService.Config.DatabaseModule = Get-Module "scum-database" -ErrorAction SilentlyContinue
     
-    Write-Log "[DatabaseService] Initialized with cache interval: $CacheIntervalSeconds seconds" -Level Info
+    Write-Log "[DatabaseService] Initialized with cache interval: $CacheIntervalSeconds seconds" -Level Debug
     
     # Initialize command cache first
     Initialize-CommandCache
     
     # Initialize cache with actual data immediately
-    Write-Log "[DatabaseService] Loading initial data into cache..." -Level Info
+    Write-Log "[DatabaseService] Loading initial data into cache..." -Level Debug
     $now = Get-Date
     
     try {
@@ -134,8 +134,8 @@ function Initialize-DatabaseService {
         $global:DatabaseService.Cache.GameWorld.Temperature = if ($weatherData -and $weatherData.Success) { $weatherData.FormattedTemperature } else { "N/A" }
         $global:DatabaseService.Cache.GameWorld.LastUpdate = $now
         
-        Write-Log "[DatabaseService] Initial cache loaded: Total=$totalPlayers, Online=$onlinePlayers, Squads=$activeSquads" -Level Info
-        Write-Log "[DatabaseService] Initial game world: Time=$($global:DatabaseService.Cache.GameWorld.GameTime), Temp=$($global:DatabaseService.Cache.GameWorld.Temperature)" -Level Info
+        Write-Log "[DatabaseService] Initial cache loaded: Total=$totalPlayers, Online=$onlinePlayers, Squads=$activeSquads" -Level Debug
+        Write-Log "[DatabaseService] Initial game world: Time=$($global:DatabaseService.Cache.GameWorld.GameTime), Temp=$($global:DatabaseService.Cache.GameWorld.Temperature)" -Level Debug
         
     } catch {
         Write-Log "[DatabaseService] Failed to load initial data: $($_.Exception.Message)" -Level Error
@@ -145,7 +145,7 @@ function Initialize-DatabaseService {
     }
     
     $global:DatabaseService.Initialized = $true
-    Write-Log "[DatabaseService] Cache initialized at: $($now.ToString('HH:mm:ss'))" -Level Info
+    Write-Log "[DatabaseService] Cache initialized at: $($now.ToString('HH:mm:ss'))" -Level Debug
 }
 
 function Update-DatabaseServiceCache {
@@ -179,7 +179,7 @@ function Update-DatabaseServiceCache {
         return
     }
 
-    Write-Log "[DatabaseService] Updating entire cache (both player stats and game world)..." -Level Info
+    Write-Log "[DatabaseService] Updating entire cache (both player stats and game world)..." -Level Debug
     $callsMade = 0
     
     # Update player stats cache
@@ -211,7 +211,7 @@ function Update-DatabaseServiceCache {
         $global:DatabaseService.Cache.PlayerStats.ActiveSquads = if ($null -ne $activeSquads) { $activeSquads } else { 0 }
         $global:DatabaseService.Cache.PlayerStats.LastUpdate = $now
         
-        Write-Log "[DatabaseService] Player stats updated: Total=$totalPlayers, Online=$onlinePlayers, Squads=$activeSquads" -Level Info
+        Write-Log "[DatabaseService] Player stats updated: Total=$totalPlayers, Online=$onlinePlayers, Squads=$activeSquads" -Level Debug
     } catch {
         Write-Log "[DatabaseService] Failed to update player stats: $($_.Exception.Message)" -Level Error
     }
@@ -237,12 +237,12 @@ function Update-DatabaseServiceCache {
         $global:DatabaseService.Cache.GameWorld.Temperature = if ($weatherData -and $weatherData.Success) { $weatherData.FormattedTemperature } else { "N/A" }
         $global:DatabaseService.Cache.GameWorld.LastUpdate = $now
         
-        Write-Log "[DatabaseService] Game world updated: Time=$($global:DatabaseService.Cache.GameWorld.GameTime), Temp=$($global:DatabaseService.Cache.GameWorld.Temperature)" -Level Info
+        Write-Log "[DatabaseService] Game world updated: Time=$($global:DatabaseService.Cache.GameWorld.GameTime), Temp=$($global:DatabaseService.Cache.GameWorld.Temperature)" -Level Debug
     } catch {
         Write-Log "[DatabaseService] Failed to update game world: $($_.Exception.Message)" -Level Error
     }
     
-    Write-Log "[DatabaseService] Complete cache update finished: $callsMade database calls made" -Level Info
+    Write-Log "[DatabaseService] Complete cache update finished: $callsMade database calls made" -Level Debug
 }
 
 function Get-DatabaseServiceStats {

@@ -43,7 +43,7 @@ async function handleServerInfoCommand(interaction) {
                 .setTimestamp();
 
             await interaction.followUp({ embeds: [embed] });
-            writeLog('Server info command completed successfully', 'Info');
+            writeLog('Server info command completed successfully', 'Debug');
         });
         
     } catch (error) {
@@ -109,7 +109,7 @@ async function handleServerStatusCommand(interaction) {
                 .setTimestamp();
 
             await interaction.followUp({ embeds: [embed] });
-            writeLog('Server status command completed successfully', 'Info');
+            writeLog('Server status command completed successfully', 'Debug');
         });
         
     } catch (error) {
@@ -161,7 +161,7 @@ async function handleServerRestartCommand(interaction) {
                     .setTimestamp();
 
                 await interaction.followUp({ embeds: [embed], ephemeral: true });
-                writeLog(`Next restart skipped by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Info');
+                writeLog(`Next restart skipped by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Debug');
             } else {
                 throw new Error(`PowerShell API returned ${response.status}`);
             }
@@ -241,7 +241,7 @@ async function handleServerRestartCommand(interaction) {
                         .setTimestamp();
 
                     await confirmation.update({ embeds: [successEmbed], components: [] });
-                    writeLog(`Server restart scheduled by ${interaction.user.tag} (ID: ${interaction.user.id}) with ${delayMinutes} minute delay`, 'Info');
+                    writeLog(`Server restart scheduled by ${interaction.user.tag} (ID: ${interaction.user.id}) with ${delayMinutes} minute delay`, 'Debug');
                 } else {
                     throw new Error(`PowerShell API returned ${response.status}`);
                 }
@@ -347,7 +347,7 @@ async function handleServerStopCommand(interaction) {
                         .setTimestamp();
 
                     await confirmation.update({ embeds: [successEmbed], components: [] });
-                    writeLog(`Server stop scheduled by ${interaction.user.tag} (ID: ${interaction.user.id}) with ${delayMinutes} minute delay`, 'Info');
+                    writeLog(`Server stop scheduled by ${interaction.user.tag} (ID: ${interaction.user.id}) with ${delayMinutes} minute delay`, 'Debug');
                 } else {
                     throw new Error(`PowerShell API returned ${response.status}`);
                 }
@@ -414,7 +414,7 @@ async function handleServerStartCommand(interaction) {
                 .setTimestamp();
 
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Server start initiated by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Info');
+            writeLog(`Server start initiated by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Debug');
         } else {
             throw new Error(`PowerShell API returned ${response.status}`);
         }
@@ -507,7 +507,7 @@ async function handleServerUpdateCommand(interaction) {
                         .setTimestamp();
 
                     await confirmation.update({ embeds: [successEmbed], components: [] });
-                    writeLog(`Server update initiated by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Info');
+                    writeLog(`Server update initiated by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Debug');
                 } else {
                     throw new Error(`PowerShell API returned ${response.status}`);
                 }
@@ -582,7 +582,7 @@ async function handleServerValidateCommand(interaction) {
             }
 
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Server validation completed by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Info');
+            writeLog(`Server validation completed by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Debug');
         } else {
             throw new Error(`PowerShell API returned ${response.status}`);
         }
@@ -636,7 +636,7 @@ async function handleServerBackupCommand(interaction) {
                 .setTimestamp();
 
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Server backup created by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Info');
+            writeLog(`Server backup created by ${interaction.user.tag} (ID: ${interaction.user.id})`, 'Debug');
         } else {
             throw new Error(`PowerShell API returned ${response.status}`);
         }
@@ -734,7 +734,7 @@ async function handleServerCancelCommand(interaction) {
                         components: []
                     });
                     
-                    writeLog(`Scheduled operations cancelled by ${interaction.user.tag} (ID: ${interaction.user.id}) - IDs: ${selection.values.join(', ')}`, 'Info');
+                    writeLog(`Scheduled operations cancelled by ${interaction.user.tag} (ID: ${interaction.user.id}) - IDs: ${selection.values.join(', ')}`, 'Debug');
                 } else {
                     throw new Error(`Cancel API returned ${cancelResponse.status}`);
                 }
@@ -822,7 +822,7 @@ async function handlePlayerSearchCommand(interaction) {
             }
             
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Player search completed by admin ${interaction.user.tag}: ${players.length} results`, 'Info');
+            writeLog(`Player search completed by admin ${interaction.user.tag}: ${players.length} results`, 'Debug');
         });
         
     } catch (error) {
@@ -878,7 +878,7 @@ async function handlePlayerOnlineCommand(interaction) {
             }
             
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Online players command completed by admin ${interaction.user.tag}: ${players.length} online`, 'Info');
+            writeLog(`Online players command completed by admin ${interaction.user.tag}: ${players.length} online`, 'Debug');
         });
         
     } catch (error) {
@@ -939,7 +939,7 @@ async function handleBotStatusCommand(interaction, client) {
                 .setTimestamp();
 
             await interaction.followUp({ embeds: [embed], ephemeral: true });
-            writeLog(`Bot status command completed for: ${interaction.user.username}`, 'Info');
+            writeLog(`Bot status command completed for: ${interaction.user.username}`, 'Debug');
         });
         
     } catch (error) {

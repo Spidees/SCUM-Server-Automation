@@ -50,6 +50,9 @@ $script:LastLoggedEventType = $null
 $script:LastEventTimestamp = $null
 $script:EventCount = @{}
 
+# Throttling for process warning messages
+$script:LastProcessWarning = $null
+
 function Initialize-LogReaderModule {
     <#
     .SYNOPSIS
@@ -100,7 +103,7 @@ function Initialize-LogReaderModule {
             }
         }
         
-        Write-Log "[LogReader] Log monitoring initialized for: $LogPath"
+        Write-Log "[LogReader] Log monitoring initialized for: $LogPath" -Level Debug
         
         # Reset state to prevent spam on initialization
         $script:LastLoggedEventType = $null
@@ -112,7 +115,7 @@ function Initialize-LogReaderModule {
         Write-Log "[LogReader] Log file not found, monitoring disabled: $LogPath" -Level Warning
     }
     
-    Write-Log "[LogReader] Module initialized - focused on log parsing only"
+    Write-Log "[LogReader] Module initialized - focused on log parsing only" -Level Debug
 }
 
 function Read-NewLogLines {
@@ -143,14 +146,14 @@ function Read-NewLogLines {
         
         # Check for log rotation (file got smaller)
         if ($script:LastLogFileSize -and $currentSize -lt $script:LastLogFileSize) {
-            Write-Log "[LogReader] Log rotation detected, resetting position"
+            Write-Log "[LogReader] Log rotation detected, resetting position" -Level Debug
             $script:LogLinePosition = 0
             $script:LastLogFileSize = $currentSize
             
             # CRITICAL FIX: Clear event history to prevent old events from causing false notifications
             $script:LastParsedEvents = New-Object System.Collections.ArrayList
             $script:LastKnownPerformanceStats = $null
-            Write-Log "[LogReader] Event history cleared due to log rotation" -Level Info
+            Write-Log "[LogReader] Event history cleared due to log rotation" -Level Debug
         }
         
         # No new content
@@ -323,7 +326,7 @@ function Parse-LogLine {
             
             # Only log summary of repeated events occasionally
             if ($script:EventCount[$parsedEvent.EventType] % 10 -eq 0) {
-                Write-Log "[LogReader] Event summary: $($parsedEvent.EventType) occurred $($script:EventCount[$parsedEvent.EventType]) times" -Level Info
+                Write-Log "[LogReader] Event summary: $($parsedEvent.EventType) occurred $($script:EventCount[$parsedEvent.EventType]) times" -Level Debug
             }
             $script:LastEventTimestamp = $parsedEvent.Timestamp
         }
@@ -332,7 +335,7 @@ function Parse-LogLine {
         $parsedEvent.IsStateChange = $isStateChange
         
         if ($shouldLog) {
-            Write-Log "[LogReader] Server state change detected: $($parsedEvent.EventType)" -Level Info
+            Write-Log "[LogReader] Server state change detected: $($parsedEvent.EventType)" -Level Debug
         }
     } else {
         # For non-server events, mark as not a state change
@@ -526,7 +529,7 @@ function Get-LatestPerformanceStats {
     if ($script:LastKnownPerformanceStats.Timestamp) {
         $age = (Get-Date) - $script:LastKnownPerformanceStats.Timestamp
         if ($age.TotalMinutes -gt 5) {
-            Write-Log "[LogReader] Performance stats too old ($([Math]::Round($age.TotalMinutes, 1)) min) - returning null" -Level Info
+            Write-Log "[LogReader] Performance stats too old ($([Math]::Round($age.TotalMinutes, 1)) min) - returning null" -Level Debug
             return $null
         }
     }
@@ -534,7 +537,12 @@ function Get-LatestPerformanceStats {
     # Additional validation: Check if SCUM process is actually running
     $scumProcess = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
     if (-not $scumProcess) {
-        Write-Log "[LogReader] Performance stats available but SCUMServer process not running - returning null" -Level Info
+        # Only log this once per minute to avoid spam
+        $currentTime = Get-Date
+        if (-not $script:LastProcessWarning -or ($currentTime - $script:LastProcessWarning).TotalMinutes -ge 1) {
+            Write-Log "[LogReader] SCUM Server process not running - performance stats unavailable" -Level Warning
+            $script:LastProcessWarning = $currentTime
+        }
         return $null
     }
     
@@ -629,7 +637,7 @@ function Reset-LogParserState {
     $script:LastLoggedEventType = $null
     $script:LastEventTimestamp = $null
     $script:EventCount = @{}
-    Write-Log "[LogReader] Parser state reset - event tracking cleared" -Level Info
+    Write-Log "[LogReader] Parser state reset - event tracking cleared" -Level Debug
 }
 
 # Export functions - focused on log parsing only

@@ -30,8 +30,8 @@ function Initialize-StatsModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[Stats] Module initialized successfully"
-        Write-Log "[Stats] Database: $DatabasePath"
+        Write-Log "[Stats] Module initialized successfully" -Level Debug
+        Write-Log "[Stats] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[Stats] Failed to initialize: $($_.Exception.Message)" -Level Error

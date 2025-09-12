@@ -30,8 +30,8 @@ function Initialize-BaseBuildingModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[BaseBuilding] Module initialized successfully"
-        Write-Log "[BaseBuilding] Database: $DatabasePath"
+        Write-Log "[BaseBuilding] Module initialized successfully" -Level Debug
+        Write-Log "[BaseBuilding] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[BaseBuilding] Failed to initialize: $($_.Exception.Message)" -Level Error

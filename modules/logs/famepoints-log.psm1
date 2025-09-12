@@ -51,12 +51,12 @@ function Initialize-FamePointsLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing fame points log management system..." -Level "Info"
+        Write-Log "Initializing fame points log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, fame points log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, fame points log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-FamePointsLogModule {
             $script:Config = $Config.SCUMLogFeatures.FamePointsFeed
         }
         else {
-            Write-Log "Fame points log relay not enabled in configuration" -Level "Info"
+            Write-Log "Fame points log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Fame points log relay not enabled in configuration" -Level "Info"
+            Write-Log "Fame points log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize fame points log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Fame points log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Fame points log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Fame points log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Fame points log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-FamePointsLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize fame points log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize fame points log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -128,7 +128,7 @@ function Update-FamePointsLogProcessing {
         foreach ($action in $newActions) {
             # Clean format with details count if available
             $detailsInfo = if ($action.Details -and $action.Details.Count -gt 0) { " ($($action.Details.Count) details)" } else { "" }
-            Write-Log "FAME POINTS [$($action.Type)] $($action.PlayerName): $($action.Action)$detailsInfo" -Level "Info"
+            Write-Log "FAME POINTS [$($action.Type)] $($action.PlayerName): $($action.Action)$detailsInfo" -Level Debug
             Send-FamePointsActionToDiscord -Action $action
         }
         
@@ -136,7 +136,7 @@ function Update-FamePointsLogProcessing {
         Save-FamePointsState
         
     } catch {
-        Write-Log "Error during fame points log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during fame points log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -149,13 +149,13 @@ function Get-NewFamePointsActions {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new fame points log file" -Level "Debug"
+        Write-Log "Switched to new fame points log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Fame points log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Fame points log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -231,7 +231,7 @@ function Get-NewFamePointsActions {
         return $newActions
         
     } catch {
-        Write-Log "Error reading fame points log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading fame points log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -242,7 +242,7 @@ function Get-LatestFamePointsLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "famepoints_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No fame points log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No fame points log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -251,7 +251,7 @@ function Get-LatestFamePointsLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest fame points log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest fame points log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -271,7 +271,7 @@ function Save-FamePointsState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save fame points log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save fame points log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -286,14 +286,14 @@ function Load-FamePointsState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous fame points log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous fame points log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded fame points log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded fame points log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous fame points log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous fame points log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestFamePointsLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -301,7 +301,7 @@ function Load-FamePointsState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -311,7 +311,7 @@ function Load-FamePointsState {
             }
         }
     } catch {
-        Write-Log "Failed to load fame points log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load fame points log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -467,38 +467,38 @@ function Send-FamePointsActionToDiscord {
     try {
         # Validate action data
         if (-not $Action -or -not $Action.Action) {
-            Write-Log "Invalid fame points action data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid fame points action data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-FamePointsEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating fame points embed for $($Action.PlayerName)" -Level "Debug"
+                Write-Log "Creating fame points embed for $($Action.PlayerName)" -Level Debug
                 $embedData = Send-FamePointsEmbed -FamePointsAction $Action
-                Write-Log "Fame points embed data created successfully" -Level "Debug"
+                Write-Log "Fame points embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending fame points embed to Discord..." -Level "Debug"
+                    Write-Log "Sending fame points embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Fame points action embed sent successfully" -Level "Info"
+                        Write-Log "Fame points action embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Fame points action embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Fame points action embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating fame points embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating fame points embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-FamePointsEmbed function not found" -Level "Warning"
+            Write-Log "Send-FamePointsEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-FamePointsActionToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-FamePointsActionToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

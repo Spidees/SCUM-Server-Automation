@@ -32,9 +32,9 @@ function Initialize-LeaderboardsModule {
         $script:SqliteExePath = $SqliteExePath
         $script:WeeklyDbPath = ".\data\weekly_leaderboards.db"
         
-        Write-Log "[Leaderboards] Module initialized successfully"
-        Write-Log "[Leaderboards] Main Database (for snapshots): $DatabasePath"
-        Write-Log "[Leaderboards] Weekly Database: $script:WeeklyDbPath"
+        Write-Log "[Leaderboards] Module initialized successfully" -Level Debug
+        Write-Log "[Leaderboards] Main Database (for snapshots): $DatabasePath" -Level Debug
+        Write-Log "[Leaderboards] Weekly Database: $script:WeeklyDbPath" -Level Debug
         
         return @{ Success = $true }
     } catch {
@@ -415,7 +415,7 @@ function Update-WeeklySnapshot {
         # Create weekly database if it doesn't exist
         if (-not (Test-Path $script:WeeklyDbPath)) {
             try {
-                Write-Log "[Leaderboards] Creating weekly leaderboards database at: $script:WeeklyDbPath" -Level Info
+                Write-Log "[Leaderboards] Creating weekly leaderboards database at: $script:WeeklyDbPath" -Level Debug
                 
                 # Create weekly database using external SQLite
                 
@@ -483,15 +483,15 @@ CREATE TABLE IF NOT EXISTS current_week_info (
         $weekEndDate = $WeekStartDate.AddDays(7)
         $weekEndStr = $weekEndDate.ToString('yyyy-MM-dd')
         
-        Write-Log "[Leaderboards] Taking weekly snapshot for week starting: $weekStartStr" -Level Info
-        Write-Log "[Leaderboards] Snapshot source database: $script:DatabasePath" -Level Info
+        Write-Log "[Leaderboards] Taking weekly snapshot for week starting: $weekStartStr" -Level Debug
+        Write-Log "[Leaderboards] Snapshot source database: $script:DatabasePath" -Level Debug
         
         # Check if we already have a snapshot for this week
         $checkQuery = "SELECT COUNT(*) as count FROM weekly_snapshots WHERE week_start_date = '$weekStartStr'"
         $checkResult = Invoke-WeeklyDatabaseQuery -Query $checkQuery -DatabasePath $script:WeeklyDbPath
         
         if ($checkResult.Success -and $checkResult.Data.Count -gt 0 -and $checkResult.Data[0].count -gt 0) {
-            Write-Log "[Leaderboards] Snapshot already exists for week $weekStartStr" -Level Info
+            Write-Log "[Leaderboards] Snapshot already exists for week $weekStartStr" -Level Debug
             return $true
         }
         
@@ -511,7 +511,7 @@ CREATE TABLE IF NOT EXISTS current_week_info (
         
         # Build the comprehensive snapshot query - attach the weekly database to the main database
         if ($isFirstSnapshot) {
-            Write-Log "[Leaderboards] Creating first snapshot with current values as baseline for weekly tracking" -Level Info
+            Write-Log "[Leaderboards] Creating first snapshot with current values as baseline for weekly tracking" -Level Debug
             # For the first snapshot, capture current values as baseline - future changes will be deltas
             $attachQuery = @"
 ATTACH DATABASE '$script:WeeklyDbPath' AS weekly;
@@ -623,7 +623,7 @@ DETACH DATABASE weekly;
         if ($snapshotResult.Success) {
             # Also create squad snapshots
             if ($isFirstSnapshot) {
-                Write-Log "[Leaderboards] Creating first squad snapshots with current values" -Level Info
+                Write-Log "[Leaderboards] Creating first squad snapshots with current values" -Level Debug
                 $squadSnapshotQuery = @"
 ATTACH DATABASE '$script:WeeklyDbPath' AS weekly;
 INSERT OR REPLACE INTO weekly.weekly_snapshots (user_profile_id, week_start_date, squad_name, squad_score, updated_at)
@@ -655,12 +655,12 @@ DETACH DATABASE weekly;
             
             $squadResult = Invoke-WeeklyDatabaseQuery -Query $squadSnapshotQuery -DatabasePath $script:DatabasePath
             if ($squadResult.Success) {
-                Write-Log "[Leaderboards] Squad snapshots completed successfully" -Level Info
+                Write-Log "[Leaderboards] Squad snapshots completed successfully" -Level Debug
             } else {
                 Write-Log "Failed to create squad snapshots: $($squadResult.Error)" -Level Error
             }
             
-            Write-Log "[Leaderboards] Weekly snapshot completed successfully for week $weekStartStr" -Level Info
+            Write-Log "[Leaderboards] Weekly snapshot completed successfully for week $weekStartStr" -Level Debug
             return $true
         } else {
             Write-Log "Failed to create weekly snapshot: $($snapshotResult.Error)" -Level Error
@@ -716,13 +716,13 @@ function Invoke-WeeklyReset {
     #>
     
     try {
-        Write-Log "[Leaderboards] Starting weekly reset process..." -Level Info
+        Write-Log "[Leaderboards] Starting weekly reset process..." -Level Debug
         
         $currentWeekStart = Get-CurrentWeekStart
         $success = Update-WeeklySnapshot -WeekStartDate $currentWeekStart
         
         if ($success) {
-            Write-Log "[Leaderboards] Weekly reset completed successfully" -Level Info
+            Write-Log "[Leaderboards] Weekly reset completed successfully" -Level Debug
             return @{ Success = $true }
         } else {
             Write-Log "Weekly reset failed" -Level Error
@@ -762,7 +762,7 @@ function Reset-WeeklyLeaderboards {
         $currentWeekStart = Get-CurrentWeekStart
         $weekStartStr = $currentWeekStart.ToString('yyyy-MM-dd')
         
-        Write-Log "[Leaderboards] Force resetting weekly leaderboards with zero baseline" -Level Info
+        Write-Log "[Leaderboards] Force resetting weekly leaderboards with zero baseline" -Level Debug
         
         # Delete existing snapshots for current week
         $deleteQuery = "DELETE FROM weekly_snapshots WHERE week_start_date = '$weekStartStr'"
@@ -788,7 +788,7 @@ function Reset-WeeklyLeaderboards {
         $success = Update-WeeklySnapshot -WeekStartDate $currentWeekStart
         
         if ($success) {
-            Write-Log "[Leaderboards] Weekly leaderboards reset successfully with zero baseline" -Level Info
+            Write-Log "[Leaderboards] Weekly leaderboards reset successfully with zero baseline" -Level Debug
             return @{ Success = $true }
         } else {
             $errorMsg = "Failed to create new zero baseline snapshot"
@@ -814,21 +814,21 @@ function Update-SnapshotOnRestart {
     #>
     
     try {
-        Write-Log "[Leaderboards] Updating snapshot after server restart..." -Level Info
+        Write-Log "[Leaderboards] Updating snapshot after server restart..." -Level Debug
         
         # Get current week start
         $currentWeekStart = Get-CurrentWeekStart
         $weekStartStr = $currentWeekStart.ToString('yyyy-MM-dd')
         
-        Write-Log "[Leaderboards] Force refreshing snapshot for week: $weekStartStr" -Level Info
-        Write-Log "[Leaderboards] Snapshot source database: $script:DatabasePath" -Level Info
+        Write-Log "[Leaderboards] Force refreshing snapshot for week: $weekStartStr" -Level Debug
+        Write-Log "[Leaderboards] Snapshot source database: $script:DatabasePath" -Level Debug
         
         # Delete existing snapshot for current week to force refresh
         $deleteQuery = "DELETE FROM weekly_snapshots WHERE week_start_date = '$weekStartStr'"
         $deleteResult = Invoke-WeeklyDatabaseQuery -Query $deleteQuery -DatabasePath $script:WeeklyDbPath
         
         if ($deleteResult.Success) {
-            Write-Log "[Leaderboards] Existing snapshot cleared for refresh" -Level Info
+            Write-Log "[Leaderboards] Existing snapshot cleared for refresh" -Level Debug
         } else {
             Write-Log "[Leaderboards] No existing snapshot to clear (or error): $($deleteResult.Error)" -Level Debug
         }
@@ -837,7 +837,7 @@ function Update-SnapshotOnRestart {
         $snapshotResult = Update-WeeklySnapshot -WeekStartDate $currentWeekStart
         
         if ($snapshotResult) {
-            Write-Log "[Leaderboards] Weekly snapshot updated successfully after restart" -Level Info
+            Write-Log "[Leaderboards] Weekly snapshot updated successfully after restart" -Level Debug
             return $true
         } else {
             Write-Log "[Leaderboards] Weekly snapshot update failed" -Level Warning

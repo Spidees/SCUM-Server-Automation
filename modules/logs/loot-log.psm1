@@ -54,14 +54,14 @@ function Initialize-LootLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing loot log management system..." -Level "Info"
-        Write-Log "NOTE: Loot log module is currently inactive - no processing will occur" -Level "Info"
+        Write-Log "Initializing loot log management system..." -Level Debug
+        Write-Log "NOTE: Loot log module is currently inactive - no processing will occur" -Level Debug
         
         # Module initialized but inactive - return false to disable processing
         return $false
         
     } catch {
-        Write-Log "Failed to initialize loot log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize loot log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -83,13 +83,13 @@ function Get-NewLootEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new loot log file" -Level "Debug"
+        Write-Log "Switched to new loot log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Loot log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Loot log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -128,7 +128,7 @@ function Get-NewLootEvents {
         return $newEvents
         
     } catch {
-        Write-Log "Error reading loot log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading loot log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -139,7 +139,7 @@ function Get-LatestLootLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "loot_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No loot log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No loot log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -148,7 +148,7 @@ function Get-LatestLootLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest loot log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest loot log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -168,7 +168,7 @@ function Save-LootState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save loot log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save loot log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -183,14 +183,14 @@ function Load-LootState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous loot log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous loot log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded loot log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded loot log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous loot log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous loot log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestLootLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -198,7 +198,7 @@ function Load-LootState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -208,7 +208,7 @@ function Load-LootState {
             }
         }
     } catch {
-        Write-Log "Failed to load loot log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load loot log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -313,7 +313,7 @@ function Send-LootEventToDiscord {
     try {
         # Validate event data
         if (-not $Event -or -not $Event.Action) {
-            Write-Log "Invalid loot event data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid loot event data, skipping processing" -Level Debug
             return
         }
         
@@ -326,7 +326,7 @@ function Send-LootEventToDiscord {
         # Additional Discord safety checks
         $filteredAction = $filteredAction.Trim()
         if ($filteredAction.Length -eq 0) {
-            Write-Log "Action description is empty after filtering, skipping" -Level "Info"
+            Write-Log "Action description is empty after filtering, skipping" -Level Debug
             return
         }
         
@@ -354,24 +354,10 @@ function Send-LootEventToDiscord {
         $messageTemplate = "{emoji} **LOOT** {action} ``[{time}]``"
         
         $formattedMessage = $messageTemplate -replace '\{action\}', $filteredAction -replace '\{time\}', $timestamp -replace '\{emoji\}', $emoji
-        
-        if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-            try {
-                $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Content $formattedMessage
-                if ($result -and $result.success) {
-                    Write-Log "Discord notification sent successfully" -Level "Debug"
-                } else {
-                    Write-Log "Discord notification failed to send" -Level "Warning"
-                }
-            } catch {
-                Write-Log "Error sending Discord notification: $($_.Exception.Message)" -Level "Warning"
-            }
-        } else {
-            Write-Log "Send-DiscordMessage command not available" -Level "Info"
-        }
+        Write-Log "Loot event logged: $formattedMessage" -Level Debug
         
     } catch {
-        Write-Log "Error in Send-LootEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-LootEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

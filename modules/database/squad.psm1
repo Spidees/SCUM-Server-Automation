@@ -30,8 +30,8 @@ function Initialize-SquadModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[Squad] Module initialized successfully"
-        Write-Log "[Squad] Database: $DatabasePath"
+        Write-Log "[Squad] Module initialized successfully" -Level Debug
+        Write-Log "[Squad] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[Squad] Failed to initialize: $($_.Exception.Message)" -Level Error

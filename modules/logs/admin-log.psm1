@@ -51,12 +51,12 @@ function Initialize-AdminLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing admin log management system..." -Level "Info"
+        Write-Log "Initializing admin log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, admin log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, admin log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-AdminLogModule {
             $script:Config = $Config.SCUMLogFeatures.AdminFeed
         }
         else {
-            Write-Log "Admin log relay not enabled in configuration" -Level "Info"
+            Write-Log "Admin log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Admin log relay not enabled in configuration" -Level "Info"
+            Write-Log "Admin log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize admin log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Admin log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Admin log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Admin log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Admin log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-AdminLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize admin log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize admin log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -127,7 +127,7 @@ function Update-AdminLogProcessing {
         
         foreach ($action in $newActions) {
             # Clean format: ADMIN [Type] Name: Action
-            Write-Log "ADMIN [$($action.Type)] $($action.AdminName): $($action.Action)" -Level "Info"
+            Write-Log "ADMIN [$($action.Type)] $($action.AdminName): $($action.Action)" -Level Debug
             Send-AdminActionToDiscord -Action $action
         }
         
@@ -135,7 +135,7 @@ function Update-AdminLogProcessing {
         Save-AdminState
         
     } catch {
-        Write-Log "Error during admin log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during admin log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -148,13 +148,13 @@ function Get-NewAdminActions {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new admin log file" -Level "Debug"
+        Write-Log "Switched to new admin log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Admin log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Admin log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -193,7 +193,7 @@ function Get-NewAdminActions {
         return $newActions
         
     } catch {
-        Write-Log "Error reading admin log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading admin log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -204,7 +204,7 @@ function Get-LatestAdminLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "admin_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No admin log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No admin log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -213,7 +213,7 @@ function Get-LatestAdminLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest admin log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest admin log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -233,7 +233,7 @@ function Save-AdminState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save admin log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save admin log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -248,14 +248,14 @@ function Load-AdminState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous admin log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous admin log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded admin log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded admin log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous admin log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous admin log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestAdminLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -263,7 +263,7 @@ function Load-AdminState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized admin log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized admin log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -273,7 +273,7 @@ function Load-AdminState {
             }
         }
     } catch {
-        Write-Log "Failed to load admin log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load admin log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -455,38 +455,38 @@ function Send-AdminActionToDiscord {
     try {
         # Validate action data
         if (-not $Action -or -not $Action.Command) {
-            Write-Log "Invalid admin action data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid admin action data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-AdminEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating admin embed for $($Action.AdminName)" -Level "Debug"
+                Write-Log "Creating admin embed for $($Action.AdminName)" -Level Debug
                 $embedData = Send-AdminEmbed -AdminAction $Action
-                Write-Log "Admin embed data created successfully" -Level "Debug"
+                Write-Log "Admin embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending admin embed to Discord..." -Level "Debug"
+                    Write-Log "Sending admin embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Admin action embed sent successfully" -Level "Info"
+                        Write-Log "Admin action embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Admin action embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Admin action embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating admin embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating admin embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-AdminEmbed function not found" -Level "Warning"
+            Write-Log "Send-AdminEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-AdminActionToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-AdminActionToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

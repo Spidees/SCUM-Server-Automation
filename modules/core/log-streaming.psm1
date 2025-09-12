@@ -74,7 +74,7 @@ function Read-LogStreamLines {
         $result.Success = $true
         
     } catch {
-        Write-Log "Error reading log stream $FilePath : $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error reading log stream $FilePath : $($_.Exception.Message)" -Level Warning
     } finally {
         if ($streamReader) { 
             $streamReader.Close()
@@ -134,7 +134,7 @@ function Get-LogFileLineCount {
         }
         
     } catch {
-        Write-Log "Error counting lines in $FilePath : $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error counting lines in $FilePath : $($_.Exception.Message)" -Level Warning
     } finally {
         if ($streamReader) { 
             $streamReader.Close()

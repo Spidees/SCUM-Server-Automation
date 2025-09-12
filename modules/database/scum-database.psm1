@@ -91,8 +91,8 @@ function Initialize-DatabaseModule {
         # Store SQLite information
         $script:SqliteExePath = $sqliteTest.Path
         
-        Write-Log "[Database] Using external SQLite: $($script:SqliteExePath)" -Level Info
-        Write-Log "[Database] SQLite version: $($sqliteTest.Version)" -Level Info
+        Write-Log "[Database] Using external SQLite: $($script:SqliteExePath)" -Level Debug
+        Write-Log "[Database] SQLite version: $($sqliteTest.Version)" -Level Debug
         
         # Test database connection
         $connectionTest = Test-DatabaseConnection
@@ -103,13 +103,13 @@ function Initialize-DatabaseModule {
         # Initialize sub-modules
         $initResults = Initialize-SubModules
         
-        Write-Log "[Database] Main module initialized successfully"
-        Write-Log "[Database] Server database path: $script:DatabasePath"
+        Write-Log "[Database] Main module initialized successfully" -Level Debug
+        Write-Log "[Database] Server database path: $script:DatabasePath" -Level Debug
         # MEMORY LEAK FIX: Only get database size if logging is verbose to avoid frequent Get-Item calls
         if ($VerbosePreference -eq "Continue") {
-            Write-Log "[Database] Server database size: $([math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)) MB"
+            Write-Log "[Database] Server database size: $([math]::Round((Get-Item $script:DatabasePath).Length / 1MB, 2)) MB" -Level Debug
         }
-        Write-Log "[Database] Sub-modules loaded: $($initResults.LoadedModules -join ', ')"
+        Write-Log "[Database] Sub-modules loaded: $($initResults.LoadedModules -join ', ')" -Level Debug
         
         return @{ 
             Success = $true
@@ -156,7 +156,7 @@ function Initialize-SubModules {
                             $loadedModules = New-Object System.Collections.ArrayList
                         }
                         $null = $loadedModules.Add($moduleName)
-                        Write-Log "[Database] Sub-module '$moduleName' loaded successfully"
+                        Write-Log "[Database] Sub-module '$moduleName' loaded successfully" -Level Debug
                     } else {
                         # MEMORY LEAK FIX: Use ArrayList instead of array +=
                         if (-not $failedModules) {
@@ -171,10 +171,10 @@ function Initialize-SubModules {
                         $loadedModules = New-Object System.Collections.ArrayList
                     }
                     $null = $loadedModules.Add($moduleName)
-                    Write-Log "[Database] Sub-module '$moduleName' imported (no init function)"
+                    Write-Log "[Database] Sub-module '$moduleName' imported (no init function)" -Level Debug
                 }
             } else {
-                Write-Log "[Database] Sub-module '$moduleName' not found at: $modulePath" -Level Info
+                Write-Log "[Database] Sub-module '$moduleName' not found at: $modulePath" -Level Debug
             }
         } catch {
             # MEMORY LEAK FIX: Use ArrayList instead of array +=
@@ -275,7 +275,7 @@ function Test-DatabaseConcurrentAccess {
     #>
     
     try {
-        Write-Log "[Database] Testing concurrent access safety..." -Level Info
+        Write-Log "[Database] Testing concurrent access safety..." -Level Debug
         
         # MEMORY LEAK FIX: Use ArrayList for recommendations instead of array +=
         $recommendationsList = [System.Collections.ArrayList]::new()
@@ -437,7 +437,7 @@ function Invoke-ExternalSQLiteQuery {
             $processInfo.CreateNoWindow = $true
             
             $startTime = Get-Date
-            Write-Log "[Database] Executing READ-ONLY query (attempt ${attempt}/${maxRetries}): $($Query.Substring(0, [Math]::Min(50, $Query.Length)))..." -Level "Debug"
+            Write-Log "[Database] Executing READ-ONLY query (attempt ${attempt}/${maxRetries}): $($Query.Substring(0, [Math]::Min(50, $Query.Length)))..." -Level Debug
             
             $process = New-Object System.Diagnostics.Process
             $process.StartInfo = $processInfo
@@ -469,7 +469,7 @@ function Invoke-ExternalSQLiteQuery {
                 if ($stderr -match "database is locked|locked|busy|SQLITE_BUSY") {
                     if ($attempt -lt $maxRetries) {
                         $delayMs = $retryDelay * [Math]::Pow(2, $attempt - 1) # Exponential backoff
-                        Write-Log "[Database] Database locked (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms..." -Level "Debug"
+                        Write-Log "[Database] Database locked (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms..." -Level Debug
                         Start-Sleep -Milliseconds $delayMs
                         continue  # Retry
                     } else {
@@ -540,13 +540,13 @@ function Invoke-ExternalSQLiteQuery {
                 return @{ Success = $true; Data = @(); Count = 0 }
             }
             
-            Write-Log "[Database] Query completed successfully in $([math]::Round($executionTime.TotalMilliseconds, 0))ms, returned $($results.Count) rows" -Level "Debug"
+            Write-Log "[Database] Query completed successfully in $([math]::Round($executionTime.TotalMilliseconds, 0))ms, returned $($results.Count) rows" -Level Debug
             return @{ Success = $true; Data = $results; Count = $results.Count }
             
         } catch {
             if ($attempt -lt $maxRetries -and $_.Exception.Message -match "locked|busy") {
                 $delayMs = $retryDelay * [Math]::Pow(2, $attempt - 1)
-                Write-Log "[Database] Error on attempt ${attempt}: $($_.Exception.Message). Retrying in ${delayMs}ms..." -Level "Debug"
+                Write-Log "[Database] Error on attempt ${attempt}: $($_.Exception.Message). Retrying in ${delayMs}ms..." -Level Debug
                 Start-Sleep -Milliseconds $delayMs
                 continue  # Retry
             }
@@ -577,7 +577,7 @@ function Get-DatabaseTables {
         
         if ($result.Success) {
             $tableNames = $result.Data | ForEach-Object { $_.name }
-            Write-Log "[Database] Found $($tableNames.Count) tables in database"
+            Write-Log "[Database] Found $($tableNames.Count) tables in database" -Level Debug
             return @{ Success = $true; Tables = $tableNames }
         } else {
             return $result
@@ -656,7 +656,7 @@ function Clear-DatabaseCache {
         Clear-PlayerCache
     }
     
-    Write-Log "[Database] All caches cleared"
+    Write-Log "[Database] All caches cleared" -Level Debug
 }
 
 # ===============================================================

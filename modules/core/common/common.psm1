@@ -207,7 +207,7 @@ function Set-ConfigPath {
     
     $resolvedPath = Resolve-ConfigPath -Path $Path
     $script:ConfigPaths[$PathKey] = $resolvedPath
-    Write-Log "[Common] Updated cached path: $PathKey = $resolvedPath"
+    Write-Log "[Common] Updated cached path: $PathKey = $resolvedPath" -Level Debug
 }
 
 function Get-AllConfigPaths {
@@ -379,9 +379,9 @@ function Invoke-SafeCommand {
     )
     
     try {
-        Write-Log "[INFO] Executing: $Description"
+        Write-Log "[INFO] Executing: $Description" -Level Debug
         $result = & $ScriptBlock
-        Write-Log "[SUCCESS] Completed: $Description"
+        Write-Log "[SUCCESS] Completed: $Description" -Level Debug
         return $result
     }
     catch {

@@ -51,12 +51,12 @@ function Initialize-GameplayLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing gameplay log management system..." -Level "Info"
+        Write-Log "Initializing gameplay log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, gameplay log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, gameplay log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-GameplayLogModule {
             $script:Config = $Config.SCUMLogFeatures.GameplayFeed
         }
         else {
-            Write-Log "Gameplay log relay not enabled in configuration" -Level "Info"
+            Write-Log "Gameplay log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Gameplay log relay not enabled in configuration" -Level "Info"
+            Write-Log "Gameplay log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize gameplay log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Gameplay log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Gameplay log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Gameplay log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Gameplay log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-GameplayLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize gameplay log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize gameplay log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -127,7 +127,7 @@ function Update-GameplayLogProcessing {
         
         foreach ($activity in $newActivities) {
             # Clean format: GAMEPLAY [Type] Player: Activity
-            Write-Log "GAMEPLAY [$($activity.Type)] $($activity.PlayerName): $($activity.Activity)" -Level "Info"
+            Write-Log "GAMEPLAY [$($activity.Type)] $($activity.PlayerName): $($activity.Activity)" -Level Debug
             Send-GameplayActivityToDiscord -Activity $activity
         }
         
@@ -135,7 +135,7 @@ function Update-GameplayLogProcessing {
         Save-GameplayState
         
     } catch {
-        Write-Log "Error during gameplay log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during gameplay log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -148,13 +148,13 @@ function Get-NewGameplayActivities {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new gameplay log file" -Level "Debug"
+        Write-Log "Switched to new gameplay log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Gameplay log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Gameplay log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -193,7 +193,7 @@ function Get-NewGameplayActivities {
         return $newActivities
         
     } catch {
-        Write-Log "Error reading gameplay log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading gameplay log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -204,7 +204,7 @@ function Get-LatestGameplayLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "gameplay_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No gameplay log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No gameplay log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -213,7 +213,7 @@ function Get-LatestGameplayLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest gameplay log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest gameplay log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -233,7 +233,7 @@ function Save-GameplayState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save gameplay log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save gameplay log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -248,14 +248,14 @@ function Load-GameplayState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous gameplay log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous gameplay log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded gameplay log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded gameplay log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous gameplay log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous gameplay log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestGameplayLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -263,7 +263,7 @@ function Load-GameplayState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -273,7 +273,7 @@ function Load-GameplayState {
             }
         }
     } catch {
-        Write-Log "Failed to load gameplay log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load gameplay log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -834,38 +834,38 @@ function Send-GameplayActivityToDiscord {
     try {
         # Validate activity data
         if (-not $Activity -or -not $Activity.Activity) {
-            Write-Log "Invalid gameplay activity data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid gameplay activity data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-GameplayEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating gameplay embed for $($Activity.PlayerName)" -Level "Debug"
+                Write-Log "Creating gameplay embed for $($Activity.PlayerName)" -Level Debug
                 $embedData = Send-GameplayEmbed -GameplayActivity $Activity
-                Write-Log "Gameplay embed data created successfully" -Level "Debug"
+                Write-Log "Gameplay embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending gameplay embed to Discord..." -Level "Debug"
+                    Write-Log "Sending gameplay embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Gameplay activity embed sent successfully" -Level "Info"
+                        Write-Log "Gameplay activity embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Gameplay activity embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Gameplay activity embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating gameplay embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating gameplay embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-GameplayEmbed function not found" -Level "Warning"
+            Write-Log "Send-GameplayEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-GameplayActivityToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-GameplayActivityToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

@@ -59,6 +59,10 @@ $script:ServerState = @{
 # Process tracking to reduce verbose logging
 $script:LastKnownProcessId = $null
 
+# Throttling for health check messages to reduce spam
+$script:LastHealthCheckWarning = $null
+$script:LastServiceStatusMessage = $null
+
 # ===============================================================
 # INITIALIZATION
 # ===============================================================
@@ -77,7 +81,7 @@ function Initialize-MonitoringModule {
     )
     
     try {
-        Write-Log "[Monitoring] Initializing monitoring system..." -Level Info
+        Write-Log "[Monitoring] Initializing monitoring system..." -Level Debug
         
         # Store configuration
         $script:Config = $Config
@@ -105,11 +109,11 @@ function Initialize-MonitoringModule {
         if (Get-Command "Update-DiscordServerStatus" -ErrorAction SilentlyContinue) {
             Write-Log "[Monitoring] Discord integration available" -Level Debug
         } else {
-            Write-Log "[Monitoring] Discord Gateway functions not available - Discord notifications may be limited" -Level Warning
+            Write-Log "[Monitoring] Gateway functions not available - some features may be limited" -Level Warning
         }
         
         $script:Initialized = $true
-        Write-Log "[Monitoring] Monitoring initialized successfully" -Level Info
+        Write-Log "[Monitoring] Monitoring initialized successfully" -Level Debug
         
         return $true
         
@@ -809,8 +813,13 @@ function Update-ServerMonitoring {
             $healthCheckResult = Test-GameProcessHealth -ServiceName $script:ServiceName -ServerDirectory $serverDir
             
             if ($healthCheckResult -and -not $healthCheckResult.IsHealthy) {
-                Write-Log "[Monitoring] Server health check FAILED: $($healthCheckResult.Reason)" -Level Warning
-                Write-Log "[Monitoring] Service Status: $($healthCheckResult.ServiceStatus), Process Found: $($healthCheckResult.ProcessFound)" -Level Warning
+                # Only log health check failures once per minute to avoid spam
+                $currentTime = Get-Date
+                if (-not $script:LastHealthCheckWarning -or ($currentTime - $script:LastHealthCheckWarning).TotalMinutes -ge 1) {
+                    Write-Log "[Monitoring] Server health check FAILED: $($healthCheckResult.Reason)" -Level Warning
+                    Write-Log "[Monitoring] Service Status: $($healthCheckResult.ServiceStatus), Process Found: $($healthCheckResult.ProcessFound)" -Level Warning
+                    $script:LastHealthCheckWarning = $currentTime
+                }
                 
                 # Check if this is the "zombie service" problem (service running but process dead)
                 if ($healthCheckResult.ServiceStatus -eq "Running" -and -not $healthCheckResult.ProcessFound) {
@@ -824,65 +833,27 @@ function Update-ServerMonitoring {
                     }
                     
                     if ($autoRestartEnabled) {
-                        Write-Log "[Monitoring] Auto-restart is ENABLED - triggering automatic repair..." -Level Info
+                        Write-Log "[Monitoring] Auto-restart is ENABLED - triggering automatic repair..." -Level Debug
                         
                         # Trigger automatic repair
                         if (Get-Command "Repair-GameService" -ErrorAction SilentlyContinue) {
-                            Write-Log "[Monitoring] Starting automatic server repair..." -Level Info
+                            Write-Log "[Monitoring] Starting automatic server repair..." -Level Debug
                             $repairResult = Repair-GameService -ServiceName $script:ServiceName -Reason "automatic crash recovery"
                             
                             if ($repairResult) {
-                                Write-Log "[Monitoring] Automatic server repair completed successfully!" -Level Info
-                                # Send admin-only notification about auto-recovery
-                                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-                                    $recoveryData = @{
-                                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-                                        service_name = $script:ServiceName
-                                        message = "Server automatically restarted after crash detection"
-                                        reason = "Process crashed but service remained running"
-                                        type = "auto-recovery"
-                                        severity = "high"
-                                    }
-                                    Send-DiscordNotification -Type 'admin.alert' -Data $recoveryData
-                                }
+                                Write-Log "[Monitoring] Automatic server repair completed successfully!" -Level Debug
                             } else {
                                 Write-Log "[Monitoring] Automatic server repair FAILED - manual intervention required!" -Level Error
-                                # Send critical admin-only alert
-                                if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-                                    $alertData = @{
-                                        timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-                                        service_name = $script:ServiceName
-                                        error = "Auto-repair failed - manual intervention required"
-                                        reason = $healthCheckResult.Reason
-                                        type = "auto-repair-failed"
-                                        message = "Server crashed and automatic repair failed. Manual intervention required!"
-                                        severity = "critical"
-                                    }
-                                    Send-DiscordNotification -Type 'admin.alert' -Data $alertData
-                                }
                             }
                         } else {
                             Write-Log "[Monitoring] Repair-GameService function not available - cannot auto-repair!" -Level Error
                         }
                     } else {
                         Write-Log "[Monitoring] Auto-restart is DISABLED in config - crash detected but no action taken" -Level Warning
-                        # Send admin-only notification about the crash
-                        if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-                            $crashData = @{
-                                timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-                                service_name = $script:ServiceName
-                                error = "Server process crashed (auto-restart disabled)"
-                                reason = $healthCheckResult.Reason
-                                type = "crash-detected"
-                                message = "Server process crashed but auto-restart is disabled. Manual intervention required!"
-                                severity = "critical"
-                            }
-                            Send-DiscordNotification -Type 'admin.alert' -Data $crashData
-                        }
                     }
                 }
             } else {
-                Write-Log -Level Debug -Message "[Monitoring] Server health check PASSED: $($healthCheckResult.Reason)"
+                Write-Log -Level Debug -Message "[Monitoring] Server health check PASSED: $($healthCheckResult.Reason)" 
             }
         }
         
@@ -893,7 +864,7 @@ function Update-ServerMonitoring {
                 $newLogEvents = Read-GameLogs
                 foreach ($logEvent in $newLogEvents) {
                     if ($logEvent.IsStateChange -and $logEvent.EventType -in @("ServerOnline", "ServerOffline", "ServerShuttingDown", "ServerStarting", "ServerLoading")) {
-                        Write-Log "[Monitoring] Log parser detected SERVER state change: $($logEvent.EventType)" -Level Info
+                        Write-Log "[Monitoring] Log parser detected SERVER state change: $($logEvent.EventType)" -Level Debug
                         
                         # Send notification based on log parser event (these are ACCURATE server states)
                         $notificationType = switch ($logEvent.EventType) {
@@ -1158,23 +1129,30 @@ function Send-StateNotification {
             entities = $freshPerformanceData.Entities
         }
         
-        # Send to Discord via unified notification system
-        if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-            Write-Log -Level Debug -Message "[Monitoring] Sending $Type notification..."
-            $result = Send-DiscordNotification -Type $Type -Data $data
-            if ($result.Success) {
+        Write-Log -Level Debug -Message "[Monitoring] Sending notification: $Type"
+        
+        # Send notification to Node.js via HTTP API
+        try {
+            $apiUrl = "http://localhost:3001/api/server/notification"
+            $body = @{
+                type = $Type
+                data = $data
+            } | ConvertTo-Json -Depth 3
+            
+            $response = Invoke-RestMethod -Uri $apiUrl -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5
+            if ($response -and $response.success) {
                 Write-Log -Level Debug -Message "[Monitoring] $Type notification sent successfully"
-                $script:ServerState.LastNotificationType = $Type  # Track last sent notification
-                $script:ServerState.LastNotificationTime = $now   # Track notification time for anti-spam logic
+                $script:ServerState.LastNotificationType = $Type
+                $script:ServerState.LastNotificationTime = $now
             } else {
-                Write-Log "[Monitoring] Failed to send $Type notification: $($result.Error)" -Level Warning
+                Write-Log "[Monitoring] Failed to send $Type notification via API" -Level Warning
             }
-        } else {
-            Write-Log "[Monitoring] Discord not available for $Type notification" -Level Warning
+        } catch {
+            Write-Log "[Monitoring] Error sending $Type notification via API: $($_.Exception.Message)" -Level Warning
         }
         
     } catch {
-        Write-Log "[Monitoring] Error sending $Type notification: $($_.Exception.Message)" -Level Warning
+        Write-Log "[Monitoring] Error processing $Type notification: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -1391,17 +1369,24 @@ function Test-PerformanceAlerts {
                 entities = $currentEntities
             }
             
-            # Send to Discord
-            if (Get-Command 'Send-DiscordNotification' -ErrorAction SilentlyContinue) {
-                Write-Log -Level Debug -Message "[Monitoring] Sending $alertType notification with fresh data..."
-                $result = Send-DiscordNotification -Type $alertType -Data $alertData
-                if ($result -and $result.Success) {
+            Write-Log -Level Debug -Message "[Monitoring] Sending performance alert: $alertType"
+            
+            # Send performance alert to Node.js via HTTP API
+            try {
+                $apiUrl = "http://localhost:3001/api/server/notification"
+                $body = @{
+                    type = $alertType
+                    data = $alertData
+                } | ConvertTo-Json -Depth 3
+                
+                $response = Invoke-RestMethod -Uri $apiUrl -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5
+                if ($response -and $response.success) {
                     Write-Log -Level Debug -Message "[Monitoring] $alertType notification sent successfully"
                 } else {
-                    Write-Log "[Monitoring] Failed to send $alertType notification: $($result.Error)" -Level Warning
+                    Write-Log "[Monitoring] Failed to send $alertType notification via API" -Level Warning
                 }
-            } else {
-                Write-Log "[Monitoring] Discord not available for $alertType notification" -Level Warning
+            } catch {
+                Write-Log "[Monitoring] Error sending $alertType notification via API: $($_.Exception.Message)" -Level Warning
             }
             
             # Update last alert time to start cooldown
@@ -1427,7 +1412,7 @@ function Stop-MonitoringModule {
     
     try {
         $script:Initialized = $false
-        Write-Log "[Monitoring] Monitoring stopped" -Level Info
+        Write-Log "[Monitoring] Monitoring stopped" -Level Debug
         
     } catch {
         Write-Log "[Monitoring] Error stopping monitoring: $($_.Exception.Message)" -Level Warning

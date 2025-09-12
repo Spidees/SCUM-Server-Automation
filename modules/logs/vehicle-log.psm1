@@ -51,12 +51,12 @@ function Initialize-VehicleLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing vehicle log management system..." -Level "Info"
+        Write-Log "Initializing vehicle log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, vehicle log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, vehicle log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-VehicleLogModule {
             $script:Config = $Config.SCUMLogFeatures.VehicleFeed
         }
         else {
-            Write-Log "Vehicle log relay not enabled in configuration" -Level "Info"
+            Write-Log "Vehicle log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Vehicle log relay not enabled in configuration" -Level "Info"
+            Write-Log "Vehicle log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize vehicle log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Vehicle log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Vehicle log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Vehicle log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Vehicle log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-VehicleLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize vehicle log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize vehicle log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -127,7 +127,7 @@ function Update-VehicleLogProcessing {
         
         foreach ($vehicleEvent in $newEvents) {
             # Clean format: VEHICLE [EventType] Vehicle: Action
-            Write-Log "VEHICLE [$($vehicleEvent.EventType)] $($vehicleEvent.VehicleName): $($vehicleEvent.Action)" -Level "Info"
+            Write-Log "VEHICLE [$($vehicleEvent.EventType)] $($vehicleEvent.VehicleName): $($vehicleEvent.Action)" -Level Debug
             Send-VehicleEventToDiscord -Event $vehicleEvent
         }
         
@@ -135,7 +135,7 @@ function Update-VehicleLogProcessing {
         Save-VehicleState
         
     } catch {
-        Write-Log "Error during vehicle log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during vehicle log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -148,13 +148,13 @@ function Get-NewVehicleEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new vehicle log file" -Level "Debug"
+        Write-Log "Switched to new vehicle log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Vehicle log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Vehicle log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -193,7 +193,7 @@ function Get-NewVehicleEvents {
         return $newEvents
         
     } catch {
-        Write-Log "Error reading vehicle log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading vehicle log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -204,7 +204,7 @@ function Get-LatestVehicleLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "vehicle_destruction_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No vehicle log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No vehicle log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -213,7 +213,7 @@ function Get-LatestVehicleLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest vehicle log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest vehicle log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -233,7 +233,7 @@ function Save-VehicleState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save vehicle log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save vehicle log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -248,14 +248,14 @@ function Load-VehicleState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous vehicle log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous vehicle log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded vehicle log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded vehicle log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous vehicle log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous vehicle log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestVehicleLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -263,7 +263,7 @@ function Load-VehicleState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -273,7 +273,7 @@ function Load-VehicleState {
             }
         }
     } catch {
-        Write-Log "Failed to load vehicle log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load vehicle log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -307,7 +307,7 @@ function ConvertFrom-VehicleLine {
                 $timestamp = [DateTime]::ParseExact($dateStr, "yyyy.MM.dd-HH.mm.ss", $null)
             } catch {
                 $timestamp = Get-Date
-                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level "Debug"
+                Write-Log "Could not parse timestamp from: $LogLine, using current time" -Level Debug
             }
             
             # Clean vehicle name
@@ -328,7 +328,7 @@ function ConvertFrom-VehicleLine {
                 $playerId = $matches[2]
                 $playerName = $matches[3].Trim()
             } else {
-                Write-Log "Could not parse owner format: $ownerPart" -Level "Debug"
+                Write-Log "Could not parse owner format: $ownerPart" -Level Debug
                 $playerName = "Unknown Owner"
             }
             
@@ -360,7 +360,7 @@ function ConvertFrom-VehicleLine {
         return $null
         
     } catch {
-        Write-Log "Error parsing vehicle line: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error parsing vehicle line: $($_.Exception.Message)" -Level Error
         return $null
     }
 }
@@ -374,38 +374,38 @@ function Send-VehicleEventToDiscord {
     try {
         # Validate event data
         if (-not $Event -or -not $Event.Action) {
-            Write-Log "Invalid vehicle event data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid vehicle event data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-VehicleEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating vehicle embed for $($Event.VehicleName)" -Level "Debug"
+                Write-Log "Creating vehicle embed for $($Event.VehicleName)" -Level Debug
                 $embedData = Send-VehicleEmbed -VehicleAction $Event
-                Write-Log "Vehicle embed data created successfully" -Level "Debug"
+                Write-Log "Vehicle embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending vehicle embed to Discord..." -Level "Debug"
+                    Write-Log "Sending vehicle embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Vehicle event embed sent successfully" -Level "Info"
+                        Write-Log "Vehicle event embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Vehicle event embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Vehicle event embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating vehicle embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating vehicle embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-VehicleEmbed function not found" -Level "Warning"
+            Write-Log "Send-VehicleEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-VehicleEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-VehicleEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

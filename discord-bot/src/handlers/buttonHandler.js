@@ -16,6 +16,8 @@ async function handleButtonInteraction(interaction) {
             await handleAccountLinkingButton(interaction);
         } else if (customId === 'check_status' || customId === 'account_linking_status' || customId === 'status_account') {
             await handleAccountStatusButton(interaction);
+        } else if (customId === 'unlink_account' || customId === 'account_linking_unlink' || customId === 'unlink_discord_account') {
+            await handleAccountUnlinkButton(interaction);
         } else {
             writeLog(`Unknown button customId: "${customId}"`, 'Warning');
             await interaction.reply(makeEphemeral({ 
@@ -136,6 +138,11 @@ async function handleAccountLinkingButton(interaction) {
                             name: ':alarm_clock: Expires', 
                             value: `<t:${Math.floor(expiresAt.getTime() / 1000)}:R>`, 
                             inline: true 
+                        },
+                        { 
+                            name: ':envelope: Important', 
+                            value: 'Make sure you allow DMs from server members to receive confirmation messages!', 
+                            inline: false 
                         }
                     )
                     .setColor('#00FF00')
@@ -143,7 +150,7 @@ async function handleAccountLinkingButton(interaction) {
                     .setTimestamp();
                 
                 await interaction.followUp(makeEphemeral({ embeds: [embed] }));
-                writeLog(`Registration code generated for ${interaction.user.tag}: ${code}`, 'Info');
+                writeLog(`Registration code generated for ${interaction.user.tag}: ${code}`, 'Debug');
             });
         });
         
@@ -226,9 +233,110 @@ async function handleAccountStatusButton(interaction) {
     }
 }
 
+// Handle account unlink button
+async function handleAccountUnlinkButton(interaction) {
+    await interaction.deferReply(makeEphemeralDefer());
+    
+    try {
+        const db = getDb();
+        
+        // Check if user has an active link
+        db.get('SELECT * FROM a_discord_profiles WHERE discord_user_id = ?', [interaction.user.id], async (err, existingLink) => {
+            if (err) {
+                writeLog(`Account unlinking check error: ${err.message}`, 'Error');
+                await interaction.followUp(makeEphemeral({ content: ':x: Failed to check account status.' }));
+                return;
+            }
+            
+            if (!existingLink) {
+                await interaction.followUp(makeEphemeral({ 
+                    content: ':information_source: Your Discord account is not linked to any SCUM character.'
+                }));
+                return;
+            }
+            
+            // Remove the link
+            db.run('DELETE FROM a_discord_profiles WHERE discord_user_id = ?', [interaction.user.id], async function(err) {
+                if (err) {
+                    writeLog(`Account unlinking error: ${err.message}`, 'Error');
+                    await interaction.followUp(makeEphemeral({ content: ':x: Failed to unlink account.' }));
+                    return;
+                }
+                
+                // Also clean up any pending registrations for this user
+                db.run('DELETE FROM a_pending_registrations WHERE discord_user_id = ?', [interaction.user.id], async function(cleanupErr) {
+                    if (cleanupErr) {
+                        writeLog(`Warning: Failed to clean up pending registrations for user ${interaction.user.id}: ${cleanupErr.message}`, 'Warning');
+                    }
+
+                    // Send DM to the user about successful unlinking
+                    try {
+                        const dmEmbed = new EmbedBuilder()
+                            .setTitle(':broken_chain: Account Successfully Unlinked')
+                            .setDescription('Your Discord account has been successfully unlinked from your SCUM character.')
+                            .addFields(
+                                { 
+                                    name: ':information_source: Previously linked to', 
+                                    value: `**Player:** ${existingLink.player_name || 'Unknown'}\n**Steam ID:** \`${existingLink.steam_id}\``, 
+                                    inline: false 
+                                },
+                                { 
+                                    name: ':calendar: Unlinked At', 
+                                    value: `<t:${Math.floor(Date.now() / 1000)}:F>`, 
+                                    inline: false 
+                                },
+                                { 
+                                    name: ':link: Want to link again?', 
+                                    value: 'You can use `/link-account` command or the Link Account button to create a new connection anytime.', 
+                                    inline: false 
+                                }
+                            )
+                            .setColor('#FFA500')
+                            .setTimestamp();
+
+                        await interaction.user.send({ embeds: [dmEmbed] });
+                        writeLog(`Account unlinking DM sent via button to ${interaction.user.tag}`, 'Debug');
+                    } catch (dmError) {
+                        writeLog(`Failed to send account unlinking DM to ${interaction.user.tag}: ${dmError.message}`, 'Warning');
+                        // Don't fail the whole operation if DM fails
+                    }
+
+                    const embed = new EmbedBuilder()
+                        .setTitle(':broken_chain: Account Unlinked')
+                        .setDescription('Your Discord account has been successfully unlinked from your SCUM character.')
+                        .addFields(
+                            { 
+                                name: ':information_source: Previously linked to', 
+                                value: `Steam ID: \`${existingLink.steam_id}\`${existingLink.player_name ? `\nPlayer: \`${existingLink.player_name}\`` : ''}`, 
+                                inline: false 
+                            },
+                            { 
+                                name: ':link: Want to link again?', 
+                                value: 'Click the "Link Account" button or use `/link-account` command', 
+                                inline: false 
+                            }
+                        )
+                        .setColor('#FFA500')
+                        .setTimestamp();
+                    
+                    await interaction.followUp(makeEphemeral({ embeds: [embed] }));
+                    writeLog(`Account unlinked via button for ${interaction.user.tag}: Steam ${existingLink.steam_id}`, 'Debug');
+                });
+            });
+        });
+        
+    } catch (error) {
+        writeLog(`Account unlink button error: ${error.message}`, 'Error');
+        await interaction.followUp(makeEphemeral({ 
+            content: ':x: An error occurred while unlinking account.'
+        }));
+    }
+}
+
 module.exports = {
     handleButtonInteraction,
     handleAdminConfirmation,
     handleAccountLinkingButton,
-    handleAccountStatusButton
+    handleAccountStatusButton,
+    handleAccountUnlinkButton
 };

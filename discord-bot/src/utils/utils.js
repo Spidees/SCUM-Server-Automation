@@ -7,13 +7,27 @@ let operationIdCounter = 1;
 
 // Write-Log compatibility function for PowerShell integration
 function writeLog(message, level = 'Info') {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] [${level}] ${message}`;
+    const CONFIG = require('../config/config');
+    
+    // Filter out Debug messages when debug mode is disabled
+    if (level.toLowerCase() === 'debug' && !CONFIG.debug) {
+        return;
+    }
+    
+    // Use consistent timestamp format to match PowerShell logs
+    const now = new Date();
+    const timestamp = now.getFullYear() + '-' + 
+                     String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                     String(now.getDate()).padStart(2, '0') + ' ' +
+                     String(now.getHours()).padStart(2, '0') + ':' +
+                     String(now.getMinutes()).padStart(2, '0') + ':' +
+                     String(now.getSeconds()).padStart(2, '0');
+    
+    const logMessage = `${timestamp} [${level}] ${message}`;
     
     console.log(logMessage);
     
     // Append to log file if it exists - use dynamic path
-    const CONFIG = require('../config/config');
     const logFile = path.join(CONFIG.rootDir, 'SCUM-Server-Automation.log');
     try {
         fs.appendFileSync(logFile, logMessage + '\n');
@@ -58,34 +72,19 @@ function getDb() {
 
 // Helper function for ephemeral responses (Discord.js v14+ compatibility)
 function makeEphemeral(options = {}) {
-    try {
-        const { InteractionResponseFlags } = require('discord.js');
-        return {
-            ...options,
-            flags: InteractionResponseFlags.Ephemeral
-        };
-    } catch (error) {
-        // Fallback to old method if InteractionResponseFlags not available
-        return {
-            ...options,
-            ephemeral: true
-        };
-    }
+    const { MessageFlags } = require('discord.js');
+    return {
+        ...options,
+        flags: MessageFlags.Ephemeral
+    };
 }
 
 // Helper function for ephemeral defer
 function makeEphemeralDefer() {
-    try {
-        const { InteractionResponseFlags } = require('discord.js');
-        return {
-            flags: InteractionResponseFlags.Ephemeral
-        };
-    } catch (error) {
-        // Fallback to old method if InteractionResponseFlags not available
-        return {
-            ephemeral: true
-        };
-    }
+    const { MessageFlags } = require('discord.js');
+    return {
+        flags: MessageFlags.Ephemeral
+    };
 }
 
 module.exports = {

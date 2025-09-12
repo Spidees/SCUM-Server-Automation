@@ -30,8 +30,8 @@ function Initialize-PrisonerModule {
         $script:DatabasePath = $DatabasePath
         $script:SqliteExePath = $SqliteExePath
         
-        Write-Log "[Prisoner] Module initialized successfully"
-        Write-Log "[Prisoner] Database: $DatabasePath"
+        Write-Log "[Prisoner] Module initialized successfully" -Level Debug
+        Write-Log "[Prisoner] Database: $DatabasePath" -Level Debug
         return @{ Success = $true }
     } catch {
         Write-Log "[Prisoner] Failed to initialize: $($_.Exception.Message)" -Level Error

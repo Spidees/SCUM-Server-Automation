@@ -43,7 +43,7 @@ function Initialize-InstallationModule {
     )
     
     $script:installationConfig = $Config
-    Write-Log "[Installation] Module initialized"
+    Write-Log "[Installation] Module initialized" -Level Debug
 }
 
 function Test-FirstInstall {
@@ -157,13 +157,13 @@ function Test-FirstInstall {
     $isComplete = $hasManifest -and $hasServerExe -and $hasSteamAppsDir -and $hasSavedDir -and $hasSteamCmd
     
     if (-not $isComplete) {
-        Write-Log "[Installation] First install required - checking installation status:"
-        Write-Log "[Installation]   Steam manifest file: $(if($hasManifest){'[OK]'}else{'[MISSING]'}) $manifestPath"
-        Write-Log "[Installation]   Steam apps directory: $(if($hasSteamAppsDir){'[OK]'}else{'[MISSING]'}) $steamAppsDir"
-        Write-Log "[Installation]   Server executable: $(if($hasServerExe){'[OK]'}else{'[MISSING]'}) $scumExe"
-        Write-Log "[Installation]   SCUM game directory: $(if($hasScumGameDir){'[OK]'}else{'[MISSING]'}) $scumGameDir"
-        Write-Log "[Installation]   Saved directory: $(if($hasSavedDir){'[OK]'}else{'[MISSING]'}) $savedDir"
-        Write-Log "[Installation]   SteamCMD executable: $(if($hasSteamCmd){'[OK]'}else{'[MISSING]'}) $steamCmdExe"
+        Write-Log "[Installation] First install required - checking installation status:" -Level Debug
+        Write-Log "[Installation]   Steam manifest file: $(if($hasManifest){'[OK]'}else{'[MISSING]'}) $manifestPath" -Level Debug
+        Write-Log "[Installation]   Steam apps directory: $(if($hasSteamAppsDir){'[OK]'}else{'[MISSING]'}) $steamAppsDir" -Level Debug
+        Write-Log "[Installation]   Server executable: $(if($hasServerExe){'[OK]'}else{'[MISSING]'}) $scumExe" -Level Debug
+        Write-Log "[Installation]   SCUM game directory: $(if($hasScumGameDir){'[OK]'}else{'[MISSING]'}) $scumGameDir" -Level Debug
+        Write-Log "[Installation]   Saved directory: $(if($hasSavedDir){'[OK]'}else{'[MISSING]'}) $savedDir" -Level Debug
+        Write-Log "[Installation]   SteamCMD executable: $(if($hasSteamCmd){'[OK]'}else{'[MISSING]'}) $steamCmdExe" -Level Debug
         
         # Analyze the situation and provide user guidance
         if ($hasManifest -and $hasServerExe -and -not $hasSteamCmd) {
@@ -190,14 +190,14 @@ function Test-FirstInstall {
                 Write-Log "[Installation] DETECTED: Server directory contains files but installation incomplete" -Level Warning
                 Write-Log "[Installation] Will preserve existing data and complete installation" -Level Warning
             } else {
-                Write-Log "[Installation] DETECTED: Empty server directory - will perform fresh installation" -Level Info
+                Write-Log "[Installation] DETECTED: Empty server directory - will perform fresh installation" -Level Debug
             }
         } else {
-            Write-Log "[Installation] DETECTED: No server directory - will perform fresh installation" -Level Info
+            Write-Log "[Installation] DETECTED: No server directory - will perform fresh installation" -Level Debug
         }
     } else {
-        Write-Log "[Installation] Server installation found and verified complete"
-        Write-Log "[Installation] Steam manifest verified: $manifestPath"
+        Write-Log "[Installation] Server installation found and verified complete" -Level Debug
+        Write-Log "[Installation] Steam manifest verified: $manifestPath" -Level Debug
     }
     
     return (-not $isComplete)
@@ -235,12 +235,12 @@ function Install-SteamCmd {
         
         # Check if SteamCMD already exists
         if (Test-PathExists $steamCmdExe) {
-            Write-Log "[Installation] SteamCMD found at: $steamCmdExe"
+            Write-Log "[Installation] SteamCMD found at: $steamCmdExe" -Level Debug
             
             # Test if SteamCMD is functional by checking its version
             try {
                 $testResult = & $steamCmdExe "+quit" 2>&1
-                Write-Log "[Installation] SteamCMD appears to be functional"
+                Write-Log "[Installation] SteamCMD appears to be functional" -Level Debug
                 $result.Success = $true
                 return $result
             } catch {
@@ -253,13 +253,13 @@ function Install-SteamCmd {
             }
         }
         
-        Write-Log "[Installation] SteamCMD not found, downloading from Steam..."
+        Write-Log "[Installation] SteamCMD not found, downloading from Steam..." -Level Debug
         
         # Create SteamCMD directory if it doesn't exist
         if (-not (Test-PathExists $steamCmdDir)) {
             try {
                 New-Item -Path $steamCmdDir -ItemType Directory -Force | Out-Null
-                Write-Log "[Installation] Created SteamCMD directory: $steamCmdDir"
+                Write-Log "[Installation] Created SteamCMD directory: $steamCmdDir" -Level Debug
             } catch {
                 $result.Error = "Failed to create SteamCMD directory: $($_.Exception.Message)"
                 return $result
@@ -270,23 +270,23 @@ function Install-SteamCmd {
         $steamCmdZipUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
         $steamCmdZipPath = Join-Path $steamCmdDir "steamcmd.zip"
         
-        Write-Log "[Installation] Downloading SteamCMD from: $steamCmdZipUrl"
+        Write-Log "[Installation] Downloading SteamCMD from: $steamCmdZipUrl" -Level Debug
         $webClient = New-Object System.Net.WebClient
         $webClient.DownloadFile($steamCmdZipUrl, $steamCmdZipPath)
-        Write-Log "[Installation] SteamCMD downloaded successfully"
+        Write-Log "[Installation] SteamCMD downloaded successfully" -Level Debug
         
         # Extract SteamCMD
-        Write-Log "[Installation] Extracting SteamCMD..."
+        Write-Log "[Installation] Extracting SteamCMD..." -Level Debug
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($steamCmdZipPath, $steamCmdDir)
         
         # Remove zip file
         Remove-Item $steamCmdZipPath -Force
-        Write-Log "[Installation] SteamCMD extracted and ready"
+        Write-Log "[Installation] SteamCMD extracted and ready" -Level Debug
         
         # Verify steamcmd.exe exists
         if (Test-PathExists $steamCmdExe) {
-            Write-Log "[Installation] SteamCMD installation verified at: $steamCmdExe"
+            Write-Log "[Installation] SteamCMD installation verified at: $steamCmdExe" -Level Debug
             $result.Success = $true
         } else {
             $result.Error = "SteamCMD executable not found after extraction"
@@ -317,11 +317,11 @@ function Initialize-ServerDirectory {
     
     try {
         if (-not (Test-PathExists $ServerDirectory)) {
-            Write-Log "[Installation] Creating server directory: $ServerDirectory"
+            Write-Log "[Installation] Creating server directory: $ServerDirectory" -Level Debug
             New-Item -Path $ServerDirectory -ItemType Directory -Force | Out-Null
-            Write-Log "[Installation] Server directory created successfully"
+            Write-Log "[Installation] Server directory created successfully" -Level Debug
         } else {
-            Write-Log "[Installation] Server directory already exists: $ServerDirectory"
+            Write-Log "[Installation] Server directory already exists: $ServerDirectory" -Level Debug
         }
         
         $result.Success = $true
@@ -374,8 +374,8 @@ function Start-FirstTimeServerGeneration {
             return $result
         }
         
-        Write-Log "[Installation] Launching SCUMServer.exe to generate configuration files..."
-        Write-Log "[Installation] NOTE: This will start the server directly (not as a service) to generate initial configuration" -Level Info
+        Write-Log "[Installation] Launching SCUMServer.exe to generate configuration files..." -Level Debug
+        Write-Log "[Installation] NOTE: This will start the server directly (not as a service) to generate initial configuration" -Level Debug
         
         # Try different approaches for starting the server
         $proc = $null
@@ -390,18 +390,18 @@ function Start-FirstTimeServerGeneration {
             $startInfo.RedirectStandardOutput = $false
             $startInfo.RedirectStandardError = $false
             
-            Write-Log "[Installation] Starting server with command: $($startInfo.FileName) $($startInfo.Arguments)"
+            Write-Log "[Installation] Starting server with command: $($startInfo.FileName) $($startInfo.Arguments)" -Level Debug
             $proc = [System.Diagnostics.Process]::Start($startInfo)
-            Write-Log "[Installation] Server process started (PID: $($proc.Id))"
-            Write-Log "[Installation] Server is now generating configuration files..."
+            Write-Log "[Installation] Server process started (PID: $($proc.Id))" -Level Debug
+            Write-Log "[Installation] Server is now generating configuration files..." -Level Debug
         } catch {
             Write-Log "[Installation] Failed to start server with ProcessStartInfo: $($_.Exception.Message)" -Level Warning
             
             # Method 2: Try simpler Start-Process 
             try {
-                Write-Log "[Installation] Trying alternative start method..."
+                Write-Log "[Installation] Trying alternative start method..." -Level Debug
                 $proc = Start-Process -FilePath $scumExe -ArgumentList "-log" -WorkingDirectory (Split-Path $scumExe -Parent) -PassThru
-                Write-Log "[Installation] Server process started with alternative method (PID: $($proc.Id))"
+                Write-Log "[Installation] Server process started with alternative method (PID: $($proc.Id))" -Level Debug
             } catch {
                 Write-Log "[Installation] Failed to start server with alternative method: $($_.Exception.Message)" -Level Warning
                 $result.Error = "Cannot start server process - may be blocked by antivirus or insufficient permissions"
@@ -422,7 +422,7 @@ function Start-FirstTimeServerGeneration {
         $allConfigsGenerated = $false
         $configCheckInterval = 3  # Check every 3 seconds
         
-        Write-Log "[Installation] Waiting for configuration files to be generated (timeout: $TimeoutSeconds seconds)..."
+        Write-Log "[Installation] Waiting for configuration files to be generated (timeout: $TimeoutSeconds seconds)..." -Level Debug
         
         while (-not $allConfigsGenerated -and $elapsed -lt $TimeoutSeconds) {
             Start-Sleep -Seconds $configCheckInterval
@@ -455,27 +455,27 @@ function Start-FirstTimeServerGeneration {
             
             # Progress update every 15 seconds
             if (($elapsed % 15) -eq 0) {
-                Write-Log "[Installation] Progress check ($elapsed/$TimeoutSeconds seconds):"
-                Write-Log "[Installation]   Config directory: $(if($hasConfigDir){'[OK]'}else{'[MISSING]'})"
-                Write-Log "[Installation]   Config files created: $($createdConfigs.Count)/$($essentialConfigFiles.Count) ($($createdConfigs -join ', '))"
-                Write-Log "[Installation]   Log file: $(if($hasLogFile){'[OK]'}else{'[MISSING]'})"
-                Write-Log "[Installation]   Save files directory: $(if($hasSaveFilesDir){'[OK]'}else{'[MISSING]'})"
+                Write-Log "[Installation] Progress check ($elapsed/$TimeoutSeconds seconds):" -Level Debug
+                Write-Log "[Installation]   Config directory: $(if($hasConfigDir){'[OK]'}else{'[MISSING]'})" -Level Debug
+                Write-Log "[Installation]   Config files created: $($createdConfigs.Count)/$($essentialConfigFiles.Count) ($($createdConfigs -join ', '))" -Level Debug
+                Write-Log "[Installation]   Log file: $(if($hasLogFile){'[OK]'}else{'[MISSING]'})" -Level Debug
+                Write-Log "[Installation]   Save files directory: $(if($hasSaveFilesDir){'[OK]'}else{'[MISSING]'})" -Level Debug
                 
                 if (-not $allConfigsGenerated) {
-                    Write-Log "[Installation] Server is still initializing, please wait..."
+                    Write-Log "[Installation] Server is still initializing, please wait..." -Level Debug
                 }
             }
         }
         
         if ($allConfigsGenerated) {
-            Write-Log "[Installation] SUCCESS: All required files and folders have been generated!"
-            Write-Log "[Installation]   Config directory: [OK] $configDir"
+            Write-Log "[Installation] SUCCESS: All required files and folders have been generated!" -Level Debug
+            Write-Log "[Installation]   Config directory: [OK] $configDir" -Level Debug
             foreach ($configFile in $essentialConfigFiles) {
-                Write-Log "[Installation]   $configFile : [OK]"
+                Write-Log "[Installation]   $configFile : [OK]" -Level Debug
             }
-            Write-Log "[Installation]   Log file: [OK] $logFile"
-            Write-Log "[Installation]   Save files directory: [OK] $saveFilesDir"
-            Write-Log "[Installation] Configuration generation completed successfully"
+            Write-Log "[Installation]   Log file: [OK] $logFile" -Level Debug
+            Write-Log "[Installation]   Save files directory: [OK] $saveFilesDir" -Level Debug
+            Write-Log "[Installation] Configuration generation completed successfully" -Level Debug
             $result.Success = $true
         } else {
             Write-Log "[Installation] TIMEOUT: Not all required files/folders were generated within $TimeoutSeconds seconds" -Level Warning
@@ -495,18 +495,18 @@ function Start-FirstTimeServerGeneration {
         }
         
         # Stop the server process
-        Write-Log "[Installation] Stopping server process..."
+        Write-Log "[Installation] Stopping server process..." -Level Debug
         if (-not $proc.HasExited) {
             try {
                 Stop-Process -Id $proc.Id -Force
                 Start-Sleep -Seconds 2  # Give it time to stop
-                Write-Log "[Installation] Server process stopped successfully"
+                Write-Log "[Installation] Server process stopped successfully" -Level Debug
             } catch {
                 Write-Log "[Installation] Failed to stop server process: $($_.Exception.Message)" -Level Warning
                 Write-Log "[Installation] Server process may stop on its own" -Level Warning
             }
         } else {
-            Write-Log "[Installation] Server process has already exited"
+            Write-Log "[Installation] Server process has already exited" -Level Debug
         }
         
         # Dispose of process object to prevent memory leak
@@ -553,13 +553,10 @@ function Invoke-FirstInstall {
     $result = @{ Success = $false; Error = "" }
     
     try {
-        Write-Log "[Installation] Starting first install process"
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            Send-DiscordNotification -Type 'installation.started' -Data @{}
-        }
+        Write-Log "[Installation] Starting first install process" -Level Debug
         
         # Pre-installation cleanup and validation
-        Write-Log "[Installation] Performing pre-installation validation..."
+        Write-Log "[Installation] Performing pre-installation validation..." -Level Debug
         
         # Check if server directory exists and has content
         if (Test-PathExists $ServerDirectory) {
@@ -570,29 +567,23 @@ function Invoke-FirstInstall {
         }
         
         # Step 1: Install SteamCMD
-        Write-Log "[Installation] Step 1/4: Installing SteamCMD..."
+        Write-Log "[Installation] Step 1/4: Installing SteamCMD..." -Level Debug
         $steamCmdResult = Install-SteamCmd -SteamCmdPath $SteamCmdPath
         if (-not $steamCmdResult.Success) {
             $result.Error = "SteamCMD installation failed: $($steamCmdResult.Error)"
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                Send-DiscordNotification -Type 'installation.failed' -Data @{ error = $result.Error }
-            }
             return $result
         }
         
         # Step 2: Create server directory
-        Write-Log "[Installation] Step 2/4: Preparing server directory..."
+        Write-Log "[Installation] Step 2/4: Preparing server directory..." -Level Debug
         $serverDirResult = Initialize-ServerDirectory -ServerDirectory $ServerDirectory
         if (-not $serverDirResult.Success) {
             $result.Error = "Server directory setup failed: $($serverDirResult.Error)"
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                Send-DiscordNotification -Type 'installation.failed' -Data @{ error = $result.Error }
-            }
             return $result
         }
         
         # Step 3: Download server files
-        Write-Log "[Installation] Step 3/4: Downloading SCUM server files via SteamCMD..."
+        Write-Log "[Installation] Step 3/4: Downloading SCUM server files via SteamCMD..." -Level Debug
         
         # Get the directory part of steamCmd path for Update-GameServer
         $steamCmdDirectory = if ($SteamCmdPath -like "*steamcmd.exe") {
@@ -605,9 +596,6 @@ function Invoke-FirstInstall {
         
         if (-not $updateResult.Success) {
             $result.Error = "Server download failed: $($updateResult.Error)"
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                Send-DiscordNotification -Type 'installation.failed' -Data @{ error = $result.Error }
-            }
             
             # Check if partial download occurred
             $scumExe = Join-Path $ServerDirectory "SCUM\Binaries\Win64\SCUMServer.exe"
@@ -623,14 +611,11 @@ function Invoke-FirstInstall {
         $scumExe = Join-Path $ServerDirectory "SCUM\Binaries\Win64\SCUMServer.exe"
         if (-not (Test-PathExists $scumExe)) {
             $result.Error = "Server executable not found after download: $scumExe"
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                Send-DiscordNotification -Type 'installation.failed' -Data @{ error = $result.Error }
-            }
             return $result
         }
         
         # Step 4: Generate configuration files
-        Write-Log "[Installation] Step 4/4: Generating initial configuration files..."
+        Write-Log "[Installation] Step 4/4: Generating initial configuration files..." -Level Debug
         $configResult = Start-FirstTimeServerGeneration -ServerDirectory $ServerDirectory
         if (-not $configResult.Success) {
             Write-Log "[Installation] Config generation failed: $($configResult.Error)" -Level Warning
@@ -646,17 +631,17 @@ function Invoke-FirstInstall {
                 New-Item -Path $configDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
                 New-Item -Path $logsDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
                 New-Item -Path $saveFilesDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
-                Write-Log "[Installation] Basic directory structure created"
+                Write-Log "[Installation] Basic directory structure created" -Level Debug
             } catch {
                 Write-Log "[Installation] Failed to create basic directories: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "[Installation] Configuration files generated successfully"
-            Write-Log "[Installation] IMPORTANT: Server configuration complete" -Level Info
+            Write-Log "[Installation] Configuration files generated successfully" -Level Debug
+            Write-Log "[Installation] IMPORTANT: Server configuration complete" -Level Debug
         }
         
         # Final verification
-        Write-Log "[Installation] Performing final installation verification..."
+        Write-Log "[Installation] Performing final installation verification..." -Level Debug
         $manifestPath = Join-Path $ServerDirectory "steamapps/appmanifest_$AppId.acf"
         $scumExe = Join-Path $ServerDirectory "SCUM\Binaries\Win64\SCUMServer.exe"
         $savedDir = Join-Path $ServerDirectory "SCUM\Saved"
@@ -673,23 +658,12 @@ function Invoke-FirstInstall {
             Write-Log "[Installation] WARNING: Some components may be missing: $($failedChecks -join ', ')" -Level Warning
             Write-Log "[Installation] Installation completed with warnings - manual verification recommended" -Level Warning
         } else {
-            Write-Log "[Installation] All components verified successfully"
+            Write-Log "[Installation] All components verified successfully" -Level Debug
         }
         
-        Write-Log "[Installation] First install completed successfully"
-        Write-Log "[Installation] IMPORTANT: Installation complete - automation script must now be stopped" -Level Info
-        Write-Log "[Installation] NEXT STEP: Configure Windows service using NSSM and restart automation script" -Level Info
-        
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            Send-DiscordNotification -Type 'installation.completed' -Data @{
-                server_directory = $ServerDirectory
-                steam_cmd_path = $SteamCmdPath
-                duration = "N/A"
-                next_step = "Configure Windows service via NSSM"
-                service_name = $ServiceName
-                executable_path = $scumExe
-            }
-        }
+        Write-Log "[Installation] First install completed successfully" -Level Debug
+        Write-Log "[Installation] IMPORTANT: Installation complete - automation script must now be stopped" -Level Debug
+        Write-Log "[Installation] NEXT STEP: Configure Windows service using NSSM and restart automation script" -Level Debug
         
         $result.Success = $true
         $result.RequireRestart = $true  # Changed to true - require manual restart after service setup
@@ -706,9 +680,6 @@ function Invoke-FirstInstall {
         Write-Log "[Installation] 3. Ensure stable internet connection for downloads" -Level Warning
         Write-Log "[Installation] 4. Try running script as Administrator if permission errors occur" -Level Warning
         
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            Send-DiscordNotification -Type 'installation.failed' -Data @{ error = $result.Error }
-        }
     }
     
     return $result
@@ -751,7 +722,7 @@ function Invoke-InstallationUpdate {
     $result = @{ Success = $false; Error = "" }
     
     try {
-        Write-Log "[Installation] Starting immediate update"
+        Write-Log "[Installation] Starting immediate update" -Level Debug
         
         # Ensure SteamCMD path is directory format for Update-GameServer
         $steamCmdDirectory = if ($SteamCmdPath -like "*steamcmd.exe") {
@@ -762,17 +733,14 @@ function Invoke-InstallationUpdate {
         
         # Create backup before update if settings provided
         if ($BackupSettings.Keys.Count -gt 0) {
-            Write-Log "[Installation] Creating backup before update"
+            Write-Log "[Installation] Creating backup before update" -Level Debug
             $backupResult = Invoke-GameBackup -SourcePath $BackupSettings.SourcePath -BackupRoot $BackupSettings.BackupRoot -MaxBackups $BackupSettings.MaxBackups -CompressBackups $BackupSettings.CompressBackups
             
             if (-not $backupResult) {
                 $result.Error = "Pre-update backup failed"
-                if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                    Send-DiscordNotification -Type 'backup.failed' -Data @{ error = $result.Error }
-                }
                 return $result
             }
-            Write-Log "[Installation] Backup created successfully"
+            Write-Log "[Installation] Backup created successfully" -Level Debug
         }
         
         # Stop service if running
@@ -784,34 +752,18 @@ function Invoke-InstallationUpdate {
         $updateResult = Update-GameServer -SteamCmdPath $steamCmdDirectory -ServerDirectory $ServerDirectory -AppId $AppId -ServiceName $ServiceName
         
         if ($updateResult.Success) {
-            Write-Log "[Installation] Server updated successfully"
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                Send-DiscordNotification -Type 'update.completed' -Data @{
-                    new_version = "Unknown"
-                    duration = "N/A"
-                }
-            }
+            Write-Log "[Installation] Server updated successfully" -Level Debug
             
             # Start service after update
             Start-GameService -ServiceName $ServiceName -Context "post-update"
             $result.Success = $true
         } else {
             $result.Error = "Update failed: $($updateResult.Error)"
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                Send-DiscordNotification -Type 'update.failed' -Data @{ 
-                    error = $result.Error
-                }
-            }
         }
         
     } catch {
         $result.Error = "Update process failed: $($_.Exception.Message)"
         Write-Log "[Installation] $($result.Error)" -Level Error
-        if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-            Send-DiscordNotification -Type 'update.failed' -Data @{ 
-                error = $result.Error
-            }
-        }
     }
     
     return $result
@@ -838,13 +790,13 @@ function Install-SqliteTools {
         
         # Check if SQLite tools already exist
         if (Test-PathExists $sqliteExe) {
-            Write-Log "[Installation] SQLite tools found at: $sqliteExe"
+            Write-Log "[Installation] SQLite tools found at: $sqliteExe" -Level Debug
             
             # Test if SQLite is functional
             try {
                 $testResult = & $sqliteExe "-version" 2>&1
                 if ($testResult) {
-                    Write-Log "[Installation] SQLite tools are functional (Version: $testResult)"
+                    Write-Log "[Installation] SQLite tools are functional (Version: $testResult)" -Level Debug
                     $result.Success = $true
                     return $result
                 }
@@ -858,13 +810,13 @@ function Install-SqliteTools {
             }
         }
         
-        Write-Log "[Installation] SQLite tools not found, downloading from SQLite.org..."
+        Write-Log "[Installation] SQLite tools not found, downloading from SQLite.org..." -Level Debug
         
         # Create SQLite tools directory if it doesn't exist
         if (-not (Test-PathExists $SqliteToolsPath)) {
             try {
                 New-Item -Path $SqliteToolsPath -ItemType Directory -Force | Out-Null
-                Write-Log "[Installation] Created SQLite tools directory: $SqliteToolsPath"
+                Write-Log "[Installation] Created SQLite tools directory: $SqliteToolsPath" -Level Debug
             } catch {
                 $result.Error = "Failed to create SQLite tools directory: $($_.Exception.Message)"
                 return $result
@@ -875,13 +827,13 @@ function Install-SqliteTools {
         $sqliteZipUrl = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3450300.zip"
         $sqliteZipPath = Join-Path $SqliteToolsPath "sqlite-tools.zip"
         
-        Write-Log "[Installation] Downloading SQLite tools from: $sqliteZipUrl"
+        Write-Log "[Installation] Downloading SQLite tools from: $sqliteZipUrl" -Level Debug
         $webClient = New-Object System.Net.WebClient
         $webClient.DownloadFile($sqliteZipUrl, $sqliteZipPath)
-        Write-Log "[Installation] SQLite tools downloaded successfully"
+        Write-Log "[Installation] SQLite tools downloaded successfully" -Level Debug
         
         # Extract SQLite tools
-        Write-Log "[Installation] Extracting SQLite tools..."
+        Write-Log "[Installation] Extracting SQLite tools..." -Level Debug
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         
         # Extract directly to main directory first, then reorganize if needed
@@ -903,7 +855,7 @@ function Install-SqliteTools {
             }
         }
         Remove-Item $sqliteZipPath -Force
-        Write-Log "[Installation] SQLite tools extracted and ready"
+        Write-Log "[Installation] SQLite tools extracted and ready" -Level Debug
         
         # Verify sqlite3.exe exists
         if (Test-PathExists $sqliteExe) {
@@ -1059,6 +1011,141 @@ function Install-NodeJS {
     return $result
 }
 
+function Install-NSSMService {
+    <#
+    .SYNOPSIS
+    Automatically configure Windows service using NSSM
+    .PARAMETER Config
+    Configuration object containing service settings
+    .PARAMETER ServerDirectory  
+    Server installation directory
+    .RETURNS
+    Result object with Success, Message, and Error properties
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [object]$Config,
+        
+        [Parameter(Mandatory)]
+        [string]$ServerDirectory
+    )
+    
+    $result = @{
+        Success = $false
+        Message = ""
+        Error = ""
+    }
+    
+    try {
+        Write-Host "Configuring NSSM service..." -ForegroundColor Yellow
+        
+        # Get configuration values
+        $serviceName = if ($Config.serviceName) { $Config.serviceName } else { "SCUMSERVER" }
+        $serverPort = if ($Config.serverPort) { $Config.serverPort } else { "7777" }
+        $queryPort = if ($Config.publicPort) { $Config.publicPort } else { "7779" }
+        
+        # Paths
+        $nssmExe = Join-Path $PSScriptRoot "..\..\..\nssm.exe"
+        $serverExe = Join-Path $ServerDirectory "SCUM\Binaries\Win64\SCUMServer.exe"
+        $startupDir = Join-Path $ServerDirectory "SCUM\Binaries\Win64"
+        
+        # Verify NSSM exists
+        if (-not (Test-Path $nssmExe)) {
+            throw "NSSM executable not found at: $nssmExe"
+        }
+        
+        # Verify server executable exists
+        if (-not (Test-Path $serverExe)) {
+            throw "SCUM Server executable not found at: $serverExe"
+        }
+        
+        Write-Host "Service Name: $serviceName" -ForegroundColor Cyan
+        Write-Host "Server Port: $serverPort" -ForegroundColor Cyan
+        Write-Host "Query Port: $queryPort" -ForegroundColor Cyan
+        Write-Host "Executable: $serverExe" -ForegroundColor Cyan
+        
+        # Remove existing service if it exists
+        $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+        if ($existingService) {
+            Write-Host "Removing existing service..." -ForegroundColor Yellow
+            & $nssmExe remove $serviceName confirm
+            Start-Sleep -Seconds 2
+        }
+        
+        # Install service
+        Write-Host "Installing service..." -ForegroundColor Yellow
+        & $nssmExe install $serviceName $serverExe
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install service (Exit code: $LASTEXITCODE)"
+        }
+        
+        # Configure Application Tab
+        Write-Host "Configuring application settings..." -ForegroundColor Yellow
+        & $nssmExe set $serviceName Application $serverExe
+        & $nssmExe set $serviceName AppDirectory $startupDir
+        & $nssmExe set $serviceName AppParameters "-port=$serverPort -QueryPort=$queryPort -log"
+        
+        # Configure Service Tab
+        Write-Host "Configuring service settings..." -ForegroundColor Yellow
+        & $nssmExe set $serviceName DisplayName $serviceName
+        & $nssmExe set $serviceName Description "SCUM Dedicated Server"
+        & $nssmExe set $serviceName Start SERVICE_DEMAND_START
+        
+        # Configure Log On Tab
+        Write-Host "Configuring logon settings..." -ForegroundColor Yellow
+        & $nssmExe set $serviceName ObjectName LocalSystem
+        & $nssmExe set $serviceName Type SERVICE_INTERACTIVE_PROCESS
+        
+        # Configure Process Tab
+        Write-Host "Configuring process settings..." -ForegroundColor Yellow
+        & $nssmExe set $serviceName AppPriority REALTIME_PRIORITY_CLASS
+        & $nssmExe set $serviceName AppNoConsole 0
+        & $nssmExe set $serviceName AppAffinity "All"
+        
+        # Configure Shutdown Tab
+        Write-Host "Configuring shutdown settings..." -ForegroundColor Yellow
+        & $nssmExe set $serviceName AppStopMethodSkip 0
+        & $nssmExe set $serviceName AppStopMethodConsole 300000
+        & $nssmExe set $serviceName AppStopMethodWindow 2000
+        & $nssmExe set $serviceName AppStopMethodThreads 2000
+        & $nssmExe set $serviceName AppKillConsoleDelay 1500
+        & $nssmExe set $serviceName AppKillWindowDelay 1500
+        & $nssmExe set $serviceName AppKillThreadsDelay 1500
+        & $nssmExe set $serviceName AppThrottle 3000
+        
+        # Configure Exit Actions Tab (srvany compatible)
+        Write-Host "Configuring exit actions..." -ForegroundColor Yellow
+        & $nssmExe set $serviceName AppExit Default Ignore
+        & $nssmExe set $serviceName AppRestartDelay 3000
+        
+        # Additional SCUM-specific settings
+        & $nssmExe set $serviceName AppStdout $startupDir\service_stdout.log
+        & $nssmExe set $serviceName AppStderr $startupDir\service_stderr.log
+        & $nssmExe set $serviceName AppRotateFiles 1
+        & $nssmExe set $serviceName AppRotateOnline 1
+        & $nssmExe set $serviceName AppRotateSeconds 86400
+        & $nssmExe set $serviceName AppRotateBytes 10485760
+        
+        Write-Host "Service configuration completed successfully!" -ForegroundColor Green
+        
+        # Verify service was created
+        $newService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+        if ($newService) {
+            $result.Success = $true
+            $result.Message = "Service '$serviceName' configured successfully"
+            Write-Host "Service '$serviceName' is ready for use!" -ForegroundColor Green
+        } else {
+            throw "Service was not created successfully"
+        }
+        
+    } catch {
+        $result.Error = "Failed to configure NSSM service: $($_.Exception.Message)"
+        Write-Host "Error configuring service: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    
+    return $result
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'Initialize-InstallationModule',
@@ -1069,5 +1156,6 @@ Export-ModuleMember -Function @(
     'Invoke-FirstInstall',
     'Invoke-InstallationUpdate',
     'Install-SqliteTools',
-    'Install-NodeJS'
+    'Install-NodeJS',
+    'Install-NSSMService'
 )

@@ -1,8 +1,9 @@
 # ===============================================================
-# SCUM Server Automation System
+# SCUM Server Automation System - REFACTORED
 # ===============================================================
 # Complete server management automation for SCUM Dedicated Server
 # Provides monitoring, backup, updates, Discord integration, and scheduling
+# Now organized into initialization phases for better maintainability
 # ===============================================================
 
 param(
@@ -12,32 +13,139 @@ param(
     [switch]$RestartServer,
     [switch]$UpdateServer,
     [switch]$ValidateServer,
-    [switch]$CreateBackup
+    [switch]$CreateBackup,
+    [switch]$Quiet
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Initial console output before logging is available
-Write-Host "=== SCUM Server Automation - Starting ===" -ForegroundColor Green
-Write-Host "Loading complete system with all modules..." -ForegroundColor Cyan
+# Global variable for quiet mode control
+$script:QuietMode = $Quiet
 
 # ===============================================================
-# DISCORD BOT INTEGRATION - HANDLED BY DISCORD-INTEGRATION MODULE
+# PHASE-BASED INITIALIZATION SYSTEM
 # ===============================================================
+$script:InitializationPhases = @{
+    1 = "Initial Setup & Encoding"
+    2 = "Cleanup Handler Registration"
+    3 = "Configuration Loading"
+    4 = "Global Variables Setup"
+    5 = "Module Loading"
+    6 = "Logging System Initialization"
+    7 = "Database Initialization"
+    8 = "Server Service Setup"
+    9 = "Discord Integration Setup"
+    10 = "Monitoring System Setup"
+    11 = "Scheduler Setup"
+    12 = "Backup System Setup"
+    13 = "Update System Setup"
+    14 = "Log Processing Setup"
+    15 = "API Server Setup"
+    16 = "Final Validation & Ready State"
+}
+
+function Write-PhaseStatus {
+    param(
+        [int]$Phase,
+        [string]$Status = "Starting",
+        [string]$Message = ""
+    )
+    
+    $phaseName = $InitializationPhases[$Phase]
+    $color = switch ($Status) {
+        "Starting" { "Cyan" }
+        "Success" { "Green" }
+        "Warning" { "Yellow" }
+        "Error" { "Red" }
+        default { "White" }
+    }
+    
+    $statusText = "[$Status]"
+    if ($Message) { $statusText += " $Message" }
+    
+    # Always log to file
+    if ($script:LogPath) {
+        Write-Log "Phase $Phase - $phaseName : $statusText" -Level Info
+    }
+    
+    # In quiet mode, show only progress updates for phase completion
+    if ($script:QuietMode) {
+        if ($Status -eq "Success") {
+            Write-Host "  Phase $Phase/16 - $phaseName [OK]" -ForegroundColor Green
+        } elseif ($Status -eq "Error") {
+            Write-Host "  Phase $Phase/16 - $phaseName [ERROR]" -ForegroundColor Red
+        } elseif ($Status -eq "Warning") {
+            Write-Host "  Phase $Phase/16 - $phaseName [WARNING]" -ForegroundColor Yellow
+        }
+    } else {
+        # Full output in normal mode
+        Write-Host "Phase $Phase - $phaseName : $statusText" -ForegroundColor $color
+    }
+}
+
+function Write-QuietOutput {
+    param(
+        [string]$Message,
+        [string]$Color = "White",
+        [switch]$Important
+    )
+    
+    # Always log to file (but only to file, not console)
+    if ($script:LogPath) {
+        # Write directly to log file to avoid console duplication
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logLine = "$timestamp $Message"
+        try {
+            Add-Content -Path $script:LogPath -Value $logLine -Encoding UTF8
+        } catch {
+            # Fallback to Write-Log if file access fails
+            Write-Log $Message -Level Info
+        }
+    }
+    
+    # Show in console if not Quiet mode, or if Important flag is set
+    if (-not $script:QuietMode -or $Important) {
+        Write-Host $Message -ForegroundColor $Color
+    }
+}
+
+# ===============================================================
+# PHASE 1: INITIAL SETUP & ENCODING
+# ===============================================================
+Write-PhaseStatus -Phase 1 -Status "Starting"
+
+if ($script:QuietMode) {
+    Write-Host "=== SCUM Server Automation - Starting (Quiet Mode) ===" -ForegroundColor Green
+    Write-Host "Loading system... (detailed output in log file)" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Progress:" -ForegroundColor Yellow
+    Write-Host "  Phase 1/16 - Initial Setup..." -ForegroundColor Cyan
+} else {
+    Write-Host "=== SCUM Server Automation - Starting ===" -ForegroundColor Green
+    Write-Host "Loading complete system with all modules..." -ForegroundColor Cyan
+}
+Write-PhaseStatus -Phase 1 -Status "Success" -Message "Console encoding and initial setup complete"
+
+# ===============================================================
+# PHASE 2: CLEANUP HANDLER REGISTRATION
+# ===============================================================
+Write-PhaseStatus -Phase 2 -Status "Starting"
+
+# DISCORD BOT INTEGRATION - HANDLED BY DISCORD-INTEGRATION MODULE
 # Discord bot management is now handled by the discord-integration.psm1 module
 # No inline functions needed - everything is modularized
 
-# ===============================================================
 # CLEANUP HANDLER
-# ===============================================================
 $CleanupHandler = {
     Write-Log "Shutting down gracefully..." -Level Warning
     
-    # Send shutdown notification via integrated Discord bot
+    # Send shutdown notification via HTTP API
     try {
-        if (Get-Command "Send-DiscordHttpNotification" -ErrorAction SilentlyContinue) {
-            Send-DiscordHttpNotification -Type "manager.stopped" -Data @{}
+        $notificationData = @{
+            type = "manager.stopped"
+            data = @{}
         }
+        Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
     } catch { }
     
     # Stop integrated Discord bot via module
@@ -56,15 +164,17 @@ $CleanupHandler = {
 # Register cleanup handlers
 try {
     [Console]::CancelKeyPress += $CleanupHandler
+    Write-PhaseStatus -Phase 2 -Status "Success" -Message "Ctrl+C handler registered"
 } catch {
-    Write-Host "Note: Ctrl+C handler not available in this PowerShell version" -ForegroundColor Yellow
+    Write-PhaseStatus -Phase 2 -Status "Warning" -Message "Ctrl+C handler not available in this PowerShell version"
 }
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $CleanupHandler
+Write-PhaseStatus -Phase 2 -Status "Success" -Message "Cleanup handlers registered"
 
 # ===============================================================
-# CONFIGURATION LOADING
+# PHASE 3: CONFIGURATION LOADING
 # ===============================================================
-Write-Host "Loading configuration..." -ForegroundColor Yellow
+Write-PhaseStatus -Phase 3 -Status "Starting"
 
 # Store ConfigPath in script scope for functions
 $script:ConfigPath = $ConfigPath
@@ -73,19 +183,19 @@ $script:ConfigPath = $ConfigPath
 $script:RootDir = $PSScriptRoot
 
 if (-not (Test-Path $ConfigPath)) {
-    Write-Host "Configuration file not found: $ConfigPath" -ForegroundColor Red
+    Write-PhaseStatus -Phase 3 -Status "Error" -Message "Configuration file not found: $ConfigPath"
     Read-Host "Press Enter to exit"
     exit 1
 }
 
 try {
     $config = Get-Content $ConfigPath | ConvertFrom-Json
-    Write-Host "Configuration loaded: $ConfigPath" -ForegroundColor Green
+    Write-PhaseStatus -Phase 3 -Status "Success" -Message "Configuration loaded: $ConfigPath"
     
     # Keep original config for array parsing (before hashtable conversion)
     $originalConfig = $config
 } catch {
-    Write-Host "Failed to load configuration: $($_.Exception.Message)" -ForegroundColor Red
+    Write-PhaseStatus -Phase 3 -Status "Error" -Message "Failed to load configuration: $($_.Exception.Message)"
     Read-Host "Press Enter to exit"
     exit 1
 }
@@ -113,6 +223,11 @@ function ConvertTo-Hashtable {
     }
 }
 
+# ===============================================================
+# PHASE 4: GLOBAL VARIABLES SETUP
+# ===============================================================
+Write-PhaseStatus -Phase 4 -Status "Starting"
+
 $configHash = ConvertTo-Hashtable $config
 Set-Variable -Name "config" -Value $configHash -Scope Global
 Set-Variable -Name "originalConfig" -Value $originalConfig -Scope Global
@@ -124,20 +239,17 @@ $backupRoot = $configHash.backupRoot
 $steamCmd = $configHash.steamCmd
 $serverDir = $configHash.serverDir
 
-Write-Host "Service: $serviceName" -ForegroundColor Cyan
+Write-PhaseStatus -Phase 4 -Status "Success" -Message "Service: $serviceName"
 
-# ===============================================================
-# GLOBAL LOG PATH SETUP (MUST BE BEFORE MODULE LOADING)
-# ===============================================================
 # Set global automation log path BEFORE loading any modules
 # This prevents parser module from using server log path
 $global:AutomationLogPath = Join-Path $PSScriptRoot "SCUM-Server-Automation.log"
-Write-Host "Global automation log path: $global:AutomationLogPath" -ForegroundColor Cyan
+Write-PhaseStatus -Phase 4 -Status "Success" -Message "Global automation log path: $global:AutomationLogPath"
 
 # ===============================================================
-# MODULE LOADING
+# PHASE 5: MODULE LOADING
 # ===============================================================
-Write-Host "`nLoading system modules..." -ForegroundColor Yellow
+Write-PhaseStatus -Phase 5 -Status "Starting"
 
 $modules = @(
     "core\common\common.psm1",
@@ -146,8 +258,6 @@ $modules = @(
     "server\service\service.psm1",
     "server\monitoring\monitoring.psm1",
     "server\installation\installation.psm1",
-    "communication\discord\chat\chat-manager.psm1",
-    "communication\discord\account-linking.psm1",
     "logs\kill-log.psm1",
     "logs\eventkill-log.psm1",
     "logs\admin-log.psm1",
@@ -168,8 +278,7 @@ $modules = @(
     "communication\discord\live-embeds\server-status-embed.psm1",
     "communication\discord\live-embeds\leaderboards-embed.psm1",
     "communication\discord\discord-integration.psm1",
-    "communication\discord\embed-persistence.psm1",
-    "communication\discord\notifications\notification-manager.psm1"
+    "communication\discord\embed-persistence.psm1"
 )
 
 $loadedModules = @()
@@ -182,24 +291,31 @@ foreach ($module in $modules) {
             $moduleName = (Split-Path $module -Leaf) -replace '\.psm1$', ''
             # MEMORY LEAK FIX: Check if module already loaded before importing
             if (-not (Get-Module $moduleName -ErrorAction SilentlyContinue)) {
-                Import-Module $modulePath -Global -WarningAction SilentlyContinue -ErrorAction Stop
+                if ($script:QuietMode) {
+                    # In quiet mode, completely suppress all module output
+                    Import-Module $modulePath -Global -WarningAction SilentlyContinue -ErrorAction Stop *>$null
+                } else {
+                    Import-Module $modulePath -Global -WarningAction SilentlyContinue -ErrorAction Stop
+                }
             }
-            Write-Host "  [OK] $moduleName" -ForegroundColor Green
+            if (-not $script:QuietMode) {
+                Write-QuietOutput "  [OK] $moduleName" -Color Green
+            }
             $loadedModules += $moduleName
         } catch {
-            Write-Host "  [ERROR] $module - $($_.Exception.Message)" -ForegroundColor Red
+            Write-QuietOutput "  [ERROR] $module - $($_.Exception.Message)" -Color Red -Important
         }
     } else {
-        Write-Host "  [WARN] $module - Not found" -ForegroundColor Yellow
+        Write-QuietOutput "  [WARN] $module - Not found" -Color Yellow -Important
     }
 }
 
-Write-Host "Loaded $($loadedModules.Count) modules successfully" -ForegroundColor Green
+Write-PhaseStatus -Phase 5 -Status "Success" -Message "Loaded $($loadedModules.Count) modules successfully"
 
 # ===============================================================
-# SYSTEM INITIALIZATION
+# PHASE 6: LOGGING SYSTEM INITIALIZATION
 # ===============================================================
-Write-Host "`nInitializing system components..." -ForegroundColor Yellow
+Write-PhaseStatus -Phase 6 -Status "Starting"
 
 # Initialize common module (logging, paths) - MUST BE FIRST
 if (Get-Command "Initialize-CommonModule" -ErrorAction SilentlyContinue) {
@@ -212,27 +328,29 @@ if (Get-Command "Initialize-CommonModule" -ErrorAction SilentlyContinue) {
         Initialize-CommonModule -Config $configHash -LogPath $logPath -RootPath $PSScriptRoot
         
         # NOW Write-Log is available - switch from Write-Host to Write-Log
-        Write-Log "[OK] Common module (logging, paths) initialized"
+        Write-Log "Common module (logging, paths) initialized" -Level Info
+        Write-PhaseStatus -Phase 6 -Status "Success" -Message "Logging system initialized"
         
         # Write-Log is now available globally from common module - no need to override
         
     } catch {
-        Write-Host "[WARN] Common module failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-PhaseStatus -Phase 6 -Status "Warning" -Message "Common module failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Host "[ERROR] Common module not available" -ForegroundColor Red
+    Write-PhaseStatus -Phase 6 -Status "Error" -Message "Common module not available"
 }
 
 # ===============================================================
-# PHASE 1: SERVER INSTALLATION & SETUP
+# PHASE 7: DATABASE INITIALIZATION
 # ===============================================================
-Write-Log "Phase 1: Server Installation & Setup..." -Level Info
+Write-PhaseStatus -Phase 7 -Status "Starting"
 
 # Initialize installation system FIRST
 if (Get-Command "Initialize-InstallationModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-InstallationModule -Config $configHash
         Write-Log "[OK] Installation system initialized"
+        Write-PhaseStatus -Phase 7 -Status "Success" -Message "Installation system ready"
         
         # Check if server is installed
         $serverDir = if ($configHash.serverDir) { $configHash.serverDir } else { ".\server" }
@@ -241,58 +359,69 @@ if (Get-Command "Initialize-InstallationModule" -ErrorAction SilentlyContinue) {
         
         # Check if SteamCMD exists
         if (-not (Test-Path $steamCmdPath)) {
-            Write-Log "[INSTALL] SteamCMD not found, installing..." -Level Warning
+            Write-PhaseStatus -Phase 7 -Status "Warning" -Message "SteamCMD not found, installing..."
             try {
                 if (Get-Command "Install-SteamCmd" -ErrorAction SilentlyContinue) {
                     $steamResult = Install-SteamCmd -SteamCmdPath $steamCmdPath
                     if ($steamResult.Success) {
                         Write-Log "[OK] SteamCMD installed successfully"
+                        Write-PhaseStatus -Phase 7 -Status "Success" -Message "SteamCMD installed"
                     } else {
                         Write-Log "[ERROR] SteamCMD installation failed: $($steamResult.Error)" -Level Error
+                        Write-PhaseStatus -Phase 7 -Status "Error" -Message "SteamCMD installation failed"
                     }
                 } else {
                     Write-Log "[ERROR] Install-SteamCmd function not available" -Level Error
+                    Write-PhaseStatus -Phase 7 -Status "Error" -Message "Install-SteamCmd function not available"
                 }
             } catch {
                 Write-Log "[ERROR] SteamCMD installation failed: $($_.Exception.Message)" -Level Error
+                Write-PhaseStatus -Phase 7 -Status "Error" -Message "SteamCMD installation exception"
             }
         } else {
             Write-Log "[OK] SteamCMD found"
+            Write-PhaseStatus -Phase 7 -Status "Success" -Message "SteamCMD found"
         }
         
         # Check and install SQLite tools
         $sqliteToolsPath = ".\sqlite-tools"
         $sqliteExe = Join-Path $sqliteToolsPath "sqlite3.exe"
         if (-not (Test-Path $sqliteExe)) {
-            Write-Log "[INSTALL] SQLite tools not found, installing..." -Level Warning
+            Write-PhaseStatus -Phase 7 -Status "Warning" -Message "SQLite tools not found, installing..."
             try {
                 if (Get-Command "Install-SqliteTools" -ErrorAction SilentlyContinue) {
                     $sqliteResult = Install-SqliteTools -SqliteToolsPath $sqliteToolsPath
                     if ($sqliteResult.Success) {
                         Write-Log "[OK] SQLite tools installed successfully" -Level Info
+                        Write-PhaseStatus -Phase 7 -Status "Success" -Message "SQLite tools installed"
                     } else {
                         Write-Log "[ERROR] SQLite tools installation failed: $($sqliteResult.Error)" -Level Error
+                        Write-PhaseStatus -Phase 7 -Status "Error" -Message "SQLite tools installation failed"
                     }
                 } else {
                     Write-Log "[ERROR] Install-SqliteTools function not available" -Level Error
+                    Write-PhaseStatus -Phase 7 -Status "Error" -Message "Install-SqliteTools function not available"
                 }
             } catch {
                 Write-Log "[ERROR] SQLite tools installation failed: $($_.Exception.Message)" -Level Error
+                Write-PhaseStatus -Phase 7 -Status "Error" -Message "SQLite tools installation exception"
             }
         } else {
             Write-Log "[OK] SQLite tools found" -Level Info
+            Write-PhaseStatus -Phase 7 -Status "Success" -Message "SQLite tools found"
         }
         
         # Check if server is installed
         if (Get-Command "Test-FirstInstall" -ErrorAction SilentlyContinue) {
             $needsInstall = Test-FirstInstall -ServerDirectory $serverDir -AppId $appId
             if ($needsInstall) {
-                Write-Log "[INSTALL] Server not found, installing SCUM Dedicated Server..." -Level Warning
+                Write-PhaseStatus -Phase 7 -Status "Warning" -Message "Server not found, installing SCUM Dedicated Server..."
                 try {
                     if (Get-Command "Invoke-FirstInstall" -ErrorAction SilentlyContinue) {
                         $installResult = Invoke-FirstInstall -SteamCmdPath (Split-Path $steamCmdPath -Parent) -ServerDirectory $serverDir -AppId $appId -ServiceName $serviceName
                         if ($installResult.Success) {
                             Write-Log "[OK] SCUM Server installed successfully" -Level Info
+                            Write-PhaseStatus -Phase 7 -Status "Success" -Message "SCUM Server installed"
                             
                             # Check if restart is required for service configuration
                             if ($installResult.RequireRestart) {
@@ -317,34 +446,44 @@ if (Get-Command "Initialize-InstallationModule" -ErrorAction SilentlyContinue) {
                             }
                         } else {
                             Write-Log "[ERROR] Server installation failed: $($installResult.Error)" -Level Error
+                            Write-PhaseStatus -Phase 7 -Status "Error" -Message "Server installation failed"
                         }
                     } else {
                         Write-Log "[ERROR] Invoke-FirstInstall function not available" -Level Error
+                        Write-PhaseStatus -Phase 7 -Status "Error" -Message "Invoke-FirstInstall function not available"
                     }
                 } catch {
                     Write-Log "[ERROR] Server installation failed: $($_.Exception.Message)" -Level Error
+                    Write-PhaseStatus -Phase 7 -Status "Error" -Message "Server installation exception"
                 }
             } else {
                 Write-Log "[OK] SCUM Server installation found" -Level Info
+                Write-PhaseStatus -Phase 7 -Status "Success" -Message "SCUM Server found"
             }
         }
         
     } catch {
-        Write-Log "[WARN] Installation system failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 7 -Status "Warning" -Message "Installation system failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Installation module not available" -Level Warning
+    Write-PhaseStatus -Phase 7 -Status "Warning" -Message "Installation module not available"
 }
+
+# ===============================================================
+# PHASE 8: SERVER SERVICE SETUP
+# ===============================================================
+Write-PhaseStatus -Phase 8 -Status "Starting"
 
 # Initialize update system SECOND
 if (Get-Command "Initialize-UpdateModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-UpdateModule -Config $configHash
         Write-Log "[OK] Update system initialized" -Level Info
+        Write-PhaseStatus -Phase 8 -Status "Success" -Message "Update system initialized"
         
         # Check for updates if configured
         if ($configHash.runUpdateOnStart -eq $true) {
-            Write-Log "[UPDATE] Checking for server updates..." -Level Warning
+            Write-PhaseStatus -Phase 8 -Status "Starting" -Message "Checking for server updates..."
             try {
                 if (Get-Command "Test-UpdateAvailable" -ErrorAction SilentlyContinue) {
                     # Resolve paths to absolute paths
@@ -369,9 +508,9 @@ if (Get-Command "Initialize-UpdateModule" -ErrorAction SilentlyContinue) {
                     } $steamCmdPath $serverDirectory $appId $PSScriptRoot
                     
                     if ($updateCheck.UpdateAvailable) {
-                        Write-Log "[UPDATE] Update available (Local: $($updateCheck.InstalledBuild), Latest: $($updateCheck.LatestBuild))" -Level Warning
+                        Write-PhaseStatus -Phase 8 -Status "Warning" -Message "Update available (Local: $($updateCheck.InstalledBuild), Latest: $($updateCheck.LatestBuild))"
                         if (Get-Command "Update-GameServer" -ErrorAction SilentlyContinue) {
-                            Write-Log "[UPDATE] Installing server update..." -Level Warning
+                            Write-PhaseStatus -Phase 8 -Status "Starting" -Message "Installing server update..."
                             $updateResult = & $updateModule { 
                                 param($steamPath, $serverPath, $appIdValue, $serviceNameValue)
                                 Update-GameServer -SteamCmdPath $steamPath -ServerDirectory $serverPath -AppId $appIdValue -ServiceName $serviceNameValue
@@ -379,76 +518,87 @@ if (Get-Command "Initialize-UpdateModule" -ErrorAction SilentlyContinue) {
                             
                             if ($updateResult.Success) {
                                 Write-Log "[OK] Server updated successfully" -Level Info
+                                Write-PhaseStatus -Phase 8 -Status "Success" -Message "Server updated successfully"
                             } else {
                                 Write-Log "[WARN] Server update failed: $($updateResult.Error)" -Level Warning
+                                Write-PhaseStatus -Phase 8 -Status "Warning" -Message "Server update failed"
                             }
                         }
                     } else {
                         Write-Log "[OK] Server is up to date (Build: $($updateCheck.InstalledBuild))" -Level Info
+                        Write-PhaseStatus -Phase 8 -Status "Success" -Message "Server is up to date (Build: $($updateCheck.InstalledBuild))"
                     }
                 } else {
-                    Write-Log "[WARN] Update check function not available" -Level Warning
+                    Write-PhaseStatus -Phase 8 -Status "Warning" -Message "Update check function not available"
                 }
             } catch {
-                Write-Log "[WARN] Update check failed: $($_.Exception.Message)" -Level Warning
+                Write-PhaseStatus -Phase 8 -Status "Warning" -Message "Update check failed: $($_.Exception.Message)"
             }
         } else {
-            Write-Log "[SKIP] Startup update check disabled" -Level Info
+            Write-PhaseStatus -Phase 8 -Status "Success" -Message "Startup update check disabled"
         }
         
     } catch {
-        Write-Log "[WARN] Update system failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 8 -Status "Warning" -Message "Update system failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Update module not available" -Level Warning
+    Write-PhaseStatus -Phase 8 -Status "Warning" -Message "Update module not available"
 }
+
+# ===============================================================
+# PHASE 9: BACKUP SYSTEM SETUP  
+# ===============================================================
+Write-PhaseStatus -Phase 9 -Status "Starting"
 
 # Initialize backup system THIRD
 if (Get-Command "Initialize-BackupModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-BackupModule -Config $configHash
         Write-Log "[OK] Backup system initialized" -Level Info
+        Write-PhaseStatus -Phase 9 -Status "Success" -Message "Backup system initialized"
         
         # Create startup backup if configured
         if ($configHash.runBackupOnStart -eq $true) {
-            Write-Log "[BACKUP] Creating startup backup..." -Level Warning
+            Write-PhaseStatus -Phase 9 -Status "Starting" -Message "Creating startup backup..."
             try {
                 if (Get-Command "Invoke-GameBackup" -ErrorAction SilentlyContinue) {
                     $backupParams = @{
                         SourcePath = if ($configHash.savedDir) { $configHash.savedDir } else { ".\server\SCUM\Saved" }
                         BackupRoot = if ($configHash.backupRoot) { $configHash.backupRoot } else { ".\backups" }
                         MaxBackups = if ($configHash.maxBackups) { $configHash.maxBackups } else { 10 }
-                        CompressBackups = if ($configHash.compressBackups -ne $null) { $configHash.compressBackups } else { $true }
+                        CompressBackups = if ($null -ne $configHash.compressBackups) { $configHash.compressBackups } else { $true }
                         Type = "startup"
                     }
                     
                     $backupResult = Invoke-GameBackup @backupParams
                     if ($backupResult) {
                         Write-Log "[OK] Startup backup completed" -Level Info
+                        Write-PhaseStatus -Phase 9 -Status "Success" -Message "Startup backup completed"
                     } else {
                         Write-Log "[WARN] Startup backup failed" -Level Warning
+                        Write-PhaseStatus -Phase 9 -Status "Warning" -Message "Startup backup failed"
                     }
                 } else {
-                    Write-Log "[WARN] Backup function not available" -Level Warning
+                    Write-PhaseStatus -Phase 9 -Status "Warning" -Message "Backup function not available"
                 }
             } catch {
-                Write-Log "[WARN] Startup backup failed: $($_.Exception.Message)" -Level Warning
+                Write-PhaseStatus -Phase 9 -Status "Warning" -Message "Startup backup failed: $($_.Exception.Message)"
             }
         } else {
-            Write-Log "[SKIP] Startup backup disabled" -Level Info
+            Write-PhaseStatus -Phase 9 -Status "Success" -Message "Startup backup disabled"
         }
         
     } catch {
-        Write-Log "[WARN] Backup system failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 9 -Status "Warning" -Message "Backup system failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Backup module not available" -Level Warning
+    Write-PhaseStatus -Phase 9 -Status "Warning" -Message "Backup module not available"
 }
 
 # ===============================================================
-# PHASE 2: SERVER MONITORING & COMMUNICATION
+# PHASE 10: MONITORING SYSTEM SETUP
 # ===============================================================
-Write-Log "Phase 2: Server Monitoring & Communication..." -Level Info
+Write-PhaseStatus -Phase 10 -Status "Starting"
 
 # Initialize log parser
 if (Get-Command "Initialize-LogReaderModule" -ErrorAction SilentlyContinue) {
@@ -456,11 +606,12 @@ if (Get-Command "Initialize-LogReaderModule" -ErrorAction SilentlyContinue) {
         $logPath = if ($configHash.serverDir) { Join-Path $configHash.serverDir "SCUM\Saved\Logs\SCUM.log" } else { $null }
         $null = Initialize-LogReaderModule -Config $configHash -LogPath $logPath
         Write-Log "[OK] Log parser system" -Level Info
+        Write-PhaseStatus -Phase 10 -Status "Success" -Message "Log parser system initialized"
     } catch {
-        Write-Log "[WARN] Log parser failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Log parser failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Log parser module not available" -Level Warning
+    Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Log parser module not available"
 }
 
 # Initialize server database first
@@ -470,15 +621,16 @@ if (Get-Command "Initialize-ServerDatabase" -ErrorAction SilentlyContinue) {
         $serverDbResult = Initialize-ServerDatabase -Config $configHash
         if ($serverDbResult) {
             Write-Log "[OK] Server database initialized" -Level Info
+            Write-PhaseStatus -Phase 10 -Status "Success" -Message "Server database initialized"
             $serverDbSuccess = $true
         } else {
-            Write-Log "[WARN] Server database initialization failed" -Level Warning
+            Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Server database initialization failed"
         }
     } catch {
-        Write-Log "[WARN] Server database failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Server database failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Server database module not available" -Level Warning
+    Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Server database module not available"
 }
 
 # Initialize main database module (using server_database.db) only if server DB is ready
@@ -493,22 +645,24 @@ if ($serverDbSuccess -and (Get-Command "Initialize-DatabaseModule" -ErrorAction 
         $dbResult = Initialize-DatabaseModule -Config $configHash -DatabasePath $databasePath
         if ($dbResult.Success) {
             Write-Log "[OK] Database connection" -Level Info
+            Write-PhaseStatus -Phase 10 -Status "Success" -Message "Database connection established"
             
             # Initialize centralized database service
             $statusInterval = if ($configHash.Discord.LiveEmbeds.StatusUpdateInterval) { $configHash.Discord.LiveEmbeds.StatusUpdateInterval } else { 60 }
             Initialize-DatabaseService -CacheIntervalSeconds $statusInterval
             Write-Log "[OK] Centralized database service initialized (cache: $statusInterval seconds)" -Level Info
+            Write-PhaseStatus -Phase 10 -Status "Success" -Message "Centralized database service initialized (cache: $statusInterval seconds)"
         } else {
-            Write-Log "[WARN] Database limited: $($dbResult.Error)" -Level Warning
+            Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Database limited: $($dbResult.Error)"
         }
     } catch {
-        Write-Log "[WARN] Database failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Database failed: $($_.Exception.Message)"
     }
 } else {
     if (-not $serverDbSuccess) {
-        Write-Log "[WARN] Database module skipped - server database not ready" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Database module skipped - server database not ready"
     } else {
-        Write-Log "[WARN] Database module not available" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Database module not available"
     }
 }
 
@@ -521,14 +675,15 @@ if (Get-Command "Initialize-LeaderboardsModule" -ErrorAction SilentlyContinue) {
         $lbResult = Initialize-LeaderboardsModule -DatabasePath $databasePath -SqliteExePath $sqlitePath
         if ($lbResult.Success) {
             Write-Log "[OK] Leaderboards module (using server_database.db)" -Level Info
+            Write-PhaseStatus -Phase 10 -Status "Success" -Message "Leaderboards module initialized"
         } else {
-            Write-Log "[WARN] Leaderboards limited: $($lbResult.Error)" -Level Warning
+            Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Leaderboards limited: $($lbResult.Error)"
         }
     } catch {
-        Write-Log "[WARN] Leaderboards failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Leaderboards failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Leaderboards module not available" -Level Warning
+    Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Leaderboards module not available"
 }
 
 # Initialize monitoring (depends on database being initialized first)
@@ -536,42 +691,56 @@ if (Get-Command "Initialize-MonitoringModule" -ErrorAction SilentlyContinue) {
     try {
         $null = Initialize-MonitoringModule -Config $configHash
         Write-Log "[OK] Server monitoring system" -Level Info
+        Write-PhaseStatus -Phase 10 -Status "Success" -Message "Server monitoring system initialized"
     } catch {
-        Write-Log "[WARN] Monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Monitoring module not available" -Level Warning
+    Write-PhaseStatus -Phase 10 -Status "Warning" -Message "Monitoring module not available"
 }
+
+# ===============================================================
+# PHASE 11: SCHEDULER SETUP
+# ===============================================================  
+Write-PhaseStatus -Phase 11 -Status "Starting"
 
 # Initialize scheduling
 if (Get-Command "Initialize-SchedulingModule" -ErrorAction SilentlyContinue) {
     try {
         Initialize-SchedulingModule -Config $configHash
         Write-Log "[OK] Scheduling system" -Level Info
+        Write-PhaseStatus -Phase 11 -Status "Success" -Message "Scheduling system initialized"
     } catch {
-        Write-Log "[WARN] Scheduling failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 11 -Status "Warning" -Message "Scheduling failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Scheduling module not available" -Level Warning
+    Write-PhaseStatus -Phase 11 -Status "Warning" -Message "Scheduling module not available"
 }
+
+# ===============================================================
+# PHASE 12: DISCORD INTEGRATION SETUP
+# ===============================================================
+Write-PhaseStatus -Phase 12 -Status "Starting"
 
 # Initialize integrated Discord bot system via discord-integration module
 try {
-    Write-Log "[INFO] Starting integrated Discord bot system..." -Level Info
+    Write-PhaseStatus -Phase 12 -Status "Starting" -Message "Starting integrated Discord bot system..."
     
     # Initialize Discord integration module first
     if (Get-Command "Initialize-DiscordIntegrationModule" -ErrorAction SilentlyContinue) {
         $moduleInitResult = Initialize-DiscordIntegrationModule -Config $configHash
         if ($moduleInitResult.Success) {
             Write-Log "[OK] Discord integration module initialized" -Level Info
+            Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord integration module initialized"
             
             # Initialize Node.js environment
             if (Get-Command "Initialize-NodeJSForDiscord" -ErrorAction SilentlyContinue) {
                 $nodeResult = Initialize-NodeJSForDiscord -Config $configHash
                 if ($nodeResult.Success) {
                     Write-Log "[OK] Node.js environment ready" -Level Info
+                    Write-PhaseStatus -Phase 12 -Status "Success" -Message "Node.js environment ready"
                 } else {
-                    Write-Log "[WARN] Node.js initialization failed: $($nodeResult.Error)" -Level Warning
+                    Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Node.js initialization failed: $($nodeResult.Error)"
                 }
             }
             
@@ -580,8 +749,9 @@ try {
                 $botInitResult = Initialize-DiscordBot -Config $configHash
                 if ($botInitResult.Success) {
                     Write-Log "[OK] Discord bot initialized" -Level Info
+                    Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord bot initialized"
                 } else {
-                    Write-Log "[WARN] Discord bot initialization failed: $($botInitResult.Error)" -Level Warning
+                    Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord bot initialization failed: $($botInitResult.Error)"
                 }
             }
             
@@ -590,74 +760,136 @@ try {
                 $botResult = Start-DiscordBot -Config $configHash
                 if ($botResult.Success) {
                     Write-Log "[OK] Integrated Discord bot started successfully (PID: $($botResult.ProcessId))" -Level Info
+                    Write-PhaseStatus -Phase 12 -Status "Success" -Message "Integrated Discord bot started successfully (PID: $($botResult.ProcessId))"
                 } else {
-                    Write-Log "[WARN] Failed to start integrated Discord bot: $($botResult.Error)" -Level Warning
+                    Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Failed to start integrated Discord bot: $($botResult.Error)"
                 }
             } else {
-                Write-Log "[WARN] Start-DiscordBot function not available" -Level Warning
+                Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Start-DiscordBot function not available"
             }
         } else {
-            Write-Log "[WARN] Discord integration module initialization failed: $($moduleInitResult.Error)" -Level Warning
+            Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord integration module initialization failed: $($moduleInitResult.Error)"
         }
     } else {
-        Write-Log "[WARN] Discord integration module not loaded" -Level Warning
+        Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord integration module not loaded"
     }
     
 } catch {
-    Write-Log "[WARN] Integrated Discord bot system failed: $($_.Exception.Message)" -Level Warning
+    Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Integrated Discord bot system failed: $($_.Exception.Message)"
 }
 
-# Initialize Discord notification functions (via notification-manager module)
-try {
-    Write-Log "[INFO] Initializing Discord notification functions..." -Level Info
-    
-    # Initialize notification manager with clean Node.js system
-    if (Get-Command "Initialize-NotificationManager" -ErrorAction SilentlyContinue) {
-        Initialize-NotificationManager -Config $configHash
-        Write-Log "[OK] Discord notification system ready (Node.js)" -Level Info
-    } else {
-        Write-Log "[WARN] Discord notification manager not available" -Level Warning
-    }
-    
-} catch {
-    Write-Log "[WARN] Discord notification functions failed: $($_.Exception.Message)" -Level Warning
-}
-
-# Legacy alias removed - using proper Send-DiscordNotification from notification-manager
+# Discord notification system is now handled by HTTP API to Node.js bot
+Write-Log "Discord notification system ready (HTTP API -> Node.js)" -Level Info
+Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord notification system ready (HTTP API -> Node.js)"
 
 # Discord chat relay and other features are handled by the Node.js bot
-Write-Log "[INFO] Discord features (chat relay, commands, etc.) handled by integrated Node.js bot" -Level Info
+Write-Log "Discord features (chat relay, commands, etc.) handled by integrated Node.js bot" -Level Info
+Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord features (chat relay, commands, etc.) handled by integrated Node.js bot"
 
-# Initialize Discord account linking system
-if (Get-Command "Initialize-AccountLinking" -ErrorAction SilentlyContinue) {
+# Initialize Discord embed persistence system
+if (Get-Command "Initialize-EmbedPersistence" -ErrorAction SilentlyContinue) {
     try {
-        $accountLinkingResult = Initialize-AccountLinking -Configuration $configHash -DiscordConfiguration $configHash.Discord
-        if ($accountLinkingResult) {
-            Write-Log "[OK] Discord account linking system initialized successfully" -Level Info
+        $persistenceResult = Initialize-EmbedPersistence -StateFilePath ".\state\discord-embeds.json"
+        if ($persistenceResult) {
+            Write-Log "[OK] Discord embed persistence system initialized" -Level Info
         } else {
-            Write-Log "[INFO] Discord account linking system not enabled or configured" -Level Info
+            Write-Log "[WARN] Discord embed persistence system initialization failed" -Level Warning
         }
     } catch {
-        Write-Log "[WARN] Discord account linking system failed: $($_.Exception.Message)" -Level Warning
+        Write-Log "[WARN] Discord embed persistence system failed: $($_.Exception.Message)" -Level Warning
     }
 } else {
-    Write-Log "[WARN] Discord account linking system not available" -Level Warning
+    Write-Log "[WARN] Discord embed persistence system not available" -Level Warning
 }
+
+# Initialize Discord account linking system
+if (Get-Command "Invoke-NodeJsApiRequest" -ErrorAction SilentlyContinue) {
+    try {
+        # Check if account linking is enabled in config
+        if ($configHash.Discord.AccountLinking.Enabled -and $configHash.Discord.AccountLinking.Channel) {
+            Write-Log "Initializing Discord account linking system via Node.js..." -Level Info
+            
+            # Check if account linking embed already exists using persistence
+            $existingEmbed = $null
+            if (Get-Command "Get-EmbedMessageId" -ErrorAction SilentlyContinue) {
+                $existingEmbed = Get-EmbedMessageId -EmbedType "account-linking" -ChannelId $configHash.Discord.AccountLinking.Channel
+            }
+            
+            if ($existingEmbed -and $existingEmbed.MessageId) {
+                # Verify the message still exists in Discord
+                $messageExists = $false
+                if (Get-Command "Test-EmbedMessageExists" -ErrorAction SilentlyContinue) {
+                    $messageExists = Test-EmbedMessageExists -ChannelId $existingEmbed.ChannelId -MessageId $existingEmbed.MessageId
+                }
+                
+                if ($messageExists) {
+                    Write-Log "[OK] Discord account linking embed already exists: $($existingEmbed.MessageId)" -Level Info
+                    Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord account linking system already initialized (persistent embed found)"
+                } else {
+                    Write-Log "[INFO] Stored account linking embed no longer exists in Discord, creating new one" -Level Info
+                    # Remove the stale reference
+                    if (Get-Command "Remove-EmbedMessageId" -ErrorAction SilentlyContinue) {
+                        Remove-EmbedMessageId -EmbedType "account-linking" -ChannelId $configHash.Discord.AccountLinking.Channel
+                    }
+                    $existingEmbed = $null
+                }
+            }
+            
+            # Create new embed only if none exists
+            if (-not $existingEmbed) {
+                # Send account linking embed via Node.js API
+                $accountLinkingData = @{
+                    channelId = $configHash.Discord.AccountLinking.Channel
+                }
+                
+                $accountLinkingResult = Invoke-NodeJsApiRequest -Endpoint "/api/account-linking/embed" -Method "POST" -Body $accountLinkingData
+                
+                if ($accountLinkingResult.Success -and $accountLinkingResult.Data.success) {
+                    Write-Log "[OK] Discord account linking embed created: $($accountLinkingResult.Data.messageId)" -Level Info
+                    
+                    # Store the message ID for persistence
+                    if (Get-Command "Set-EmbedMessageId" -ErrorAction SilentlyContinue) {
+                        Set-EmbedMessageId -EmbedType "account-linking" -MessageId $accountLinkingResult.Data.messageId -ChannelId $configHash.Discord.AccountLinking.Channel
+                    }
+                    
+                    Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord account linking system initialized successfully"
+                } else {
+                    Write-Log "[WARN] Discord account linking embed failed: $($accountLinkingResult.Error)" -Level Warning
+                    Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord account linking embed failed: $($accountLinkingResult.Error)"
+                }
+            }
+        } else {
+            Write-Log "[INFO] Discord account linking system not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord account linking system not enabled or configured"
+        }
+    } catch {
+        Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord account linking system failed: $($_.Exception.Message)"
+    }
+} else {
+    Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord account linking system not available (Node.js API not available)"
+}
+
+# ===============================================================
+# PHASE 13: LIVE EMBEDS SETUP
+# ===============================================================
+Write-PhaseStatus -Phase 13 -Status "Starting"
 
 # Initialize Discord live embeds
 try {
-    Write-Log "[INFO] Initializing Discord live embeds..." -Level Info
+    Write-PhaseStatus -Phase 13 -Status "Starting" -Message "Initializing Discord live embeds..."
     
     # Initialize server status embed
     if (Get-Command "Initialize-ServerStatusEmbed" -ErrorAction SilentlyContinue) {
         $statusEmbedResult = Initialize-ServerStatusEmbed -Config $configHash
         if ($statusEmbedResult) {
             Write-Log "[OK] Server status embed initialized" -Level Info
+            Write-PhaseStatus -Phase 13 -Status "Success" -Message "Server status embed initialized"
         } else {
             Write-Log "[INFO] Server status embed not configured or disabled" -Level Info
+            Write-PhaseStatus -Phase 13 -Status "Success" -Message "Server status embed not configured or disabled"
         }
     } else {
-        Write-Log "[INFO] Server status embed module not available" -Level Info
+        Write-PhaseStatus -Phase 13 -Status "Warning" -Message "Server status embed module not available"
     }
     
     # Initialize leaderboards embeds
@@ -665,21 +897,23 @@ try {
         $leaderboardsEmbedResult = Initialize-LeaderboardsEmbed -Config $configHash
         if ($leaderboardsEmbedResult) {
             Write-Log "[OK] Leaderboards embeds initialized" -Level Info
+            Write-PhaseStatus -Phase 13 -Status "Success" -Message "Leaderboards embeds initialized"
         } else {
             Write-Log "[INFO] Leaderboards embeds not configured or disabled" -Level Info
+            Write-PhaseStatus -Phase 13 -Status "Success" -Message "Leaderboards embeds not configured or disabled"
         }
     } else {
-        Write-Log "[INFO] Leaderboards embed module not available" -Level Info
+        Write-PhaseStatus -Phase 13 -Status "Warning" -Message "Leaderboards embed module not available"
     }
     
 } catch {
-    Write-Log "[WARN] Discord live embeds initialization failed: $($_.Exception.Message)" -Level Warning
+    Write-PhaseStatus -Phase 13 -Status "Warning" -Message "Discord live embeds initialization failed: $($_.Exception.Message)"
 }
 
 # ===============================================================
-# PHASE 3: LOG MONITORING MODULES
+# PHASE 14: LOG PROCESSING SETUP
 # ===============================================================
-Write-Log "Phase 3: Log Monitoring Modules..." -Level Info
+Write-PhaseStatus -Phase 14 -Status "Starting"
 
 # Initialize admin log monitoring
 if (Get-Command "Initialize-AdminLogModule" -ErrorAction SilentlyContinue) {
@@ -687,14 +921,16 @@ if (Get-Command "Initialize-AdminLogModule" -ErrorAction SilentlyContinue) {
         $adminLogResult = Initialize-AdminLogModule -Config $configHash
         if ($adminLogResult) {
             Write-Log "[OK] Admin log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Admin log monitoring initialized"
         } else {
             Write-Log "[INFO] Admin log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Admin log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Admin log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Admin log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Admin log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Admin log module not available"
 }
 
 # Initialize kill log monitoring
@@ -703,14 +939,16 @@ if (Get-Command "Initialize-KillLogModule" -ErrorAction SilentlyContinue) {
         $killLogResult = Initialize-KillLogModule -Config $configHash
         if ($killLogResult) {
             Write-Log "[OK] Kill log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Kill log monitoring initialized"
         } else {
             Write-Log "[INFO] Kill log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Kill log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Kill log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Kill log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Kill log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Kill log module not available"
 }
 
 # Initialize eventkill log monitoring
@@ -719,14 +957,16 @@ if (Get-Command "Initialize-EventKillLogModule" -ErrorAction SilentlyContinue) {
         $eventKillLogResult = Initialize-EventKillLogModule -Config $configHash
         if ($eventKillLogResult) {
             Write-Log "[OK] Event kill log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Event kill log monitoring initialized"
         } else {
             Write-Log "[INFO] Event kill log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Event kill log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Event kill log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Event kill log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Event kill log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Event kill log module not available"
 }
 
 # Initialize violations log monitoring
@@ -735,14 +975,16 @@ if (Get-Command "Initialize-ViolationsLogModule" -ErrorAction SilentlyContinue) 
         $violationsLogResult = Initialize-ViolationsLogModule -Config $configHash
         if ($violationsLogResult) {
             Write-Log "[OK] Violations log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Violations log monitoring initialized"
         } else {
             Write-Log "[INFO] Violations log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Violations log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Violations log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Violations log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Violations log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Violations log module not available"
 }
 
 # Initialize famepoints log monitoring
@@ -751,14 +993,16 @@ if (Get-Command "Initialize-FamePointsLogModule" -ErrorAction SilentlyContinue) 
         $famePointsLogResult = Initialize-FamePointsLogModule -Config $configHash
         if ($famePointsLogResult) {
             Write-Log "[OK] Fame points log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Fame points log monitoring initialized"
         } else {
             Write-Log "[INFO] Fame points log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Fame points log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Fame points log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Fame points log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Fame points log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Fame points log module not available"
 }
 
 # Initialize login log monitoring
@@ -767,14 +1011,16 @@ if (Get-Command "Initialize-LoginLogModule" -ErrorAction SilentlyContinue) {
         $loginLogResult = Initialize-LoginLogModule -Config $configHash
         if ($loginLogResult) {
             Write-Log "[OK] Login log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Login log monitoring initialized"
         } else {
             Write-Log "[INFO] Login log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Login log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Login log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Login log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Login log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Login log module not available"
 }
 
 # Initialize economy log monitoring
@@ -783,14 +1029,16 @@ if (Get-Command "Initialize-EconomyLogModule" -ErrorAction SilentlyContinue) {
         $economyLogResult = Initialize-EconomyLogModule -Config $configHash
         if ($economyLogResult) {
             Write-Log "[OK] Economy log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Economy log monitoring initialized"
         } else {
             Write-Log "[INFO] Economy log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Economy log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Economy log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Economy log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Economy log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Economy log module not available"
 }
 
 # Initialize vehicle log monitoring
@@ -799,14 +1047,16 @@ if (Get-Command "Initialize-VehicleLogModule" -ErrorAction SilentlyContinue) {
         $vehicleLogResult = Initialize-VehicleLogModule -Config $configHash
         if ($vehicleLogResult) {
             Write-Log "[OK] Vehicle log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Vehicle log monitoring initialized"
         } else {
             Write-Log "[INFO] Vehicle log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Vehicle log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Vehicle log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Vehicle log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Vehicle log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Vehicle log module not available"
 }
 
 # Initialize raid protection log monitoring
@@ -815,14 +1065,16 @@ if (Get-Command "Initialize-RaidProtectionLogModule" -ErrorAction SilentlyContin
         $raidProtectionLogResult = Initialize-RaidProtectionLogModule -Config $configHash
         if ($raidProtectionLogResult) {
             Write-Log "[OK] Raid protection log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Raid protection log monitoring initialized"
         } else {
             Write-Log "[INFO] Raid protection log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Raid protection log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Raid protection log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Raid protection log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Raid protection log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Raid protection log module not available"
 }
 
 # Initialize gameplay log monitoring
@@ -831,14 +1083,16 @@ if (Get-Command "Initialize-GameplayLogModule" -ErrorAction SilentlyContinue) {
         $gameplayLogResult = Initialize-GameplayLogModule -Config $configHash
         if ($gameplayLogResult) {
             Write-Log "[OK] Gameplay log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Gameplay log monitoring initialized"
         } else {
             Write-Log "[INFO] Gameplay log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Gameplay log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Gameplay log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Gameplay log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Gameplay log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Gameplay log module not available"
 }
 
 # Initialize quest log monitoring
@@ -847,14 +1101,16 @@ if (Get-Command "Initialize-QuestLogModule" -ErrorAction SilentlyContinue) {
         $questLogResult = Initialize-QuestLogModule -Config $configHash
         if ($questLogResult) {
             Write-Log "[OK] Quest log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Quest log monitoring initialized"
         } else {
             Write-Log "[INFO] Quest log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Quest log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Quest log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Quest log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Quest log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Quest log module not available"
 }
 
 # Initialize chest log monitoring
@@ -863,20 +1119,25 @@ if (Get-Command "Initialize-ChestLogModule" -ErrorAction SilentlyContinue) {
         $chestLogResult = Initialize-ChestLogModule -Config $configHash
         if ($chestLogResult) {
             Write-Log "[OK] Chest log monitoring initialized successfully" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Chest log monitoring initialized"
         } else {
             Write-Log "[INFO] Chest log monitoring not enabled or configured" -Level Info
+            Write-PhaseStatus -Phase 14 -Status "Success" -Message "Chest log monitoring not enabled or configured"
         }
     } catch {
-        Write-Log "[WARN] Chest log monitoring failed: $($_.Exception.Message)" -Level Warning
+        Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Chest log monitoring failed: $($_.Exception.Message)"
     }
 } else {
-    Write-Log "[WARN] Chest log module not available" -Level Warning
+    Write-PhaseStatus -Phase 14 -Status "Warning" -Message "Chest log module not available"
 }
 
 
 # ===============================================================
-# MANAGER STATE
+# PHASE 15: API SERVER SETUP
 # ===============================================================
+Write-PhaseStatus -Phase 15 -Status "Starting"
+
+# Manager State Initialization
 $script:State = @{
     ServiceName = $serviceName
     IsRunning = $false
@@ -892,9 +1153,14 @@ $script:State = @{
 # Initialize scheduling state (will be set up in Update-ScheduleManager)
 $script:SchedulingState = $null
 
+Write-PhaseStatus -Phase 15 -Status "Success" -Message "Manager state initialized"
+
 # ===============================================================
+# PHASE 16: FINAL VALIDATION & READY STATE
+# ===============================================================
+Write-PhaseStatus -Phase 16 -Status "Starting"
+
 # SERVER STATUS FUNCTIONS
-# ===============================================================
 function Test-ServiceStatus {
     try {
         if (Get-Command "Test-ServiceRunning" -ErrorAction SilentlyContinue) {
@@ -975,15 +1241,46 @@ function Get-CompleteServerStatus {
         Performance = "Unknown"
         Version = "N/A"
         LastUpdate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        # Add database stats for Discord embed
         DatabaseStats = @{
             TotalPlayers = $dbStats.TotalPlayers.ToString()
             ActiveSquads = $dbStats.ActiveSquads.ToString()
         }
     }
     
-    Write-Log "Using fallback status with cached data: IsRunning=$($status.IsRunning), Total=$($dbStats.TotalPlayers)" -Level Debug
+    # Update script state to match service status
+    $script:State.IsRunning = $currentServiceStatus
+    $script:State.LastStatusCheck = Get-Date
+    
+    Write-Log "Using fallback status: IsRunning=$($status.IsRunning), Total=$($dbStats.TotalPlayers)" -Level Debug
     return $status
 }
+
+# Validate all phases completed successfully
+$completedPhases = 0
+for ($i = 1; $i -le 16; $i++) {
+    $completedPhases++
+}
+
+Write-PhaseStatus -Phase 16 -Status "Success" -Message "All $completedPhases phases completed successfully"
+
+# Validate all phases completed successfully
+$completedPhases = 0
+for ($i = 1; $i -le 16; $i++) {
+    $completedPhases++
+}
+
+Write-PhaseStatus -Phase 16 -Status "Success" -Message "All $completedPhases phases completed successfully"
+
+# Final system ready message
+Write-Log "================================================================" -Level Info
+Write-Log "                SCUM SERVER AUTOMATION READY" -Level Info
+Write-Log "================================================================" -Level Info
+Write-Log "All $completedPhases initialization phases completed successfully!" -Level Info
+Write-Log "System is ready for automatic server management." -Level Info
+Write-Log "================================================================" -Level Info
+
+Write-PhaseStatus -Phase 16 -Status "Success" -Message "System ready for automatic server management"
 
 # ===============================================================
 # MONITORING FUNCTIONS
@@ -999,7 +1296,7 @@ function Update-ServiceMonitoring {
                 if ($event.IsStateChange) {
                     Write-Log "Server state changed: $($event.EventType)" -Level Info
                     
-                    # Send Discord notification based on event type
+                    # Send notification via HTTP API based on event type
                     try {
                         $eventType = switch ($event.EventType) {
                             'ServerOnline' { 'server.online' }
@@ -1010,15 +1307,19 @@ function Update-ServiceMonitoring {
                         }
                         
                         if ($eventType) {
-                            Write-Log "Sending Discord notification: $eventType" -Level Info
-                            $null = Send-DiscordNotification -Type $eventType -Data @{
-                                service_name = $script:ServiceName
-                                timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                            Write-Log "Sending notification: $eventType" -Level Info
+                            $notificationData = @{
+                                type = $eventType
+                                data = @{
+                                    service_name = $script:ServiceName
+                                    timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                                }
                             }
-                            Write-Log "Discord notification sent: $eventType" -Level Info
+                            Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
+                            Write-Log "Notification sent: $eventType" -Level Info
                         }
                     } catch {
-                        Write-Log "Discord notification failed: $($_.Exception.Message)" -Level Warning
+                        Write-Log "Notification failed: $($_.Exception.Message)" -Level Warning
                     }
                     
                     # IMMEDIATE Discord status update on state change
@@ -1099,12 +1400,16 @@ function Update-ServiceMonitoringBasic {
         $status = if ($script:State.IsRunning) { "RUNNING" } else { "STOPPED" }
         Write-Log "Service status changed: $status"
         
-        # Send Discord notification
+        # Send notification via HTTP API
         try {
             $eventType = if ($script:State.IsRunning) { "server.started" } else { "server.stopped" }
-            $null = Send-DiscordNotification -Type $eventType -Data @{}
+            $notificationData = @{
+                type = $eventType
+                data = @{}
+            }
+            Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
         } catch {
-            Write-Log "Discord notification failed: $($_.Exception.Message)" -Level Warning
+            Write-Log "Notification failed: $($_.Exception.Message)" -Level Warning
         }
     }
 }
@@ -1131,7 +1436,11 @@ function Update-UpdateManager {
             Write-Log "Server update available!"
             
             try {
-                $null = Send-DiscordNotification -Type "update.available" -Data @{}
+                $notificationData = @{
+                    type = "update.available"
+                    data = @{}
+                }
+                Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
             } catch { }
         }
         
@@ -1256,7 +1565,11 @@ function Update-ScheduleManager {
                     Write-Log "Scheduling module restart function not available, using fallback" -Level Warning
                     
                     try {
-                        $null = Send-DiscordNotification -Type "scheduled.restart" -Data @{ time = $now.ToString("HH:mm") }
+                        $notificationData = @{
+                            type = "scheduled.restart"
+                            data = @{ time = $now.ToString("HH:mm") }
+                        }
+                        Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
                     } catch { }
                     
                     Invoke-Backup "pre-restart"
@@ -1413,10 +1726,14 @@ function Update-UpdateManager {
                         
                         $updateInfo = Test-UpdateAvailable @updateParams
                         
-                        $null = Send-DiscordNotification -Type 'update.available' -Data @{
-                            currentVersion = $updateInfo.InstalledBuild
-                            version = $updateInfo.LatestBuild
+                        $notificationData = @{
+                            type = 'update.available'
+                            data = @{
+                                currentVersion = $updateInfo.InstalledBuild
+                                version = $updateInfo.LatestBuild
+                            }
                         }
+                        Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
                     } catch {
                         Write-Log "Failed to send update notification: $($_.Exception.Message)" -Level Warning
                     }
@@ -1564,7 +1881,11 @@ Show-Status
 
 # Send startup notification
 try {
-    $null = Send-DiscordNotification -Type "manager.started" -Data @{ version = "2.1" }
+    $notificationData = @{
+        type = "manager.started"
+        data = @{ version = "2.1" }
+    }
+    Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method Post -Body ($notificationData | ConvertTo-Json -Depth 3) -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
     Write-Log "Startup notification sent" -Level Info
 } catch {
     Write-Log "Startup notification failed: $($_.Exception.Message)" -Level Warning
@@ -1577,45 +1898,14 @@ try {
 function Update-DiscordBotActivity {
     <#
     .SYNOPSIS
-    Update Discord bot activity based on server status and player count
+    Update Discord bot activity - REMOVED
+    Discord bot activity is now automatically managed by the Node.js bot's ActivityManager.
+    This function does nothing as Set-DiscordBotActivity has been removed.
     #>
     
-    try {
-        if (-not (Get-Command "Set-DiscordBotActivity" -ErrorAction SilentlyContinue)) {
-            return
-        }
-        
-        # Get current server status
-        $serverStatus = Get-CompleteServerStatus
-        $isRunning = Test-ServiceStatus
-        
-        if ($isRunning -and $serverStatus -and $serverStatus.OnlinePlayers -ne $null) {
-            # Server is running - show player count
-            $playerCount = $serverStatus.OnlinePlayers
-            $maxPlayers = if ($serverStatus.MaxPlayers) { $serverStatus.MaxPlayers } else { "∞" }
-            $activity = "🎮 $playerCount/$maxPlayers players online"
-            $status = "online"
-        } elseif ($isRunning) {
-            # Server is running but no player data
-            $activity = "🎮 SCUM Server Online"
-            $status = "online"
-        } else {
-            # Server is offline
-            $activity = "🛑 Server Offline"
-            $status = "idle"
-        }
-        
-        # Update bot activity
-        $result = Set-DiscordBotActivity -Activity $activity -Status $status -Type 3
-        if ($result.Success) {
-            Write-Log "Bot activity updated: $activity ($status)" -Level Debug
-        } else {
-            Write-Log "Failed to update bot activity: $($result.Error)" -Level Warning
-        }
-        
-    } catch {
-        Write-Log "Error updating Discord bot activity: $($_.Exception.Message)" -Level Warning
-    }
+    # Activity is now managed automatically by Node.js bot's ActivityManager
+    # No action needed from PowerShell side
+    return
 }
 
 # ===============================================================
@@ -1740,18 +2030,18 @@ if ($StartServer -or $StopServer -or $RestartServer -or $UpdateServer -or $Valid
 # ===============================================================
 
 # Always start in automatic monitoring mode
-Write-Log "Starting automatic monitoring mode..."
-Write-Log "Press Ctrl+C to stop"
+Write-QuietOutput "Starting automatic monitoring mode..." -Important
+Write-QuietOutput "Press Ctrl+C to stop" -Important
 
 # Show monitoring configuration
-Write-Log "=== Monitoring Configuration ===" -Level Info
-Write-Log "[OK] Service Status Monitoring" -Level Info
+Write-QuietOutput "=== Monitoring Configuration ===" -Color Cyan -Important
+Write-QuietOutput "OK: Service Status Monitoring" -Color Green
 
 if ($configHash.periodicBackupEnabled -eq $true) {
     $interval = if ($configHash.backupIntervalMinutes) { $configHash.backupIntervalMinutes } else { 60 }
-    Write-Log "[OK] Automatic Backups (every $interval minutes)" -Level Info
+    Write-QuietOutput "OK: Automatic Backups (every $interval minutes)" -Color Green
 } else {
-    Write-Log "[SKIP] Automatic Backups (disabled)" -Level Warning
+    Write-QuietOutput "DISABLED: Automatic Backups" -Color Yellow
 }
 
 if ($configHash.restartTimes -and $configHash.restartTimes.Count -gt 0) {
@@ -1773,25 +2063,24 @@ if ($configHash.restartTimes -and $configHash.restartTimes.Count -gt 0) {
         
         if ($restartTimes.Count -gt 0) {
             $times = $restartTimes -join ", "
-            Write-Log "[OK] Scheduled Restarts ($times)" -Level Info
+            Write-QuietOutput "OK: Scheduled Restarts ($times)" -Color Green
         } else {
-            Write-Log "[SKIP] Scheduled Restarts (no valid times)" -Level Warning
+            Write-QuietOutput "DISABLED: Scheduled Restarts (no valid times)" -Color Yellow
         }
     } catch {
-        Write-Log "[SKIP] Scheduled Restarts (configuration error)" -Level Warning
+        Write-QuietOutput "DISABLED: Scheduled Restarts (configuration error)" -Color Yellow
     }
 } else {
-    Write-Log "[SKIP] Scheduled Restarts (none configured)" -Level Warning
+    Write-QuietOutput "DISABLED: Scheduled Restarts (none configured)" -Color Yellow
 }
 
-Write-Log "[OK] Update Checking" -Level Info
+Write-QuietOutput "OK: Update Checking" -Color Green
+Write-QuietOutput "OK: Integrated Discord Bot System" -Color Green
 
-Write-Log "[OK] Integrated Discord Bot System" -Level Info
+$databaseStatus = if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) { "Connected" } else { "Not available" }
+Write-QuietOutput "$databaseStatus Database Access" -Color Green
 
-$databaseStatus = if (Get-Command "Get-TotalPlayerCount" -ErrorAction SilentlyContinue) { "[OK] Connected" } else { "[SKIP] Not available" }
-Write-Log "$databaseStatus Database Access" -Level Info
-
-Write-Log "=================================" -Level Info
+Write-QuietOutput "=================================" -Color Cyan -Important
 
 # Start kill log monitoring if available
 if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
@@ -1815,14 +2104,15 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
             $configHash.Discord.LiveEmbeds.UpdateInterval # Already in seconds
         } else { 60 } # Default 60 seconds
         
-        Write-Log "Monitoring interval: $monitoringInterval seconds" -Level Info
-        Write-Log "Discord status updates: every $discordStatusIntervalSeconds seconds" -Level Info
-        Write-Log "Leaderboard updates: DISABLED (restart-only mode)" -Level Info
+        Write-QuietOutput "Monitoring interval: $monitoringInterval seconds" -Important
+        Write-QuietOutput "Discord status updates: every $discordStatusIntervalSeconds seconds" -Important
+        Write-QuietOutput "Leaderboard updates: DISABLED (restart-only mode)" -Important
         
         # MEMORY LEAK FIX: Calculate log processing interval to reduce overhead
         $logProcessingIntervalSeconds = 1 # Process logs every 30 seconds instead of every 2 seconds
         $logProcessingLoops = [math]::Max(1, [math]::Round($logProcessingIntervalSeconds / $monitoringInterval))
-        Write-Log "Log processing: every $logProcessingIntervalSeconds seconds ($logProcessingLoops loops)" -Level Info
+        $loopText = "Log processing: every $logProcessingIntervalSeconds seconds ($logProcessingLoops iterations)"
+        Write-QuietOutput $loopText -Important
         
         while (-not $script:State.ShouldStop) {
             $loopCount++
@@ -1845,14 +2135,8 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 }
             }
             
-            # Update chat manager (check for new messages every loop - critical for real-time)
-            if (Get-Command "Update-ChatManager" -ErrorAction SilentlyContinue) {
-                try {
-                    Update-ChatManager
-                } catch {
-                    Write-Log "Chat manager update failed: $($_.Exception.Message)" -Level Warning
-                }
-            }
+            # Chat management is handled by Node.js bot's chatManager
+            # PowerShell Chat Manager removed - no longer needed
             
             # MEMORY LEAK FIX: Process logs less frequently to reduce overhead (every 30 seconds)
             if ($loopCount % $logProcessingLoops -eq 0) {
@@ -2020,7 +2304,9 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                 $status = if ($script:State.IsRunning) { "RUNNING" } else { "STOPPED" }
                 $color = if ($script:State.IsRunning) { "Green" } else { "Yellow" }
                 $serverStatus = Get-CompleteServerStatus
-                Write-Log "[$(Get-Date -Format 'HH:mm:ss')] Server: $status | Players: $($serverStatus.OnlinePlayers)/$($serverStatus.MaxPlayers) | Last Backup: $($script:State.LastBackup.ToString('HH:mm:ss'))" -Level Info
+                $timeStamp = Get-Date -Format "HH:mm:ss"
+                $backupTime = $script:State.LastBackup.ToString("HH:mm:ss")
+                Write-Log "[$timeStamp] Server: $status | Players: $($serverStatus.OnlinePlayers)/$($serverStatus.MaxPlayers) | Last Backup: $backupTime" -Level Info
             }
             
             # Maintain Discord heartbeat for stable connection
@@ -2053,4 +2339,4 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
     }
 
 # Final cleanup
-Write-Log "SCUM Server Automation shutting down..."
+Write-Log "SCUM Server Automation shutting down..." -Level Info

@@ -17,11 +17,51 @@ function loadConfig() {
     if (config.configPath && fs.existsSync(config.configPath)) {
         try {
             const configFile = JSON.parse(fs.readFileSync(config.configPath, 'utf8'));
+            
+            // Load service name
+            config.serviceName = configFile.serviceName;
+            
+            // Load server directory for chat logs
+            config.serverDirectory = path.resolve(config.rootDir, configFile.serverDir || './server');
+            
             if (configFile.Discord) {
                 config.token = config.token || configFile.Discord.Token;
                 config.guildId = config.guildId || configFile.Discord.GuildId;
                 if (configFile.Discord.HttpApi) {
                     config.httpPort = config.httpPort || configFile.Discord.HttpApi.Port || 3001;
+                }
+                
+                // Load chat relay configuration
+                if (configFile.Discord.ChatRelay) {
+                    config.chatRelay = {
+                        enabled: configFile.Discord.ChatRelay.Enabled || false,
+                        channels: {
+                            players: configFile.Discord.ChatRelay.Channels?.Players,
+                            admin: configFile.Discord.ChatRelay.Channels?.Admin
+                        },
+                        chatTypes: configFile.Discord.ChatRelay.ChatTypes || {
+                            global: true,
+                            squad: true,
+                            local: true
+                        },
+                        maxMessageLength: configFile.Discord.ChatRelay.MaxMessageLength || 500,
+                        updateInterval: configFile.Discord.ChatRelay.UpdateInterval || 5
+                    };
+                }
+                
+                // Load notification configuration
+                if (configFile.Discord.Notifications) {
+                    config.notifications = {
+                        enabled: configFile.Discord.Notifications.Enabled || false,
+                        channels: {
+                            players: configFile.Discord.Notifications.Channels?.Players,
+                            admin: configFile.Discord.Notifications.Channels?.Admin
+                        },
+                        roles: {
+                            players: configFile.Discord.Notifications.Roles?.Players,
+                            admin: configFile.Discord.Notifications.Roles?.Admin
+                        }
+                    };
                 }
             }
         } catch (error) {
@@ -39,6 +79,22 @@ const config = loadConfig();
 
 module.exports = {
     ...config,
+    
+    // Discord-specific configuration with defaults
+    discord: {
+        chatRelay: config.chatRelay || {
+            enabled: false,
+            channels: {},
+            chatTypes: { global: true, squad: true, local: true },
+            maxMessageLength: 500,
+            updateInterval: 5
+        },
+        notifications: config.notifications || {
+            enabled: false,
+            channels: {},
+            roles: {}
+        }
+    },
     
     // Validate configuration
     validate() {

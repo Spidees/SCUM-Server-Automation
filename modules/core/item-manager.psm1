@@ -48,7 +48,7 @@ function Initialize-ItemsData {
                     }
                 }
                 
-                Write-Log "Items database loaded: $($script:ItemsData.Count) items" -Level Info
+                Write-Log "Items database loaded: $($script:ItemsData.Count) items" -Level Debug
             } else {
                 Write-Log "Items database not found at: $itemsPath" -Level Warning
                 $script:ItemsData = @{}

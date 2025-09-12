@@ -61,12 +61,12 @@ function Initialize-LoginLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing login log management system..." -Level "Info"
+        Write-Log "Initializing login log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, login log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, login log relay disabled" -Level Debug
             return $false
         }
         
@@ -75,39 +75,39 @@ function Initialize-LoginLogModule {
             $script:Config = $Config.SCUMLogFeatures.LoginFeed
         }
         else {
-            Write-Log "Login log relay not enabled in configuration" -Level "Info"
+            Write-Log "Login log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Login log relay not enabled in configuration" -Level "Info"
+            Write-Log "Login log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize login log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Login log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Login log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Login log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Login log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
         # Initialize database paths
         if ($Config.dataDir) {
             $script:ServerDbPath = Join-Path $Config.dataDir "server_database.db"
-            Write-Log "Server database path: $script:ServerDbPath" -Level "Debug"
+            Write-Log "Server database path: $script:ServerDbPath" -Level Debug
         }
         
         if ($Config.rootDir) {
             $script:SqlitePath = Join-Path $Config.rootDir "sqlite-tools\sqlite3.exe"
-            Write-Log "SQLite executable path: $script:SqlitePath" -Level "Debug"
+            Write-Log "SQLite executable path: $script:SqlitePath" -Level Debug
         }
         
         # Initialize state persistence
@@ -126,7 +126,7 @@ function Initialize-LoginLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize login log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize login log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -148,7 +148,7 @@ function Update-LoginLogProcessing {
         
         foreach ($event in $newEvents) {
             # Clean format: LOGIN [Type] Name: Action
-            Write-Log "LOGIN [$($event.Type)] $($event.PlayerName): $($event.Action)" -Level "Info"
+            Write-Log "LOGIN [$($event.Type)] $($event.PlayerName): $($event.Action)" -Level Debug
             Send-LoginEventToDiscord -LoginEvent $event
             Save-LoginEventToDatabase -LoginEvent $event
         }
@@ -157,7 +157,7 @@ function Update-LoginLogProcessing {
         Save-LoginState
         
     } catch {
-        Write-Log "Error during login log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during login log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -170,13 +170,13 @@ function Get-NewLoginEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new login log file" -Level "Debug"
+        Write-Log "Switched to new login log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Login log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Login log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -215,7 +215,7 @@ function Get-NewLoginEvents {
         return $newEvents
         
     } catch {
-        Write-Log "Error reading login log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading login log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -226,7 +226,7 @@ function Get-LatestLoginLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "login_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No login log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No login log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -235,7 +235,7 @@ function Get-LatestLoginLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest login log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest login log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -255,7 +255,7 @@ function Save-LoginState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save login log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save login log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -270,14 +270,14 @@ function Load-LoginState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous login log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous login log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded login log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded login log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous login log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous login log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestLoginLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -285,7 +285,7 @@ function Load-LoginState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -295,7 +295,7 @@ function Load-LoginState {
             }
         }
     } catch {
-        Write-Log "Failed to load login log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load login log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -379,18 +379,18 @@ function Save-LoginEventToDatabase {
     try {
         # Check if database is available
         if (-not $script:ServerDbPath -or -not (Test-Path $script:ServerDbPath)) {
-            Write-Log "Server database not available, skipping database save" -Level "Debug"
+            Write-Log "Server database not available, skipping database save" -Level Debug
             return
         }
         
         if (-not $script:SqlitePath -or -not (Test-Path $script:SqlitePath)) {
-            Write-Log "SQLite executable not available, skipping database save" -Level "Debug"
+            Write-Log "SQLite executable not available, skipping database save" -Level Debug
             return
         }
         
         # Validate event data
         if (-not $LoginEvent -or -not $LoginEvent.PlayerName) {
-            Write-Log "Invalid login event data for database save (missing PlayerName)" -Level "Debug"
+            Write-Log "Invalid login event data for database save (missing PlayerName)" -Level Debug
             return
         }
         
@@ -398,12 +398,12 @@ function Save-LoginEventToDatabase {
         $userId = $null
         if ($LoginEvent.PlayerId -and $null -ne $LoginEvent.PlayerId) {
             $userId = $LoginEvent.PlayerId
-            Write-Log "Using SCUM PlayerId for database: $userId (Player: $($LoginEvent.PlayerName))" -Level "Info"
+            Write-Log "Using SCUM PlayerId for database: $userId (Player: $($LoginEvent.PlayerName))" -Level Debug
         } elseif ($LoginEvent.SteamId) {
             $userId = $LoginEvent.SteamId
-            Write-Log "Using SteamId as fallback for database: $userId (Player: $($LoginEvent.PlayerName))" -Level "Info"
+            Write-Log "Using SteamId as fallback for database: $userId (Player: $($LoginEvent.PlayerName))" -Level Debug
         } else {
-            Write-Log "No valid user ID found (neither PlayerId nor SteamId)" -Level "Debug"
+            Write-Log "No valid user ID found (neither PlayerId nor SteamId)" -Level Debug
             return
         }
         
@@ -431,7 +431,7 @@ function Save-LoginEventToDatabase {
                 }
             }
         } catch {
-            Write-Log "Failed to parse timestamp: $($LoginEvent.Timestamp)" -Level "Debug"
+            Write-Log "Failed to parse timestamp: $($LoginEvent.Timestamp)" -Level Debug
         }
         
         # Update user profile in database
@@ -516,9 +516,9 @@ WHERE changes() = 0;
         try {
             $result = & $script:SqlitePath $script:ServerDbPath ".read $tempSqlFile" 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Log "Login event saved to database: $($LoginEvent.PlayerName) $($LoginEvent.Type)" -Level "Debug"
+                Write-Log "Login event saved to database: $($LoginEvent.PlayerName) $($LoginEvent.Type)" -Level Debug
             } else {
-                Write-Log "Failed to save login event to database (exit code: $LASTEXITCODE): $result" -Level "Warning"
+                Write-Log "Failed to save login event to database (exit code: $LASTEXITCODE): $result" -Level Warning
             }
         } finally {
             # Clean up temp file
@@ -528,7 +528,7 @@ WHERE changes() = 0;
         }
         
     } catch {
-        Write-Log "Error saving login event to database: $($_.Exception.Message)" -Level "Warning"
+        Write-Log "Error saving login event to database: $($_.Exception.Message)" -Level Warning
     }
 }
 
@@ -543,38 +543,38 @@ function Send-LoginEventToDiscord {
     try {
         # Validate event data
         if (-not $LoginEvent -or -not $LoginEvent.Type) {
-            Write-Log "Invalid login event data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid login event data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-LoginEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating login embed for $($LoginEvent.PlayerName)" -Level "Debug"
+                Write-Log "Creating login embed for $($LoginEvent.PlayerName)" -Level Debug
                 $embedData = Send-LoginEmbed -LoginEvent $LoginEvent
-                Write-Log "Login embed data created successfully" -Level "Debug"
+                Write-Log "Login embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending login embed to Discord..." -Level "Debug"
+                    Write-Log "Sending login embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Login event embed sent successfully" -Level "Info"
+                        Write-Log "Login event embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Login event embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Login event embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating login embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating login embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-LoginEmbed function not found" -Level "Warning"
+            Write-Log "Send-LoginEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-LoginEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-LoginEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

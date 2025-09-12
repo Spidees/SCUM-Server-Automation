@@ -51,12 +51,12 @@ function Initialize-QuestLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing quest log management system..." -Level "Info"
+        Write-Log "Initializing quest log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, quest log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, quest log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-QuestLogModule {
             $script:Config = $Config.SCUMLogFeatures.QuestFeed
         }
         else {
-            Write-Log "Quest log relay not enabled in configuration" -Level "Info"
+            Write-Log "Quest log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Quest log relay not enabled in configuration" -Level "Info"
+            Write-Log "Quest log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize quest log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Quest log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Quest log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Quest log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Quest log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-QuestLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize quest log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize quest log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -127,7 +127,7 @@ function Update-QuestLogProcessing {
         
         foreach ($quest in $newQuests) {
             # Clean format: QUEST [Action] Player: Quest (Category - Tier)
-            Write-Log "QUEST [$($quest.Action.ToUpper())] $($quest.Player): $($quest.DisplayQuestName) ($($quest.Category) - $($quest.Tier))" -Level "Info"
+            Write-Log "QUEST [$($quest.Action.ToUpper())] $($quest.Player): $($quest.DisplayQuestName) ($($quest.Category) - $($quest.Tier))" -Level Debug
             Send-QuestEventToDiscord -Event $quest
         }
         
@@ -135,7 +135,7 @@ function Update-QuestLogProcessing {
         Save-QuestState
         
     } catch {
-        Write-Log "Error during quest log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during quest log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -148,13 +148,13 @@ function Get-NewQuestEvents {
     
     # Check if we're monitoring a different file now
     if ($script:CurrentLogFile -ne $latestLogFile) {
-        Write-Log "Switched to new quest log file" -Level "Debug"
+        Write-Log "Switched to new quest log file" -Level Debug
         $script:CurrentLogFile = $latestLogFile
         $script:LastLineNumber = 0  # Reset line counter for new file
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Quest log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Quest log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -193,7 +193,7 @@ function Get-NewQuestEvents {
         return $newQuests
         
     } catch {
-        Write-Log "Error reading quest log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading quest log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -204,7 +204,7 @@ function Get-LatestQuestLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "quests_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No quest log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No quest log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -213,7 +213,7 @@ function Get-LatestQuestLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest quest log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest quest log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -233,7 +233,7 @@ function Save-QuestState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save quest log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save quest log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -248,14 +248,14 @@ function Load-QuestState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous quest log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous quest log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded quest log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded quest log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous quest log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous quest log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestQuestLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -263,7 +263,7 @@ function Load-QuestState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized kill log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -273,7 +273,7 @@ function Load-QuestState {
             }
         }
     } catch {
-        Write-Log "Failed to load quest log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load quest log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -439,38 +439,38 @@ function Send-QuestEventToDiscord {
     try {
         # Validate event data
         if (-not $Event -or -not $Event.Player) {
-            Write-Log "Invalid quest event data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid quest event data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-QuestEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating quest embed for $($Event.Player): $($Event.DisplayQuestName)" -Level "Debug"
+                Write-Log "Creating quest embed for $($Event.Player): $($Event.DisplayQuestName)" -Level Debug
                 $embedData = Send-QuestEmbed -QuestAction $Event
-                Write-Log "Quest embed data created successfully" -Level "Debug"
+                Write-Log "Quest embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending quest embed to Discord..." -Level "Debug"
+                    Write-Log "Sending quest embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Quest event embed sent successfully" -Level "Info"
+                        Write-Log "Quest event embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Quest event embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Quest event embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating quest embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating quest embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-QuestEmbed function not found" -Level "Warning"
+            Write-Log "Send-QuestEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-QuestEventToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-QuestEventToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 

@@ -57,6 +57,9 @@ async function handleSlashCommand(interaction, client) {
             case 'link-account':
                 await linkingCommands.handleLinkAccountCommand(interaction);
                 break;
+            case 'unlink-account':
+                await linkingCommands.handleUnlinkAccountCommand(interaction);
+                break;
                 
             default:
                 await interaction.reply(makeEphemeral({ 

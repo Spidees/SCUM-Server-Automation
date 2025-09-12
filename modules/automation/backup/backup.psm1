@@ -42,7 +42,7 @@ function Initialize-BackupModule {
     
     $script:backupConfig = $Config
     
-    Write-Log "[Backup] Module initialized"
+    Write-Log "[Backup] Module initialized" -Level Debug
 }
 
 # ===============================================================
@@ -81,8 +81,21 @@ function Invoke-GameBackup {
     
     Write-Log "[Backup] Starting backup process"
     
-    # Track backup start time for duration calculation
-    $backupStartTime = Get-Date
+    # Send backup started notification via API
+    try {
+        $apiUrl = "http://localhost:3001/api/server/notification"
+        $body = @{
+            type = 'backup.started'
+            data = @{ type = $Type }
+        } | ConvertTo-Json -Depth 2
+        
+        $null = Invoke-RestMethod -Uri $apiUrl -Method POST -Body $body -ContentType "application/json" -TimeoutSec 5 -ErrorAction SilentlyContinue
+    } catch {
+        Write-Log "[Backup] Error sending backup started notification: $($_.Exception.Message)" -Level Warning
+    }
+    
+    # Start stopwatch for duration tracking
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     
     # Use provided parameters directly
     $resolvedSourcePath = $SourcePath
@@ -207,7 +220,7 @@ function Invoke-GameBackup {
                             $global:ProgressPreference = $oldProgressPreference
                         }
                         Remove-Item -Path $tempBackupDir -Recurse -Force -ErrorAction SilentlyContinue
-                        Write-Log "[Backup] Fallback backup completed successfully" -Level Info
+                        Write-Log "[Backup] Fallback backup completed successfully" -Level Debug
                 } else {
                     throw "Robocopy failed with exit code: $($robocopyResult.ExitCode)"
                 }
@@ -264,7 +277,7 @@ function Invoke-GameBackup {
                             $global:ProgressPreference = $oldProgressPreference
                         }
                         Remove-Item -Path $tempBackupDir -Recurse -Force -ErrorAction SilentlyContinue
-                        Write-Log "[Backup] Manual fallback backup completed" -Level Info
+                        Write-Log "[Backup] Manual fallback backup completed" -Level Debug
                     } else {
                         throw "No files were successfully copied for backup"
                     }
@@ -280,21 +293,6 @@ function Invoke-GameBackup {
             $backupSizeText = ConvertTo-HumanReadableSize $backupSize
             
             Write-Log "[Backup] Compressed backup created successfully: $backupSizeText"
-            
-            # Send success notification
-            try {
-                if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                    $sizeMB = [Math]::Round($backupSize / 1MB, 2)
-                    $duration = ((Get-Date) - $backupStartTime).ToString("mm\:ss")
-                    Send-DiscordNotification -Type 'backup.completed' -Data @{ 
-                        type = $Type
-                        size = "${sizeMB} MB"
-                        duration = $duration
-                    }
-                }
-            } catch {
-                Write-Log "[Backup] Failed to send completion notification: $($_.Exception.Message)" -Level Warning
-            }
         }
         else {
             # Create uncompressed backup
@@ -306,25 +304,29 @@ function Invoke-GameBackup {
             $backupSizeText = ConvertTo-HumanReadableSize $backupSize
             
             Write-Log "[Backup] Uncompressed backup created successfully: $backupSizeText"
-            
-            # Send success notification
-            try {
-                if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                    $sizeMB = [Math]::Round($backupSize / 1MB, 2)
-                    $duration = ((Get-Date) - $backupStartTime).ToString("mm\:ss")
-                    Send-DiscordNotification -Type 'backup.completed' -Data @{ 
-                        type = $Type
-                        size = "${sizeMB} MB"
-                        duration = $duration
-                    }
-                }
-            } catch {
-                Write-Log "[Backup] Failed to send completion notification: $($_.Exception.Message)" -Level Warning
-            }
         }
         
         # Clean up old backups
         Remove-OldBackups -BackupRoot $resolvedBackupRoot -MaxBackups $MaxBackups
+        
+        # Send completion notification
+        try {
+            $completionData = @{
+                type = $Type
+                size = $backupSizeText
+                duration = "{0:F1} seconds" -f $stopwatch.Elapsed.TotalSeconds
+                path = if ($UseCompression) { $zipPath } else { $backupPath }
+            }
+            
+            $notificationBody = @{
+                type = "backup.completed"
+                data = $completionData
+            } | ConvertTo-Json -Depth 3
+            
+            Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method POST -Body $notificationBody -ContentType "application/json" -ErrorAction SilentlyContinue
+        } catch {
+            Write-Log "[Backup] Failed to send completion notification: $($_.Exception.Message)" -Level Warning
+        }
         
         return $true
     }
@@ -333,13 +335,18 @@ function Invoke-GameBackup {
         
         # Send failure notification
         try {
-            if (Get-Command "Send-DiscordNotification" -ErrorAction SilentlyContinue) {
-                $duration = ((Get-Date) - $backupStartTime).ToString("mm\:ss")
-                Send-DiscordNotification -Type 'backup.failed' -Data @{
-                    error = $_.Exception.Message
-                    duration = $duration
-                }
+            $failureData = @{
+                type = $Type
+                error = $_.Exception.Message
+                duration = "{0:F1} seconds" -f $stopwatch.Elapsed.TotalSeconds
             }
+            
+            $notificationBody = @{
+                type = "backup.failed"
+                data = $failureData
+            } | ConvertTo-Json -Depth 3
+            
+            Invoke-RestMethod -Uri "http://localhost:3001/api/server/notification" -Method POST -Body $notificationBody -ContentType "application/json" -ErrorAction SilentlyContinue
         } catch {
             Write-Log "[Backup] Failed to send failure notification: $($_.Exception.Message)" -Level Warning
         }

@@ -34,13 +34,13 @@ function Add-CustomDatabaseObjects {
     try {
         $installSqlPath = Join-Path $Config.dataDir "sql\install.sql"
         if (-not (Test-Path $installSqlPath)) {
-            Write-Log "[ServerDB] No custom install.sql found: $installSqlPath" -Level Info
+            Write-Log "[ServerDB] No custom install.sql found: $installSqlPath" -Level Debug
             return
         }
-        Write-Log "[ServerDB] Running custom install.sql: $installSqlPath" -Level Info
+        Write-Log "[ServerDB] Running custom install.sql: $installSqlPath" -Level Debug
         & $script:SqlitePath $script:ServerDbPath ".read $installSqlPath" | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Write-Log "[ServerDB] Custom SQL applied successfully" -Level Info
+            Write-Log "[ServerDB] Custom SQL applied successfully" -Level Debug
         } else {
             Write-Log "[ServerDB] Error applying custom SQL (exit code: $LASTEXITCODE)" -Level Error
         }
@@ -112,10 +112,10 @@ function Initialize-ServerDatabase {
         
         # If server database doesn't exist, create it
         if (-not (Test-Path $script:ServerDbPath)) {
-            Write-Log "[ServerDB] Creating new server database..." -Level Info
+            Write-Log "[ServerDB] Creating new server database..." -Level Debug
             New-ServerDatabase
         } else {
-            Write-Log "[ServerDB] Server database already exists" -Level Info
+            Write-Log "[ServerDB] Server database already exists" -Level Debug
         }
         
         return $true
@@ -127,13 +127,13 @@ function Initialize-ServerDatabase {
 }
 
 function New-ServerDatabase {
-    Write-Log "[ServerDB] Creating server_database.db using SQLite..." -Level Info
+    Write-Log "[ServerDB] Creating server_database.db using SQLite..." -Level Debug
     
     # Simply copy SCUM.db as server_database.db
     Copy-Item $script:ScumDbPath $script:ServerDbPath -Force
     
     if (Test-Path $script:ServerDbPath) {
-        Write-Log "[ServerDB] Server database created successfully" -Level Info
+        Write-Log "[ServerDB] Server database created successfully" -Level Debug
         # Run custom SQL for columns/tables/data
         Add-CustomDatabaseObjects -Config $script:Config
     } else {
@@ -152,7 +152,7 @@ function Update-ServerDatabase {
     #>
     
     try {
-        Write-Log "[ServerDB] Starting database update from SCUM.db..." -Level Info
+        Write-Log "[ServerDB] Starting database update from SCUM.db..." -Level Debug
         
         # Check if both databases exist
         if (-not (Test-Path $script:ScumDbPath)) {
@@ -192,7 +192,7 @@ ATTACH DATABASE '$script:ScumDbPath' AS scum_source;
         Remove-Item $tempSqlFile -Force -ErrorAction SilentlyContinue
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Log "[ServerDB] Database updated successfully" -Level Info
+            Write-Log "[ServerDB] Database updated successfully" -Level Debug
             return $true
         } else {
             Write-Log "[ServerDB] Error during database update (exit code: $LASTEXITCODE)" -Level Error
@@ -241,7 +241,7 @@ function Set-AllPlayersOffline {
             return $false
         }
         
-        Write-Log "[ServerDB] Setting all players offline before server start..." -Level Info
+        Write-Log "[ServerDB] Setting all players offline before server start..." -Level Debug
         
         $updateSql = @"
 UPDATE a_user_profile 
@@ -264,12 +264,12 @@ WHERE user_is_online = 1;
                 if ($LASTEXITCODE -eq 0 -and $countResult -match "^\d+$") {
                     $playersUpdated = [int]$countResult
                     if ($playersUpdated -gt 0) {
-                        Write-Log "[ServerDB] Set $playersUpdated players offline" -Level Info
+                        Write-Log "[ServerDB] Set $playersUpdated players offline" -Level Debug
                     } else {
                         Write-Log "[ServerDB] No online players found to update" -Level Debug
                     }
                 } else {
-                    Write-Log "[ServerDB] All players set offline (count unknown)" -Level Info
+                    Write-Log "[ServerDB] All players set offline (count unknown)" -Level Debug
                 }
                 return $true
             } else {

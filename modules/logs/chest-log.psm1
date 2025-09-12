@@ -51,12 +51,12 @@ function Initialize-ChestLogModule {
     param([hashtable]$Config)
     
     try {
-        Write-Log "Initializing chest log management system..." -Level "Info"
+        Write-Log "Initializing chest log management system..." -Level Debug
         
         # Initialize configuration
         $script:DiscordConfig = $Config.Discord
         if (-not $script:DiscordConfig -or -not $script:DiscordConfig.Token) {
-            Write-Log "Discord not configured, chest log relay disabled" -Level "Info"
+            Write-Log "Discord not configured, chest log relay disabled" -Level Debug
             return $false
         }
         
@@ -65,27 +65,27 @@ function Initialize-ChestLogModule {
             $script:Config = $Config.SCUMLogFeatures.ChestFeed
         }
         else {
-            Write-Log "Chest log relay not enabled in configuration" -Level "Info"
+            Write-Log "Chest log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         if (-not $script:Config.Enabled) {
-            Write-Log "Chest log relay not enabled in configuration" -Level "Info"
+            Write-Log "Chest log relay not enabled in configuration" -Level Debug
             return $false
         }
         
         # Initialize chest log directory
         $serverDir = $Config.serverDir
         if (-not $serverDir) {
-            Write-Log "Server directory not configured" -Level "Info"
+            Write-Log "Server directory not configured" -Level Debug
             return $false
         }
         
         $script:LogDirectory = Join-Path $serverDir "SCUM\Saved\SaveFiles\Logs"
-        Write-Log "Chest log directory: $script:LogDirectory" -Level "Info"
+        Write-Log "Chest log directory: $script:LogDirectory" -Level Debug
         
         if (-not (Test-Path $script:LogDirectory)) {
-            Write-Log "Chest log directory not found: $script:LogDirectory" -Level "Info"
+            Write-Log "Chest log directory not found: $script:LogDirectory" -Level Debug
             return $false
         }
         
@@ -105,7 +105,7 @@ function Initialize-ChestLogModule {
         
         return $true
     } catch {
-        Write-Log "Failed to initialize chest log manager: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to initialize chest log manager: $($_.Exception.Message)" -Level Debug
         return $false
     }
 }
@@ -127,7 +127,7 @@ function Update-ChestLogProcessing {
         
         foreach ($action in $newActions) {
             # Clean format: CHEST [Type] Player: Action
-            Write-Log "CHEST [$($action.Type)] $($action.PlayerName): $($action.Action)" -Level "Info"
+            Write-Log "CHEST [$($action.Type)] $($action.PlayerName): $($action.Action)" -Level Debug
             Send-ChestActionToDiscord -Action $action
         }
         
@@ -135,7 +135,7 @@ function Update-ChestLogProcessing {
         Save-ChestState
         
     } catch {
-        Write-Log "Error during chest log update: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error during chest log update: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -153,7 +153,7 @@ function Get-NewChestActions {
     }
     
     if (-not (Test-Path $script:CurrentLogFile)) {
-        Write-Log "Chest log file not found: $script:CurrentLogFile" -Level "Info"
+        Write-Log "Chest log file not found: $script:CurrentLogFile" -Level Debug
         return @()
     }
     
@@ -191,7 +191,7 @@ function Get-NewChestActions {
         return $newActions
         
     } catch {
-        Write-Log "Error reading chest log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error reading chest log: $($_.Exception.Message)" -Level Debug
         return @()
     }
 }
@@ -202,7 +202,7 @@ function Get-LatestChestLogFile {
         $LogFiles = Get-ChildItem -Path $script:LogDirectory -Filter "chest_ownership_*.log" -ErrorAction SilentlyContinue
         
         if (-not $LogFiles -or $LogFiles.Count -eq 0) {
-            Write-Log "No chest log files found in $script:LogDirectory" -Level "Info"
+            Write-Log "No chest log files found in $script:LogDirectory" -Level Debug
             return $null
         }
         
@@ -211,7 +211,7 @@ function Get-LatestChestLogFile {
         return $latestFile.FullName
         
     } catch {
-        Write-Log "Error finding latest chest log: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Error finding latest chest log: $($_.Exception.Message)" -Level Debug
         return $null
     }
 }
@@ -231,7 +231,7 @@ function Save-ChestState {
         Set-Content -Path $script:StateFile -Value $stateJson -Encoding UTF8
         
     } catch {
-        Write-Log "Failed to save chest log state: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to save chest log state: $($_.Exception.Message)" -Level Debug
     }
 }
 
@@ -246,14 +246,14 @@ function Load-ChestState {
             
             # Verify the saved log file still exists, if not reset
             if ($script:CurrentLogFile -and -not (Test-Path $script:CurrentLogFile)) {
-                Write-Log "Previous chest log file no longer exists, resetting state" -Level "Info"
+                Write-Log "Previous chest log file no longer exists, resetting state" -Level Debug
                 $script:CurrentLogFile = $null
                 $script:LastLineNumber = 0
             } else {
-                Write-Log "Loaded chest log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level "Info"
+                Write-Log "Loaded chest log state: File=$($script:CurrentLogFile), Line=$($script:LastLineNumber)" -Level Debug
             }
         } else {
-            Write-Log "No previous chest log state found, starting from current log end" -Level "Info"
+            Write-Log "No previous chest log state found, starting from current log end" -Level Debug
             # Initialize to current log file and skip to end to avoid spam
             $latestLogFile = Get-LatestChestLogFile
             if ($latestLogFile -and (Test-Path $latestLogFile)) {
@@ -261,7 +261,7 @@ function Load-ChestState {
                 # MEMORY LEAK FIX: Use streaming to count lines instead of loading entire file
                 try {
                     $script:LastLineNumber = Get-LogFileLineCount -FilePath $script:CurrentLogFile -Encoding ([System.Text.Encoding]::Unicode)
-                    Write-Log "Initialized chest log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level "Info"
+                    Write-Log "Initialized chest log state: File=$($script:CurrentLogFile), Starting from line $($script:LastLineNumber)" -Level Debug
                 } catch {
                     $script:LastLineNumber = 0
                 }
@@ -271,7 +271,7 @@ function Load-ChestState {
             }
         }
     } catch {
-        Write-Log "Failed to load chest log state, starting fresh: $($_.Exception.Message)" -Level "Info"
+        Write-Log "Failed to load chest log state, starting fresh: $($_.Exception.Message)" -Level Debug
         $script:CurrentLogFile = $null
         $script:LastLineNumber = 0
     }
@@ -416,38 +416,38 @@ function Send-ChestActionToDiscord {
     try {
         # Validate action data
         if (-not $Action -or -not $Action.Action) {
-            Write-Log "Invalid chest action data, skipping Discord notification" -Level "Debug"
+            Write-Log "Invalid chest action data, skipping processing" -Level Debug
             return
         }
         
         # Try to use embed format
         if (Get-Command "Send-ChestEmbed" -ErrorAction SilentlyContinue) {
             try {
-                Write-Log "Creating chest embed for $($Action.PlayerName)" -Level "Debug"
+                Write-Log "Creating chest embed for $($Action.PlayerName)" -Level Debug
                 $embedData = Send-ChestEmbed -ChestAction $Action
-                Write-Log "Chest embed data created successfully" -Level "Debug"
+                Write-Log "Chest embed data created successfully" -Level Debug
                 
                 if (Get-Command "Send-DiscordMessage" -ErrorAction SilentlyContinue) {
-                    Write-Log "Sending chest embed to Discord..." -Level "Debug"
+                    Write-Log "Sending chest embed to Discord..." -Level Debug
                     $result = Send-DiscordMessage -Token $script:DiscordConfig.Token -ChannelId $script:Config.Channel -Embed $embedData
                     if ($result -and $result.success) {
-                        Write-Log "Chest action embed sent successfully" -Level "Info"
+                        Write-Log "Chest action embed sent successfully" -Level Debug
                         return
                     } else {
-                        Write-Log "Chest action embed failed to send: $($result | ConvertTo-Json)" -Level "Warning"
+                        Write-Log "Chest action embed failed to send: $($result | ConvertTo-Json)" -Level Warning
                     }
                 } else {
-                    Write-Log "Send-DiscordMessage command not found" -Level "Warning"
+                    Write-Log "Send-DiscordMessage command not found" -Level Warning
                 }
             } catch {
-                Write-Log "Error creating chest embed: $($_.Exception.Message)" -Level "Warning"
+                Write-Log "Error creating chest embed: $($_.Exception.Message)" -Level Warning
             }
         } else {
-            Write-Log "Send-ChestEmbed function not found" -Level "Warning"
+            Write-Log "Send-ChestEmbed function not found" -Level Warning
         }
         
     } catch {
-        Write-Log "Error in Send-ChestActionToDiscord: $($_.Exception.Message)" -Level "Error"
+        Write-Log "Error in Send-ChestActionToDiscord: $($_.Exception.Message)" -Level Error
     }
 }
 
