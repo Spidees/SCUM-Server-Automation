@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActivityType, REST, Routes, InteractionResponseFlags } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, REST, Routes, InteractionResponseFlags, MessageFlags } = require('discord.js');
 const express = require('express');
 const path = require('path');
 
@@ -75,15 +75,25 @@ client.on('interactionCreate', async (interaction) => {
     } catch (error) {
         writeLog(`Interaction error: ${error.message}`, 'Error');
         
-        const errorResponse = { 
-            content: ':x: An error occurred while processing your interaction.',
-            ephemeral: true 
-        };
+        // Check if the interaction has expired or already been responded to
+        if (error.code === 10062 || error.message.includes('Unknown interaction')) {
+            writeLog('Interaction expired or unknown, skipping error response', 'Warning');
+            return;
+        }
         
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp(errorResponse);
-        } else {
-            await interaction.reply(errorResponse);
+        try {
+            const errorResponse = { 
+                content: ':x: An error occurred while processing your interaction.',
+                flags: MessageFlags.Ephemeral
+            };
+            
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp(errorResponse);
+            } else {
+                await interaction.reply(errorResponse);
+            }
+        } catch (replyError) {
+            writeLog(`Failed to send error response: ${replyError.message}`, 'Warning');
         }
     }
 });

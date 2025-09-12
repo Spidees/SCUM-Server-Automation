@@ -10,6 +10,12 @@ async function handleButtonInteraction(interaction) {
         // Debug logging
         writeLog(`Button interaction received: customId="${customId}", user=${interaction.user.tag}`, 'Debug');
         
+        // Check if interaction is still valid
+        if (interaction.replied || interaction.deferred) {
+            writeLog(`Interaction already replied/deferred: replied=${interaction.replied}, deferred=${interaction.deferred}`, 'Warning');
+            return;
+        }
+        
         if (customId.startsWith('confirm_') || customId.startsWith('cancel_')) {
             await handleAdminConfirmation(interaction);
         } else if (customId === 'link_account' || customId === 'account_linking_connect' || customId === 'connect_account') {
@@ -20,15 +26,27 @@ async function handleButtonInteraction(interaction) {
             await handleAccountUnlinkButton(interaction);
         } else {
             writeLog(`Unknown button customId: "${customId}"`, 'Warning');
-            await interaction.reply(makeEphemeral({ 
-                content: ':x: Unknown button interaction.'
-            }));
+            try {
+                await interaction.reply(makeEphemeral({ 
+                    content: ':x: Unknown button interaction.'
+                }));
+            } catch (replyError) {
+                writeLog(`Failed to reply to unknown button: ${replyError.message}`, 'Warning');
+            }
         }
     } catch (error) {
         writeLog(`Button interaction error: ${error.message}`, 'Error');
-        await interaction.reply(makeEphemeral({ 
-            content: ':x: An error occurred while processing the button interaction.'
-        }));
+        
+        // Only try to reply if we haven't already responded and the interaction is still valid
+        if (!interaction.replied && !interaction.deferred && error.code !== 10062) {
+            try {
+                await interaction.reply(makeEphemeral({ 
+                    content: ':x: An error occurred while processing the button interaction.'
+                }));
+            } catch (replyError) {
+                writeLog(`Failed to send error response: ${replyError.message}`, 'Warning');
+            }
+        }
     }
 }
 
@@ -72,7 +90,12 @@ async function handleAdminConfirmation(interaction) {
 
 // Handle account linking button
 async function handleAccountLinkingButton(interaction) {
-    await interaction.deferReply(makeEphemeralDefer());
+    try {
+        await interaction.deferReply(makeEphemeralDefer());
+    } catch (deferError) {
+        writeLog(`Failed to defer account linking interaction: ${deferError.message}`, 'Error');
+        return;
+    }
     
     try {
         const db = getDb();
@@ -81,14 +104,22 @@ async function handleAccountLinkingButton(interaction) {
         db.get('SELECT * FROM a_discord_profiles WHERE discord_user_id = ?', [interaction.user.id], async (err, existingLink) => {
             if (err) {
                 writeLog(`Account linking check error: ${err.message}`, 'Error');
-                await interaction.followUp(makeEphemeral({ content: ':x: Failed to check account linking status.' }));
+                try {
+                    await interaction.followUp(makeEphemeral({ content: ':x: Failed to check account linking status.' }));
+                } catch (followUpError) {
+                    writeLog(`Failed to send follow-up error message: ${followUpError.message}`, 'Warning');
+                }
                 return;
             }
             
             if (existingLink) {
-                await interaction.followUp(makeEphemeral({ 
-                    content: ':information_source: Your Discord account is already linked to a SCUM character.'
-                }));
+                try {
+                    await interaction.followUp(makeEphemeral({ 
+                        content: ':information_source: Your Discord account is already linked to a SCUM character.'
+                    }));
+                } catch (followUpError) {
+                    writeLog(`Failed to send already linked message: ${followUpError.message}`, 'Warning');
+                }
                 return;
             }
             
@@ -111,7 +142,11 @@ async function handleAccountLinkingButton(interaction) {
             `, [interaction.user.id, interaction.user.tag, code, expiresAt.toISOString()], async (err) => {
                 if (err) {
                     writeLog(`Registration code storage error: ${err.message}`, 'Error');
-                    await interaction.followUp(makeEphemeral({ content: ':x: Failed to generate registration code.' }));
+                    try {
+                        await interaction.followUp(makeEphemeral({ content: ':x: Failed to generate registration code.' }));
+                    } catch (followUpError) {
+                        writeLog(`Failed to send code generation error: ${followUpError.message}`, 'Warning');
+                    }
                     return;
                 }
                 
@@ -149,16 +184,24 @@ async function handleAccountLinkingButton(interaction) {
                     .setFooter({ text: 'The code will expire in 15 minutes' })
                     .setTimestamp();
                 
-                await interaction.followUp(makeEphemeral({ embeds: [embed] }));
-                writeLog(`Registration code generated for ${interaction.user.tag}: ${code}`, 'Debug');
+                try {
+                    await interaction.followUp(makeEphemeral({ embeds: [embed] }));
+                    writeLog(`Registration code generated for ${interaction.user.tag}: ${code}`, 'Debug');
+                } catch (followUpError) {
+                    writeLog(`Failed to send registration code embed: ${followUpError.message}`, 'Warning');
+                }
             });
         });
         
     } catch (error) {
         writeLog(`Account linking button error: ${error.message}`, 'Error');
-        await interaction.followUp(makeEphemeral({ 
-            content: ':x: An error occurred while processing account linking.'
-        }));
+        try {
+            await interaction.followUp(makeEphemeral({ 
+                content: ':x: An error occurred while processing account linking.'
+            }));
+        } catch (followUpError) {
+            writeLog(`Failed to send account linking error message: ${followUpError.message}`, 'Warning');
+        }
     }
 }
 

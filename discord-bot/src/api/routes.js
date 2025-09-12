@@ -753,7 +753,7 @@ router.post('/send-embed', async (req, res) => {
 function createAccountLinkingEmbed(data = {}) {
     return {
         title: ':link: Account Linking',
-        description: data.description || 'Link your Discord account with your SCUM server profile.\n\n**Benefits of linking:**\n• :gift: Access to exclusive rewards\n• :bar_chart: Statistics tracking\n• :trophy: Participation in competitions\n• :loudspeaker: Game event notifications\n\n**How to link:**\n1. Click the **Connect Account** button below\n2. You\'ll receive a registration code (visible only to you)\n3. In the game chat, type: `connect:YOUR_CODE`',
+        description: data.description || 'Link your Discord account with your SCUM server profile.\n\n**How to link:**\n1. Click the **Connect Account** button below\n2. You\'ll receive a registration code (visible only to you)\n3. In the game chat, type: `connect:YOUR_CODE`',
         color: 3447003, // Blue
         footer: {
             text: 'SCUM Server Automation',
@@ -855,7 +855,7 @@ function createInfoEmbed(data = {}) {
 // Account linking embed endpoint
 router.post('/account-linking/embed', async (req, res) => {
     try {
-        const { channelId } = req.body;
+        const { channelId, updateMessageId } = req.body;
         
         if (!channelId) {
             return res.status(400).json({ error: 'Channel ID is required' });
@@ -884,12 +884,12 @@ Welcome to the SCUM server! Link your Discord account to your in-game character 
 4. Your accounts will be linked automatically!
 
 **Benefits:**
-• Personal notifications for kills, deaths, and events
-• Access to exclusive Discord features
-• Leaderboard tracking
+• Personal notifications
 • Raid protection alerts
+• And more ....
             `)
             .setColor('#00863A')
+            .setImage('https://playhub.cz/scum/11.gif')
             .setFooter({ 
                 text: 'SCUM Server Automation • Account Linking',
                 iconURL: 'https://playhub.cz/scum/manager/server_automation_discord.png'
@@ -902,7 +902,7 @@ Welcome to the SCUM server! Link your Discord account to your in-game character 
                 new ButtonBuilder()
                     .setCustomId('link_account')
                     .setLabel('Link Account')
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Success)
                     .setEmoji('🔗'),
                 new ButtonBuilder()
                     .setCustomId('check_status')
@@ -910,25 +910,55 @@ Welcome to the SCUM server! Link your Discord account to your in-game character 
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('📊'),
                 new ButtonBuilder()
+                    .setCustomId('setting_account')
+                    .setLabel('Settings')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setEmoji('⚙️'),                    
+                new ButtonBuilder()
                     .setCustomId('unlink_account')
                     .setLabel('Unlink Account')
                     .setStyle(ButtonStyle.Danger)
                     .setEmoji('🔓')
             );
         
-        // Send the embed
-        const message = await channel.send({
-            embeds: [embed],
-            components: [row]
-        });
+        let message;
+        let operation = 'created';
         
-        writeLog(`Account linking embed sent to channel ${channelId}: ${message.id}`, 'Debug');
+        // If updateMessageId is provided, try to update existing message
+        if (updateMessageId) {
+            try {
+                const existingMessage = await channel.messages.fetch(updateMessageId);
+                message = await existingMessage.edit({
+                    embeds: [embed],
+                    components: [row]
+                });
+                operation = 'updated';
+                writeLog(`Account linking embed updated in channel ${channelId}: ${message.id}`, 'Debug');
+            } catch (updateError) {
+                writeLog(`Failed to update message ${updateMessageId}, creating new one: ${updateError.message}`, 'Warning');
+                // If update fails, create new message
+                message = await channel.send({
+                    embeds: [embed],
+                    components: [row]
+                });
+                operation = 'recreated';
+                writeLog(`Account linking embed recreated in channel ${channelId}: ${message.id}`, 'Debug');
+            }
+        } else {
+            // Create new message
+            message = await channel.send({
+                embeds: [embed],
+                components: [row]
+            });
+            writeLog(`Account linking embed created in channel ${channelId}: ${message.id}`, 'Debug');
+        }
         
         res.json({
             success: true,
             messageId: message.id,
             channelId: channelId,
-            message: 'Account linking embed sent successfully'
+            operation: operation,
+            message: `Account linking embed ${operation} successfully`
         });
         
     } catch (error) {

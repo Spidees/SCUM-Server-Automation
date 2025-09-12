@@ -33,6 +33,18 @@ try {
     Write-Warning "[WARNING] Common module not available for discord-integration module"
 }
 
+# Import embed persistence module
+try {
+    $embedPersistencePath = Join-Path $PSScriptRoot "embed-persistence.psm1"
+    if (Test-Path $embedPersistencePath) {
+        if (-not (Get-Module "embed-persistence" -ErrorAction SilentlyContinue)) {
+            Import-Module $embedPersistencePath -ErrorAction SilentlyContinue
+        }
+    }
+} catch {
+    Write-Warning "[WARNING] Embed persistence module not available"
+}
+
 # Module variables
 $script:ModuleConfig = @{
     Name = "DiscordIntegration"
@@ -250,60 +262,43 @@ function Start-DiscordBot {
     )
 
     try {
-        # First, check if our specific Discord bot is already running by testing the HTTP API
-        $ourBotRunning = $false
+        Write-Log "[Discord] Starting Discord bot - force killing any existing instances..." -Level Debug
+        
+        # ALWAYS kill any existing Discord bot processes on our port
         try {
-            $response = Invoke-RestMethod -Uri "$($script:ModuleConfig.NodeBotApiUrl)/api/status" -Method GET -TimeoutSec 2 -ErrorAction SilentlyContinue
-            if ($response -and $response.status -eq "online") {
-                $ourBotRunning = $true
-                Write-Log "[Discord] Our Discord bot is already running on port $($script:ModuleConfig.HttpApiPort)" -Level Debug
-            }
-        } catch {
-            # No bot running on our port, which is fine
-        }
-
-        # Only stop Node.js processes if our bot is running and we need to restart it
-        if ($ourBotRunning) {
-            # Find Node.js processes that are likely our Discord bot (listening on configured port)
-            $botProcesses = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
-                try {
-                    # Get network connections to check if this process is using our configured port
-                    $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
-                    $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
-                    return $processIds -contains $_.Id.ToString()
-                } catch {
-                    return $false
-                }
-            }
+            # Find Node.js processes that are listening on our configured port
+            $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
+            $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
             
-            if ($botProcesses) {
-                Write-Log "[Discord] Stopping existing Discord bot processes on port $($script:ModuleConfig.HttpApiPort)..." -Level Debug
-                $botProcesses | Stop-Process -Force
+            if ($processIds) {
+                foreach ($pid in $processIds) {
+                    try {
+                        $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                        if ($process -and $process.ProcessName -eq "node") {
+                            Write-Log "[Discord] Killing existing Node.js process on port $($script:ModuleConfig.HttpApiPort): PID $pid" -Level Debug
+                            Stop-Process -Id $pid -Force
+                        }
+                    } catch {
+                        Write-Log "[Discord] Failed to kill process $pid`: $($_.Exception.Message)" -Level Warning
+                    }
+                }
                 Start-Sleep -Seconds 3  # Wait for processes to fully terminate
             }
+        } catch {
+            Write-Log "[Discord] Error checking for existing processes: $($_.Exception.Message)" -Level Warning
         }
-
-        # If our bot was already running and healthy, we can reuse it
-        if ($ourBotRunning) {
-            # Store token for API functions
-            $script:ModuleConfig.BotToken = $Config.Discord.Token
-            
-            # Find the running process
-            $runningProcess = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
-                try {
-                    $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
-                    $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
-                    return $processIds -contains $_.Id.ToString()
-                } catch {
-                    return $false
+        
+        # Also kill any previous bot process we might have stored
+        if ($script:ModuleConfig.BotProcess) {
+            try {
+                if (-not $script:ModuleConfig.BotProcess.HasExited) {
+                    Write-Log "[Discord] Killing stored bot process: PID $($script:ModuleConfig.BotProcess.Id)" -Level Debug
+                    $script:ModuleConfig.BotProcess.Kill()
                 }
-            } | Select-Object -First 1
-            
-            if ($runningProcess) {
-                $script:ModuleConfig.BotProcess = $runningProcess
-                Write-Log "[Discord] Using existing healthy bot process (PID: $($runningProcess.Id))" -Level Debug
-                return @{ Success = $true; Message = "Bot already running"; ProcessId = $runningProcess.Id }
+            } catch {
+                Write-Log "[Discord] Failed to kill stored bot process: $($_.Exception.Message)" -Level Warning
             }
+            $script:ModuleConfig.BotProcess = $null
         }
 
         $nodeExe = Join-Path $script:ModuleConfig.NodePath "node.exe"
@@ -444,18 +439,44 @@ function Start-DiscordBot {
 #>
 function Stop-DiscordBot {
     try {
-        if ($script:ModuleConfig.BotProcess -and -not $script:ModuleConfig.BotProcess.HasExited) {
-            Write-Log "[Discord] Stopping Discord bot..." -Level Debug
-            
-            $script:ModuleConfig.BotProcess.CloseMainWindow()
-            if (-not $script:ModuleConfig.BotProcess.WaitForExit(5000)) {
-                $script:ModuleConfig.BotProcess.Kill()
+        Write-Log "[Discord] Stopping Discord bot - force killing all instances..." -Level Debug
+        
+        # Kill any stored process reference
+        if ($script:ModuleConfig.BotProcess) {
+            try {
+                if (-not $script:ModuleConfig.BotProcess.HasExited) {
+                    Write-Log "[Discord] Killing stored bot process: PID $($script:ModuleConfig.BotProcess.Id)" -Level Debug
+                    $script:ModuleConfig.BotProcess.Kill()
+                }
+            } catch {
+                Write-Log "[Discord] Failed to kill stored bot process: $($_.Exception.Message)" -Level Warning
             }
-            
-            Write-Log "[Discord] Bot stopped successfully" -Level Debug
+            $script:ModuleConfig.BotProcess = $null
         }
         
-        $script:ModuleConfig.BotProcess = $null
+        # Kill any Node.js process using our configured port
+        try {
+            $connections = netstat -ano | Select-String ":$($script:ModuleConfig.HttpApiPort).*LISTENING"
+            $processIds = $connections | ForEach-Object { ($_ -split '\s+')[-1] }
+            
+            if ($processIds) {
+                foreach ($pid in $processIds) {
+                    try {
+                        $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                        if ($process -and $process.ProcessName -eq "node") {
+                            Write-Log "[Discord] Force killing Node.js process on port $($script:ModuleConfig.HttpApiPort): PID $pid" -Level Debug
+                            Stop-Process -Id $pid -Force
+                        }
+                    } catch {
+                        Write-Log "[Discord] Failed to kill process $pid`: $($_.Exception.Message)" -Level Warning
+                    }
+                }
+            }
+        } catch {
+            Write-Log "[Discord] Error checking for processes on port: $($_.Exception.Message)" -Level Warning
+        }
+        
+        Write-Log "[Discord] Bot stopped successfully" -Level Debug
         return @{ Success = $true; Message = "Discord bot stopped" }
 
     } catch {
@@ -666,23 +687,48 @@ function Test-DiscordBotHealth {
 function New-AccountLinkingEmbed {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ChannelId
+        [string]$ChannelId,
+        [Parameter(Mandatory = $false)]
+        [string]$UpdateMessageId
     )
 
     try {
+        # If UpdateMessageId not provided, check persistence system
+        if (-not $UpdateMessageId -and (Get-Command "Get-EmbedMessageId" -ErrorAction SilentlyContinue)) {
+            $embedInfo = Get-EmbedMessageId -EmbedType "account-linking" -ChannelId $ChannelId
+            if ($embedInfo -and $embedInfo.MessageId) {
+                $UpdateMessageId = $embedInfo.MessageId
+                Write-Log "[Discord] Found existing account linking embed ID: $UpdateMessageId" -Level Debug
+            }
+        }
+        
         # Use dedicated Node.js API endpoint for account linking embed
         $body = @{
             channelId = $ChannelId
+        }
+        
+        # Add message ID if updating existing embed
+        if ($UpdateMessageId) {
+            $body.updateMessageId = $UpdateMessageId
         }
 
         $response = Invoke-NodeJsApiRequest -Endpoint "/api/account-linking/embed" -Method "POST" -Body $body
 
         if ($response.Success -and $response.Data.success) {
-            Write-Log "[Discord] Account linking embed created successfully in channel $ChannelId" -Level Debug
+            $operation = if ($response.Data.operation) { $response.Data.operation } else { "created" }
+            
+            # Store message ID in persistence system
+            if (Get-Command "Set-EmbedMessageId" -ErrorAction SilentlyContinue) {
+                Set-EmbedMessageId -EmbedType "account-linking" -MessageId $response.Data.messageId -ChannelId $ChannelId
+                Write-Log "[Discord] Stored account linking embed ID in persistence: $($response.Data.messageId)" -Level Debug
+            }
+            
+            Write-Log "[Discord] Account linking embed $operation successfully in channel $ChannelId" -Level Debug
             return @{
                 Success = $true
                 MessageId = $response.Data.messageId
                 ChannelId = $response.Data.channelId
+                Operation = $operation
                 Message = $response.Data.message
             }
         } else {
@@ -695,6 +741,153 @@ function New-AccountLinkingEmbed {
             Success = $false
             Error = $_.Exception.Message
         }
+    }
+}
+
+<#
+.SYNOPSIS
+    Updates existing account linking embed to refresh timestamp and content.
+#>
+function Update-AccountLinkingEmbed {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ChannelId,
+        [Parameter(Mandatory = $false)]
+        [string]$MessageId
+    )
+
+    try {
+        # If MessageId not provided, get it from persistence system
+        if (-not $MessageId -and (Get-Command "Get-EmbedMessageId" -ErrorAction SilentlyContinue)) {
+            $embedInfo = Get-EmbedMessageId -EmbedType "account-linking" -ChannelId $ChannelId
+            if ($embedInfo -and $embedInfo.MessageId) {
+                $MessageId = $embedInfo.MessageId
+                Write-Log "[Discord] Retrieved account linking embed ID from persistence: $MessageId" -Level Debug
+            } else {
+                Write-Log "[Discord] No stored account linking embed found for channel $ChannelId" -Level Warning
+                return @{
+                    Success = $false
+                    Error = "No stored embed message ID found"
+                }
+            }
+        }
+        
+        if (-not $MessageId) {
+            Write-Log "[Discord] No message ID provided and persistence not available" -Level Warning
+            return @{
+                Success = $false
+                Error = "No message ID available for update"
+            }
+        }
+        
+        Write-Log "[Discord] Updating account linking embed in channel $ChannelId (message: $MessageId)" -Level Debug
+        
+        # Use the same function but with UpdateMessageId parameter
+        $result = New-AccountLinkingEmbed -ChannelId $ChannelId -UpdateMessageId $MessageId
+        
+        if ($result.Success) {
+            Write-Log "[Discord] Account linking embed updated successfully" -Level Debug
+            return $result
+        } else {
+            throw "Update failed: $($result.Error)"
+        }
+
+    } catch {
+        Write-Log "[Discord] Failed to update account linking embed: $($_.Exception.Message)" -Level Warning
+        return @{
+            Success = $false
+            Error = $_.Exception.Message
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Manages automatic refresh of account linking embeds.
+#>
+function Start-AccountLinkingEmbedRefresh {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config
+    )
+
+    try {
+        # Check if account linking is configured
+        if (-not $Config.Discord.AccountLinking.Enabled -or -not $Config.Discord.AccountLinking.Channel) {
+            Write-Log "[Discord] Account linking embed refresh not configured" -Level Debug
+            return $false
+        }
+
+        # Set default refresh interval (6 hours)
+        $refreshIntervalHours = if ($Config.Discord.AccountLinking.RefreshIntervalHours) { 
+            $Config.Discord.AccountLinking.RefreshIntervalHours 
+        } else { 6 }
+
+        Write-Log "[Discord] Account linking embed refresh enabled (every $refreshIntervalHours hours)" -Level Info
+
+        # Store refresh configuration in module scope for monitoring loop
+        $script:ModuleConfig.AccountLinkingRefresh = @{
+            Enabled = $true
+            ChannelId = $Config.Discord.AccountLinking.Channel
+            IntervalHours = $refreshIntervalHours
+            LastRefresh = $null
+        }
+
+        return $true
+
+    } catch {
+        Write-Log "[Discord] Failed to start account linking embed refresh: $($_.Exception.Message)" -Level Error
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Updates account linking embed refresh monitoring (called from main loop).
+#>
+function Update-AccountLinkingEmbedRefresh {
+    try {
+        # Check if refresh is enabled
+        if (-not $script:ModuleConfig.AccountLinkingRefresh.Enabled) {
+            return
+        }
+
+        $config = $script:ModuleConfig.AccountLinkingRefresh
+        $currentTime = Get-Date
+
+        # Check if it's time to refresh
+        if ($config.LastRefresh) {
+            $timeSinceLastRefresh = $currentTime - $config.LastRefresh
+            if ($timeSinceLastRefresh.TotalHours -lt $config.IntervalHours) {
+                return # Not time yet
+            }
+        }
+
+        Write-Log "[Discord] Refreshing account linking embed..." -Level Debug
+
+        # Try to update existing embed (persistence system will handle finding the message ID)
+        $result = Update-AccountLinkingEmbed -ChannelId $config.ChannelId
+        
+        if ($result.Success) {
+            # Update was successful
+            $config.LastRefresh = $currentTime
+            Write-Log "[Discord] Account linking embed refreshed successfully" -Level Debug
+        } else {
+            # Update failed, try to create new embed
+            Write-Log "[Discord] Account linking embed update failed, creating new one: $($result.Error)" -Level Warning
+            
+            $createResult = New-AccountLinkingEmbed -ChannelId $config.ChannelId
+            
+            if ($createResult.Success) {
+                $config.LastRefresh = $currentTime
+                Write-Log "[Discord] New account linking embed created for refresh" -Level Debug
+            } else {
+                Write-Log "[Discord] Failed to create account linking embed for refresh: $($createResult.Error)" -Level Warning
+            }
+        }
+
+    } catch {
+        Write-Log "[Discord] Error during account linking embed refresh: $($_.Exception.Message)" -Level Error
     }
 }
 
@@ -865,5 +1058,8 @@ Export-ModuleMember -Function @(
     'Update-DiscordLeaderboards',
     
     # Account linking
-    'New-AccountLinkingEmbed'
+    'New-AccountLinkingEmbed',
+    'Update-AccountLinkingEmbed',
+    'Start-AccountLinkingEmbedRefresh',
+    'Update-AccountLinkingEmbedRefresh'
 )

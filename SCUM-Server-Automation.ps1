@@ -868,6 +868,22 @@ if (Get-Command "Invoke-NodeJsApiRequest" -ErrorAction SilentlyContinue) {
             Write-Log "[INFO] Discord account linking system not enabled or configured" -Level Info
             Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord account linking system not enabled or configured"
         }
+        
+        # Initialize account linking embed refresh system
+        if (Get-Command "Start-AccountLinkingEmbedRefresh" -ErrorAction SilentlyContinue) {
+            try {
+                $refreshResult = Start-AccountLinkingEmbedRefresh -Config $configHash
+                if ($refreshResult) {
+                    Write-Log "[OK] Discord account linking embed refresh system enabled" -Level Info
+                    Write-PhaseStatus -Phase 12 -Status "Success" -Message "Discord account linking embed refresh system enabled"
+                } else {
+                    Write-Log "[INFO] Discord account linking embed refresh not configured" -Level Info
+                }
+            } catch {
+                Write-Log "[WARN] Discord account linking embed refresh system failed: $($_.Exception.Message)" -Level Warning
+            }
+        }
+        
     } catch {
         Write-PhaseStatus -Phase 12 -Status "Warning" -Message "Discord account linking system failed: $($_.Exception.Message)"
     }
@@ -2300,6 +2316,15 @@ if (Get-Command "Start-KillLogMonitoring" -ErrorAction SilentlyContinue) {
                         Maintenance-DiscordConnection | Out-Null
                     } catch {
                         Write-Log "Legacy Discord connection maintenance failed: $($_.Exception.Message)" -Level Warning
+                    }
+                }
+                
+                # Account linking embed refresh (every 10 loops = every 10 seconds check, but actual refresh based on configured interval)
+                if (Get-Command "Update-AccountLinkingEmbedRefresh" -ErrorAction SilentlyContinue) {
+                    try {
+                        Update-AccountLinkingEmbedRefresh
+                    } catch {
+                        Write-Log "Account linking embed refresh failed: $($_.Exception.Message)" -Level Warning
                     }
                 }
             }
