@@ -57,9 +57,8 @@ client.once('clientReady', async () => {
     // Make client available globally for API routes
     global.discordClient = client;
     
-    // Skip automatic slash command registration to test command listing
-    console.log('⏭️ Skipping automatic slash command registration');
-    writeLog('Bot started without automatic slash command registration', 'Debug');
+    // Register slash commands
+    await registerSlashCommands();
 });
 
 client.on('interactionCreate', async (interaction) => {
