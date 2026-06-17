@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS a_discord_profiles (
   player_name TEXT,
   linked_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS a_notification_prefs (
+  discord_user_id TEXT PRIMARY KEY,
+  notify_raid INTEGER DEFAULT 0,
+  notify_vehicle INTEGER DEFAULT 0,
+  notify_chest INTEGER DEFAULT 0,
+  notify_lock INTEGER DEFAULT 0,
+  scope TEXT DEFAULT 'own',
+  last_update DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `;
 
 let serverDb = null;
@@ -69,6 +79,8 @@ function getServerDb() {
   fsExtra.ensureDirSync(path.dirname(SERVER_DB_PATH));
   serverDb = new Database(SERVER_DB_PATH);
   serverDb.exec(SCHEMA);
+  // Migration: add notify_lock to an a_notification_prefs table created before it existed.
+  try { serverDb.exec('ALTER TABLE a_notification_prefs ADD COLUMN notify_lock INTEGER DEFAULT 0'); } catch { /* already present */ }
   logger.info(`[Database] Opened server database: ${SERVER_DB_PATH}`);
   return serverDb;
 }
@@ -259,6 +271,71 @@ function unlinkAccount(discordUserId) {
   return profile;
 }
 
+// ===========================================================================
+// Per-player raid notification preferences
+// ===========================================================================
+
+function getNotifyPrefs(discordUserId) {
+  const db = getServerDb();
+  const row = db.prepare('SELECT * FROM a_notification_prefs WHERE discord_user_id = ?').get(discordUserId);
+  return {
+    raid: row ? row.notify_raid === 1 : false,
+    vehicle: row ? row.notify_vehicle === 1 : false,
+    chest: row ? row.notify_chest === 1 : false,
+    lock: row ? row.notify_lock === 1 : false,
+    scope: row && row.scope === 'squad' ? 'squad' : 'own',
+  };
+}
+
+function setNotifyPrefs(discordUserId, { raid, vehicle, chest, lock, scope }) {
+  const db = getServerDb();
+  db.prepare(`
+    INSERT INTO a_notification_prefs (discord_user_id, notify_raid, notify_vehicle, notify_chest, notify_lock, scope, last_update)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(discord_user_id) DO UPDATE SET
+      notify_raid = excluded.notify_raid,
+      notify_vehicle = excluded.notify_vehicle,
+      notify_chest = excluded.notify_chest,
+      notify_lock = excluded.notify_lock,
+      scope = excluded.scope,
+      last_update = CURRENT_TIMESTAMP
+  `).run(discordUserId, raid ? 1 : 0, vehicle ? 1 : 0, chest ? 1 : 0, lock ? 1 : 0, scope === 'squad' ? 'squad' : 'own');
+}
+
+/**
+ * Linked Discord users who want notifications of a given type ('raid'|'vehicle'|'chest'|'lock').
+ * Returns [{ discordUserId, steamId, playerName, scope }].
+ */
+function getNotifyRecipients(type) {
+  const col = {
+    raid: 'notify_raid', vehicle: 'notify_vehicle', chest: 'notify_chest', lock: 'notify_lock',
+  }[type];
+  if (!col) return [];
+  const db = getServerDb();
+  return db.prepare(`
+    SELECT p.discord_user_id AS discordUserId, dp.steam_id AS steamId,
+           dp.player_name AS playerName, p.scope AS scope
+    FROM a_notification_prefs p
+    JOIN a_discord_profiles dp ON dp.discord_user_id = p.discord_user_id
+    WHERE p.${col} = 1
+  `).all();
+}
+
+/** Resolve a player's Steam ID from a flag owner's user id / flag id (best effort). */
+function getSteamIdByUserId(userId) {
+  if (userId == null) return null;
+  const db = getServerDb();
+  const row = db.prepare('SELECT steam_id FROM a_user_profile WHERE user_id = ?').get(String(userId));
+  return row ? row.steam_id : null;
+}
+
+function getSteamIdByFlagId(flagId) {
+  if (flagId == null) return null;
+  const db = getServerDb();
+  const row = db.prepare('SELECT steam_id FROM a_user_profile WHERE flag_id = ? LIMIT 1').get(String(flagId));
+  return row ? row.steam_id : null;
+}
+
 function closeAll() {
   if (serverDb) {
     try { serverDb.close(); } catch { /* ignore */ }
@@ -279,6 +356,11 @@ module.exports = {
   getDiscordProfile,
   getDiscordProfileBySteamId,
   unlinkAccount,
+  getNotifyPrefs,
+  setNotifyPrefs,
+  getNotifyRecipients,
+  getSteamIdByUserId,
+  getSteamIdByFlagId,
   closeAll,
   SERVER_DB_PATH,
 };

@@ -1,4 +1,4 @@
-{
+  {
   "serviceName": "SCUMSERVER",
   "appId": "3792580",
   "publicIP": "",
@@ -14,10 +14,10 @@
   "backupRoot": "./backups",
   "nssmPath": "./nssm.exe",
   "restartTimes": [
-    "06:00",
-    "12:00",
-    "18:00",
-    "00:00"
+    "03:00",
+    "09:00",
+    "15:00",
+    "21:00"
   ],
   "periodicBackupEnabled": true,
   "backupIntervalMinutes": 60,
@@ -46,7 +46,7 @@
   "performanceAlertCooldownMinutes": 5,
   "performanceLogIntervalMinutes": 1,
   "performanceThresholds": {
-    "excellent": 30,
+    "excellent": 25,
     "good": 20,
     "fair": 15,
     "poor": 10,
@@ -68,11 +68,17 @@
     },
     "LiveEmbeds": {
       "StatusChannel": "",
+      "PlayersChannel": "",
+      "BunkerChannel": "",
       "LeaderboardsChannel": "",
       "UpdateInterval": 30,
+      "PlayersUpdateInterval": 60,
+      "BunkerUpdateInterval": 60,
       "LeaderboardUpdateInterval": 120,
       "Images": {
         "ServerStatus": "https://playhub.cz/scum/3.gif",
+        "Players": "https://playhub.cz/scum/8.gif",
+        "Bunker": "https://playhub.cz/scum/5.gif",
         "Leaderboards": {
           "Weekly": "https://playhub.cz/scum/2.gif",
           "AllTime": "https://playhub.cz/scum/4.gif"

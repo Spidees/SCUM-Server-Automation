@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   REST, Routes, SlashCommandBuilder,
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
 } = require('discord.js');
 const logger = require('../core/logger');
 const { config, env, paths } = require('../core/config');
@@ -150,26 +150,52 @@ function fmtKdr(kills, deaths) {
   return (kills / deaths).toFixed(2);
 }
 
+function fmtNum(n) {
+  return Math.trunc(Number(n) || 0).toLocaleString('en-US');
+}
+
 function buildPlayerStatsEmbed(stats, online, lastSeen) {
   const kdr = fmtKdr(stats.Kills, stats.Deaths);
+  const survivedH = (Number(stats.MinutesSurvived || 0) / 60).toFixed(1);
+  const distanceKm = (Number(stats.Distance || 0) / 1000).toFixed(1);
+
   return new EmbedBuilder()
-    .setTitle(`${online ? ':green_circle:' : ':black_circle:'} ${stats.Name}`)
+    .setTitle(`${online ? '🟢' : '⚫'} ${stats.Name}`)
     .setColor(online ? COLORS.green : COLORS.grey)
-    .setFooter(FOOTER)
+    .setImage('https://playhub.cz/scum/13.gif')
     .setTimestamp()
     .addFields(
-      { name: 'Steam ID', value: stats.SteamID || '-', inline: true },
-      { name: 'Status', value: online ? 'Online' : 'Offline', inline: true },
-      { name: 'Last Seen', value: lastSeen, inline: true },
-      { name: ':crossed_swords: Kills', value: `${stats.Kills}`, inline: true },
-      { name: ':skull: Deaths', value: `${stats.Deaths}`, inline: true },
-      { name: ':bar_chart: K/D', value: kdr, inline: true },
-      { name: ':star: Fame', value: `${stats.FamePoints}`, inline: true },
-      { name: ':timer: Playtime', value: fmtPlaytime(stats.PlayTime), inline: true },
-      { name: ':moneybag: Money', value: `${stats.Money}`, inline: true },
-      { name: ':trophy: Events Won', value: `${stats.EventsWon}`, inline: true },
-      { name: ':dart: Headshots', value: `${stats.Headshots}`, inline: true },
-      { name: ':zombie: Zombie Kills', value: `${stats.ZombieKills}`, inline: true },
+      { name: '🆔 Steam ID', value: stats.SteamID || '-', inline: true },
+      { name: '📡 Status', value: online ? 'Online' : 'Offline', inline: true },
+      { name: '🕓 Last Seen', value: lastSeen, inline: true },
+
+      { name: '⚔️ Kills', value: fmtNum(stats.Kills), inline: true },
+      { name: '💀 Deaths', value: fmtNum(stats.Deaths), inline: true },
+      { name: '📊 K/D', value: kdr, inline: true },
+
+      { name: '🎯 Headshots', value: fmtNum(stats.Headshots), inline: true },
+      { name: '🔭 Longest Kill', value: `${fmtNum(stats.LongestKill)} m`, inline: true },
+      { name: '🤝 Team Kills', value: fmtNum(stats.TeamKills), inline: true },
+
+      { name: '🔪 Melee Kills', value: fmtNum(stats.MeleeKills), inline: true },
+      { name: '🏹 Archery Kills', value: fmtNum(stats.ArcheryKills), inline: true },
+      { name: '🧟 Puppet Kills', value: fmtNum(stats.ZombieKills), inline: true },
+
+      { name: '🐾 Animal Kills', value: fmtNum(stats.AnimalKills), inline: true },
+      { name: '⏱️ Survived', value: `${survivedH} h`, inline: true },
+      { name: '👣 Distance', value: `${distanceKm} km`, inline: true },
+
+      { name: '📦 Looted', value: fmtNum(stats.Looted), inline: true },
+      { name: '🎣 Fish Caught', value: fmtNum(stats.FishCaught), inline: true },
+      { name: '🩹 Wounds Patched', value: fmtNum(stats.WoundsPatched), inline: true },
+
+      { name: '🔨 Items Crafted', value: fmtNum(stats.Crafted), inline: true },
+      { name: '🔓 Locks Picked', value: fmtNum(stats.LocksPicked), inline: true },
+      { name: '🏆 Events Won', value: fmtNum(stats.EventsWon), inline: true },
+
+      { name: '⭐ Fame', value: fmtNum(stats.FamePoints), inline: true },
+      { name: '💰 Money', value: fmtNum(stats.Money), inline: true },
+      { name: '⏲️ Playtime', value: fmtPlaytime(stats.PlayTime), inline: true },
     );
 }
 
@@ -774,7 +800,11 @@ function registerInteractionHandler(client) {
         if (customId === 'link_account') return handleButton_link_account(interaction);
         if (customId === 'check_status') return handleButton_check_status(interaction);
         if (customId === 'setting_account') return handleButton_check_status(interaction);
+        if (customId === 'notify_settings') return handleButton_notify_settings(interaction);
         if (customId === 'unlink_account') return handleButton_unlink_account(interaction);
+      } else if (interaction.isStringSelectMenu()) {
+        const { customId } = interaction;
+        if (customId === 'notify_types' || customId === 'notify_scope') return handleNotifySelect(interaction);
       }
     } catch (err) {
       logger.error(`[Discord] Interaction handling failed: ${err.message}`);
@@ -817,8 +847,89 @@ function buildLinkingPanelRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('link_account').setLabel('Link Account').setStyle(ButtonStyle.Success).setEmoji('🔗'),
     new ButtonBuilder().setCustomId('check_status').setLabel('Check Status').setStyle(ButtonStyle.Secondary).setEmoji('📊'),
+    new ButtonBuilder().setCustomId('notify_settings').setLabel('Notifications').setStyle(ButtonStyle.Primary).setEmoji('⚙️'),
     new ButtonBuilder().setCustomId('unlink_account').setLabel('Unlink Account').setStyle(ButtonStyle.Danger).setEmoji('🔓'),
   );
+}
+
+/**
+ * Build the ephemeral "Raid Notification Settings" message (embed + two select
+ * menus) reflecting the user's current preferences.
+ */
+function buildNotifySettingsPayload(prefs) {
+  const typesMenu = new StringSelectMenuBuilder()
+    .setCustomId('notify_types')
+    .setPlaceholder('Select what to be notified about (DM)')
+    .setMinValues(0)
+    .setMaxValues(4)
+    .addOptions(
+      { label: 'Raid / Base', value: 'raid', description: 'Protection changes & base being destroyed', emoji: '🛡️', default: prefs.raid },
+      { label: 'Vehicles', value: 'vehicle', description: 'When your vehicle is destroyed', emoji: '🚗', default: prefs.vehicle },
+      { label: 'Chests', value: 'chest', description: 'When your chest is taken or lost', emoji: '📦', default: prefs.chest },
+      { label: 'Locks', value: 'lock', description: 'When someone picks your lock / dial pad', emoji: '🔒', default: prefs.lock },
+    );
+
+  const scopeMenu = new StringSelectMenuBuilder()
+    .setCustomId('notify_scope')
+    .setPlaceholder('Whose property to watch')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      { label: 'My stuff only', value: 'own', emoji: '👤', default: prefs.scope !== 'squad' },
+      { label: 'My squad too', value: 'squad', emoji: '👥', default: prefs.scope === 'squad' },
+    );
+
+  const embed = applyBranding(new EmbedBuilder()
+    .setTitle('⚙️ Raid Notification Settings')
+    .setColor(COLORS.blue)
+    .setDescription([
+      'Get a **direct message** when something happens to property you own.',
+      '',
+      `🛡️ Raid Protection — **${prefs.raid ? 'On' : 'Off'}**`,
+      `🚗 Vehicles — **${prefs.vehicle ? 'On' : 'Off'}**`,
+      `📦 Chests — **${prefs.chest ? 'On' : 'Off'}**`,
+      `🔒 Locks — **${prefs.lock ? 'On' : 'Off'}**`,
+      `👥 Scope — **${prefs.scope === 'squad' ? 'My squad too' : 'My stuff only'}**`,
+      '',
+      '*Use the menus below — changes save automatically.*',
+    ].join('\n')));
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(typesMenu),
+      new ActionRowBuilder().addComponents(scopeMenu),
+    ],
+  };
+}
+
+async function handleButton_notify_settings(interaction) {
+  const linked = database.getDiscordProfile(interaction.user.id);
+  if (!linked) {
+    await interaction.reply({ content: ':link: Link your account first using the **Link Account** button.', ephemeral: true });
+    return;
+  }
+  const prefs = database.getNotifyPrefs(interaction.user.id);
+  await interaction.reply({ ...buildNotifySettingsPayload(prefs), ephemeral: true });
+}
+
+async function handleNotifySelect(interaction) {
+  if (!database.getDiscordProfile(interaction.user.id)) {
+    await interaction.reply({ content: ':link: Link your account first.', ephemeral: true });
+    return;
+  }
+  const prefs = database.getNotifyPrefs(interaction.user.id);
+  if (interaction.customId === 'notify_types') {
+    const vals = interaction.values || [];
+    prefs.raid = vals.includes('raid');
+    prefs.vehicle = vals.includes('vehicle');
+    prefs.chest = vals.includes('chest');
+    prefs.lock = vals.includes('lock');
+  } else {
+    prefs.scope = interaction.values[0] === 'squad' ? 'squad' : 'own';
+  }
+  database.setNotifyPrefs(interaction.user.id, prefs);
+  await interaction.update(buildNotifySettingsPayload(prefs));
 }
 
 /**

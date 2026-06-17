@@ -71,11 +71,24 @@ function baseEmbed(title, color) {
     .setTimestamp(new Date());
 }
 
-function locationField(loc, inline = false) {
+/** Interactive SCUM map link for a coordinate (scum-map.com). */
+function mapUrl(x, y, z) {
+  return `https://scum-map.com/en/shared/scum/island/${Math.round(x)},${Math.round(y)},${Math.round(z)}`;
+}
+
+const LOC_TRIPLET_RE = /X=(-?[\d.]+)\s+Y=(-?[\d.]+)\s+Z=(-?[\d.]+)/g;
+
+/** Append a clickable map link after every "X=.. Y=.. Z=.." coordinate set in a string. */
+function linkifyLocationText(text) {
+  if (!text) return text;
+  return text.replace(LOC_TRIPLET_RE, (match, x, y, z) => `${match} [🗺️](${mapUrl(x, y, z)})`);
+}
+
+function locationField(loc, inline = true) {
   if (!loc) return null;
   const { x, y, z } = loc;
   if (x === undefined || y === undefined || z === undefined) return null;
-  return { name: 'Location', value: `X=${x} Y=${y} Z=${z}`, inline };
+  return { name: '📍 Location', value: `[🗺️ View on map](${mapUrl(x, y, z)})`, inline };
 }
 
 // --- Login / Logout ---------------------------------------------------
@@ -87,14 +100,14 @@ function buildLoginEmbed(event) {
     isLogin ? COLORS.Login : COLORS.Logout,
   );
   const fields = [
-    { name: 'Player', value: event.playerName || 'Unknown', inline: true },
-    { name: 'Player ID', value: event.playerId || 'N/A', inline: true },
-    { name: 'SteamID', value: event.steamId || 'N/A', inline: true },
+    { name: '👤 Player', value: event.playerName || 'Unknown', inline: true },
+    { name: '🆔 Player ID', value: event.playerId || 'N/A', inline: true },
+    { name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true },
   ];
-  if (event.ipAddress) fields.push({ name: 'IP Address', value: event.ipAddress, inline: true });
+  if (event.ipAddress) fields.push({ name: '🌐 IP Address', value: event.ipAddress, inline: true });
   const loc = locationField(event.location);
   if (loc) fields.push(loc);
-  if (event.isDrone) fields.push({ name: 'Drone Mode', value: 'Yes', inline: true });
+  if (event.isDrone) fields.push({ name: '🚁 Drone Mode', value: 'Yes', inline: true });
   embed.addFields(fields);
   return embed;
 }
@@ -126,11 +139,11 @@ function buildAdminEmbed(event) {
   const meta = ADMIN_TYPES[event.type] || ADMIN_TYPES.default;
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   const fields = [
-    { name: 'Admin', value: event.adminName || 'Unknown', inline: true },
-    { name: 'Player ID', value: event.playerId || 'N/A', inline: true },
-    { name: 'SteamID', value: event.steamId || 'N/A', inline: true },
+    { name: '🛡️ Admin', value: event.adminName || 'Unknown', inline: true },
+    { name: '🆔 Player ID', value: event.playerId || 'N/A', inline: true },
+    { name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true },
   ];
-  if (event.command) fields.push({ name: 'Command', value: event.command, inline: false });
+  if (event.command) fields.push({ name: '⌨️ Command', value: event.command, inline: false });
   embed.addFields(fields);
   return embed;
 }
@@ -149,12 +162,12 @@ function buildChestEmbed(event) {
   const meta = CHEST_TYPES[event.type] || CHEST_TYPES.default;
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   const fields = [
-    { name: 'Player', value: event.playerName || 'Unknown', inline: true },
-    { name: 'Player ID', value: event.playerId || 'N/A', inline: true },
-    { name: 'SteamID', value: event.steamId || 'N/A', inline: true },
-    { name: 'Entity ID', value: String(event.entityId ?? 'N/A'), inline: true },
+    { name: '👤 Player', value: event.playerName || 'Unknown', inline: true },
+    { name: '🆔 Player ID', value: event.playerId || 'N/A', inline: true },
+    { name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true },
+    { name: '🆔 Entity ID', value: String(event.entityId ?? 'N/A'), inline: true },
   ];
-  if (event.action) fields.push({ name: 'Action', value: event.action, inline: true });
+  if (event.action) fields.push({ name: '⚡ Action', value: event.action, inline: true });
   const loc = locationField(event.location);
   if (loc) fields.push(loc);
   embed.addFields(fields);
@@ -208,21 +221,21 @@ function buildEconomyEmbed(event) {
   const meta = ECONOMY_TYPES[event.type] || ECONOMY_TYPES.default;
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   const fields = [
-    { name: 'Player', value: event.playerName || 'Unknown', inline: true },
-    { name: 'SteamID', value: event.steamId || 'N/A', inline: true },
+    { name: '👤 Player', value: event.playerName || 'Unknown', inline: true },
+    { name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true },
   ];
 
   if (event.items && event.items.length) {
     fields.push({ name: event.type === 'sell' ? 'Items Sold' : 'Items', value: formatItemList(event.items), inline: false });
-    if (event.totalAmount !== undefined) fields.push({ name: 'Total Credits', value: String(event.totalAmount), inline: true });
+    if (event.totalAmount !== undefined) fields.push({ name: '💰 Total Credits', value: String(event.totalAmount), inline: true });
   } else if (event.item) {
-    fields.push({ name: 'Item', value: getItemDisplayName(event.item), inline: true });
-    if (event.amount !== undefined) fields.push({ name: 'Amount', value: String(event.amount), inline: true });
+    fields.push({ name: '📦 Item', value: getItemDisplayName(event.item), inline: true });
+    if (event.amount !== undefined) fields.push({ name: '💵 Amount', value: String(event.amount), inline: true });
   } else if (event.amount !== undefined) {
-    fields.push({ name: 'Amount', value: String(event.amount), inline: true });
+    fields.push({ name: '💵 Amount', value: String(event.amount), inline: true });
   }
 
-  if (event.cardType) fields.push({ name: 'Card Type', value: event.cardType, inline: true });
+  if (event.cardType) fields.push({ name: '💳 Card Type', value: event.cardType, inline: true });
 
   const before = {};
   const after = {};
@@ -235,7 +248,7 @@ function buildEconomyEmbed(event) {
   void after;
 
   const trader = formatTrader(event.trader);
-  if (trader) fields.push({ name: 'Trader', value: trader, inline: true });
+  if (trader) fields.push({ name: '🏪 Trader', value: trader, inline: true });
 
   embed.addFields(fields);
   return embed;
@@ -269,25 +282,25 @@ function buildGameplayEmbed(event) {
   const embed = baseEmbed(title, color);
   const fields = [];
   if (event.source === 'SYSTEM') {
-    fields.push({ name: 'Source', value: 'SYSTEM', inline: true });
+    fields.push({ name: '📡 Source', value: 'SYSTEM', inline: true });
   } else {
-    if (event.playerName) fields.push({ name: 'Player', value: event.playerName, inline: true });
-    if (event.playerId) fields.push({ name: 'Player ID', value: String(event.playerId), inline: true });
-    if (event.steamId) fields.push({ name: 'SteamID', value: event.steamId, inline: true });
+    if (event.playerName) fields.push({ name: '👤 Player', value: event.playerName, inline: true });
+    if (event.playerId) fields.push({ name: '🆔 Player ID', value: String(event.playerId), inline: true });
+    if (event.steamId) fields.push({ name: '🎮 Steam ID', value: event.steamId, inline: true });
   }
-  if (event.activity) fields.push({ name: 'Activity', value: event.activity, inline: true });
-  if (event.minigame) fields.push({ name: 'Minigame', value: event.minigame, inline: true });
-  if (event.success !== undefined) fields.push({ name: 'Success', value: event.success ? '✅' : '❌', inline: true });
-  if (event.elapsedTime !== undefined) fields.push({ name: 'Elapsed Time', value: `${event.elapsedTime}s`, inline: true });
-  if (event.failedAttempts !== undefined) fields.push({ name: 'Failed Attempts', value: String(event.failedAttempts), inline: true });
-  if (event.targetObject) fields.push({ name: 'Target Object', value: event.targetObject, inline: true });
-  if (event.lockType) fields.push({ name: 'Lock Type', value: event.lockType, inline: true });
-  if (event.ownerName) fields.push({ name: 'Owner', value: event.ownerName, inline: true });
-  if (event.itemName) fields.push({ name: 'Item', value: event.itemName, inline: true });
-  if (event.trapName) fields.push({ name: 'Trap', value: event.trapName, inline: true });
+  if (event.activity) fields.push({ name: '🎮 Activity', value: event.activity, inline: true });
+  if (event.minigame) fields.push({ name: '🎮 Minigame', value: event.minigame, inline: true });
+  if (event.success !== undefined) fields.push({ name: '✅ Success', value: event.success ? '✅' : '❌', inline: true });
+  if (event.elapsedTime !== undefined) fields.push({ name: '⏱️ Elapsed Time', value: `${event.elapsedTime}s`, inline: true });
+  if (event.failedAttempts !== undefined) fields.push({ name: '❌ Failed Attempts', value: String(event.failedAttempts), inline: true });
+  if (event.targetObject) fields.push({ name: '🎯 Target Object', value: event.targetObject, inline: true });
+  if (event.lockType) fields.push({ name: '🔒 Lock Type', value: event.lockType, inline: true });
+  if (event.ownerName) fields.push({ name: '👑 Owner', value: event.ownerName, inline: true });
+  if (event.itemName) fields.push({ name: '📦 Item', value: event.itemName, inline: true });
+  if (event.trapName) fields.push({ name: '🪤 Trap', value: event.trapName, inline: true });
   if (event.bombType) fields.push({ name: 'Bomb Type', value: event.bombType, inline: true });
-  if (event.flagId) fields.push({ name: 'Flag ID', value: String(event.flagId), inline: true });
-  if (event.details) fields.push({ name: 'Details', value: event.details, inline: false });
+  if (event.flagId) fields.push({ name: '🚩 Flag ID', value: String(event.flagId), inline: true });
+  if (event.details) fields.push({ name: '📋 Details', value: event.details, inline: false });
   const loc = locationField(event.location);
   if (loc) fields.push(loc);
   embed.addFields(fields);
@@ -306,36 +319,36 @@ const KILL_WEAPON_TYPE_META = {
 function buildKillFields(event, { includeIds }) {
   const fields = [];
   if (event.type === 'suicide') {
-    fields.push({ name: 'Player', value: event.playerName || 'Unknown', inline: true });
+    fields.push({ name: '👤 Player', value: event.playerName || 'Unknown', inline: true });
     if (includeIds) {
-      fields.push({ name: 'Player ID', value: String(event.playerId ?? 'N/A'), inline: true });
-      fields.push({ name: 'SteamID', value: event.steamId || 'N/A', inline: true });
+      fields.push({ name: '🆔 Player ID', value: String(event.playerId ?? 'N/A'), inline: true });
+      fields.push({ name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true });
     }
     const loc = locationField(event.location);
     if (loc) fields.push(loc);
-    else if (event.locationText) fields.push({ name: 'Location', value: event.locationText, inline: false });
+    else if (event.locationText) fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
     return fields;
   }
 
-  fields.push({ name: 'Killer', value: event.killerName || 'Unknown', inline: true });
-  fields.push({ name: 'Victim', value: event.victimName || 'Unknown', inline: true });
+  fields.push({ name: '🔪 Killer', value: event.killerName || 'Unknown', inline: true });
+  fields.push({ name: '💀 Victim', value: event.victimName || 'Unknown', inline: true });
   if (includeIds) {
-    fields.push({ name: 'Killer SteamID', value: event.killerSteamId || 'N/A', inline: true });
-    fields.push({ name: 'Victim SteamID', value: event.victimSteamId || 'N/A', inline: true });
+    fields.push({ name: '🎮 Killer Steam ID', value: event.killerSteamId || 'N/A', inline: true });
+    fields.push({ name: '🎮 Victim Steam ID', value: event.victimSteamId || 'N/A', inline: true });
   }
 
   if (event.weaponName) {
     const displayName = getItemDisplayName(event.weaponName);
-    fields.push({ name: 'Weapon', value: displayName, inline: true });
+    fields.push({ name: '🔫 Weapon', value: displayName, inline: true });
     if (includeIds && displayName !== event.weaponName) {
-      fields.push({ name: 'Weapon ID', value: event.weaponName, inline: true });
+      fields.push({ name: '🆔 Weapon ID', value: event.weaponName, inline: true });
     }
   }
-  if (event.weaponType) fields.push({ name: 'Weapon Type', value: event.weaponType, inline: true });
+  if (event.weaponType) fields.push({ name: '🏷️ Weapon Type', value: event.weaponType, inline: true });
   if (event.distance !== undefined && event.weaponType !== 'explosion') {
-    fields.push({ name: 'Distance', value: `${event.distance} m`, inline: true });
+    fields.push({ name: '📏 Distance', value: `${event.distance} m`, inline: true });
   }
-  if (event.locationText) fields.push({ name: 'Location', value: event.locationText, inline: false });
+  if (event.locationText) fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
   return fields;
 }
 
@@ -386,25 +399,25 @@ const EVENT_KILL_TYPE_META = {
 
 function buildEventKillFields(event, { includeIds }) {
   const fields = [
-    { name: 'Killer', value: event.killerName || 'Unknown', inline: true },
-    { name: 'Victim', value: event.victimName || 'Unknown', inline: true },
+    { name: '🔪 Killer', value: event.killerName || 'Unknown', inline: true },
+    { name: '💀 Victim', value: event.victimName || 'Unknown', inline: true },
   ];
   if (includeIds) {
-    fields.push({ name: 'Killer SteamID', value: event.killerSteamId || 'N/A', inline: true });
-    fields.push({ name: 'Victim SteamID', value: event.victimSteamId || 'N/A', inline: true });
+    fields.push({ name: '🎮 Killer Steam ID', value: event.killerSteamId || 'N/A', inline: true });
+    fields.push({ name: '🎮 Victim Steam ID', value: event.victimSteamId || 'N/A', inline: true });
   }
   if (event.weaponName) {
     const displayName = getItemDisplayName(event.weaponName);
-    fields.push({ name: 'Weapon', value: displayName, inline: true });
+    fields.push({ name: '🔫 Weapon', value: displayName, inline: true });
     if (includeIds && displayName !== event.weaponName) {
-      fields.push({ name: 'Weapon ID', value: event.weaponName, inline: true });
+      fields.push({ name: '🆔 Weapon ID', value: event.weaponName, inline: true });
     }
   }
-  if (event.weaponType) fields.push({ name: 'Weapon Type', value: event.weaponType, inline: true });
-  if (event.distance !== undefined) fields.push({ name: 'Distance', value: `${event.distance} m`, inline: true });
+  if (event.weaponType) fields.push({ name: '🏷️ Weapon Type', value: event.weaponType, inline: true });
+  if (event.distance !== undefined) fields.push({ name: '📏 Distance', value: `${event.distance} m`, inline: true });
   fields.push({ name: 'Event Type', value: 'Game Event Kill', inline: true });
   if (event.locationText) {
-    fields.push({ name: 'Location', value: event.locationText, inline: false });
+    fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
   } else {
     const loc = locationField(event.location);
     if (loc) fields.push(loc);
@@ -436,15 +449,15 @@ function buildFamePointsEmbed(event) {
 
   const embed = baseEmbed(':star: Fame Points', color);
   const fields = [
-    { name: 'Player', value: event.playerName || 'Unknown', inline: true },
-    { name: 'SteamID', value: event.steamId || 'N/A', inline: true },
-    { name: 'Amount', value: String(event.amount ?? 0), inline: true },
+    { name: '👤 Player', value: event.playerName || 'Unknown', inline: true },
+    { name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true },
+    { name: '💵 Amount', value: String(event.amount ?? 0), inline: true },
   ];
-  if (event.action) fields.push({ name: 'Action', value: event.action, inline: true });
-  if (event.reason) fields.push({ name: 'Reason', value: event.reason, inline: true });
+  if (event.action) fields.push({ name: '⚡ Action', value: event.action, inline: true });
+  if (event.reason) fields.push({ name: '📝 Reason', value: event.reason, inline: true });
   if (event.details && event.details.length) {
     const breakdown = event.details.map((d) => `${d.label}: ${d.amount}`).join('\n');
-    fields.push({ name: 'Breakdown', value: breakdown, inline: false });
+    fields.push({ name: '📊 Breakdown', value: breakdown, inline: false });
   }
   embed.addFields(fields);
   return embed;
@@ -464,14 +477,14 @@ function buildQuestEmbed(event) {
   const meta = QUEST_ACTION_META[event.action] || QUEST_ACTION_META.default;
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   const fields = [
-    { name: 'Player', value: event.playerName || 'Unknown', inline: true },
-    { name: 'Steam ID', value: event.steamId || 'N/A', inline: true },
-    { name: 'Quest', value: event.displayQuestName || event.questName || 'Unknown', inline: true },
+    { name: '👤 Player', value: event.playerName || 'Unknown', inline: true },
+    { name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true },
+    { name: '📜 Quest', value: event.displayQuestName || event.questName || 'Unknown', inline: true },
   ];
-  if (event.questId) fields.push({ name: 'Quest ID', value: event.questId, inline: true });
-  if (event.tier) fields.push({ name: 'Tier', value: String(event.tier), inline: true });
+  if (event.questId) fields.push({ name: '🆔 Quest ID', value: event.questId, inline: true });
+  if (event.tier) fields.push({ name: '⭐ Tier', value: String(event.tier), inline: true });
   if (event.rewards && event.rewards.length) {
-    fields.push({ name: 'Rewards', value: event.rewards.map((r) => `${r.quantity > 1 ? `${r.quantity}x ` : ''}${getItemDisplayName(r.item)}`).join('\n'), inline: false });
+    fields.push({ name: '🎁 Rewards', value: event.rewards.map((r) => `${r.quantity > 1 ? `${r.quantity}x ` : ''}${getItemDisplayName(r.item)}`).join('\n'), inline: false });
   }
   const loc = locationField(event.location);
   if (loc) fields.push(loc);
@@ -493,17 +506,17 @@ function buildRaidProtectionEmbed(event) {
   const meta = RAID_PROTECTION_META[event.eventType] || RAID_PROTECTION_META.default;
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   const fields = [
-    { name: 'Flag ID', value: String(event.flagId ?? 'N/A'), inline: true },
-    { name: 'Owner ID', value: event.ownerId ? String(event.ownerId) : 'N/A', inline: true },
+    { name: '🚩 Flag ID', value: String(event.flagId ?? 'N/A'), inline: true },
+    { name: '👑 Owner ID', value: event.ownerId ? String(event.ownerId) : 'N/A', inline: true },
   ];
   if (event.duration !== undefined) {
-    fields.push({ name: 'Duration', value: `${(event.duration / 3600).toFixed(1)} hours`, inline: true });
+    fields.push({ name: '⏱️ Duration', value: `${(event.duration / 3600).toFixed(1)} hours`, inline: true });
   }
   if (event.startDelay !== undefined) {
-    fields.push({ name: 'Starts In', value: `${Math.round(event.startDelay / 60)} minutes`, inline: true });
+    fields.push({ name: '⏳ Starts In', value: `${Math.round(event.startDelay / 60)} minutes`, inline: true });
   }
-  if (event.userId) fields.push({ name: 'Triggered By', value: String(event.userId), inline: true });
-  if (event.reason) fields.push({ name: 'Reason', value: event.reason, inline: true });
+  if (event.userId) fields.push({ name: '⚡ Triggered By', value: String(event.userId), inline: true });
+  if (event.reason) fields.push({ name: '📝 Reason', value: event.reason, inline: true });
   const loc = locationField({ x: event.locationX, y: event.locationY, z: event.locationZ });
   if (loc) fields.push(loc);
   embed.addFields(fields);
@@ -524,13 +537,13 @@ function buildVehicleEmbed(event) {
   const meta = VEHICLE_EVENT_META[event.eventType] || VEHICLE_EVENT_META.default;
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   const fields = [
-    { name: 'Vehicle', value: event.vehicleName || 'Unknown', inline: true },
-    { name: 'Vehicle ID', value: String(event.vehicleId ?? 'N/A'), inline: true },
-    { name: 'Owner', value: event.ownerName || 'No Owner', inline: true },
+    { name: '🚗 Vehicle', value: event.vehicleName || 'Unknown', inline: true },
+    { name: '🆔 Vehicle ID', value: String(event.vehicleId ?? 'N/A'), inline: true },
+    { name: '👑 Owner', value: event.ownerName || 'No Owner', inline: true },
   ];
-  if (event.ownerPlayerId) fields.push({ name: 'Player ID', value: String(event.ownerPlayerId), inline: true });
-  if (event.ownerSteamId) fields.push({ name: 'Steam ID', value: event.ownerSteamId, inline: true });
-  fields.push({ name: 'Details', value: meta.details || event.eventType, inline: false });
+  if (event.ownerPlayerId) fields.push({ name: '🆔 Player ID', value: String(event.ownerPlayerId), inline: true });
+  if (event.ownerSteamId) fields.push({ name: '🎮 Steam ID', value: event.ownerSteamId, inline: true });
+  fields.push({ name: '📋 Details', value: meta.details || event.eventType, inline: false });
   const loc = locationField({ x: event.locationX, y: event.locationY, z: event.locationZ });
   if (loc) fields.push(loc);
   embed.addFields(fields);
@@ -554,14 +567,14 @@ function buildViolationsEmbed(event) {
   }
   const embed = baseEmbed(`${meta.emoji} ${meta.title}`, color);
   const fields = [
-    { name: 'Player', value: event.playerName || 'Unknown Player', inline: true },
+    { name: '👤 Player', value: event.playerName || 'Unknown Player', inline: true },
   ];
-  if (event.playerId) fields.push({ name: 'Player ID', value: String(event.playerId), inline: true });
-  if (event.steamId) fields.push({ name: 'Steam ID', value: event.steamId, inline: true });
-  if (event.action) fields.push({ name: 'Action', value: event.action, inline: true });
-  if (event.reason) fields.push({ name: 'Reason', value: event.reason, inline: true });
-  if (event.weapon) fields.push({ name: 'Weapon', value: event.weapon, inline: true });
-  if (event.distance !== undefined) fields.push({ name: 'Distance', value: `${event.distance} m`, inline: true });
+  if (event.playerId) fields.push({ name: '🆔 Player ID', value: String(event.playerId), inline: true });
+  if (event.steamId) fields.push({ name: '🎮 Steam ID', value: event.steamId, inline: true });
+  if (event.action) fields.push({ name: '⚡ Action', value: event.action, inline: true });
+  if (event.reason) fields.push({ name: '📝 Reason', value: event.reason, inline: true });
+  if (event.weapon) fields.push({ name: '🔫 Weapon', value: event.weapon, inline: true });
+  if (event.distance !== undefined) fields.push({ name: '📏 Distance', value: `${event.distance} m`, inline: true });
   const loc = locationField({ x: event.locationX, y: event.locationY, z: event.locationZ });
   if (loc) fields.push(loc);
   embed.addFields(fields);

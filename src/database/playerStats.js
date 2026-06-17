@@ -199,10 +199,22 @@ function getPlayerStatsByName(name) {
       COALESCE(s.puppets_killed, 0)             AS ZombieKills,
       COALESCE(s.animals_killed, 0)             AS AnimalKills,
       COALESCE(s.locks_picked, 0)               AS LocksPicked,
+      COALESCE(s.melee_kills, 0)                AS MeleeKills,
+      COALESCE(s.archery_kills, 0)              AS ArcheryKills,
+      COALESCE(s.longest_kill_distance, 0)      AS LongestKill,
+      COALESCE(s.minutes_survived, 0)           AS MinutesSurvived,
+      COALESCE(s.distance_travelled_by_foot, 0) AS Distance,
+      COALESCE(s.containers_looted, 0)          AS Looted,
+      COALESCE(s.wounds_patched, 0)             AS WoundsPatched,
+      COALESCE(f.fish_caught, 0)                AS FishCaught,
+      (COALESCE(s.guns_crafted, 0) + COALESCE(s.bullets_crafted, 0)
+       + COALESCE(s.arrows_crafted, 0) + COALESCE(s.clothing_crafted, 0)
+       + COALESCE(s.melee_weapons_crafted, 0)) AS Crafted,
       COALESCE(barc.account_balance, 0)         AS Money
     FROM user_profile u
     LEFT JOIN events_stats e      ON u.id = e.user_profile_id
     LEFT JOIN survival_stats s    ON u.id = s.user_profile_id
+    LEFT JOIN fishing_stats f     ON u.id = f.user_profile_id
     LEFT JOIN bank_account_registry bar
            ON u.id = bar.account_owner_user_profile_id
     LEFT JOIN bank_account_registry_currencies barc
@@ -270,9 +282,94 @@ function searchPlayersBySteamId(steamId) {
   }
 }
 
+/** Squad id of the player with the given Steam ID, or null. */
+function getSquadIdBySteamId(steamId) {
+  const db = getScumDb();
+  if (!db || steamId == null) return null;
+  try {
+    const row = db.prepare(excludeDeletedProfiles(
+      `SELECT sm.squad_id AS SquadId FROM user_profile u
+       JOIN squad_member sm ON u.id = sm.user_profile_id
+       WHERE u.user_id = ? LIMIT 1`,
+    )).get(String(steamId));
+    return row ? row.SquadId : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Steam IDs of all members of a squad. */
+function getSquadMemberSteamIds(squadId) {
+  const db = getScumDb();
+  if (!db || squadId == null) return [];
+  try {
+    const rows = db.prepare(excludeDeletedProfiles(
+      `SELECT u.user_id AS SteamID FROM user_profile u
+       JOIN squad_member sm ON u.id = sm.user_profile_id
+       WHERE sm.squad_id = ?`,
+    )).all(squadId);
+    return rows.map((r) => String(r.SteamID));
+  } catch {
+    return [];
+  }
+}
+
+/** Steam ID (user_profile.user_id) for a SCUM user_profile.id, or null. */
+function getSteamIdByProfileId(profileId) {
+  const db = getScumDb();
+  if (!db || profileId == null) return null;
+  try {
+    const row = db.prepare('SELECT user_id AS SteamID FROM user_profile WHERE id = ?').get(Number(profileId));
+    return row ? String(row.SteamID) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Human-readable name for an entity id (e.g. 'Wolfswagen Item Container'), or null. */
+function getEntityDisplayName(entityId) {
+  const db = getScumDb();
+  if (!db || entityId == null) return null;
+  try {
+    const row = db.prepare('SELECT class AS Class FROM entity WHERE id = ?').get(Number(entityId));
+    if (!row || !row.Class) return null;
+    return String(row.Class).replace(/_ES$/, '').replace(/_C$/, '').replace(/_/g, ' ').trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Owner (user_profile.id) of the base nearest a destruction location. The destroyed
+ * element itself is already gone from base_element, so we match the closest
+ * surviving element of the same base (within maxDist game units / cm).
+ */
+function getBaseElementOwnerProfileId(x, y, z, maxDist = 5000) {
+  const db = getScumDb();
+  if (!db || x == null || y == null || z == null) return null;
+  try {
+    const row = db.prepare(`
+      SELECT owner_profile_id AS OwnerProfileId,
+        ((location_x - ?) * (location_x - ?) + (location_y - ?) * (location_y - ?)
+         + (location_z - ?) * (location_z - ?)) AS d2
+      FROM base_element ORDER BY d2 ASC LIMIT 1
+    `).get(x, x, y, y, z, z);
+    if (!row || row.OwnerProfileId == null) return null;
+    if (Math.sqrt(row.d2) > maxDist) return null;
+    return row.OwnerProfileId;
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   getOnlinePlayers,
   getTotalPlayerCount,
+  getSquadIdBySteamId,
+  getSquadMemberSteamIds,
+  getSteamIdByProfileId,
+  getEntityDisplayName,
+  getBaseElementOwnerProfileId,
   getOnlinePlayerCount,
   getGameTimeData,
   getWeatherData,

@@ -97,6 +97,7 @@ const EMOJI = {
   bank: '🏦',
   atm: '🏧',
   arrow_forward: '▶️',
+  gear: '⚙️',
   '1234': '🔢',
 };
 

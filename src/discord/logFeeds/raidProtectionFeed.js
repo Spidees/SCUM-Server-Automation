@@ -2,7 +2,9 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildRaidProtectionEmbed } = require('./embeds');
-const { upsertRaidProtection, updateUserProfileFlagId } = require('../../database/serverDb');
+const { upsertRaidProtection, updateUserProfileFlagId, getSteamIdByFlagId } = require('../../database/serverDb');
+const database = require('../../database');
+const raidNotify = require('../raidNotify');
 
 const TIMESTAMP_RE = /^(\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}):\s+(.+)$/;
 
@@ -107,6 +109,45 @@ async function handle(event, client, config) {
 
   if (event.eventType === 'ProtectionEnded' && event.userId) {
     updateUserProfileFlagId(event.userId, event.flagId);
+  }
+
+  // DM the flag owner about any raid-protection change to their base.
+  const RAID_ALERTS = {
+    ProtectionScheduled: {
+      title: ':hourglass: Raid Protection Scheduled',
+      description: (e) => `Your base protection will activate${e.startDelay ? ` in **${Math.round(e.startDelay / 60)} min**` : ''} (all owners offline).`,
+      color: 0xfee75c,
+    },
+    ProtectionActivated: {
+      title: ':shield: Raid Protection Activated',
+      description: () => 'Your base is now **under raid protection**.',
+      color: 0x57f287,
+    },
+    ProtectionEnded: {
+      title: ':door: Raid Protection Ended',
+      description: () => 'Your base **raid protection has ended** — your base can now be raided.',
+      color: 0xe67e22,
+    },
+    ProtectionExpired: {
+      title: ':hourglass_flowing_sand: Raid Protection Expired',
+      description: () => 'Your base **raid protection expired** — your base can now be raided.',
+      color: 0x808080,
+    },
+  };
+  const alert = RAID_ALERTS[event.eventType];
+  if (alert) {
+    // owner id is a SCUM user_profile.id; resolve to its Steam ID.
+    const ownerSteam = database.getSteamIdByProfileId(event.ownerId) || getSteamIdByFlagId(event.flagId);
+    if (ownerSteam) {
+      await raidNotify.dispatchOwnerAlert(client, {
+        type: 'raid',
+        ownerSteamId: ownerSteam,
+        title: alert.title,
+        description: alert.description(event),
+        color: alert.color,
+        location: { x: event.locationX, y: event.locationY, z: event.locationZ },
+      });
+    }
   }
 
   const feedCfg = (config.SCUMLogFeatures || {}).RaidProtectionFeed || {};

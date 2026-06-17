@@ -2,6 +2,8 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildGameplayEmbed } = require('./embeds');
+const raidNotify = require('../raidNotify');
+const bunkerState = require('../bunkerState');
 
 const TIMESTAMP_RE = /^([\d.-]+):\s+(.+)/;
 
@@ -33,6 +35,9 @@ function parseLine(line) {
   const tm = TIMESTAMP_RE.exec(line);
   if (!tm) return null;
   const content = tm[2];
+
+  // Keep the live bunker-status tracker up to date (used by the bunker live embed).
+  if (content.indexOf('[LogBunkerLock]') !== -1) bunkerState.processLine(line);
 
   let m;
 
@@ -219,6 +224,18 @@ function parseLine(line) {
       }
     }
 
+    // The owner of the locked/owned object. Log format: "User owner: 2([76561198079911047] Spidees)"
+    // i.e. profileId([steamId] name).
+    let ownerName = null;
+    let ownerSteamId = null;
+    let om;
+    if ((om = /User owner:\s+\d+\(\[(\d+)\]\s*([^)]+)\)/.exec(info))) {
+      ownerSteamId = om[1];
+      ownerName = om[2].trim();
+    } else if ((om = /User owner:\s+([^.]+)/.exec(info))) {
+      ownerName = om[1].trim();
+    }
+
     return {
       type: category,
       playerName,
@@ -231,6 +248,8 @@ function parseLine(line) {
       failedAttempts,
       targetObject,
       lockType,
+      ownerName,
+      ownerSteamId,
       details: info,
       location: parseLocation(info),
     };
@@ -320,18 +339,39 @@ function parseLine(line) {
   return null;
 }
 
-async function handle(event, client, config) {
-  const feedCfg = config.SCUMLogFeatures.GameplayFeed;
-  if (!feedCfg.Enabled || !feedCfg.Channel) return;
+// Minigame categories that mean "someone is opening another player's owned/locked
+// object" — lockpicking, dial pads, notice boards, etc.
+const LOCK_CATEGORIES = new Set(['lockpicking', 'dialpad', 'dialpad_attempt', 'minigame']);
 
-  const embed = buildGameplayEmbed(event);
-  await sendToChannel(client, feedCfg.Channel, [], embed);
+async function handle(event, client, config) {
+  const feedCfg = (config.SCUMLogFeatures || {}).GameplayFeed || {};
+  if (feedCfg.Enabled && feedCfg.Channel) {
+    const embed = buildGameplayEmbed(event);
+    await sendToChannel(client, feedCfg.Channel, [], embed);
+  }
+
+  // DM the owner when someone ELSE interacts with their locked object.
+  if (LOCK_CATEGORIES.has(event.type)
+    && event.ownerSteamId
+    && String(event.ownerSteamId) !== String(event.steamId)) {
+    const what = event.targetObject || event.lockType || 'locked object';
+    await raidNotify.dispatchOwnerAlert(client, {
+      type: 'lock',
+      ownerSteamId: event.ownerSteamId,
+      ownerName: event.ownerName,
+      title: ':lock: Lockpicking Alert',
+      description: `Someone ${event.success ? 'opened' : 'is trying to open'} your **${what}**.`,
+      color: event.success ? 0xed4245 : 0xfee75c,
+      location: event.location,
+    });
+  }
 }
 
 module.exports = {
   name: 'gameplay',
   logPrefix: 'gameplay_',
-  isEnabled: (config) => !!(config.SCUMLogFeatures.GameplayFeed && config.SCUMLogFeatures.GameplayFeed.Enabled),
+  // Always poll so player lock DM notifications work even when the public feed is off.
+  isEnabled: (config) => !!config.SCUMLogFeatures,
   parseLine,
   handle,
 };

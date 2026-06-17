@@ -369,8 +369,9 @@ const CATEGORIES = [
       type: 'simple',
       currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(s.distance_travelled_by_foot, 0) as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id`,
       snapshotField: 'distance_travelled_by_foot',
-      value: (delta) => Math.trunc(delta),
-      format: (delta) => `+${Math.trunc(delta)} meters`,
+      // Match the all-time format (km, not raw meters).
+      value: (delta) => round(delta / 1000, 1),
+      format: (delta) => `+${round(delta / 1000, 1)} km`,
     },
   },
   {

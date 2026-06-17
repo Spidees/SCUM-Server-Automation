@@ -8,28 +8,36 @@ const { applyBranding, emojify } = require('./branding');
 const monitoring = require('../server/monitoring');
 const scheduling = require('../automation/scheduling');
 const database = require('../database');
+const bunkerState = require('./bunkerState');
 
 // In-memory message refs, keyed by a logical embed name. Mirrors the
 // {ChannelId, MessageId, LastUpdate} tracking in live-embeds-manager.psm1.
 const trackedMessages = {
   status: { messageId: null, lastUpdate: 0, lastState: null },
+  players: { messageId: null, lastUpdate: 0 },
+  bunkers: { messageId: null, lastUpdate: 0 },
   leaderboardWeekly: { messageId: null, lastUpdate: 0 },
   leaderboardAllTime: { messageId: null, lastUpdate: 0 },
 };
 
-const LEADERBOARD_CATEGORIES = [
-  { key: 'squad_score', label: ':triangular_flag_on_post: Top Squads' },
-  { key: 'survivors', label: ':medal: Top Survivors' },
-  { key: 'fame', label: ':medal: Top Fame Points' },
-  { key: 'money', label: ':medal: Top Money' },
-  { key: 'puppet_kills', label: ':medal: Top Puppet Killers' },
-  { key: 'animal_kills', label: ':medal: Top Animal Hunters' },
-  { key: 'melee_warriors', label: ':medal: Top Melee Warriors' },
-  { key: 'archers', label: ':medal: Top Archers' },
-  { key: 'sniper', label: ':medal: Top Sniper' },
-  { key: 'headshots', label: ':medal: Top Headshot Masters' },
-  { key: 'locks_picked', label: ':medal: Top Lockpickers' },
-  { key: 'looters', label: ':medal: Top Looters' },
+const { CATEGORIES_BY_KEY } = require('../database/leaderboardDefs');
+
+// Curated set shown in the live embed (the dashboard browses all categories;
+// a Discord embed can't fit them all within the 25-field / 6000-char limits).
+// Labels are pulled from leaderboardDefs so they stay in sync with the dashboard.
+const LEADERBOARD_KEYS = [
+  { key: 'squad_score', emoji: ':triangular_flag_on_post:' },
+  { key: 'survivors', emoji: ':medal:' },
+  { key: 'fame', emoji: ':medal:' },
+  { key: 'money', emoji: ':medal:' },
+  { key: 'puppet_kills', emoji: ':medal:' },
+  { key: 'animal_kills', emoji: ':medal:' },
+  { key: 'melee_warriors', emoji: ':medal:' },
+  { key: 'archers', emoji: ':medal:' },
+  { key: 'sniper', emoji: ':medal:' },
+  { key: 'headshots', emoji: ':medal:' },
+  { key: 'locks_picked', emoji: ':medal:' },
+  { key: 'looters', emoji: ':medal:' },
 ];
 
 /**
@@ -190,7 +198,18 @@ function buildLeaderboardEmbed(weekly) {
     return embed;
   }
 
-  for (const cat of LEADERBOARD_CATEGORIES) {
+  // Discord caps embeds at 25 fields / 6000 total characters — track the running
+  // size and stop before exceeding either, so the embed never gets rejected.
+  let totalChars = (embed.data.title || '').length + (embed.data.description || '').length;
+  const MAX_CHARS = 5800;
+  const MAX_FIELDS = 25;
+
+  for (const cat of LEADERBOARD_KEYS) {
+    if ((embed.data.fields || []).length >= MAX_FIELDS) break;
+
+    const def = CATEGORIES_BY_KEY.get(cat.key);
+    const name = `${cat.emoji} ${def ? def.label : cat.key}`;
+
     let rows;
     try {
       rows = database.getLeaderboard(cat.key, 5, weekly);
@@ -204,15 +223,151 @@ function buildLeaderboardEmbed(weekly) {
       value = 'No data yet';
     } else {
       value = rows.map((row, i) => {
-        const name = (row.Name || 'Unknown').slice(0, 16);
-        return `${i + 1}. ${name} - ${row.FormattedValue}`;
+        const playerName = (row.Name || 'Unknown').slice(0, 18);
+        return `\`${i + 1}.\` ${playerName} — ${row.FormattedValue}`;
       }).join('\n');
     }
+    if (value.length > 1024) value = `${value.slice(0, 1020)}…`;
 
-    embed.addFields({ name: cat.label, value, inline: false });
+    if (totalChars + name.length + value.length > MAX_CHARS) break;
+    totalChars += name.length + value.length;
+    embed.addFields({ name, value, inline: false });
   }
 
   return embed;
+}
+
+/**
+ * Build the online-players live embed (a numbered list of currently connected
+ * players). Online players come from SCUM.db (dead profiles already excluded).
+ */
+function buildPlayersEmbed() {
+  const liveCfg = (config.Discord && config.Discord.LiveEmbeds) || {};
+  const embed = new EmbedBuilder()
+    .setColor(COLORS.green)
+    .setTimestamp(new Date());
+
+  if (!database.isScumDbAvailable()) {
+    embed.setTitle(':busts_in_silhouette: Online Players');
+    embed.setDescription('SCUM database not found yet.');
+    return embed;
+  }
+
+  let players = [];
+  try {
+    players = database.getOnlinePlayers() || [];
+  } catch (err) {
+    logger.warn(`[Discord] Failed to load online players: ${err.message}`);
+  }
+
+  const maxPlayers = monitoring.getMaxPlayersFromConfig();
+  embed.setTitle(`:busts_in_silhouette: Online Players (${players.length} / ${maxPlayers})`);
+
+  if (!players.length) {
+    embed.setDescription('*No players are online right now.*');
+  } else {
+    const names = players.map((p) => p.PlayerName || p.name || 'Unknown');
+    let desc = '';
+    let shown = 0;
+    for (let i = 0; i < names.length; i += 1) {
+      const line = `\`${String(i + 1).padStart(2, '0')}.\` ${names[i]}\n`;
+      if (desc.length + line.length > 3900) break; // embed description cap is 4096
+      desc += line;
+      shown += 1;
+    }
+    if (shown < names.length) desc += `\n*…and ${names.length - shown} more*`;
+    embed.setDescription(desc);
+  }
+
+  if (liveCfg.Images && liveCfg.Images.Players) embed.setImage(liveCfg.Images.Players);
+  return embed;
+}
+
+/**
+ * Update (or create) the online-players live embed if its interval has elapsed.
+ */
+async function updatePlayersEmbed(client) {
+  const liveCfg = (config.Discord && config.Discord.LiveEmbeds) || {};
+  const channelId = liveCfg.PlayersChannel;
+  if (!channelId) return;
+
+  const intervalMs = (liveCfg.PlayersUpdateInterval || liveCfg.UpdateInterval || 30) * 1000;
+  const tracked = trackedMessages.players;
+  if (tracked.messageId && Date.now() - tracked.lastUpdate < intervalMs) return;
+
+  await upsertEmbed(client, channelId, ':busts_in_silhouette: Online Players', tracked, buildPlayersEmbed());
+  tracked.lastUpdate = Date.now();
+}
+
+/**
+ * Build the abandoned-bunkers live embed (which bunkers are active vs locked).
+ * State is tracked from the gameplay log's [LogBunkerLock] lines.
+ */
+function buildBunkerEmbed() {
+  const liveCfg = (config.Discord && config.Discord.LiveEmbeds) || {};
+  bunkerState.seedFromLog();
+  const bunkers = bunkerState.getBunkers();
+
+  const active = bunkers.filter((b) => b.state === 'active');
+  const locked = bunkers.filter((b) => b.state !== 'active');
+
+  const mapLink = (b) => ((b.location && b.location.x != null)
+    ? ` \u00b7 [\ud83d\uddfa\ufe0f map](https://scum-map.com/en/shared/scum/island/${Math.round(b.location.x)},${Math.round(b.location.y)},${Math.round(b.location.z)})`
+    : '');
+
+  const embed = new EmbedBuilder()
+    .setTitle(':european_castle: Abandoned Bunkers')
+    .setColor(active.length ? COLORS.green : COLORS.grey)
+    .setTimestamp(new Date());
+
+  if (!bunkers.length) {
+    embed.setDescription([
+      'Abandoned bunkers across the island open on a timer, stay open for a while, then lock again.',
+      '',
+      '*No bunker data yet \u2014 this updates when the server next reports bunker status.*',
+    ].join('\n'));
+    if (liveCfg.Images && liveCfg.Images.Bunker) embed.setImage(liveCfg.Images.Bunker);
+    return embed;
+  }
+
+  embed.setDescription([
+    'Loot the **open** bunkers before they lock again \u2014 **locked** ones reopen on the timer shown.',
+    '',
+    `\ud83d\udfe2 **${active.length}** open  \u00b7  \ud83d\udd12 **${locked.length}** locked`,
+  ].join('\n'));
+
+  if (active.length) {
+    const value = active
+      .map((b) => `\ud83d\udfe2 \`${b.sector}\` \u2014 open${b.activationUnix ? ` since <t:${b.activationUnix}:R>` : ''}${mapLink(b)}`)
+      .join('\n')
+      .slice(0, 1024);
+    embed.addFields({ name: `\ud83d\udfe2 Open  \u00b7  ${active.length}`, value, inline: false });
+  }
+  if (locked.length) {
+    const value = locked
+      .map((b) => `\ud83d\udd12 \`${b.sector}\` \u2014 ${b.etaUnix ? `opens <t:${b.etaUnix}:R>` : 'locked'}${mapLink(b)}`)
+      .join('\n')
+      .slice(0, 1024);
+    embed.addFields({ name: `\ud83d\udd12 Locked  \u00b7  ${locked.length}`, value, inline: false });
+  }
+
+  if (liveCfg.Images && liveCfg.Images.Bunker) embed.setImage(liveCfg.Images.Bunker);
+  return embed;
+}
+/**
+ * Update (or create) the abandoned-bunkers live embed if its interval has elapsed.
+ */
+async function updateBunkerEmbed(client) {
+  const liveCfg = (config.Discord && config.Discord.LiveEmbeds) || {};
+  const channelId = liveCfg.BunkerChannel;
+  if (!channelId) return;
+
+  const intervalMs = (liveCfg.BunkerUpdateInterval || liveCfg.UpdateInterval || 60) * 1000;
+  const tracked = trackedMessages.bunkers;
+  if (tracked.messageId && Date.now() - tracked.lastUpdate < intervalMs) return;
+
+  await upsertEmbed(client, channelId, ':european_castle: Abandoned Bunkers', tracked, buildBunkerEmbed());
+  tracked.lastUpdate = Date.now();
 }
 
 /**
@@ -277,6 +432,16 @@ function startLiveEmbeds(client) {
       logger.warn(`[Discord] Status embed update failed: ${err.message}`);
     }
     try {
+      await updatePlayersEmbed(client);
+    } catch (err) {
+      logger.warn(`[Discord] Players embed update failed: ${err.message}`);
+    }
+    try {
+      await updateBunkerEmbed(client);
+    } catch (err) {
+      logger.warn(`[Discord] Bunker embed update failed: ${err.message}`);
+    }
+    try {
       await updateLeaderboardEmbeds(client);
     } catch (err) {
       logger.warn(`[Discord] Leaderboard embed update failed: ${err.message}`);
@@ -293,4 +458,4 @@ function stopLiveEmbeds() {
   tickTimer = null;
 }
 
-module.exports = { startLiveEmbeds, stopLiveEmbeds, buildStatusEmbed, buildLeaderboardEmbed };
+module.exports = { startLiveEmbeds, stopLiveEmbeds, buildStatusEmbed, buildLeaderboardEmbed, buildPlayersEmbed, buildBunkerEmbed };

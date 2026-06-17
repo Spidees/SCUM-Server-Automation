@@ -19,6 +19,7 @@ const FEEDS = [
   require('./raidProtectionFeed'),
   require('./vehicleFeed'),
   require('./violationsFeed'),
+  require('./baseBuildingFeed'),
 ];
 
 let intervalId = null;

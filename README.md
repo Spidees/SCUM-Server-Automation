@@ -1,525 +1,237 @@
 ![SCUM Server Automation](http://playhub.cz/scum/manager/repository-open-graph-template.jpg)
 
-# 🎮 SCUM Server Automation v2.2.0
+# SCUM Server Automation
 
-**SCUM Dedicated Server Management for Windows**
+A complete management tool for a **SCUM dedicated server on Windows**. It handles the full server
+lifecycle — installation, Windows-service control, crash recovery, scheduled restarts, backups and
+Steam updates — and exposes everything through a themed **web dashboard** and a feature-rich
+**Discord bot** (live embeds, log feeds, leaderboards, account linking and per-player raid alerts).
 
-This project provides a complete automation solution for running SCUM dedicated servers on Windows. Features include:
-
-- ✅ **Automatic First Install** – Fully automated first-time setup, including SteamCMD download and server installation
-- ✅ **Smart Update System** – Intelligent update detection with player notifications and pre-update backups
-- ✅ **Scheduled Restarts** – Customizable restart times with advance warnings via Discord
-- ✅ **Automated Backups** – Compressed backups with retention management and cleanup
-- ✅ **Rich Discord Integration** – Live embeds, comprehensive notifications, and role-based admin commands
-- ✅ **Game Chat Relay** – Game chat messages displayed in Discord channels
-- ✅ **Live Leaderboards** – Real-time player statistics with weekly and all-time rankings
-- ✅ **Crash Recovery** – Automatic server recovery with intelligent health monitoring
-- ✅ **Performance Monitoring** – Real-time FPS tracking with configurable alert thresholds
-- ✅ **Advanced Log Analysis** – Real-time server state detection and event parsing
-- ✅ **Service Management** – Runs as Windows service via NSSM with automatic startup
-- ✅ **Database Integration** – SQLite database for player statistics and leaderboards
+- 🌐 GitHub: <https://github.com/Spidees/SCUM-Server-Automation>
+- 💬 Discord: <https://playhub.cz/discord>
 
 ---
 
-# 📁 Quick Setup Guide
+## Features
 
-## Prerequisites
+### Server management
+- One-click install of the SCUM dedicated server via **SteamCMD** on first run
+- Start / stop / restart through a Windows service (**NSSM**)
+- Configurable launch arguments — game port, query port, max players, BattlEye — set during
+  setup and **auto-synced to the service** whenever you change them
+- **Crash detection & auto-repair**: if the service is up but the process died, it restarts
+- **Scheduled restarts** at configurable times with 15 / 5 / 1-minute warnings
+- Skip the next scheduled restart from the dashboard or Discord
 
-Before starting, make sure you have:
+### Backups & updates
+- Periodic, on-start and pre-restart backups of the `Saved/` directory (zip or plain copy,
+  configurable retention)
+- Automatic Steam update detection with a configurable delay and countdown warnings
+- Manual *validate files* and *check & update* actions (with confirmation on Discord)
 
-- **Windows 10/11** with Administrator access
-- **PowerShell 5.1+** (pre-installed on Windows)
-- **Discord Bot** (optional, for notifications and admin commands)
-- **Visual C++** from Microsoft ( 2012, 2013 and the 2015-2022 files ) [Download](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
-- **DirectX End-User Runtimes** [Download](https://www.microsoft.com/en-gb/download/details.aspx?id=35)
+### Web dashboard — `http://localhost:8080`
+- Distinctive "TEC1 terminal" theme; consistent header, footer (GitHub / Discord links) on every screen
+- Live status: state, players, **system CPU & RAM (used / total)**, server FPS, entities, service status
+- Server controls (start / stop / restart / backup / validate / check & update)
+- Scheduling & backup info, next restart (incl. pending **manual** restarts) and skip toggle
+- Leaderboards (29 categories, all-time & weekly) and online players
+- **Settings** screen: every `config/config.json` option, grouped into collapsible categories with
+  search and expand/collapse
+- **Game Settings** screen: `ServerSettings.ini` editor (correct field types + descriptions from a
+  community reference), user lists (admin / banned / exclusive / whitelisted), and raw-JSON editors
+  for `EconomyOverride.json`, `RaidTimes.json` and `Notifications.json`
+- Live server-log tail over WebSocket
 
-> 📋 **No manual SCUM server installation required** – the script automatically downloads SteamCMD (if missing) and server files!
-
-## 🚀 Installation Steps
-
-### 1. Download Required Tools
-
-| Tool      | Purpose         | Download Link                       |
-|-----------|----------------|-------------------------------------|
-| **NSSM**  | Service manager | [Download](https://nssm.cc/download) |
-
-
-> **Note:** SteamCMD and SQLite tools are downloaded and extracted automatically by the script if not present. No manual download needed!
-
-### 2. Project Structure
-
-Current project structure with modular architecture:
-
-```
-📁 SCUMServer/
-├── 📄 SCUM-Server-Automation.ps1          # Main automation script
-├── 📄 SCUM-Server-Automation.config.json  # Comprehensive configuration file
-├── 📄 start_server_manager.bat            # Start server automation system
-├── 📄 nssm.exe                            # Service manager
-├── 📄 README.md                           # This documentation
-├── 📄 SCUM-Server-Automation.log          # Main log file (auto-created)
-├── 📄 scum_automation.pid                 # Process ID tracking (auto-created)
-├── 📁 server/                             # SCUM server files (auto-created)
-│   ├── 📁 SCUM/                           # Main server folder
-│   │   ├── 📁 Binaries/Win64/             # Server executable
-│   │   ├── 📁 Saved/                      # Save files & configuration
-│   │   │   ├── 📁 Config/WindowsServer/   # Server settings (*.ini files)
-│   │   │   ├── 📁 SaveFiles/              # Game world saves
-│   │   │   └── 📁 Logs/                   # Server logs
-│   │   ├── 📁 Content/                    # Game content files
-│   │   └── 📁 Shaders/                    # Shader cache
-│   ├── 📁 steamapps/                      # Steam manifest files
-│   ├── 📁 Engine/                         # Unreal Engine files
-│   └── 📁 BattlEye/                       # Anti-cheat system
-├── 📁 steamcmd/                           # SteamCMD installation (auto-created)
-│   ├── 📄 steamcmd.exe                    # Steam command line tool
-│   ├── 📁 steamapps/                      # Steam app cache
-│   ├── 📁 logs/                           # SteamCMD logs
-│   └── 📁 appcache/                       # Application cache
-├── 📁 backups/                            # Automatic backups (auto-created)
-├── 📁 data/                               # Database storage (auto-created)
-│   └── 📄 weekly_leaderboards.db          # SQLite database for statistics
-├── 📁 sqlite-tools/                       # SQLite utilities (auto-downloaded)
-│   ├── 📄 sqlite3.exe                     # SQLite command line tool
-│   ├── 📄 sqlite3_analyzer.exe            # Database analyzer
-│   └── 📄 sqldiff.exe                     # Database diff tool
-└── 📁 modules/                            # PowerShell modules (modular architecture)
-    ├── 📁 automation/                     # Automation systems
-    │   ├── 📁 backup/                     # Backup management
-    │   │   └── 📄 backup.psm1             # Backup operations
-    │   ├── 📁 scheduling/                 # Scheduled operations
-    │   │   └── scheduling.psm1         # Restart scheduling & warnings
-    │   └── 📁 update/                     # Update management
-    │       └── 📄 update.psm1             # Server update system
-    ├── 📁 communication/                  # Communication systems
-    │   └── 📁 discord/                    # Discord integration
-    │       ├── 📄 discord-integration.psm1 # Main Discord coordinator
-    │       ├── 📁 chat/                   # Chat relay system
-    │       ├── 📁 commands/               # Discord command handlers
-    │       │   ├── 📄 discord-admin-commands.psm1    # Admin commands
-    │       │   ├── 📄 discord-player-commands.psm1   # Player commands
-    │       │   ├── 📄 discord-scheduled-tasks.psm1   # Task scheduling
-    │       │   └── 📄 discord-text-commands.psm1     # Text processing
-    │       ├── 📁 core/                   # Discord core functionality
-    │       │   ├── 📄 discord-api.psm1    # Discord API wrapper
-    │       │   └── 📄 discord-websocket-bot-direct.psm1 # WebSocket bot
-    │       ├── 📁 live-embeds/            # Live embed system
-    │       │   └── 📄 live-embeds-manager.psm1 # Status & leaderboard embeds
-    │       ├── 📁 notifications/          # Notification system
-    │       │   ├── 📄 notification-manager.psm1 # Notification coordinator
-    │       │   └── 📄 player-notifications.psm1 # Player-specific notifications
-    │       └── 📁 templates/              # Message templates
-    ├── 📁 core/                           # Core functionality
-    │   ├── 📁 common/                     # Common utilities
-    │   │   └── 📄 common.psm1             # Shared utility functions
-    │   └── 📁 logging/                    # Logging systems
-    │       └── 📄 logging.psm1            # Advanced logging & parsing
-    ├── 📁 database/                       # Database systems
-    │   └── 📄 scum-database.psm1          # SQLite database operations & queries
-    └── 📁 server/                         # Server management
-        ├── 📁 installation/               # Server installation
-        │   └── 📄 installation.psm1       # First-time setup & updates
-        ├── 📁 monitoring/                 # Server health monitoring
-        │   └── 📄 monitoring.psm1         # Performance & health monitoring
-        └── 📁 service/                    # Windows service management
-            └── 📄 service.psm1            # NSSM service operations
-```
-
-### 3. Setup Instructions
-
-1. **Extract NSSM** and place `nssm.exe` in the root folder
-2. **Copy the automation files** to the root folder:
-   - `SCUM-Server-Automation.ps1` (main automation script)
-   - `SCUM-Server-Automation.config.json` (configuration)
-   - `start_server_manager.bat` (startup script)
-   - `modules/` folder (complete modular system)
+### Discord bot (optional)
+- **Notifications** — server lifecycle, service status, backups, updates, performance alerts and
+  restart/update warnings (admin vs. player channels, configurable per type)
+- **Live self-updating embeds** — server status, online players, abandoned-bunker status and
+  leaderboards (each with its own channel, interval and optional image)
+- **Chat relay** — in-game chat → Discord (global / squad / local)
+- **13 real-time log feeds** — Kill, Login, Admin, Chest, Economy, Event-kill, Fame, Gameplay,
+  Quest, Raid-protection, Vehicle, Violations, Base-building-destruction — each posts a clean,
+  unified embed with **interactive map links** (scum-map.com)
+- **Account linking** — link Discord ↔ SCUM character with an in-game code and a persistent panel
+- **Per-player raid alerts (DMs)** — opt in via the panel's *Notifications* button to be DM'd when
+  your **base protection** changes, your **base is being destroyed**, your **vehicle** is destroyed,
+  your **chest** is taken, or your **lock** is picked — for your own property or your squad's
+- Slash commands for server control and detailed player stats
 
 ---
 
-# ⚙️ Configuration
+## Requirements
 
-All settings are centralized in `SCUM-Server-Automation.config.json` with comprehensive organization:
+| Requirement | Notes |
+|---|---|
+| **Windows** | Service control uses `sc.exe` + NSSM |
+| **NSSM** | Download `nssm.exe` from [nssm.cc](https://nssm.cc/download) and place it in the project root (next to `Start.bat`) |
+| **Node.js 22+** | Installed automatically by `Start.bat`, or get it from [nodejs.org](https://nodejs.org) |
+| **SteamCMD** | Auto-downloaded into `steamcmd/` on first install |
+| **Administrator rights** | `Start.bat` self-elevates (required for service control) |
+| **Discord bot** *(optional)* | Create one at [discord.com/developers](https://discord.com/developers/applications) |
+| **Visual C++** | from Microsoft ( 2012, 2013 and the 2015-2022 files ) [Download](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
+| **DirectX End-User Runtimes** | [Download](https://www.microsoft.com/en-gb/download/details.aspx?id=35)
 
-## Core System Configuration
-```json
-{
-  "serviceName": "SCUMSERVER",           // NSSM service name
-  "appId": "3792580",                     // SCUM Steam App ID  
-  "publicIP": "99.99.99.99",            // Server public IP
-  "publicPort": "7042",                  // Server public port
-  "serverDir": "./server",               // Server installation path
-  "savedDir": "./server/SCUM/Saved",     // Server save files
-  "steamCmd": "./steamcmd/steamcmd.exe", // SteamCMD path (auto-managed)
-  "backupRoot": "./backups"              // Backup storage location
-}
-```
-
-## Automation & Scheduling
-```json
-{
-  "restartTimes": ["23:30", "23:50", "04:55"], // Daily restart schedule
-  "periodicBackupEnabled": true,         // Enable automatic backups
-  "backupIntervalMinutes": 60,           // Backup frequency
-  "maxBackups": 10,                      // Backup retention count
-  "compressBackups": true,               // Compress backup files
-  "runUpdateOnStart": false,             // Check updates on startup
-  "updateCheckIntervalMinutes": 15,      // Update check frequency
-  "updateDelayMinutes": 10              // Update delay when server running
-}
-```
-
-## Performance & Monitoring
-```json
-{
-  "performanceAlertThreshold": "Critical", // Alert sensitivity level
-  "performanceAlertCooldownMinutes": 5,   // Alert cooldown period
-  "performanceThresholds": {              // Performance level definitions
-    "excellent": 30,  // 30+ FPS
-    "good": 25,       // 25-29 FPS  
-    "fair": 20,       // 20-24 FPS
-    "poor": 18,       // 18-19 FPS
-    "critical": 17    // <18 FPS (alerts triggered)
-  }
-}
-```
+> Native dependency `better-sqlite3` ships prebuilt binaries — no Python or build tools needed on
+> supported Node versions.
 
 ---
 
-# 🔔 Discord Integration Setup
+## Quick start
 
-## Comprehensive Discord Bot Integration
-
-The system provides full Discord integration with live embeds, comprehensive notifications, chat relay, and admin commands.
-
-### Discord Configuration Structure
-```json
-{
-  "Discord": {
-    "Token": "YOUR_BOT_TOKEN_HERE",
-    "GuildId": "YOUR_GUILD_ID_HERE",
-    
-    "Presence": {
-      "Activity": "SCUM Server Automation",
-      "Status": "online", 
-      "Type": "Watching",
-      "DynamicActivity": true,
-      "OnlineActivityFormat": "{players} / {maxPlayers} players"
-    },
-    
-    "LiveEmbeds": {
-      "StatusChannel": "CHANNEL_ID_FOR_STATUS",
-      "LeaderboardsChannel": "CHANNEL_ID_FOR_LEADERBOARDS", 
-      "UpdateInterval": 30,
-      "LeaderboardUpdateInterval": 120
-    },
-    
-    "Notifications": {
-      "Channels": {
-        "Admin": "ADMIN_CHANNEL_ID",
-        "Players": "PLAYER_CHANNEL_ID" 
-      },
-      "Roles": {
-        "Admin": ["ADMIN_ROLE_ID"],
-        "Players": ["PLAYER_ROLE_ID"]
-      }
-    },
-    
-    "ChatRelay": {
-      "Enabled": true,
-      "Channels": {
-        "Players": "CHAT_RELAY_CHANNEL_ID",
-        "Admin": "ADMIN_CHAT_CHANNEL_ID"
-      }
-    },
-    
-    "Commands": {
-      "Enabled": true,
-      "Channels": {
-        "Admin": "ADMIN_COMMANDS_CHANNEL_ID",
-        "Players": "PLAYER_COMMANDS_CHANNEL_ID"
-      },
-      "Roles": {
-        "Admin": ["ADMIN_ROLE_ID"],
-        "Players": ["PLAYER_ROLE_ID"]
-      }
-    }
-  }
-}
+```bat
+git clone https://github.com/Spidees/SCUM-Server-Automation.git
+cd SCUM-Server-Automation
+:: download nssm.exe from https://nssm.cc/download and put it in this folder
+Start.bat
 ```
 
-## Setup Steps
+`Start.bat` self-elevates to administrator, installs Node.js if missing, runs `npm install`, then
+launches the app and opens the browser.
 
-1. **Create Discord Bot:**
-   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
-   - Create New Application → Bot tab → Create Bot
-   - Copy the **Bot Token**
+On first run the dashboard shows an **interactive setup wizard**:
+- SCUM server directory & backup directory
+- Windows service name
+- Public IP, game port, query port, max players, BattlEye toggle
+- Web panel port & admin password
+- Discord bot token & Guild ID *(optional — can be added later)*
 
-2. **Add Bot to Server:**
-   - Go to OAuth2 → URL Generator
-   - Select scopes: `bot` and permissions: `View Channels`, `Send Messages`, `Manage Messages`, `Read Message History`, `Mention Everyone`, `Use External Emojis`, `Add Reactions`
-   - Use generated URL to add bot to your Discord server
-
-3. **Configure Channels and Roles:**
-   - Create dedicated channels for different purposes
-   - Set up roles for admins and players
-   - Copy channel IDs and role IDs to configuration
-
-4. **Features Included:**
-   - **Live Status Embeds** - Real-time server status with player count and performance
-   - **Live Leaderboards** - Dynamic leaderboards with weekly and all-time statistics  
-   - **Chat Relay** - Game chat messages displayed in Discord channels
-   - **Rich Notifications** - Comprehensive server event notifications
-   - **Admin Commands** - Full server control via Discord
-   - **Player Commands** - Information commands for players
+After saving, the SCUM server is installed (you can watch the progress in the browser) and the app
+starts automatically. Subsequent launches skip the wizard.
 
 ---
 
-### First Run
+## Configuration
 
-1. **Run `start_server_manager.bat`** (recommended) or `SCUM-Server-Automation.ps1`
-2. On first run:
-   - The script automatically downloads and extracts SteamCMD if missing
-   - SQLite tools are downloaded and configured automatically
-   - All required directories are created automatically
-   - SCUM server files are downloaded via SteamCMD (no manual installation needed)
-   - Database is initialized for leaderboards and statistics
-   - After successful install, the script begins monitoring
+### `config/config.json`
+All non-secret settings — editable directly or from the dashboard **Settings** screen.
 
-> 📝 **Note:** The automation system detects missing components and downloads them automatically. Just run the script and it handles everything!
+| Key | Default | Description |
+|---|---|---|
+| `serviceName` | `SCUMSERVER` | Windows service name (NSSM) |
+| `serverDir` / `savedDir` / `backupRoot` | *(wizard)* | Core paths |
+| `serverArgs` | `{port, queryPort, maxPlayers, noBattleye}` | SCUM launch arguments |
+| `restartTimes` | `["03:00","09:00","15:00","21:00"]` | Scheduled daily restarts |
+| `autoRestart` | `true` | Auto-restart on crash detection |
+| `backupIntervalMinutes` | `60` | Periodic backup interval |
+| `updateCheckIntervalMinutes` | `15` | How often to check for Steam updates |
+| `web.port` | `8080` | Web dashboard port |
+| `Discord` | … | Bot presence, notifications, live embeds, chat relay, log feeds |
 
----
+> Players connect on **game port + 2** (e.g. `-port=7042` → connect on `7042` … the in-game/server
+> address shown in the status embed uses the +2 connect port automatically).
 
-# 🔧 NSSM Service Configuration
+### `.env`
+Secrets generated by the wizard — never commit this file.
 
-**NSSM (Non-Sucking Service Manager)** allows your SCUM server to run as a Windows service.
-
-## 1. Install Service
-
-Open **Command Prompt as Administrator** in your SCUM folder and run:
-
-```cmd
-nssm.exe install SCUMSERVER
+```env
+DISCORD_TOKEN=        # bot token — leave empty to disable Discord
+WEB_ADMIN_PASSWORD=   # dashboard login password
+SESSION_SECRET=       # random string (auto-generated)
 ```
 
-## 2. Configure Service Settings
-
-The NSSM GUI will open. Configure each tab as follows:
-
-### 📋 Application Tab
-- **Path:** `C:\YourPath\SCUMServer\server\SCUM\Binaries\Win64\SCUMServer.exe`
-- **Startup directory:** `C:\YourPath\SCUMServer\server\SCUM\Binaries\Win64`
-- **Arguments:** `-port=7777 -log` (adjust port as needed)
-  
-  > **Known parameters:**
-  > - `-port=` (game port)
-  > - `-QueryPort=` (query port)
-  > - `-MaxPlayers=` (max players)
-  > - `-nobattleye` (disable BattlEye)
-  > - `-log` (**always required!**)
-  >
-  > **Note:**
-  > - Adding the `-port=7777` argument will start the server on the specified port. When connecting, use the format `IP:port`.
-  > - **Important:** The response port for client connections is always the defined port +2. For example, if you start the server with `-port=7777`, players must connect using `IP:7779`.
-  > - If no port is defined, the server uses the default port `7779`.
-  
-### ⚙️ Details Tab
-- **Display name:** `SCUMSERVER`
-- **Description:** `SCUM Dedicated Server`
-- **Startup type:** `Manual` (automation will control it)
-
-### 🔐 Log On Tab
-- **Account:** `Local System account`
-- ✅ **Allow service to interact with desktop**
-
-### ⚡ Process Tab
-- **Priority class:** `Realtime`
-- ✅ **Console window**
-- **Processor affinity:** `All processors`
-
-### 🛑 Shutdown Tab
-- **Shutdown method:** `Generate Ctrl+C`
-- **Timeouts:** `300000 ms` for first field
-- ✅ **Terminate process**
-
-### 🔄 Exit Actions Tab
-- ✅ **On Exit:** `No action (srvany compatible)`
-- **Delay restart by:** `3000 ms`
-
-## 3. Install
-
-- Click **"Install service"**
-
-> ⚠️ **Important:** The automation script will control the service – don't set it to "Automatic" startup!
-
-### 📸 Visual Configuration Guide
-
-For visual reference, here are the NSSM configuration screenshots:
-
-| Tab              | Screenshot                                              |
-|------------------|--------------------------------------------------------|
-| **Application**  | ![Application Tab](https://playhub.cz/scum/manager/nssm1.png) |
-| **Details**      | ![Details Tab](https://playhub.cz/scum/manager/nssm6.png)     |
-| **Log On**       | ![Log On Tab](https://playhub.cz/scum/manager/nssm2.png)      |
-| **Process**      | ![Process Tab](https://playhub.cz/scum/manager/nssm3.png)     |
-| **Shutdown**     | ![Shutdown Tab](https://playhub.cz/scum/manager/nssm4.png)    |
-| **Exit Actions** | ![Exit Actions Tab](https://playhub.cz/scum/manager/nssm5.png) |
+To reconfigure from scratch, delete `.env` and restart.
 
 ---
 
-# ✅ Server Ready & Advanced Management
+## Discord
 
-Once you have completed the setup, your server provides enterprise-grade management:
+1. [discord.com/developers/applications](https://discord.com/developers/applications) → **New
+   Application** → **Bot** → copy the token.
+2. Enable **Message Content Intent** (needed for chat relay & account linking).
+3. Invite with scopes `bot` + `applications.commands` and permissions: *Send Messages, Embed Links,
+   Read Message History, Manage Messages*.
+4. Put the token in `.env` and your Guild ID in `config/config.json` (or via the wizard).
 
-## Starting the System
-1. **Run `start_server_manager.bat`**
-   - Launches the complete automation system
-   - Manages server lifecycle automatically
-   - Provides Discord integration and live embeds
-   - Monitors performance and handles crashes
+### Slash commands
 
-2. **Monitor via multiple channels:**
-   - **Console window** - Real-time status and debug information
-   - **Log file** - `SCUM-Server-Automation.log` with detailed operation logs
-   - **Discord channels** - Live embeds and notifications
-   - **Performance metrics** - Continuous FPS and health monitoring
+| Command | Who | Description |
+|---|---|---|
+| `/link-account` · `/unlink-account` | Anyone | Link / unlink your SCUM character |
+| `/my-stats` | Linked | Your detailed SCUM stats |
+| `/player-stats <name>` · `/player-search <query>` | Anyone | Look up / search players |
+| `/server-info` · `/player-online` | Anyone | Current status / online players |
+| `/server-status` | Admin | Full live status embed |
+| `/server-start` | Admin | Start the server |
+| `/server-stop [minutes]` | Admin | Stop (immediate → **confirm button**, or delayed with warnings) |
+| `/server-restart [minutes]` | Admin | Restart (confirm or delayed) |
+| `/server-update [minutes]` | Admin | Apply Steam update (confirm or delayed) |
+| `/server-backup` · `/server-validate` | Admin | Manual backup / file validation |
+| `/server-cancel` | Admin | Cancel a pending stop / restart / update |
+| `/server-restart-skip` | Admin | Toggle skipping the next scheduled restart |
+| `/bot-status` | Admin | Bot uptime, DB status, linked accounts |
 
-## Available Management Commands
+Admin commands are restricted to roles in `Discord.SlashCommands.AdminRoles`.
 
-**System Control Scripts:**
-- `start_server_manager.bat` – Launch complete automation system (recommended)
-- `SCUM-Server-Automation.ps1` – Direct PowerShell execution
+### Account linking & raid alerts
 
-**Discord Admin Commands:**
-- `!server_restart [minutes]` – Schedule server restart with optional delay and confirmation
-- `!server_stop [minutes]` – Schedule server stop with optional delay and confirmation
-- `!server_start` – Start stopped server immediately
-- `!server_status` – Comprehensive status report with performance metrics and player info
-- `!server_update [minutes]` – Smart update system with delay if server running
-- `!server_validate` – Server file validation using SteamCMD
-- `!server_backup` – Execute manual backup with compression
-- `!server_cancel` – Cancel all scheduled admin actions (restart, stop, update)
-- `!server_restart_skip` – Skip the next automatic scheduled restart
+1. `/link-account` → receive a private 6-character code (valid 15 min).
+2. Join the server and type `connect:XXXXXX` in chat (the code is hidden from the chat relay).
+3. The bot confirms via DM.
 
-> **Security:** All admin commands require configured Discord roles and can only be used in designated channels. Every action is logged and confirmed via Discord reactions.
+From the persistent **linking panel** (post it from the dashboard's *Discord* screen), players use
+the **⚙️ Notifications** button to choose what to be DM'd about — *Raid / Base, Vehicles, Chests,
+Locks* — and the scope (*my stuff only* or *my squad too*). Owners are resolved from the SCUM
+database; lock owners and base owners are matched even when the destroyed object is already gone.
+
+### Live embeds
+
+Configured under `Discord.LiveEmbeds` (channel + interval + optional image each):
+
+| Embed | Channel key |
+|---|---|
+| Server status | `StatusChannel` |
+| Online players | `PlayersChannel` |
+| Abandoned bunkers (open/locked + timers + map links) | `BunkerChannel` |
+| Leaderboards (weekly + all-time) | `LeaderboardsChannel` |
+
+### Log feeds
+
+Each feed tails its SCUM log every `SCUMLogFeatures.UpdateInterval` seconds and posts an embed.
+Enable feeds and set channel IDs under `SCUMLogFeatures` (or via Settings). The **Kill feed**
+supports a delay queue so dying players can't immediately see who killed them. Vehicle, chest,
+gameplay and base-building feeds always parse the log so **player DM alerts work even when their
+public channel is off**.
 
 ---
 
-# 🔔 Discord Integration
-
-The system provides comprehensive Discord integration with multiple advanced features:
-
-## Core Features
-- **Live Status Embeds** – Real-time server status with performance metrics, player count, and uptime
-- **Live Leaderboards** – Dynamic leaderboard displays with weekly and all-time statistics (19 categories)
-- **Chat Relay System** – Game chat messages displayed in Discord with multiple chat types
-- **Rich Notifications** – Comprehensive event notifications with role-based targeting
-- **Admin Command System** – Full server control via Discord with confirmation and security
-
-## Discord Bot Setup
-All Discord functionality requires a Discord bot. See the "Discord Integration Setup" section above for complete configuration details.
-
-> **Required Permissions:** `View Channels`, `Send Messages`, `Manage Messages`, `Read Message History`, `Mention Everyone`, `Use External Emojis`, `Add Reactions`
-
----
-
-# 🛠️ Server Configuration After First Start
-
-After the initial start of your server, the necessary configuration files will be generated. These include all the `.ini` and `.json` files you can edit to customize your server.
-
-To access these files, navigate to:
+## Project structure
 
 ```
-...\server\SCUM\Saved\Config\WindowsServer
+├── Start.bat / install-node.ps1   # launcher (admin elevation, Node install, npm install, run)
+├── nssm.exe                        # Windows service manager (download from nssm.cc)
+├── config/config.json              # all non-secret settings
+├── data/                           # runtime DBs, log-feed state, item DB (mostly gitignored)
+│   └── scum_items.json             # SCUM item database (names + icons) for embeds
+├── src/
+│   ├── index.js · setup.js · app.js   # entry, setup wizard, bootstrap
+│   ├── core/        # config, logger, event bus, shared state
+│   ├── server/      # install, NSSM service, log parser, monitoring, game-config (.ini/.json)
+│   ├── automation/  # backups, restart scheduling, Steam updates
+│   ├── database/    # SCUM.db (read-only), leaderboards, weekly snapshots, server_database.db
+│   ├── discord/     # bot, notifications, live embeds, chat relay, slash commands, raid alerts,
+│   │   └── logFeeds/    #   bunker tracker, 13 log-feed modules + tailer & embed builders
+│   └── web/         # Express + socket.io dashboard
+│       ├── public/      #   index.html, app.js, style.css, logo, serverSettingsMeta.json
+│       └── routes/      #   auth, api, game-config, setup
+└── package.json
 ```
 
-Below is a summary of the most important files and their purposes:
+### Runtime data (`data/`)
 
-### AdminUsers.ini
-Placing SteamIDs into this file gives players admin rights (basic commands). You can grant access to additional commands by adding arguments in brackets next to the SteamID:
-
-- `[SetGodMode]` — Access to `#SetGodMode True/False` (instant building)
-- `[RestartServer]` — Access to `#RestartServer pretty please` (shutdown sequence)
-
-**Examples:**
-```
-76561199637135087                        # admin commands
-76561199637135087[SetGodMode]            # admin + setgodmode  
-76561199637135087[SetGodMode,RestartServer] # admin + setgodmode + restartserver
-```
-
-### BannedUsers.ini
-All banned players are listed here. You can also manually add SteamIDs to ban users.
-
-### EconomyOverride.json
-Adjust prices of items and services at traders in safe zones. Examples are included in the file—replace the item/service name and assign to the correct trader.
-- More info: [Economy Update News](https://store.steampowered.com/news/app/513710/view/3131696199142015448)
-- Tool: [SCUM Trader Economy Tool](https://trader.scum-global.com/)
-
-### ExclusiveUsers.ini
-Add SteamIDs of players who should have exclusive access. Only listed players can join. This is active after the first SteamID is added.
-
-### GameUserSettings.ini & Input.ini
-These files are not used by the server and can be ignored.
-
-### RaidTimes.json
-Set global raid times. More info: [Raid Times Guide](https://store.steampowered.com/news/app/513710/view/4202497395525190702)
-
-### ServerSettings.ini
-Contains all server settings. You can manually configure your server here without entering the game.
-
-### ServerSettingsAdminUsers.ini
-Add SteamIDs to grant access to in-game server settings configuration.
-
-### SilencedUsers.ini
-Lists silenced players and the duration of their silence.
-
-### WhitelistedUsers.ini
-Add SteamIDs for players who should have priority access. Whitelisted players can join even if the server is full (one non-whitelisted player will be kicked if needed).
+| File / DB | Purpose |
+|---|---|
+| `SCUM-Server-Automation.log` | Application log |
+| `server_database.db` | Player profiles, raid-protection state, account links, notification prefs |
+| `weekly_leaderboards.db` | Weekly leaderboard snapshots |
+| `logfeed_<name>_state.json` | Last-read position per log feed |
+| `scum_restart_skip.flag` | Persistent restart-skip flag |
 
 ---
 
-## Additional Resources
+## License
 
-- **Loot Modification Guide:** [Google Doc](https://docs.google.com/document/d/1TIxj5OUnyrOvnXyEn3aigxLzTUQ-o-695luaaK2PTW0)
-- **Custom Quests Guide:** [Google Doc](https://docs.google.com/document/d/1B1qooypdebE2xvJ33cb-BIH5MEEsvi9w4v-vrgcYO1k/edit?tab=t.0#heading=h.o19tfspdpkw9)
-
----
-
-## Server Logs
-
-- The output from the server window is saved in the `Logs` folder:
-  - `...\server\SCUM\Saved\Logs`
-- Additional logs:
-  - `...\server\SCUM\Saved\SaveFiles\Logs`
-- Automation system logs:
-  - `SCUM-Server-Automation.log` (in root directory)
-- SteamCMD logs:
-  - `...\steamcmd\logs\`
-
-
-# 📝 Best Practices & Troubleshooting
-
-- Always run as Administrator
-- Use `start_server_manager.bat` for automated server management
-- Use `start_server.bat` and `stop_server.bat` for manual service control
-- Configure Discord fields with empty arrays (`[]`) if not used
-- Monitor `SCUM-Server-Automation.log` for errors and status
-- Test Discord commands and notifications after setup
-- Adjust performance thresholds for your community size and hardware
-- Configure notification settings to avoid spam
-
-**Common issues:**
-
-| Problem                      | Solution                                                      |
-|------------------------------|---------------------------------------------------------------|
-| Notifications not sending    | Check bot token/channel IDs, use empty arrays if not used    |
-| Server won't start           | Check NSSM/service config, verify paths                      |
-| Updates failing              | Run as Admin, check SteamCMD path, check log                 |
-| Backups not working          | Check disk space/permissions                                  |
-| Commands ignored             | Check Discord role/channel config                            |
-| Performance alerts spam     | Adjust performance thresholds and cooldown settings          |
-| Log file growing too large   | Enable log rotation in configuration                         |
-| Automation not detecting crashes | Check log monitoring settings and server log path        |
+MIT — see [LICENSE](LICENSE).
 
 ---
 

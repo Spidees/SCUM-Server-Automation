@@ -2,6 +2,8 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildChestEmbed } = require('./embeds');
+const raidNotify = require('../raidNotify');
+const database = require('../../database');
 
 const CLAIM_RE = /^Chest\s+\(entity\s+id:\s+(\d+)\)\s+ownership\s+claimed\.\s+Owner:\s+(\d+)\s+\((\d+),\s+(.+?)\)\.\s+Location:\s+X=([-\d.]+)\s+Y=([-\d.]+)\s+Z=([-\d.]+)/;
 const TRANSFER_RE = /^Chest\s+\(entity\s+id:\s+(\d+)\)\s+ownership\s+changed\.\s+Old\s+owner:\s+(\d+)\s+\((\d+),\s+(.+?)\)\s+->\s+New\s+owner:\s+(\d+)\s+\((\d+),\s+(.+?)\)\.\s+Location:\s+X=([-\d.]+)\s+Y=([-\d.]+)\s+Z=([-\d.]+)/;
@@ -40,6 +42,7 @@ function parseLine(line) {
       playerId: m[6],
       entityId: m[1],
       oldOwner: m[4].trim(),
+      oldOwnerSteamId: m[2],
       action: `took ownership of chest (ID: ${m[1]}) from ${m[4].trim()}`,
       location: { x: m[8], y: m[9], z: m[10] },
     };
@@ -77,17 +80,44 @@ function parseLine(line) {
 }
 
 async function handle(event, client, config) {
-  const feedCfg = config.SCUMLogFeatures.ChestFeed;
-  if (!feedCfg.Enabled || !feedCfg.Channel) return;
+  const feedCfg = (config.SCUMLogFeatures || {}).ChestFeed || {};
+  if (feedCfg.Enabled && feedCfg.Channel) {
+    const embed = buildChestEmbed(event);
+    await sendToChannel(client, feedCfg.Channel, [], embed);
+  }
 
-  const embed = buildChestEmbed(event);
-  await sendToChannel(client, feedCfg.Channel, [], embed);
+  // DM the player who lost a chest: 'transfer' (taken by someone) or 'unclaim' (lost it).
+  let victimSteamId = null;
+  let victimName = null;
+  let description = null;
+  const itemName = database.getEntityDisplayName(event.entityId) || 'container';
+  if (event.type === 'transfer') {
+    victimSteamId = event.oldOwnerSteamId;
+    victimName = event.oldOwner;
+    description = `Your **${itemName}** was **taken by another player**.`;
+  } else if (event.type === 'unclaim') {
+    victimSteamId = event.steamId;
+    victimName = event.playerName;
+    description = `You **lost ownership** of your **${itemName}** — destroyed or unclaimed.`;
+  }
+  if (victimSteamId) {
+    await raidNotify.dispatchOwnerAlert(client, {
+      type: 'chest',
+      ownerSteamId: victimSteamId,
+      ownerName: victimName,
+      title: ':package: Container Alert',
+      description,
+      color: 0xe67e22,
+      location: event.location,
+    });
+  }
 }
 
 module.exports = {
   name: 'chest',
   logPrefix: 'chest_ownership_',
-  isEnabled: (config) => !!(config.SCUMLogFeatures.ChestFeed && config.SCUMLogFeatures.ChestFeed.Enabled),
+  // Always poll so player DM notifications work even when the public feed is off.
+  isEnabled: (config) => !!config.SCUMLogFeatures,
   parseLine,
   handle,
 };

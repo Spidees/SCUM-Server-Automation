@@ -2,6 +2,7 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildVehicleEmbed } = require('./embeds');
+const raidNotify = require('../raidNotify');
 
 const VEHICLE_RE = /^(\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}):\s+\[([^\]]+)\]\s+([^.]+)\.\s+VehicleId:\s+(\d+)\.\s+Owner:\s+(.+?)\.\s+Location:\s+X=([^\s]+)\s+Y=([^\s]+)\s+Z=([^\s]+)/;
 
@@ -54,17 +55,31 @@ function parseLine(line) {
 }
 
 async function handle(event, client, config) {
-  const feedCfg = config.SCUMLogFeatures.VehicleFeed;
-  if (!feedCfg.Enabled || !feedCfg.Channel) return;
+  const feedCfg = (config.SCUMLogFeatures || {}).VehicleFeed || {};
+  if (feedCfg.Enabled && feedCfg.Channel) {
+    const embed = buildVehicleEmbed(event);
+    await sendToChannel(client, feedCfg.Channel, [], embed);
+  }
 
-  const embed = buildVehicleEmbed(event);
-  await sendToChannel(client, feedCfg.Channel, [], embed);
+  // DM the vehicle owner (their vehicle was destroyed / disappeared).
+  if (event.ownerSteamId) {
+    await raidNotify.dispatchOwnerAlert(client, {
+      type: 'vehicle',
+      ownerSteamId: event.ownerSteamId,
+      ownerName: event.ownerName,
+      title: ':red_car: Vehicle Alert',
+      description: `Your **${event.vehicleName}** (ID ${event.vehicleId}) — ${event.eventType}.`,
+      color: 0xed4245,
+      location: { x: event.locationX, y: event.locationY, z: event.locationZ },
+    });
+  }
 }
 
 module.exports = {
   name: 'vehicle',
   logPrefix: 'vehicle_destruction_',
-  isEnabled: (config) => !!(config.SCUMLogFeatures.VehicleFeed && config.SCUMLogFeatures.VehicleFeed.Enabled),
+  // Always poll so player DM notifications work even when the public feed is off.
+  isEnabled: (config) => !!config.SCUMLogFeatures,
   parseLine,
   handle,
 };
