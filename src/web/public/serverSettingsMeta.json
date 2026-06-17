@@ -1,0 +1,3158 @@
+{
+  "scum.ServerName": {
+    "type": "string",
+    "desc": "Server name in the server browser",
+    "default": "Scum Server"
+  },
+  "scum.ServerDescription": {
+    "type": "string",
+    "desc": "currently no impact",
+    "default": "Server Description"
+  },
+  "scum.ServerPassword": {
+    "type": "string",
+    "desc": "Password to join server (leave blank for open server)"
+  },
+  "scum.MaxPlayers": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of players that can be connected simultaneously",
+    "default": "64",
+    "min": 1,
+    "max": 128
+  },
+  "scum.PlaySafeIdProtection": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Allows only players who have verified their identity, linked their account, and are not currently banned on PlaySafe ID to join the server",
+    "default": "False"
+  },
+  "scum.ServerBannerUrl": {
+    "type": "string",
+    "desc": "currently no impact"
+  },
+  "scum.ServerPlaystyle": {
+    "type": "string",
+    "desc": "currently no impact",
+    "default": "PVE"
+  },
+  "scum.WelcomeMessage": {
+    "type": "string",
+    "unit": "Text",
+    "desc": "Message displayed on every server join",
+    "default": "Welcome to our SCUM Server"
+  },
+  "scum.MessageOfTheDay": {
+    "type": "string",
+    "unit": "Text",
+    "desc": "Message that is displayed at the interval defined below",
+    "default": "This is the Message of the Day."
+  },
+  "scum.MessageOfTheDayCooldown": {
+    "type": "number",
+    "unit": "Minutes",
+    "desc": "Interval at which the message of the day is displayed",
+    "default": "10",
+    "min": 10,
+    "max": 720
+  },
+  "scum.MinServerTickRate": {
+    "type": "number",
+    "unit": "Hz",
+    "desc": "Tick rate of the server when no player is connected",
+    "default": "5",
+    "min": 1,
+    "max": 1000
+  },
+  "scum.MaxServerTickRate": {
+    "type": "number",
+    "unit": "Hz",
+    "desc": "Tick rate of the server with at least one connected player",
+    "default": "30",
+    "min": 1,
+    "max": 1000
+  },
+  "scum.MaxPingCheckEnabled": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Max Ping Value will be respected only if this is True",
+    "default": "True"
+  },
+  "scum.MaxPing": {
+    "type": "number",
+    "unit": "ms",
+    "desc": "Maximum ping before player is denied access to the server or kicked",
+    "default": "200",
+    "min": 10,
+    "max": 999
+  },
+  "scum.LogoutTimer": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time in seconds before player disappears from the game world when logging out",
+    "default": "60",
+    "min": 1,
+    "max": 600
+  },
+  "scum.LogoutTimerWhileCaptured": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time in seconds before player disappears from the game world when logged out when tied up",
+    "default": "120",
+    "min": 1,
+    "max": 600
+  },
+  "scum.LogoutTimerInBunker": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time in seconds before player disappears from the game world when logging out if in the bunker",
+    "default": "30000",
+    "min": 1,
+    "max": 36000
+  },
+  "scum.AllowFirstPerson": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether first person view is allowed (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowThirdPerson": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether third person view is allowed (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowCrosshair": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the crosshair is allowed (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowVoting": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether players are allowed to participate in votes (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowMapScreen": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether players are allowed to view the map screen (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowKillClaiming": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether BCU drop is allowed after a player is killed (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowComa": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether players can fall into a coma before death, for example, to be revived (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowMinesAndTraps": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether mines or traps can be used (True=allowed)",
+    "default": "True"
+  },
+  "scum.AllowSkillGainInSafeZones": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether experience points can be earned in safe zones (e.g., merchant zone) (True=allowed)",
+    "default": "False"
+  },
+  "scum.AllowEvents": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether events are allowed on the server (True=allowed) (Event tab is still displayed when deactivated, but is empty)",
+    "default": "True"
+  },
+  "scum.LimitGlobalChat": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the global chat can only be used by admins or by any player (True=admins only)",
+    "default": "False"
+  },
+  "scum.AllowGlobalChat": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the global chat is usable (True=usable)",
+    "default": "True"
+  },
+  "scum.AllowLocalChat": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the local chat is usable (True=usable)",
+    "default": "True"
+  },
+  "scum.AllowSquadChat": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the Squad Chat is usable (True=usable)",
+    "default": "True"
+  },
+  "scum.AllowAdminChat": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the admin chat is usable (True=usable)",
+    "default": "True"
+  },
+  "scum.RustyLocksLogging": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Enable log for rusty locks (10 second locks in the world) (True=log enabled)",
+    "default": "False"
+  },
+  "scum.HideKillNotification": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a notification is shown to players who kill each other (True=Hide notification)",
+    "default": "True"
+  },
+  "scum.DisableExamineGhost": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a ghost will surprise you when searching item containers (False=Ghost can surprise)",
+    "default": "False"
+  },
+  "scum.DisableTimedGifts": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether time-based gifts should be deactivated (e.g. gifts at Christmas) (True=deactivated)",
+    "default": "False"
+  },
+  "scum.UseMapBaseBuildingRestriction": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether base building is allowed in certain areas (e.g. near POIs) (True=not allowed)",
+    "default": "True"
+  },
+  "scum.DisableBaseBuilding": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether base building should be completely banned (True=banned)",
+    "default": "False"
+  },
+  "scum.VotingDuration": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Duration for a vote",
+    "default": "60",
+    "min": 30,
+    "max": 600
+  },
+  "scum.PlayerMinimalVotingInterest": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "What percentage of online players must vote for a vote to be valid (0.5=50%)",
+    "default": "0.5",
+    "min": 0,
+    "max": 1
+  },
+  "scum.PlayerPositiveVotePercentage": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "What proportion of votes must be yes for a referendum to be accepted (0.5=50%)",
+    "default": "0.5",
+    "min": 0,
+    "max": 1
+  },
+  "scum.MasterServerUpdateSendInterval": {
+    "type": "number",
+    "desc": "Probably the update interval to the master server (server browser) for information like number of players etc. (no reliable explanation)",
+    "default": "60"
+  },
+  "scum.MasterServerIsLocalTest": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Probably to hide own server in the server browser for others (no effect when testing)",
+    "default": "False"
+  },
+  "scum.PartialWipe": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "When the server starts, a partial wipe is performed (world progress but not character development) (True=perform wipe) (Will then automatically be reset to False)",
+    "default": "False"
+  },
+  "scum.GoldWipe": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "When the server starts, all players' gold is deleted (True=perform wipe) (Will then automatically be reset to False)",
+    "default": "False"
+  },
+  "scum.FullWipe": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Perform a full wipe at server startup (True=Perform wipe) (Will then automatically be reset to False)",
+    "default": "False"
+  },
+  "scum.ItemVirtualizationRelevancyUpdatePeriod": {
+    "type": "number",
+    "desc": "According to the developer, this should not be changed",
+    "default": "1"
+  },
+  "scum.ItemVirtualizationEventProcessingTimeBudget": {
+    "type": "number",
+    "desc": "According to the developer, this should not be changed",
+    "default": "5"
+  },
+  "scum.ItemVirtualizationVisitorDistanceTravelledForUpdate": {
+    "type": "number",
+    "desc": "According to the developer, this should not be changed",
+    "default": "100"
+  },
+  "scum.ItemVirtualizationVisitorBounds": {
+    "type": "number",
+    "desc": "According to the developer, this should not be changed",
+    "default": "10000"
+  },
+  "scum.VirtualizedItemBounds": {
+    "type": "number",
+    "desc": "According to the developer, this should not be changed",
+    "default": "100"
+  },
+  "scum.FameGainMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for earning fame points (>1=more fame, between 0 and 1 for less fame)",
+    "default": "1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.FamePointPenaltyOnDeath": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "What percentage of fame points a player loses upon death (excluding PvP) (0.1=10% of his fame points)",
+    "default": "0.1",
+    "min": 0,
+    "max": 1
+  },
+  "scum.FamePointPenaltyOnKilled": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "What percentage of fame points a player loses when killed by another player (0.5=50% of his fame points)",
+    "default": "0.5",
+    "min": 0,
+    "max": 1
+  },
+  "scum.FamePointRewardOnKill": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "What percentage of the killed player's fame points a player receives (0.25=25% of the killed player's fame points)",
+    "default": "0.25",
+    "min": 0,
+    "max": 1
+  },
+  "scum.LogSuicides": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a log of suicides should be created (True=Create log)",
+    "default": "False"
+  },
+  "scum.EnableSpawnOnGround": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the parachute jump should be skipped and players spawn on the ground (True=Spawn on the ground)",
+    "default": "False"
+  },
+  "scum.DeleteInactiveUsers": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether inactive players should be automatically deleted after the following time at server start (True=Inactive players are deleted)",
+    "default": "True"
+  },
+  "scum.DaysSinceLastLoginToBecomeInactive": {
+    "type": "number",
+    "unit": "Days",
+    "desc": "Days after which a player is considered inactive",
+    "default": "180",
+    "min": 1,
+    "max": 3600
+  },
+  "scum.DeleteBannedUsers": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether banned players should be deleted at server start (True=banned players are deleted)",
+    "default": "False"
+  },
+  "scum.MaximumTimeForChestsInForbiddenZones": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Time chests are allowed to exist in forbidden zones (e.g. merchants) (despawn is applied if no player is nearby)",
+    "default": "02:00:00"
+  },
+  "scum.LogChestOwnership": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a log of chest owners should be kept (True=log is created)",
+    "default": "True"
+  },
+  "scum.DeleteDuplicateChestsOnServerStartup": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "If set to true, it will delete duplicated chests on the server start",
+    "default": "False"
+  },
+  "scum.SettingsVersion": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Version of Settings.ini (do not change)",
+    "default": "4"
+  },
+  "scum.MaxAllowedBirds": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Still disabled and without effect",
+    "default": "15",
+    "min": -1,
+    "max": 64
+  },
+  "scum.MaxAllowedCharacters": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum allowed characters (players, NPCs, mechs, animals, puppets) in the game world (-1 means default value, in this case 128) (HTZ excluded)",
+    "default": "-1",
+    "min": -1,
+    "max": 1024
+  },
+  "scum.MaxAllowedPuppets": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of zombies that can exist at the same time",
+    "default": "-1",
+    "min": -1,
+    "max": 1024
+  },
+  "scum.MaxAllowedAnimals": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of animals that can exist at the same time",
+    "default": "-1",
+    "min": -1,
+    "max": 1024
+  },
+  "scum.MaxAllowedNPCs": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of NPCs that can exist simultaneously (Armed NPCs)",
+    "default": "-1",
+    "min": -1,
+    "max": 512
+  },
+  "scum.MaxAllowedDrones": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum permitted drones in the world",
+    "default": "30",
+    "min": 0,
+    "max": 40
+  },
+  "scum.DisableSentrySpawning": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether Mech spawning should be disabled (True=no Mechs)",
+    "default": "False"
+  },
+  "scum.EnableSentryRespawning": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether mechs can respawn at POIs through dropship drops, but does not affect general respawning of mechs (True=respawn possible)",
+    "default": "True"
+  },
+  "scum.DisableSuicidePuppetSpawning": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether explosive puppets should be deactivated (True=no explosive puppets)",
+    "default": "False"
+  },
+  "scum.DisableLootPuppetSpawning": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Disables loot puppet spawning when set to True",
+    "default": "False"
+  },
+  "scum.EnableLootPuppetHorde": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Enables the horde that spawns when a loot puppet dies when set to True",
+    "default": "True"
+  },
+  "scum.AbandonedBunkerCommotionThreshold": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Basic threshold for noise generated in the bunker, above which the bunker reacts (noises such as shaft rattling, etc.)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.AbandonedBunkerCommotionThresholdPerPlayerExtra": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Additional threshold at which the bunker reacts, for noise generated per player in the bunker (except the first) (Base Threshold + Extra Threshold)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.AbandonedBunkerEnemyActivationThreshold": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Base threshold for generated noise in the bunker, from which Razors spawn from the shafts",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.AbandonedBunkerEnemyActivationThresholdPerPlayerExtra": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Additional threshold at which Razors spawn for noise generated per player in the bunker (except the first one) (Base Threshold + Extra Threshold)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.AbandonedBunkerResetArmoryLockersOnActivationOnly": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Armory rooms in abandoned bunkers are only reset when activated (naturally or by keycard) when this is True",
+    "default": "True"
+  },
+  "scum.PuppetsCanOpenDoors": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether zombies can open doors (True=Puppets can open doors)",
+    "default": "True"
+  },
+  "scum.PuppetsCanVaultWindows": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether zombies can jump through windows (True=Puppets can jump through windows)",
+    "default": "True"
+  },
+  "scum.PuppetHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Puppet health multiplier (higher values = more health)",
+    "default": "1 (Server) / 0.6 (Sandbox)",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.PuppetRunningSpeedMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Is used to set puppets running speed (values >1 = faster, values <1 = slower)",
+    "default": "1",
+    "min": 0.5,
+    "max": 2
+  },
+  "scum.PuppetCullDistanceOverride": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Specifies the maximum distance in meters at which puppets are rendered to connected clients",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.PuppetLimpingEnabled": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Enables/disables puppet limping",
+    "default": "True"
+  },
+  "scum.DropshipHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Dropship health multiplier (higher values = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.SentryHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Mech Health Multiplier (Higher values = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.BaseBuildingAttackerSentryHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for Mech health of the Mech that can be dropped from a dropship during base building (Higher values = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.ArmedNPCDifficultyLevel": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Difficulty of the NPCS (affects accuracy and attack interval) (1=easy, 2=medium, 3=hard)",
+    "default": "1",
+    "min": 1,
+    "max": 3
+  },
+  "scum.ArmedNPCHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Armed NPC max health multiplier (higher values = more health)",
+    "default": "1 (Server) / 0.6 (Sandbox)",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.ArmedNPCDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Armed NPC max damage multiplier (higher values = NPCs deal more damage)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.ArmedNPCSpreadMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Armed NPC max spread multiplier (bullet spread of firearms, higher values=more spread)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.ArmedNPCRunningSpeedMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Armed NPC running speed (values >1 = faster, values <1 = slower)",
+    "default": "1",
+    "min": 0.5,
+    "max": 2
+  },
+  "scum.ArmedNPCNetCullDistanceOverride": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Armed NPC net cull distance in meters (rendering to connected clients)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.ProbabilityForArmedNPCToDropItemFromHandsWhenSearched": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that an NPC drops the weapon in their hand (0.4=40% chance for drop)",
+    "default": "1",
+    "min": 0,
+    "max": 1
+  },
+  "scum.MinimumDurabilityOfArmedNPCsDroppedItemFromHands": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Durability of an item dropped from hands by an armed NPC will be randomly picked from a minimum - maximum interval (cant be higher than max value)",
+    "default": "0.2",
+    "min": 0,
+    "max": 1
+  },
+  "scum.MaximumDurabilityOfArmedNPCsDroppedItemFromHands": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Durability of an item dropped from hands by an armed NPC will be randomly picked from a minimum - maximum interval",
+    "default": "0.3",
+    "min": 0,
+    "max": 1
+  },
+  "scum.ArmedNPCLimpingEnabled": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Enable/disable armed NPC limping",
+    "default": "True"
+  },
+  "scum.AnimalNetCullDistanceOverride": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Sets animal net cull distance override in meters (rendering to connected clients)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.EncounterBaseCharacterAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplies the base character count in an encounter with the standard number per zone (LTZ:1-2, MTZ:2-3, HTZ:4-5) Example: Multiplier 3 for MTZ: between 3*2 and 3*3 puppets",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterExtraCharacterPerPlayerMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Increases base character count in an encounter according to the formula: Standard number + (number of players - 1) * Extra number per player * Multiplier",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterExtraCharacterPlayerCapMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "From which number of players the characters are no longer increased in an encounter (e.g.: Set this to 3 = From 3 players on the numbers of puppets in an encounter will remain the same)",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterCharacterRespawnTimeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Time between respawns according to the formula base value * multiplier (HTZ - From 0 to 0.5sec/MTZ - From 60 to 120sec/LTZ - From 60 to 120sec)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.EncounterCharacterRespawnBatchSizeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the size of respawn waves in an encounter according to the formula base value * multiplier (HTZ - 0 / MTZ - From 1 to 2 entities per wave / LTZ - From 1 to 2 entities per wave)",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterCharacterAggressiveSpawnChanceOverride": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Percentage of characters that already spawn aggressively and attack the player directly (50=half of the zombies spawn aggressively)",
+    "default": "-1",
+    "min": -1,
+    "max": 100
+  },
+  "scum.EncounterCharacterAINoiseResponseRadiusMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Distance multiplier for puppets that hear the alarm like a zombie scream from other puppets according to the formula base value*multiplier (HTZ - 20m / MTZ-20m/LTZ-30m)",
+    "default": "0.5",
+    "min": 0,
+    "max": 100
+  },
+  "scum.EncounterHordeGroupBaseCharacterAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the size of a horde wave (base value unknown)",
+    "default": "0.5",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterHordeGroupExtraCharacterPerPlayerMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Increases the number of characters in a horde wave according to the formula: Standard number + (number of players - 1) * Extra number per player * Multiplier",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterHordeGroupExtraCharacterPlayerCapMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "From which number of players the characters of a horde wave are no longer increased (e.g.: Set this to 3 = From 3 players on the numbers of puppets in a horde wave will remain the same)",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterHordeBaseCharacterAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the total size of a horde (base value unknown)",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterHordeExtraCharacterPerPlayerMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Increases total horde size according to formula: Standard number + (number of players - 1) * Extra number per player * Multiplier",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterHordeExtraCharacterPlayerCapMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "From which number of players the characters of a horde are no longer increased (e.g.: Set this to 3 = From 3 players on the total number of puppets in a horde will remain the same)",
+    "default": "1",
+    "min": 0,
+    "max": 3
+  },
+  "scum.EncounterHordeActivationChanceMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the chance that an action that makes noise triggers a horde",
+    "default": "1",
+    "min": 0,
+    "max": 10000
+  },
+  "scum.EncounterHordeNoiseCheckCooldownMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Cooldown multiplier for how often checks are made after Horde trigger (higher values = rare checks after Horde trigger)",
+    "default": "1",
+    "min": 0,
+    "max": 10000
+  },
+  "scum.EncounterHordeSpawnDistanceMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the distance at which puppets spawn around the player (name is confusing and wrongly named)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.EncounterHordeGroupRefillTimeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the refill time of a horde wave - no reliable explanation what this means",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.EncounterHordeShouldPlayActivationSound": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a sound should be played when a horde is triggered (True=sound is played)",
+    "default": "False"
+  },
+  "scum.EncounterHordePuppetHordeActivationScreamOverrideChance": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that a Puppet's scream activates a Horde (-1=default value of 20%)",
+    "default": "-1",
+    "min": -1,
+    "max": 100
+  },
+  "scum.EncounterCanRemoveLowPriorityCharacters": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Removes inactive puppets further away from the player to spawn new ones when spawn limit is reached (True=inactive puppets are removed)",
+    "default": "True"
+  },
+  "scum.EncounterCanClampCharacterNumWhenOutOfResources": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Can set the puppet count of an encounter to the minimum value if the spawn limit has been reached (True=number can be reduced if the limit has been reached)",
+    "default": "True"
+  },
+  "scum.EncounterCharacterSpawnDistanceMinOverrideLTZ": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines the minimal character spawn distance from players; this applies to all LTZ encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.EncounterCharacterSpawnDistanceMaxOverrideLTZ": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines maximum character spawn distance from players; this applies to all LTZ encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 1100
+  },
+  "scum.EncounterCharacterSpawnDistanceMinOverrideLargePOI": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines the minimal character spawn distance from players; this applies to all large POI encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 200
+  },
+  "scum.EncounterCharacterSpawnDistanceMaxOverrideLargePOI": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines maximum character spawn distance from players; this applies to all large POI encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 220
+  },
+  "scum.EncounterCharacterRespawnDistanceMinOverrideLTZ": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines the minimal character respawn distance from players; this applies for all LTZ encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.EncounterCharacterRespawnDistanceMaxOverrideLTZ": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines the maximum character respawn distance from players; this applies to all LTZ encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 1100
+  },
+  "scum.EncounterCharacterRespawnDistanceMinOverrideLargePOI": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines the minimal character respawn distance from players; this applies to all large POI encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 200
+  },
+  "scum.EncounterCharacterRespawnDistanceMaxOverrideLargePOI": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Determines maximum character respawn distance from players; this applies for all large POI encounters",
+    "default": "-1",
+    "min": 0,
+    "max": 220
+  },
+  "scum.EncounterLTZRadiusMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplies the effective size of LTZ encounters; by changing this, you can change the size of the area the encounter covers, giving you more area/distance to keep the characters owned by the encounter spawned",
+    "default": "1",
+    "min": 1,
+    "max": 10
+  },
+  "scum.EncounterMTZRadiusMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplies the effective size of MTZ encounters; by changing this, you can change the size of the area the encounter covers, giving you more area/distance to keep the characters owned by the encounter spawned",
+    "default": "1",
+    "min": 1,
+    "max": 10
+  },
+  "scum.EncounterHTZRadiusMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Encounter radius multiplier (applied to ALL newly spawned encoutners in high thread zones)",
+    "default": "1",
+    "min": 1,
+    "max": 10
+  },
+  "scum.EncounterVirtualizedTimeOverride": {
+    "type": "number",
+    "unit": "Minutes",
+    "desc": "Overrides the time an encounter spends in a virtualized state before being destroyed",
+    "default": "-1",
+    "min": 0,
+    "max": 60
+  },
+  "scum.EncounterZoneActivationDistanceMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Controls the distance from the edges of encounter zones (cities, POIs, ...) where encounters start being triggered",
+    "default": "1",
+    "min": 0.1,
+    "max": 10
+  },
+  "scum.EncounterGlobalZoneCooldownMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the cooldown time after an encounter has ended before a new encounter can occur (higher values = longer time between encounters)",
+    "default": "1",
+    "min": 0
+  },
+  "scum.EncounterEnableSpawnPreventionAreaSpawnOnCharacterDeath": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Prevents characters from spawning near a killed player (True=prevented)",
+    "default": "False"
+  },
+  "scum.EncounterNeverRespawnCharacters": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether characters should only spawn at the beginning of an encounter and not respawn (True=no respawn)",
+    "default": "False"
+  },
+  "scum.PuppetWorldEncounterSpawnWeightMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the spawn weight of puppets in an encounter (see calculator, copy document to use) >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>",
+    "default": "1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.AnimalWorldEncounterSpawnWeightMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the spawn weight of animals in an encounter (see calculator)",
+    "default": "1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.NPCWorldEncounterSpawnWeightMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the spawn weight of NPCs in an encounter (see calculator) Seems to be missing after the last update (wait and see if this was intentional)",
+    "default": "1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.DropshipWorldEncounterSpawnWeightMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the spawn weight of dropships in an encounter (see calculator)",
+    "default": "1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.EnableDropshipAbandonedBunkerEncounter": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether dropships can spawn at abandoned bunkers (True=spawn possible)",
+    "default": "True"
+  },
+  "scum.DropshipAbandonedBunkerEncounterTriggerChance": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance for a dropship spawn at Abandoned Bunker Alarms (percent chance, -1 is default and means 50%)",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.BaseBuildingEncounterTriggerChance": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance for a dropship spawn during base building (percent chance, -1 is default and means 7.5%)",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.BaseBuildingEncounterTriggerTimeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier of the time of player activity at the base before dropship encounter can happen (default value=900s player activity/ 1800s-2700s spawn after spawn fail/ 28800s-36000s cooldown after BB encounter)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.EnableDropshipBaseBuildingEncounter": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether dropships can spawn during base building (True=spawn possible)",
+    "default": "False"
+  },
+  "scum.SpawnEncountersInThreatZonesIgnoringBaseBuilding": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether encounters are allowed to spawn in HTZ and MTZ zones if base building is allowed there (in LTZ, spawning is always prohibited if BB is allowed)",
+    "default": "False"
+  },
+  "scum.EnableEncounterManagerLowPlayerCountMode": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Spawn behavior more in the direction of a pre-encounter manager (larger threat zones and more character spawns). WARNING: High server load, designed for single player! (Tested: Server RAM increased from 2GB to 9GB with 1 player)",
+    "default": "False"
+  },
+  "scum.BaseBuildingEncounterMinNumElementsToStart": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Total number of BB elements where a Dropship Encounter can start (-1=default value 100)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.BaseBuildingEncounterMinNumElementsToEnd": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Total number of BB elements at which the Dropship Encounter ends (-1=default value 50)",
+    "default": "-1",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.BaseBuildingEncounterDamagePercentageIncreasePerSquadMember": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Increases the damage to BaseBuilding elements in a Dropship Encounter by this percentage per squad member (except the first) (50=Dropship does 50% more damage to BB elements)",
+    "default": "0",
+    "min": 0,
+    "max": 100
+  },
+  "scum.BaseBuildingEncounterTimeToFullMinNumToEnd": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Time in days after which a BB Encounter finally ends when the minimum number of BB elements is reached (default -1 = 3 days)",
+    "default": "-1",
+    "min": -1,
+    "max": 30
+  },
+  "scum.BaseBuildingEncounterMaximumMinToEndReduction": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Reduction of the minimum number of BB elements that must be destroyed at the beginning of a BB encounter (default = 0, so no reduction)",
+    "default": "-1",
+    "min": -1,
+    "max": 1000
+  },
+  "scum.StartTimeOfDay": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Time of day (ingame) the server starts after a wipe",
+    "default": "08:00:00"
+  },
+  "scum.TimeOfDaySpeed": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Day length (default value=6 real-time hours) (Higher values=shorter days)",
+    "default": "3.84",
+    "min": 0,
+    "max": 12
+  },
+  "scum.NighttimeDarkness": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Darkness of the night (Lower values = brighter night)",
+    "default": "-1",
+    "min": -1,
+    "max": 1
+  },
+  "scum.SunriseTime": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Sunrise time",
+    "default": "06:00:00"
+  },
+  "scum.SunsetTime": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Sunset time",
+    "default": "21:00:00"
+  },
+  "scum.EnableFog": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Renders various fogs on the island if this is True",
+    "default": "True"
+  },
+  "scum.ShouldDestroyEntitiesOutsideMapLimitsOnRestart": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether objects outside the map boundaries should be destroyed on server restart (True=objects are destroyed)",
+    "default": "True"
+  },
+  "scum.EnableLockedLootContainers": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the lockers in the world should be locked or open (True= lockers are locked)",
+    "default": "True"
+  },
+  "scum.CustomMapEnabled": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a custom map limit (only part of the map playable) should be applied (True=map limit applied)",
+    "default": "False"
+  },
+  "scum.CustomMapCenterXCoordinate": {
+    "type": "number",
+    "unit": "Coordinate",
+    "desc": "Center of your own map area X-coordinate",
+    "default": "0",
+    "min": -922896,
+    "max": 637685
+  },
+  "scum.CustomMapCenterYCoordinate": {
+    "type": "number",
+    "unit": "Coordinate",
+    "desc": "Center of your own map area Y-coordinate",
+    "default": "0",
+    "min": -922896,
+    "max": 619200
+  },
+  "scum.CustomMapWidth": {
+    "type": "number",
+    "unit": "Kilometers",
+    "desc": "Width of your map in kilometers",
+    "default": "15.24",
+    "min": 0,
+    "max": 15.24
+  },
+  "scum.CustomMapHeight": {
+    "type": "number",
+    "unit": "Kilometers",
+    "desc": "Height of your map in kilometers",
+    "default": "15.24",
+    "min": 0,
+    "max": 15.24
+  },
+  "scum.DoorLockability.Garage": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether garage doors can be locked with locks (False=cannot be locked)",
+    "default": "False"
+  },
+  "scum.CargoDropCooldownMinimum": {
+    "type": "number",
+    "unit": "Minutes",
+    "desc": "Minimum time in minutes that must pass before a new Cargo Drop can spawn",
+    "default": "90",
+    "min": 1,
+    "max": 720
+  },
+  "scum.CargoDropCooldownMaximum": {
+    "type": "number",
+    "unit": "Minutes",
+    "desc": "Maximum time in minutes that can pass until a new Cargo Drop can spawn",
+    "default": "120",
+    "min": 1,
+    "max": 720
+  },
+  "scum.CargoDropFallDelay": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time in seconds until a CargoDrop starts falling after the announcement",
+    "default": "540",
+    "min": 1,
+    "max": 600
+  },
+  "scum.CargoDropFallDuration": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time in seconds that a CargoDrop takes to fall to the ground",
+    "default": "60",
+    "min": 1,
+    "max": 600
+  },
+  "scum.CargoDropSelfdestructTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time in seconds until a CargoDrop explodes after spawning",
+    "default": "1200",
+    "min": 1,
+    "max": 3600
+  },
+  "scum.CargoDropZombieEncounterWeightMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the chance of encountering zombies during a CargoDrop (base value of 1=Zombies 90% and Dropship 10%)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.CargoDropDropshipEncounterWeightMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the chance of encountering a dropship during a cargo drop (base value of 1=Zombies 90% and Dropship 10%)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.MaxAllowedHunts": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum allowed hunts that can be started simultaneously in the world",
+    "default": "20",
+    "min": 0,
+    "max": 64
+  },
+  "scum.HuntTriggerChanceOverride_ContinentalForest": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that entering a forest biome will trigger a hunt (50 = 50% Chance that hunt will trigger when entering biome)",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.HuntTriggerChanceOverride_ContinentalMeadow": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that entering a meadow biome triggers a hunt",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.HuntTriggerChanceOverride_Mediterranean": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that a hunt will be triggered when entering a Mediterranean biome",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.HuntTriggerChanceOverride_Mountain": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that entering a mountain biome will trigger a hunt",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.HuntTriggerChanceOverride_Urban": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that a hunt will be triggered when entering a city biome",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.HuntTriggerChanceOverride_Village": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Chance that a hunt will be triggered when entering a village biome",
+    "default": "-1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.HuntFailureTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time to find the next clue before a hunt fails",
+    "default": "150",
+    "min": 10,
+    "max": 3600
+  },
+  "scum.HuntFailureDistance": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Maximum distance in meters that players can have to the animals before a hunt fails",
+    "default": "300",
+    "min": 300,
+    "max": 22000
+  },
+  "scum.BearMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Bear maximum health multiplier (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.BoarMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Wild boar maximum health multiplier (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.ChickenMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the maximum health of chickens (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.DeerMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Deer maximum health multiplier (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.DonkeyMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Donkey maximum health multiplier (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.GoatMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Goat maximum health multiplier (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.HorseMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for maximum horse health (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.RabbitMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Rabbit maximum health multiplier (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.WolfMaxHealthMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the maximum health of wolves (higher value = more health)",
+    "default": "1",
+    "min": 0.01,
+    "max": 100
+  },
+  "scum.MaxAllowedKillboxKeycards": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of keycards that can be found in total (police stations + radiation zone)",
+    "default": "2",
+    "min": 0,
+    "max": 1024
+  },
+  "scum.MaxAllowedKillboxKeycards_PoliceStation": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of keycards that can be found in police stations",
+    "default": "1",
+    "min": 0,
+    "max": 1024
+  },
+  "scum.MaxAllowedKillboxKeycards_RadiationZone": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of keycards that can be found in the Radiation Zone",
+    "default": "1",
+    "min": 0,
+    "max": 1024
+  },
+  "scum.AbandonedBunkerMaxSimultaneouslyActive": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of abandoned bunkers that can be active at the same time",
+    "default": "2",
+    "min": 1,
+    "max": 4
+  },
+  "scum.AbandonedBunkerActiveDurationHours": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Duration in hours that abandoned bunkers remain active after natural activation",
+    "default": "24",
+    "min": 0,
+    "max": 720
+  },
+  "scum.AbandonedBunkerKeyCardActiveDurationHours": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Duration in hours that abandoned bunkers remain active after activation by keycard",
+    "default": "3",
+    "min": 0,
+    "max": 720
+  },
+  "scum.AbandonedBunkerBCUTerminalCooldown": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Modify the cooldown (in HH : MM : SS) of BCU terminals in abandoned bunkers",
+    "default": "24:00:00"
+  },
+  "scum.SecretBunkerKeyCardActiveDurationHours": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Duration in hours that secret bunkers remain active after activation by keycard",
+    "default": "0.5",
+    "min": 0,
+    "max": 720
+  },
+  "scum.AllowSectorRespawn": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether it is allowed to spawn in the sector (with enough money depending on the settings)",
+    "default": "True"
+  },
+  "scum.AllowShelterRespawn": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether it is allowed to spawn at the hideout (with enough money depending on the settings)",
+    "default": "True"
+  },
+  "scum.AllowSquadmateRespawn": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether it is allowed to spawn with other squad members (with enough money depending on the settings)",
+    "default": "True"
+  },
+  "scum.RandomRespawnPrice": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Price to respawn at a random point",
+    "default": "250",
+    "min": 0,
+    "max": 100000
+  },
+  "scum.SectorRespawnPrice": {
+    "type": "number",
+    "unit": "Integer (+g for gold value)",
+    "desc": "Price to respawn in a specific sector",
+    "default": "1000"
+  },
+  "scum.ShelterRespawnPrice": {
+    "type": "string",
+    "unit": "Integer (+g for gold value)",
+    "desc": "Price to respawn at the hideout",
+    "default": "1g"
+  },
+  "scum.ShelterRespawnPriceOutsideFlagArea": {
+    "type": "string",
+    "unit": "Integer (+g for gold value)",
+    "desc": "Determines the price for the respawn on the shelters outside the flag area",
+    "default": "2g"
+  },
+  "scum.SquadRespawnPrice": {
+    "type": "string",
+    "unit": "Integer (+g for gold value)",
+    "desc": "Price to respawn at squad member (not ingame? is it working?)",
+    "default": "3g"
+  },
+  "scum.RandomRespawnInitialTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Waiting time until random respawn is possible after the first death",
+    "default": "0",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.SectorRespawnInitialTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Waiting time until the sector respawn is possible after the first death",
+    "default": "60",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.ShelterRespawnInitialTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Waiting time until the hideout respawn is possible after the first death",
+    "default": "60",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.SquadRespawnInitialTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Waiting time until the squad member respawn is possible after the first death",
+    "default": "60",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.RandomRespawnCooldown": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Cooldown time for random spawn after multiple deaths (added to the standard waiting time)",
+    "default": "0",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.SectorRespawnCooldown": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Cooldown time for the sector spawn after multiple deaths (added to the standard waiting time)",
+    "default": "240",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.ShelterRespawnCooldown": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Cooldown time for the hideout spawn after multiple deaths (added to the standard waiting time)",
+    "default": "240",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.SquadRespawnCooldown": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Cooldown time for squad member spawn after multiple deaths (added to the standard waiting time)",
+    "default": "60",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.RandomCooldownResetMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Is multiplied by cooldown time and results in time after which the cooldown is reset to its default value for random respawn",
+    "default": "0",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SectorCooldownResetMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Is multiplied by cooldown time and results in time after which the cooldown is reset to its default value for the sector respawn",
+    "default": "3",
+    "min": 0,
+    "max": 10
+  },
+  "scum.ShelterCooldownResetMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Is multiplied by cooldown time and results in time after which the cooldown is reset to its default value for the hideout respawn",
+    "default": "3",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SquadCooldownResetMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Is multiplied by cooldown time and results in time after which the cooldown is reset to its default value for the squad member respawn",
+    "default": "2",
+    "min": 0,
+    "max": 10
+  },
+  "scum.RandomPricePerSquadmateModifier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the random respawn price per squad member (e.g. price is 100, 3 squad members and multiplier is 1, so 100*(3x1)=300)",
+    "default": "0",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SectorPricePerSquadmateModifier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the sector respawn price per squad member (e.g. price is 100, 3 squad members and multiplier is 1 so 100*(3x1)=300)",
+    "default": "0",
+    "min": 0,
+    "max": 10
+  },
+  "scum.ShelterPricePerSquadmateModifier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the hideout respawn price per squad member (e.g. price is 100, 3 squad members and multiplier is 1 so 100*(3x1)=300)",
+    "default": "0",
+    "min": 0,
+    "max": 10
+  },
+  "scum.CommitSuicideInitialTime": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Waiting time until suicide is available",
+    "default": "0",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.CommitSuicideCooldown": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Cooldown time for suicide after use",
+    "default": "60",
+    "min": 0,
+    "max": 18000
+  },
+  "scum.CommitSuicideCooldownResetMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for cooldown time after multiple uses before cooldown is reset",
+    "default": "1.25",
+    "min": 0,
+    "max": 10
+  },
+  "scum.MaximumBaseProximityWhenSpawning": {
+    "type": "number",
+    "unit": "Meter",
+    "desc": "Minimum distance to enemy flags when respawning (not clear if option has any effect at the moment)",
+    "default": "10000",
+    "min": 0,
+    "max": 100000
+  },
+  "scum.PermadeathThreshold": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Limit of negative account balance at which the player is deleted (permadeath)",
+    "default": "-2500",
+    "min": -1000000,
+    "max": 2147483646
+  },
+  "scum.FuelDrainFromEngineMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Multiplier for fuel consumption of all engines",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.BatteryDrainFromEngineMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Multiplier for battery consumption of all engines",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.BatteryDrainFromDevicesMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Multiplier for battery consumption of all electrical devices",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.BatteryDrainFromInactivityMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Multiplier for battery consumption due to inactivity of a device or motor",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.BatteryChargeWithAlternatorMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Multiplier for battery charging rate by alternator",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.BatteryChargeWithDynamoMultiplier": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Multiplier for battery charging rate by generators",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.KingletDusterMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of aircraft",
+    "default": "2",
+    "min": 0,
+    "max": 128
+  },
+  "scum.KingletDusterMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of aircraft that function (with engine) (to test - does have an impact?)",
+    "default": "2",
+    "min": 0,
+    "max": 128
+  },
+  "scum.KingletDusterMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of aircraft available for sale at the dealer (to test - does have an impact?)",
+    "default": "0",
+    "min": 0,
+    "max": 128
+  },
+  "scum.DirtbikeMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of motorcycles (dirt bikes)",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.DirtbikeMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of motorcycles (dirt bikes) that work (with engine)",
+    "default": "15",
+    "min": 0,
+    "max": 128
+  },
+  "scum.DirtbikeMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of motorcycles (dirt bikes) available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.LaikaMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of Laika",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.LaikaMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of Laika that work (with engine)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.LaikaMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of Laika available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.MotorboatMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of boats (motorboat)",
+    "default": "11",
+    "min": 0,
+    "max": 128
+  },
+  "scum.MotorboatMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of boats (motorboat) that work",
+    "default": "11",
+    "min": 0,
+    "max": 128
+  },
+  "scum.MotorboatMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of boats (motorboats) available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.WheelbarrowMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of wheelbarrows",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.WheelbarrowMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of wheelbarrows that work (to test - does have an impact?)",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.WheelbarrowMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of wheelbarrows available for sale at the dealer",
+    "default": "10",
+    "min": 0,
+    "max": 128
+  },
+  "scum.WolfswagenMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of Wolfswagen",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.WolfswagenMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of Wolfswagen that work (with engine)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.WolfswagenMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of Wolfswagen available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.BicycleMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of bicycles",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.BicycleMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of bicycles that work",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.BicycleMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of bicycles available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.RagerMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of ragers",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.RagerMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of working ragers (with engine)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.RagerMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of Ragers available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.CruiserMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of cruisers",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.CruiserMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of cruisers that work (with engine)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.CruiserMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of cruisers available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.RisMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of quads (RIS)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.RisMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of quads (RIS) that work (with engine)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.RisMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of quads (RIS) available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.DinghyMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum amount of Dingies on the server",
+    "default": "14",
+    "min": 0,
+    "max": 128
+  },
+  "scum.DinghyMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum amount of functional Dinghies spawning",
+    "default": "14",
+    "min": 0,
+    "max": 128
+  },
+  "scum.DinghyMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum amount of Dinghies or dinghy engines available to buy",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.SUPMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of SUPs",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.SUPMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of SUPs that work (to test - does have an impact?)",
+    "default": "20",
+    "min": 0,
+    "max": 128
+  },
+  "scum.SUPMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of SUPs available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.KingletMarinerMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of seaplanes (Kinglet Mariner)",
+    "default": "1",
+    "min": 0,
+    "max": 128
+  },
+  "scum.KingletMarinerMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of seaplanes (Kinglet Mariner) that operate",
+    "default": "1",
+    "min": 0,
+    "max": 128
+  },
+  "scum.KingletMarinerMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of seaplanes (Kinglet Mariner) available for sale at the dealer",
+    "default": "0",
+    "min": 0,
+    "max": 128
+  },
+  "scum.TractorMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of tractors",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.TractorMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of tractors that work (with engine)",
+    "default": "50",
+    "min": 0,
+    "max": 128
+  },
+  "scum.TractorMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum number of tractors available for sale at the dealer",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.SidecarBikeMaxAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum amount of Sidecar bikes on the server",
+    "default": "25",
+    "min": 0,
+    "max": 128
+  },
+  "scum.SidecarBikeMaxFunctionalAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum amount of functional Sidecar bikes spawning",
+    "default": "25",
+    "min": 0,
+    "max": 128
+  },
+  "scum.SidecarBikeMinPurchasedAmount": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Minimum amount of Sidecar bikes or Sidecar bike engines available to buy",
+    "default": "5",
+    "min": 0,
+    "max": 128
+  },
+  "scum.MaximumTimeOfVehicleInactivity": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Time until a vehicle is considered inactive and removed from the world",
+    "default": "240:00:00"
+  },
+  "scum.MaximumTimeForVehiclesInForbiddenZones": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Time that vehicles may remain in prohibited zones (e.g. dealers) before they are removed",
+    "default": "02:00:00"
+  },
+  "scum.LogVehicleDestroyed": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a log should be created about the destroyed vehicles (True=log is created)",
+    "default": "True"
+  },
+  "scum.HumanToHumanDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage between two people (higher = more damage) (also affects NPCs)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.HumanToHumanArmedMeleeDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage between two people with melee weapons (higher = more damage) (also affects NPCs)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.HumanToHumanUnarmedMeleeDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage between two people with fists (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.HumanToHumanThrowingDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage between two people with thrown objects (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SentryDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage caused by the sentries (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SentryRailgunDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage that sentries cause with their railgun (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SentryGrenadeDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage caused by sentries' grenades (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.BaseBuildingAttackerSentryDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage that BB elements receive in an encounter (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.BaseBuildingAttackerSentryRailgunDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage that Mechs inflict with the rail gun in the BaseBuilding Encounter (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.BaseBuildingAttackerSentryGrenadeDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage caused by mechs with grenades in base building encounters (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SentryBaseBuildingDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage caused by Mechs in BB Encounters (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.DropshipDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage that dropships cause to characters (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.DropshipRailgunDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage caused by a dropship's rail gun (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.DropshipBaseBuildingElementsDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage that dropships cause to BB elements (higher = more damage)",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.ZombieDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for damage caused by zombies (higher = more damage)",
+    "default": "0.5",
+    "min": 0,
+    "max": 10
+  },
+  "scum.ItemDecayDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the damage that items gradually receive (higher = items decay faster) (value 1.0= roughly 1.4% decay per 24 hours)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.FoodDecayDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Food decay multiplier (higher = food decays faster)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WeaponDecayDamageOnFiring": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the wear and tear of a weapon when firing (higher = weapons wear out faster)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.LockProtectionDamageMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the damage caused by locks (higher = more damage) (excluding killbox locks)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.FlagOvertakeDuration": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "How long it takes to capture an enemy flag",
+    "default": "24:00:00"
+  },
+  "scum.MaximumAmountOfElementsPerFlag": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of base elements that can be built per flag",
+    "default": "100",
+    "min": 1,
+    "max": 9999
+  },
+  "scum.ExtraElementsPerFlagForAdditionalSquadMember": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Additional elements that can be built per flag per squad member except the first",
+    "default": "25",
+    "min": 1,
+    "max": 100
+  },
+  "scum.MaximumNumberOfExpandedElementsPerFlag": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "By how many elements the total number of possible elements can be expanded using base expansion kits",
+    "default": "75",
+    "min": 1,
+    "max": 500
+  },
+  "scum.AllowMultipleFlagsPerPlayer": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether players may built multiple flags or only one (True=multiple flags possible)",
+    "default": "False"
+  },
+  "scum.AllowFlagPlacementOnBBElements": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether flags may be built on BB elements (True=flags on base elements possible)",
+    "default": "False"
+  },
+  "scum.ChestAcquisitionDuration": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Time before an enemy chest becomes your property if it is in your flag area",
+    "default": "24",
+    "min": 0,
+    "max": 9999
+  },
+  "scum.WeaponRackMaxAmountPerFlagArea": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of weapon racks per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WeaponRackStartDecayingIfFlagAreaHasMoreThan": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Weapon racks start to decay faster when there are more than X per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WallWeaponRackMaxAmountPerFlagArea": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of wall weapon racks per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WallWeaponRackStartDecayingIfFlagAreaHasMoreThan": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Wall weapon racks start to decay faster when there are more than X per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WellMaxAmountPerFlagArea": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of wells per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WellStartDecayingIfFlagAreaHasMoreThan": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Wells begin to decay when there are more than X per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.TurretMaxAmountPerFlagArea": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of turrets per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.TurretStartDecayingIfFlagAreaHasMoreThan": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Turrets start to decay faster if there are more than X per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.OvenMaxAmountPerFlagArea": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Determines the maximum number of ovens per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.OvenStartDecayingIfFlagAreaHasMoreThan": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Determines the maximum number of ovens per flag area before they start decaying at an increased pace",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GardenMaxAmountPerFlagArea": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of gardens per flag area",
+    "default": "-1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.AllowFloorPlacementOnHalfAndLowWalls": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Allows placing floors on half-height or low walls (True= allowed)",
+    "default": "False"
+  },
+  "scum.AllowWallPlacementOnHalfAndLowWalls": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Allows placing walls on half-height or low walls (True= allowed)",
+    "default": "True"
+  },
+  "scum.BaseBuildingDestructionLogDamageThreshold": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Damage threshold for the base building destruction log, which outputs the last 10 instances of damage for each destroyed base building element. Only damage instances that would make more or the same damage as the threshold are logged.",
+    "default": "20",
+    "min": 0,
+    "max": 999
+  },
+  "scum.RaidProtectionType": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Sets the type of raid protection (0=Off;1=Offline(when everyone is offline);2=Flag-specific(activated by the flag);3=Global(whole server))",
+    "default": "0",
+    "min": 0,
+    "max": 3
+  },
+  "scum.RaidProtectionEnableLog": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Enables logging for raid protection events (True= active)",
+    "default": "False"
+  },
+  "scum.RaidProtectionFlagSpecificChangeSettingCooldown": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Cooldown between setting new times for flag-specific raid protection",
+    "default": "120:00:00"
+  },
+  "scum.RaidProtectionFlagSpecificChangeSettingPrice": {
+    "type": "string",
+    "unit": "Integer (+g for gold value)",
+    "desc": "Price to skip cooldown for flag-specific raid protection",
+    "default": "10g"
+  },
+  "scum.RaidProtectionFlagSpecificMaxProtectionTime": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Maximum duration of flag-specific raid protection",
+    "default": "08:00:00"
+  },
+  "scum.RaidProtectionOfflineProtectionStartDelay": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Time the base is still vulnerable after the last player has logged out",
+    "default": "00:30:00"
+  },
+  "scum.RaidProtectionGlobalShouldShowRaidTimesMessage": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Should clients be shown a message about the global raid time (True=yes)",
+    "default": "True"
+  },
+  "scum.RaidProtectionGlobalShouldShowRaidAnnouncementMessage": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Should clients be shown a raid announcement message (True=yes)",
+    "default": "True"
+  },
+  "scum.RaidProtectionGlobalShouldShowRaidStartEndMessages": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Should clients be shown a start and end message (True=yes)",
+    "default": "True"
+  },
+  "scum.WaterPricePerUnitMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "not in use",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterPeriodicInitialAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "not in use",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterPeriodicMaxAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the maximum water quantity in BB water tanks (BB well)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterPeriodicReplenishAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the amount of water that is refilled at certain intervals (BB well)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterPeriodicReplenishIntervalMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the intervals at which water is refilled (BB well)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterProximityReplenishAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the amount of water refilled in wells around the world (World Wells)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterProximityReplenishChanceMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the chance that a world well is refilled (World Well)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.WaterProximityReplenishTimeoutMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the time between individual checks whether a world well is refilled (World Well)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolinePricePerUnitMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the fuel price per liter at gas stations (1=approx. $15 per liter)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolinePeriodicInitialAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the initial amount of fuel at petrol stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolinePeriodicMaxAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the maximum amount of fuel in petrol stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolinePeriodicReplenishAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the amount of fuel that is refilled at certain intervals in petrol stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolinePeriodicReplenishIntervalMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the interval at which petrol stations are refilled with fuel",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolineProximityReplenishAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Was allegedly added although option already existed, not yet clear what is handled",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolineProximityReplenishChanceMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Was allegedly added although option already existed, not yet clear what is handled",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.GasolineProximityReplenishTimeoutMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Was allegedly added although option already existed, not yet clear what is handled",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropanePricePerUnitMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the propane price per liter at gas stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropanePeriodicInitialAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the initial amount of propane in propane tanks at gas stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropanePeriodicMaxAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the maximum amount of propane in gas stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropanePeriodicReplenishAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the amount of propane that is refilled at certain intervals in gas stations",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropanePeriodicReplenishIntervalMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the interval at which gas stations are refilled with propane",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropaneProximityReplenishAmountMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "not in use",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropaneProximityReplenishChanceMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "not in use",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.PropaneProximityReplenishTimeoutMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "not in use",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SpawnerProbabilityMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the probability that a world item spawns (items that are lying around freely)",
+    "default": "2",
+    "min": 0.1,
+    "max": 10
+  },
+  "scum.ExamineSpawnerProbabilityMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the probability that a container you examine will spawn an item",
+    "default": "5",
+    "min": 0.1,
+    "max": 10
+  },
+  "scum.ExamineSpawnerExpirationTimeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the time without a player nearby (50m) after which a container decides whether it contains items (1=60min;0.5=30min)",
+    "default": "0.5",
+    "min": 0.1,
+    "max": 10
+  },
+  "scum.SpawnerExpirationTimeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the time without players nearby (50m) after which a world spawner decides whether to spawn items (1=60min;0.5=30min)",
+    "default": "0.5",
+    "min": 0.1,
+    "max": 10
+  },
+  "scum.EnableItemCooldownGroups": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether certain items should be grouped into cooldown groups to prevent item farming (cooldown when certain rare items are found, on the same group of items)",
+    "default": "True"
+  },
+  "scum.ItemCooldownGroupsDurationMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the time of cooldown groups before items from the group can be found again (higher values = higher cooldown)",
+    "default": "1",
+    "min": 0.1,
+    "max": 10
+  },
+  "scum.SquadMemberCountAtIntLevel1": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Number of possible team members at INT level 1",
+    "default": "2",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SquadMemberCountAtIntLevel2": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Number of possible team members at INT level 2",
+    "default": "4",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SquadMemberCountAtIntLevel3": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Number of possible team members at INT level 3",
+    "default": "6",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SquadMemberCountAtIntLevel4": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Number of possible team members at INT level 4",
+    "default": "8",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SquadMemberCountAtIntLevel5": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Number of possible team members at INT level 5",
+    "default": "10",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SquadMemberCountLimitForPunishment": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of squad mates for which prisoners will not receive a penalty",
+    "default": "2",
+    "min": 0,
+    "max": 64
+  },
+  "scum.RTSquadProbationDuration": {
+    "type": "number",
+    "unit": "Days",
+    "desc": "Probationary period for a squad member who leaves and rejoins the squad",
+    "default": "1",
+    "min": 0,
+    "max": 100
+  },
+  "scum.SquadMoneyPenaltyPerPrevSquadMember": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Money that prisoners have to pay per squad member in a former squad to join or form a new one",
+    "default": "0",
+    "min": 0,
+    "max": 100000
+  },
+  "scum.SquadFamePointsPenaltyPerPrevSquadMember": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Fame points that must be lost per squad member in a former squad to join or form a new one",
+    "default": "0",
+    "min": 0,
+    "max": 1000
+  },
+  "scum.EnableSquadMemberNameWidget": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether a widget with the name should be displayed above the heads of team members (True=Widget on)",
+    "default": "False"
+  },
+  "scum.PlantHarvestExamineTimeMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for the expiration time of harvested products in plants after they have grown",
+    "default": "1",
+    "min": 0.2,
+    "max": 10
+  },
+  "scum.FirstPlantHarvestAdditionalChance": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Percent chance that harvest products spawn at the first plant harvest (1=100%)",
+    "default": "1",
+    "min": 0,
+    "max": 1
+  },
+  "scum.ArcherySkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain in archery (higher = more xp per action)",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.AviationSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when flying aircraft",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.AwarenessSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain during perception training",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.BrawlingSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain in fistfights",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.CamouflageSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when camouflaging",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.CookingSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when cooking",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.DemolitionSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain in explosives crafting",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.DrivingSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when driving a car",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.EnduranceSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain in endurance activities",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.EngineeringSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain in engineering",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.FarmingSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when farming",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.HandgunSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when shooting with a pistol",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.MedicalSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain from medical actions",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.MeleeWeaponsSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain with melee weapons",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.MotorcycleSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when riding a motorcycle",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.RiflesSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when shooting rifles",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.RunningSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain while running",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SnipingSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain during sniper training",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.StealthSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when sneaking",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.SurvivalSkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain in survival training",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.ThieverySkillMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for XP gain when stealing",
+    "default": "1",
+    "min": 0,
+    "max": 10
+  },
+  "scum.QuestsEnabled": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the quest system is active (True=active)",
+    "default": "True"
+  },
+  "scum.QuestsGlobalCycleDuration": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Duration of the quest cycle",
+    "default": "23:59:59"
+  },
+  "scum.MaxQuestsPerCyclePerTrader": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of quests that can be accepted per merchant per cycle",
+    "default": "3",
+    "min": 1,
+    "max": 64
+  },
+  "scum.MaxSimultaneousQuestsPerTrader": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Maximum number of quests accepted simultaneously per merchant",
+    "default": "1",
+    "min": 1,
+    "max": 64
+  },
+  "scum.QuestsTraderRefillCooldown": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Cooldown for new quests from merchants",
+    "default": "03:00:00"
+  },
+  "scum.QuestsPhoneRefillCooldown": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Cooldown for new quests on smartphones",
+    "default": "01:00:00"
+  },
+  "scum.QuestsNoticeBoardRefillCooldown": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Cooldown for new quests on notice boards",
+    "default": "02:00:00"
+  },
+  "scum.QuestRequirementsBlockTradeableItems": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the purchase of quest-relevant items is blocked (True=blocked)",
+    "default": "False"
+  },
+  "scum.TurretsAttackPrisoners": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether gun turrets attack prisoners (True=yes)",
+    "default": "True"
+  },
+  "scum.TurretsAttackPuppets": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether turrets attack zombies (True=yes)",
+    "default": "True"
+  },
+  "scum.TurretsAttackVehicles": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether turrets attack vehicles (True=yes)",
+    "default": "True"
+  },
+  "scum.TurretsAttackSentries": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether turrets attack Mechs (True=yes)",
+    "default": "True"
+  },
+  "scum.TurretsAttackAnimals": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether gun turrets attack animals (True=yes)",
+    "default": "True"
+  },
+  "scum.TurretsAttackArmedNPCs": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether turrets attack human NPCs (True=yes)",
+    "default": "True"
+  },
+  "scum.MovementInertiaAmount": {
+    "type": "number",
+    "unit": "Decimal number",
+    "desc": "Character's movement inertia value (no effect detected in the test)",
+    "default": "1",
+    "min": 0,
+    "max": 1
+  },
+  "scum.StaminaDrainOnJumpMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for stamina costs when jumping (higher = more stamina costs)",
+    "default": "1",
+    "min": 0,
+    "max": 5
+  },
+  "scum.StaminaDrainOnClimbMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for stamina costs when climbing (higher = more stamina costs)",
+    "default": "1",
+    "min": 0,
+    "max": 5
+  },
+  "scum.BodySimulationSpeedMultiplier": {
+    "type": "number",
+    "unit": "Multiplier",
+    "desc": "Multiplier for body simulation speed (digestion, etc.)",
+    "default": "3.84",
+    "min": 0.1,
+    "max": 8
+  },
+  "scum.MaintainItemsExpirationTime": {
+    "type": "string",
+    "unit": "h:m:s",
+    "desc": "Expiration time of maintenance items (beds, etc.) before they expire if no interaction has taken place",
+    "default": "360:00:00"
+  },
+  "scum.KillboxDefuseFailureBonus": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Additional time in seconds for failed killbox defusing attempts",
+    "default": "0.2",
+    "min": 0,
+    "max": 5
+  },
+  "scum.BedrollVisibilityTimer": {
+    "type": "number",
+    "unit": "Seconds",
+    "desc": "Time a sleeping bag is visible to other players after a player logs out",
+    "default": "1",
+    "min": 1,
+    "max": 43200
+  },
+  "scum.EnableBCULocking": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the BCU lock can be used (True=activated)",
+    "default": "True"
+  },
+  "scum.NameChangeCooldown": {
+    "type": "number",
+    "unit": "Hours",
+    "desc": "Cooldown time before a character name change is possible again",
+    "default": "168",
+    "min": 0,
+    "max": 720
+  },
+  "scum.NameChangeCost": {
+    "type": "number",
+    "unit": "Integer",
+    "desc": "Price for changing the character's name",
+    "default": "1000",
+    "min": 0,
+    "max": 1000000000
+  },
+  "scum.EnableNewPlayerProtection": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Enable or disable protection for new players (True=enabled)",
+    "default": "True"
+  },
+  "scum.NewPlayerProtectionDuration": {
+    "type": "number",
+    "unit": "Minutes",
+    "desc": "Duration of protection for new players",
+    "default": "120",
+    "min": 120,
+    "max": 1140
+  },
+  "scum.AllowAutomaticParachuteOpening": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the parachute opens automatically shortly before the ground (True=automatic opening activated)",
+    "default": "True"
+  },
+  "scum.HideQuickAccessBar": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the quickbar slots should be displayed in the HUD (True=not displayed)",
+    "default": "False"
+  },
+  "scum.HideLifeIndicators": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the character stats (health, stamina, ...) are displayed in the HUD (True=not displayed)",
+    "default": "False"
+  },
+  "scum.EnableDeenaOnServer": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether Deena is activated on the server (True=activated)",
+    "default": "True"
+  },
+  "scum.EnableDigitalDeluxeStarterPack": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the Digital Deluxe Starter Pack is usable (True=usable)",
+    "default": "True"
+  },
+  "scum.EnableDigitalDeluxeFreeGoldCard": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Whether the Free Gold Card from the Digital Deluxe Starter Pack can be received (True=can be received)",
+    "default": "True"
+  },
+  "scum.EnableNetWatchdog": {
+    "type": "boolean",
+    "unit": "Boolean",
+    "desc": "Server protection against players circumventing ping limits (False= off, True= on)",
+    "default": "False"
+  }
+}

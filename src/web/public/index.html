@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d0e0a" />
+  <title>SCUM Server Automation</title>
+  <link rel="icon" href="logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Setup wizard (first-time only) ─────────────────────────────────────── -->
+  <div id="setup-screen" class="screen hidden setup-center">
+
+    <!-- Step 1: configuration form -->
+    <div id="su-form-wrap" class="setup-box">
+      <div class="setup-brand">
+        <img src="logo.png" alt="SCUM" />
+        <h1>SCUM Server Automation</h1>
+      </div>
+      <p class="setup-intro">First-time setup — fill in the basics to get started.</p>
+
+      <form id="su-form">
+        <fieldset class="settings-group">
+          <legend>Server</legend>
+          <div class="settings-field">
+            <label for="su-serverDir">SCUM server directory</label>
+            <input id="su-serverDir" type="text" placeholder="C:\SCUM\server" required />
+          </div>
+          <div class="settings-field">
+            <label for="su-backupRoot">Backup directory <span class="su-optional">(optional)</span></label>
+            <input id="su-backupRoot" type="text" placeholder="Auto: sibling Backups folder" />
+          </div>
+          <div class="settings-field">
+            <label for="su-serviceName">Windows service name <span class="su-optional">(no spaces)</span></label>
+            <input id="su-serviceName" type="text" value="SCUMSERVER" />
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Network</legend>
+          <div class="settings-field">
+            <label for="su-publicIP">Public IP address</label>
+            <input id="su-publicIP" type="text" placeholder="Your server's public IP" />
+          </div>
+          <div class="settings-field">
+            <label for="su-serverPort">Game port <span class="su-optional">(-port=)</span></label>
+            <input id="su-serverPort" type="number" value="7042" />
+          </div>
+          <div class="settings-field">
+            <label for="su-queryPort">Query port <span class="su-optional">(-QueryPort=)</span></label>
+            <input id="su-queryPort" type="number" value="7043" />
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Server launch options</legend>
+          <div class="settings-field">
+            <label for="su-maxPlayers">Max players <span class="su-optional">(-MaxPlayers=)</span></label>
+            <input id="su-maxPlayers" type="number" value="64" min="1" max="100" />
+          </div>
+          <div class="settings-field checkbox">
+            <input id="su-nobattleye" type="checkbox" />
+            <label for="su-nobattleye">Disable BattlEye <span class="su-optional">(-nobattleye)</span></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Web Panel</legend>
+          <div class="settings-field">
+            <label for="su-webPassword">Admin password <span style="color:#f87171">*</span></label>
+            <input id="su-webPassword" type="password" required />
+          </div>
+          <div class="settings-field">
+            <label for="su-webPort">Web port</label>
+            <input id="su-webPort" type="number" value="8080" />
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
+          <legend>Discord <span class="su-optional">(optional)</span></legend>
+          <div class="settings-field">
+            <label for="su-discordToken">Bot token</label>
+            <input id="su-discordToken" type="text" placeholder="Leave empty to disable Discord" />
+          </div>
+          <div class="settings-field">
+            <label for="su-guildId">Guild / Server ID</label>
+            <input id="su-guildId" type="text" placeholder="Right-click server → Copy Server ID" />
+          </div>
+        </fieldset>
+
+        <p id="su-error" class="error"></p>
+        <button type="submit" id="su-save-btn">Save &amp; Install SCUM Server →</button>
+      </form>
+    </div>
+
+    <!-- Step 2: installation progress -->
+    <div id="su-install-wrap" class="setup-box hidden">
+      <div class="setup-brand">
+        <img src="logo.png" alt="SCUM" />
+        <h1>Installing SCUM Server</h1>
+      </div>
+      <p class="setup-intro">This may take 30–60 minutes. Do not close this window.</p>
+      <div id="su-progress-log" class="su-log"></div>
+      <div id="su-done-wrap" class="hidden" style="margin-top:1.2rem">
+        <p style="color:#4ade80;margin:0 0 0.5rem">Installation complete!</p>
+        <p style="color:#9aa0a8;font-size:.9em;margin:0">
+          Close the console window and run <strong>Start.bat</strong> again to begin managing your server.
+        </p>
+      </div>
+      <div id="su-error-wrap" class="hidden" style="margin-top:1rem">
+        <p id="su-install-error" style="color:#f87171;margin:0"></p>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="login-screen" class="screen">
+    <form id="login-form" class="login-box">
+      <img src="logo.png" alt="SCUM" class="login-logo" />
+      <p class="login-tagline">Server Automation</p>
+      <h1>Restricted Access</h1>
+      <input type="password" id="password" placeholder="Admin password" autocomplete="current-password" required />
+      <button type="submit">Authenticate</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+
+  <div id="dashboard-screen" class="screen hidden">
+    <header>
+      <div class="brand">
+        <img src="logo.png" alt="SCUM" class="brand-logo" />
+        <div class="brand-text">
+          <span class="brand-title">SCUM</span>
+          <span class="brand-sub">Server Automation</span>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <button id="discord-btn" class="secondary">Discord</button>
+        <button id="game-settings-btn" class="secondary">Game Settings</button>
+        <button id="settings-btn" class="secondary">Settings</button>
+        <button id="logout-btn" class="secondary">Logout</button>
+      </div>
+    </header>
+
+    <section class="status-card viewport">
+      <div class="panel-eyebrow">
+        <span class="live-dot"></span> Vitals
+        <span class="feed-id">FEED&nbsp;01</span>
+      </div>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="label">Status</span>
+          <span id="status-value" class="value badge">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Players</span>
+          <span id="players-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">FPS</span>
+          <span id="fps-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">CPU</span>
+          <span id="cpu-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Memory</span>
+          <span id="memory-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Entities</span>
+          <span id="entities-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Service</span>
+          <span id="service-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Last update</span>
+          <span id="lastupdate-value" class="value">-</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="start-btn">Start</button>
+      <button id="stop-btn" class="danger">Stop</button>
+      <button id="restart-btn" class="warning">Restart</button>
+      <button id="backup-btn" class="secondary">Backup now</button>
+      <button id="validate-btn" class="secondary">Validate files</button>
+      <button id="update-btn" class="secondary">Check &amp; update</button>
+      <span id="control-message"></span>
+    </section>
+
+    <section class="status-card">
+      <div class="panel-eyebrow">Operations <span class="feed-id">FEED&nbsp;02</span></div>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="label">Next restart</span>
+          <span id="next-restart-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Skip next restart</span>
+          <span class="value">
+            <label class="switch">
+              <input type="checkbox" id="skip-restart-toggle" />
+              <span id="skip-restart-label">No</span>
+            </label>
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="label">Last backup</span>
+          <span id="last-backup-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Backups</span>
+          <span id="backup-stats-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Installed version</span>
+          <span id="installed-version-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Update status</span>
+          <span id="update-status-value" class="value">-</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="status-card">
+      <div class="panel-eyebrow">World State <span class="feed-id">FEED&nbsp;03</span></div>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="label">Game time</span>
+          <span id="gametime-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Weather</span>
+          <span id="weather-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Total players</span>
+          <span id="totalplayers-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Active squads</span>
+          <span id="squads-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Vehicles</span>
+          <span id="vehicles-value" class="value">-</span>
+        </div>
+        <div class="status-item">
+          <span class="label">Bases</span>
+          <span id="bases-value" class="value">-</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="leaderboards">
+      <h2>Leaderboards</h2>
+      <div class="leaderboard-controls">
+        <select id="leaderboard-category"></select>
+        <label><input type="checkbox" id="leaderboard-weekly" /> Weekly</label>
+      </div>
+      <table id="leaderboard-table">
+        <thead><tr><th>#</th><th>Name</th><th>Value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="players">
+      <h2>Online players</h2>
+      <ul id="players-list"></ul>
+    </section>
+
+    <section class="logs">
+      <h2>Live server log</h2>
+      <pre id="log-tail"></pre>
+    </section>
+  </div>
+
+  <div id="settings-screen" class="screen hidden">
+    <header>
+      <div class="brand">
+        <img src="logo.png" alt="SCUM" class="brand-logo" />
+        <div class="brand-text">
+          <span class="brand-title">SCUM</span>
+          <span class="brand-sub">Server Automation</span>
+        </div>
+      </div>
+      <span class="page-tag">Settings</span>
+      <div class="nav-actions">
+        <button id="settings-save-btn">Save</button>
+        <button id="settings-close-btn" class="secondary">Back to dashboard</button>
+      </div>
+    </header>
+    <p class="settings-note">
+      Changes are written to <code>config/config.json</code>. Most settings require a restart of
+      the Node process to take effect. Discord token and web/session secrets are configured in
+      <code>.env</code>, not here.
+    </p>
+    <p id="settings-message" class="settings-message"></p>
+    <div class="settings-toolbar">
+      <input id="settings-search" type="text" class="settings-search" placeholder="🔍  Search settings by name…" autocomplete="off" />
+      <div class="settings-toolbar-actions">
+        <button id="settings-expand-all" type="button" class="secondary">Expand all</button>
+        <button id="settings-collapse-all" type="button" class="secondary">Collapse all</button>
+      </div>
+    </div>
+    <form id="settings-form" class="settings-form"></form>
+  </div>
+
+  <div id="game-settings-screen" class="screen hidden">
+    <header>
+      <div class="brand">
+        <img src="logo.png" alt="SCUM" class="brand-logo" />
+        <div class="brand-text">
+          <span class="brand-title">SCUM</span>
+          <span class="brand-sub">Server Automation</span>
+        </div>
+      </div>
+      <span class="page-tag">Game Settings</span>
+      <div class="nav-actions">
+        <button id="game-settings-close-btn" class="secondary">Back to dashboard</button>
+      </div>
+    </header>
+    <p class="settings-note">
+      Changes are written directly to SCUM server config files under
+      <code>SCUM/Saved/Config/WindowsServer/</code>. Most settings require a <strong>server restart</strong> to take effect.
+    </p>
+    <p id="game-settings-message" class="settings-message"></p>
+
+    <div class="gs-tabs">
+      <button class="gs-tab active" data-tab="server-settings">Server Settings</button>
+      <button class="gs-tab" data-tab="user-lists">User Lists</button>
+      <button class="gs-tab" data-tab="economy">Economy Override</button>
+      <button class="gs-tab" data-tab="raid-times">Raid Times</button>
+      <button class="gs-tab" data-tab="notifications">Notifications</button>
+    </div>
+
+    <div id="gs-tab-server-settings" class="gs-tab-content">
+      <div class="gs-tab-header">
+        <h2>ServerSettings.ini</h2>
+        <button id="gs-server-settings-save" class="gs-save-btn">Save</button>
+      </div>
+      <div class="settings-toolbar">
+        <input id="gs-ss-search" type="text" class="settings-search" placeholder="🔍  Search server settings…" autocomplete="off" />
+        <div class="settings-toolbar-actions">
+          <button id="gs-ss-expand" type="button" class="secondary">Expand all</button>
+          <button id="gs-ss-collapse" type="button" class="secondary">Collapse all</button>
+        </div>
+      </div>
+      <form id="gs-server-settings-form" class="settings-form gs-ini-form"></form>
+    </div>
+
+
+    <div id="gs-tab-user-lists" class="gs-tab-content hidden">
+      <div class="gs-user-lists">
+        <div class="gs-list-section">
+          <div class="gs-tab-header">
+            <h3>Admin Users</h3>
+            <button class="gs-save-btn" data-list="admin-users">Save</button>
+          </div>
+          <textarea id="gs-list-admin-users" rows="12" placeholder="One Steam ID per line"></textarea>
+        </div>
+        <div class="gs-list-section">
+          <div class="gs-tab-header">
+            <h3>Banned Users</h3>
+            <button class="gs-save-btn" data-list="banned-users">Save</button>
+          </div>
+          <textarea id="gs-list-banned-users" rows="12" placeholder="One Steam ID per line"></textarea>
+        </div>
+        <div class="gs-list-section">
+          <div class="gs-tab-header">
+            <h3>Exclusive Users</h3>
+            <button class="gs-save-btn" data-list="exclusive-users">Save</button>
+          </div>
+          <textarea id="gs-list-exclusive-users" rows="12" placeholder="One Steam ID per line"></textarea>
+        </div>
+        <div class="gs-list-section">
+          <div class="gs-tab-header">
+            <h3>Whitelisted Users</h3>
+            <button class="gs-save-btn" data-list="whitelisted-users">Save</button>
+          </div>
+          <textarea id="gs-list-whitelisted-users" rows="12" placeholder="One Steam ID per line"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div id="gs-tab-economy" class="gs-tab-content hidden">
+      <div class="gs-tab-header">
+        <h2>EconomyOverride.json</h2>
+        <div class="gs-btn-row">
+          <button class="secondary gs-json-validate" data-json="economy">Validate JSON</button>
+          <button class="gs-save-btn gs-json-save" data-json="economy">Save</button>
+        </div>
+      </div>
+      <p class="error hidden gs-json-error" data-json="economy"></p>
+      <textarea class="gs-code-textarea gs-json-textarea" data-json="economy" rows="32" spellcheck="false"></textarea>
+    </div>
+
+    <div id="gs-tab-raid-times" class="gs-tab-content hidden">
+      <div class="gs-tab-header">
+        <h2>RaidTimes.json</h2>
+        <div class="gs-btn-row">
+          <button class="secondary gs-json-validate" data-json="raid-times">Validate JSON</button>
+          <button class="gs-save-btn gs-json-save" data-json="raid-times">Save</button>
+        </div>
+      </div>
+      <p class="error hidden gs-json-error" data-json="raid-times"></p>
+      <textarea class="gs-code-textarea gs-json-textarea" data-json="raid-times" rows="32" spellcheck="false"></textarea>
+    </div>
+
+    <div id="gs-tab-notifications" class="gs-tab-content hidden">
+      <div class="gs-tab-header">
+        <h2>Notifications.json</h2>
+        <div class="gs-btn-row">
+          <button class="secondary gs-json-validate" data-json="notifications">Validate JSON</button>
+          <button class="gs-save-btn gs-json-save" data-json="notifications">Save</button>
+        </div>
+      </div>
+      <p class="error hidden gs-json-error" data-json="notifications"></p>
+      <textarea class="gs-code-textarea gs-json-textarea" data-json="notifications" rows="32" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div id="discord-screen" class="screen hidden">
+    <header>
+      <div class="brand">
+        <img src="logo.png" alt="SCUM" class="brand-logo" />
+        <div class="brand-text">
+          <span class="brand-title">SCUM</span>
+          <span class="brand-sub">Server Automation</span>
+        </div>
+      </div>
+      <span class="page-tag">Discord</span>
+      <div class="nav-actions">
+        <button id="discord-close-btn" class="secondary">Back to dashboard</button>
+      </div>
+    </header>
+    <p class="settings-note">
+      Manage Discord integration: post the account-linking panel embed, view linked accounts.
+      The bot must be running and <code>Discord.GuildId</code> must be set in
+      <code>config/config.json</code>.
+    </p>
+    <p id="discord-message" class="settings-message"></p>
+
+    <section class="settings-form">
+      <fieldset class="settings-group">
+        <legend>Account Linking Panel</legend>
+        <p style="font-size:.85em;color:#aaa;margin:0 0 12px">
+          Posts a persistent embed with Link / Check Status / Unlink buttons to a Discord channel.
+          Copy the <strong>Message ID</strong> from the first post and paste it below for future
+          updates so the same message is edited instead of a new one being created.
+        </p>
+        <div class="settings-field">
+          <label for="dc-panel-channel">Channel ID</label>
+          <input type="text" id="dc-panel-channel" placeholder="e.g. 1234567890123456789" />
+        </div>
+        <div class="settings-field">
+          <label for="dc-panel-msgid">Message ID (optional — to update existing)</label>
+          <input type="text" id="dc-panel-msgid" placeholder="Leave blank to create a new message" />
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="dc-panel-post-btn">Post Panel</button>
+        </div>
+        <p id="dc-panel-result" style="margin-top:8px;font-size:.85em"></p>
+      </fieldset>
+
+      <fieldset class="settings-group" style="margin-top:16px">
+        <legend>Linked Accounts</legend>
+        <p id="dc-linked-count" style="font-size:.85em;color:#aaa">Loading…</p>
+        <table id="dc-linked-table" style="width:100%;border-collapse:collapse;font-size:.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #333">Discord</th>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #333">Player</th>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #333">Steam ID</th>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #333">Linked At</th>
+            </tr>
+          </thead>
+          <tbody id="dc-linked-tbody"></tbody>
+        </table>
+      </fieldset>
+    </section>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

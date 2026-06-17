@@ -1,0 +1,1146 @@
+/* ════════════════════════════════════════════════════════════════════════
+   SCUM Server Automation — "TEC1 Field Terminal"
+   A tactical surveillance/telemetry console for the prison-island server.
+   Display: Chakra Petch · Data/readout: Share Tech Mono
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg:        #0d0e0a;
+  --bg-2:      #0a0b08;
+  --panel:     #161710;
+  --panel-2:   #1c1d14;
+  --inset:     #0b0c08;
+
+  --amber:     #f0820c;
+  --amber-hi:  #ff9a2e;
+  --online:    #6cbf3f;
+  --alarm:     #e5443f;
+  --standby:   #e0a92e;
+
+  --text:      #e4e2d6;
+  --muted:     #8e8f82;
+  --faint:     #63645a;
+
+  --line:      rgba(228, 226, 214, 0.09);
+  --line-2:    rgba(228, 226, 214, 0.05);
+  --line-amber: rgba(240, 130, 12, 0.30);
+
+  --mono: 'Share Tech Mono', 'Consolas', monospace;
+  --ui:   'Chakra Petch', 'Segoe UI', Tahoma, sans-serif;
+
+  --radius: 4px;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ui);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+}
+
+/* faint scanlines + vignette — surveillance-monitor atmosphere */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.018) 0,
+      rgba(255, 255, 255, 0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(120% 80% at 50% 0%, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+.hidden { display: none !important; }
+
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3 {
+  font-family: var(--ui);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+a { color: var(--amber); }
+
+code {
+  font-family: var(--mono);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  color: var(--amber-hi);
+  font-size: 0.9em;
+}
+
+.error {
+  color: var(--alarm);
+  font-size: 0.85rem;
+  margin: 0;
+  min-height: 1em;
+}
+
+/* ── Brand lockup ──────────────────────────────────────────────────────── */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  min-width: 0;
+}
+
+.brand-title {
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: 0.12em;
+}
+
+.brand-sub {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+/* ── Header / command bar ──────────────────────────────────────────────── */
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+button {
+  font-family: var(--ui);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.05s;
+}
+
+button:active { transform: translateY(1px); }
+
+header button,
+.nav-actions button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+header button:hover,
+.nav-actions button:hover {
+  border-color: var(--line-amber);
+  color: var(--amber-hi);
+}
+
+header button.secondary,
+.nav-actions button.secondary { background: var(--panel-2); }
+
+/* Save buttons in screen headers */
+#settings-save-btn {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1a1206;
+}
+#settings-save-btn:hover { background: var(--amber-hi); border-color: var(--amber-hi); color: #1a1206; }
+
+/* ── Panels ────────────────────────────────────────────────────────────── */
+
+.status-card,
+.leaderboards,
+.players,
+.logs {
+  margin: 1.25rem 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.15rem 1.4rem;
+}
+
+.status-card { margin-bottom: 0; }
+.status-card + .status-card { margin-top: 1.25rem; }
+.controls + .status-card { margin-top: 0; }
+
+/* Eyebrow label — names the feed each panel carries */
+.panel-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 1rem;
+}
+
+.panel-eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 7px var(--amber);
+}
+
+.panel-eyebrow .feed-id {
+  margin-left: auto;
+  color: var(--faint);
+  letter-spacing: 0.15em;
+}
+
+/* when a live dot is present, drop the static amber marker to avoid two dots */
+.panel-eyebrow:has(.live-dot)::before { display: none; }
+
+.panel-eyebrow .live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--online);
+  box-shadow: 0 0 8px var(--online);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* ── Vitals viewport (primary status panel) — the signature element ────── */
+
+.viewport {
+  position: relative;
+  border-color: var(--line-amber);
+}
+
+.viewport::before,
+.viewport::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--amber);
+  pointer-events: none;
+}
+
+.viewport::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.viewport::after  { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+/* ── Status grid / telemetry readouts ──────────────────────────────────── */
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1.1rem 1.4rem;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--line-2);
+}
+
+.status-item .label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.status-item .value {
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+/* ── Vitals badge ──────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  padding: 0.2rem 0.7rem 0.2rem 0.6rem;
+  border-radius: 3px;
+  font-family: var(--ui);
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.badge::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge.online {
+  color: var(--online);
+  border-color: rgba(108, 191, 63, 0.4);
+  background: rgba(108, 191, 63, 0.08);
+}
+.badge.online::before { box-shadow: 0 0 8px var(--online); }
+
+.badge.offline {
+  color: var(--alarm);
+  border-color: rgba(229, 68, 63, 0.4);
+  background: rgba(229, 68, 63, 0.08);
+}
+
+.badge.transitional {
+  color: var(--standby);
+  border-color: rgba(224, 169, 46, 0.4);
+  background: rgba(224, 169, 46, 0.08);
+}
+.badge.transitional::before { animation: pulse 1s ease-in-out infinite; }
+
+/* Win over `.status-item .value` font-size for the badge specifically */
+.status-item .value.badge { font-size: 0.9rem; }
+
+/* ── Controls ──────────────────────────────────────────────────────────── */
+
+.controls {
+  margin: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.controls button {
+  padding: 0.6rem 1.25rem;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.controls button:hover { border-color: var(--line-amber); color: var(--amber-hi); }
+
+/* Primary action — Start */
+#start-btn {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1a1206;
+}
+#start-btn:hover { background: var(--amber-hi); border-color: var(--amber-hi); color: #1a1206; }
+
+.controls button.danger { color: var(--alarm); border-color: rgba(229, 68, 63, 0.35); }
+.controls button.danger:hover { background: rgba(229, 68, 63, 0.12); color: var(--alarm); }
+
+.controls button.warning { color: var(--standby); border-color: rgba(224, 169, 46, 0.35); }
+.controls button.warning:hover { background: rgba(224, 169, 46, 0.12); color: var(--standby); }
+
+#control-message {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+/* ── Skip-restart switch ───────────────────────────────────────────────── */
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.switch input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--amber);
+}
+
+/* ── Section headers w/ feed tick ──────────────────────────────────────── */
+
+.leaderboards h2,
+.players h2,
+.logs h2 {
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+.leaderboards h2::before,
+.players h2::before,
+.logs h2::before {
+  content: "▸";
+  color: var(--amber);
+  margin-right: 0.55rem;
+  font-size: 0.9em;
+}
+
+/* ── Leaderboards ──────────────────────────────────────────────────────── */
+
+.leaderboard-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.leaderboard-controls select {
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+#leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+}
+
+#leaderboard-table th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--amber);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+}
+
+#leaderboard-table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line-2);
+}
+
+#leaderboard-table tbody tr:hover { background: rgba(240, 130, 12, 0.05); }
+
+/* ── Players list ──────────────────────────────────────────────────────── */
+
+#players-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+}
+
+#players-list li {
+  padding: 0.4rem 0.2rem;
+  border-bottom: 1px solid var(--line-2);
+}
+
+#players-list li:first-child::before {
+  content: none;
+}
+
+/* ── Live log feed ─────────────────────────────────────────────────────── */
+
+.logs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#log-tail {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 400px;
+  color: #b9c2ad;
+}
+
+/* ── App footer ────────────────────────────────────────────────────────── */
+
+.app-footer {
+  margin: auto 1.5rem 1.25rem;   /* margin-top:auto pins it to the bottom of the screen */
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* page identifier chip shown in sub-screen headers */
+.page-tag {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--amber);
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--line-amber);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.app-footer-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.app-footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.14s;
+}
+
+.app-footer-links a:hover {
+  color: var(--amber-hi);
+}
+
+/* ── Login screen ──────────────────────────────────────────────────────── */
+
+#login-screen {
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.login-box {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line-amber);
+  padding: 2.25rem 2rem 2rem;
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 320px;
+  text-align: center;
+}
+
+.login-box::before,
+.login-box::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--amber);
+  pointer-events: none;
+}
+.login-box::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.login-box::after  { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+.login-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  margin: 0 auto 0.25rem;
+  border: 1px solid var(--line);
+}
+
+.login-box h1 {
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.login-box .login-tagline {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 0.5rem;
+}
+
+.login-box input {
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--text);
+  font-family: var(--mono);
+  text-align: center;
+  letter-spacing: 0.1em;
+}
+
+.login-box input:focus { outline: none; border-color: var(--amber); }
+
+.login-box button {
+  padding: 0.6rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--amber);
+  background: var(--amber);
+  color: #1a1206;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.login-box button:hover { background: var(--amber-hi); border-color: var(--amber-hi); }
+
+/* ── Settings / Game Settings / Discord notes ──────────────────────────── */
+
+.settings-note, .settings-message {
+  margin: 0 1.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.settings-note { margin-top: 1rem; line-height: 1.6; }
+
+.settings-message {
+  font-family: var(--mono);
+  letter-spacing: 0.03em;
+}
+.settings-message.success { color: var(--online); }
+.settings-message.error { color: var(--alarm); }
+
+.settings-form {
+  margin: 1rem 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Settings search toolbar + collapsible categories ──────────────────── */
+
+.settings-toolbar {
+  margin: 1rem 1.5rem 0;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Inside the Game Settings tab the container already has horizontal margin */
+.gs-tab-content .settings-toolbar {
+  margin: 0 0 1rem;
+}
+
+.settings-search {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+.settings-search:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px rgba(240, 130, 12, 0.25);
+}
+
+.settings-toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.settings-toolbar-actions button {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-toolbar-actions button:hover { border-color: var(--line-amber); color: var(--amber-hi); }
+
+.settings-category {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.settings-category[open] { border-color: var(--line-amber); }
+
+.settings-cat-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.95rem 1.3rem;
+  user-select: none;
+}
+
+.settings-cat-summary::-webkit-details-marker { display: none; }
+.settings-cat-summary:hover .settings-cat-title { color: var(--amber-hi); }
+
+.settings-cat-title {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.settings-cat-title::before {
+  content: "▸";
+  color: var(--amber);
+  margin-right: 0.6rem;
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.settings-category[open] .settings-cat-title::before { transform: rotate(90deg); }
+
+.settings-cat-desc {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  margin-top: 0.3rem;
+  padding-left: 1.2rem;
+}
+
+.settings-cat-body {
+  padding: 0.4rem 1.3rem 1.2rem;
+  border-top: 1px solid var(--line);
+}
+
+.settings-cat-body > .settings-field:first-child { margin-top: 0.8rem; }
+
+.settings-cat-body .settings-group {
+  background: var(--bg-2);
+  margin-top: 0.85rem;
+}
+
+.filtered-hidden { display: none !important; }
+
+/* INI setting metadata: unit/type badge + description help text */
+.ini-type {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--line-amber);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  vertical-align: middle;
+}
+
+.ini-desc {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* checkbox rows need to wrap so the description sits on its own line */
+.settings-field.checkbox { flex-wrap: wrap; }
+.settings-field.checkbox .ini-desc { flex-basis: 100%; margin-top: 0.35rem; }
+
+.settings-group {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.4rem 1.2rem;
+}
+
+.settings-group > legend {
+  font-weight: 600;
+  padding: 0 0.5rem;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--amber);
+}
+
+.settings-group .settings-group {
+  background: var(--bg-2);
+  margin-top: 0.75rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.7rem 0;
+}
+
+.settings-field.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-field label {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settings-field input[type="text"],
+.settings-field input[type="number"],
+.settings-field input[type="password"],
+.settings-field textarea,
+.setup-box .settings-field input {
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.settings-field input:focus,
+.settings-field textarea:focus,
+.setup-box .settings-field input:focus,
+.login-box input:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px rgba(240, 130, 12, 0.25);
+}
+
+.settings-field textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+  white-space: pre;
+}
+
+.settings-field input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--amber);
+}
+
+/* ── Game Settings tabs ────────────────────────────────────────────────── */
+
+.gs-tabs {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin: 1.2rem 1.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.gs-tab {
+  padding: 0.55rem 1.1rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gs-tab:hover { color: var(--text); }
+
+.gs-tab.active {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--amber);
+  margin-bottom: -1px;
+}
+
+.gs-tab-content {
+  margin: 0 1.5rem 2rem;
+  padding-top: 1.25rem;
+}
+
+.gs-tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gs-tab-header h2, .gs-tab-header h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
+.gs-btn-row { display: flex; gap: 0.5rem; }
+
+.gs-save-btn {
+  padding: 0.45rem 1.1rem;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber);
+  color: #1a1206;
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gs-save-btn:hover { background: var(--amber-hi); border-color: var(--amber-hi); }
+
+.gs-tab-content .secondary {
+  padding: 0.45rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+.gs-tab-content .secondary:hover { border-color: var(--line-amber); color: var(--amber-hi); }
+
+.gs-ini-form { margin: 0; }
+
+.gs-user-lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.4rem;
+}
+
+@media (max-width: 700px) {
+  .gs-user-lists { grid-template-columns: 1fr; }
+}
+
+.gs-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gs-list-section textarea,
+.gs-code-textarea {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: #b9c2ad;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.gs-code-textarea:focus,
+.gs-list-section textarea:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+/* ── Setup wizard ──────────────────────────────────────────────────────── */
+
+.setup-center {
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+}
+
+.setup-box {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2rem 2rem 2.25rem;
+  width: 100%;
+  max-width: 580px;
+}
+
+.setup-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.setup-brand img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.setup-box h1 {
+  font-size: 1.15rem;
+  margin: 0;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.setup-intro {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  margin: 0 0 1.5rem;
+}
+
+.su-optional {
+  font-weight: normal;
+  font-size: 0.82em;
+  color: var(--faint);
+}
+
+.setup-box .settings-group {
+  background: var(--bg-2);
+  margin-bottom: 0.85rem;
+}
+
+#su-save-btn {
+  display: block;
+  width: 100%;
+  margin-top: 1.3rem;
+  padding: 0.7rem 1.2rem;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber);
+  color: #1a1206;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+#su-save-btn:hover { background: var(--amber-hi); border-color: var(--amber-hi); }
+#su-save-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.su-log {
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  min-height: 180px;
+  max-height: 420px;
+  overflow-y: auto;
+  color: #b9c2ad;
+}
+
+/* ── Focus visibility (a11y) ───────────────────────────────────────────── */
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.gs-tab:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  header { padding: 0.85rem 1rem; }
+  .status-card, .leaderboards, .players, .logs, .controls { margin-left: 1rem; margin-right: 1rem; }
+  .brand-title { font-size: 1.1rem; }
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

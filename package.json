@@ -1,0 +1,27 @@
+{
+  "name": "scum-server-automation",
+  "version": "0.1.0",
+  "description": "SCUM Dedicated Server automation - installer, service manager, monitor, web panel and Discord bot",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "echo \"No automated tests configured\" && exit 0"
+  },
+  "license": "MIT",
+  "overrides": {
+    "ws": "^8.21.0"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "archiver": "^7.0.1",
+    "better-sqlite3": "^12.7.1",
+    "discord.js": "^14.26.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-session": "^1.18.0",
+    "fs-extra": "^11.2.0",
+    "socket.io": "^4.8.3",
+    "systeminformation": "^5.22.11"
+  }
+}

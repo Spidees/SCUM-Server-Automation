@@ -1,0 +1,220 @@
+{
+  "serviceName": "SCUMSERVER",
+  "appId": "3792580",
+  "publicIP": "",
+  "serverArgs": {
+    "port": 7777,
+    "queryPort": 7778,
+    "maxPlayers": 64,
+    "noBattleye": false
+  },
+  "serverDir": "./server",
+  "savedDir": "./server/SCUM/Saved",
+  "steamCmd": "./steamcmd/steamcmd.exe",
+  "backupRoot": "./backups",
+  "nssmPath": "./nssm.exe",
+  "restartTimes": [
+    "06:00",
+    "12:00",
+    "18:00",
+    "00:00"
+  ],
+  "periodicBackupEnabled": true,
+  "backupIntervalMinutes": 60,
+  "maxBackups": 10,
+  "compressBackups": true,
+  "runBackupOnStart": false,
+  "preRestartBackupEnabled": false,
+  "runUpdateOnStart": false,
+  "updateCheckIntervalMinutes": 15,
+  "updateDelayMinutes": 10,
+  "autoRestart": true,
+  "autoRestartCooldownMinutes": 2,
+  "maxConsecutiveRestartAttempts": 3,
+  "serverStartupTimeoutMinutes": 10,
+  "serverShutdownTimeoutMinutes": 5,
+  "enableDetailedLogging": true,
+  "maxLogFileSizeMB": 100,
+  "logRotationEnabled": true,
+  "consoleLogLevel": "Info",
+  "customLogPath": null,
+  "monitoringIntervalSeconds": 1,
+  "logMonitoringEnabled": true,
+  "logMonitoringIntervalSeconds": 1,
+  "preventStatusRegression": true,
+  "performanceAlertThreshold": "Critical",
+  "performanceAlertCooldownMinutes": 5,
+  "performanceLogIntervalMinutes": 1,
+  "performanceThresholds": {
+    "excellent": 30,
+    "good": 20,
+    "fair": 15,
+    "poor": 10,
+    "critical": 5
+  },
+  "web": {
+    "port": 8080,
+    "enabled": true
+  },
+  "Discord": {
+    "GuildId": "",
+    "Presence": {
+      "Activity": "SCUM Server Automation",
+      "Status": "online",
+      "Type": "Watching",
+      "DynamicActivity": true,
+      "OfflineActivity": "OFFLINE",
+      "OnlineActivityFormat": "{players} / {maxPlayers} players"
+    },
+    "LiveEmbeds": {
+      "StatusChannel": "",
+      "LeaderboardsChannel": "",
+      "UpdateInterval": 30,
+      "LeaderboardUpdateInterval": 120,
+      "Images": {
+        "ServerStatus": "https://playhub.cz/scum/3.gif",
+        "Leaderboards": {
+          "Weekly": "https://playhub.cz/scum/2.gif",
+          "AllTime": "https://playhub.cz/scum/4.gif"
+        }
+      }
+    },
+    "Notifications": {
+      "SuppressStatusChanges": false,
+      "Channels": {
+        "Admin": "",
+        "Players": ""
+      },
+      "Roles": {
+        "Admin": [
+          ""
+        ],
+        "Players": [
+          ""
+        ]
+      },
+      "NotificationTypes": {
+        "AdminOnly": [
+          "manager.started",
+          "manager.stopped",
+          "backup.started",
+          "backup.completed",
+          "backup.failed",
+          "update.available",
+          "update.started",
+          "update.completed",
+          "update.failed",
+          "performance.critical",
+          "performance.poor",
+          "performance.warning",
+          "performance.alert",
+          "service.started",
+          "service.stopped",
+          "service.starting",
+          "service.stopping",
+          "server.started",
+          "server.stopped",
+          "server.starting",
+          "server.shutting_down",
+          "server.loading",
+          "server.online",
+          "server.offline",
+          "admin.alert",
+          "error"
+        ],
+        "Player": [
+          "server.online",
+          "server.offline",
+          "update.started",
+          "updateWarning15",
+          "updateWarning5",
+          "updateWarning1",
+          "update.completed",
+          "restartWarning15",
+          "restartWarning5",
+          "restartWarning1",
+          "server.scheduledRestart",
+          "manualRestartWarning",
+          "manualStopWarning",
+          "manualUpdateWarning"
+        ]
+      }
+    },
+    "ChatRelay": {
+      "Enabled": false,
+      "Channels": {
+        "Players": "",
+        "Admin": ""
+      },
+      "ChatTypes": {
+        "global": true,
+        "squad": true,
+        "local": true
+      },
+      "MaxMessageLength": 500,
+      "UpdateInterval": 5
+    },
+    "SlashCommands": {
+      "AdminRoles": [
+        ""
+      ]
+    }
+  },
+  "SCUMLogFeatures": {
+    "UpdateInterval": 10,
+    "KillFeed": {
+      "AdminEnabled": false,
+      "AdminChannel": "",
+      "PlayersEnabled": false,
+      "PlayersChannel": "",
+      "PlayersDelayEnabled": false,
+      "PlayersDelaySeconds": 30
+    },
+    "LoginFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "AdminFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "RaidProtectionFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "EconomyFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "GameplayFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "ChestFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "QuestFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "FamePointsFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "VehicleFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "ViolationsFeed": {
+      "Enabled": false,
+      "Channel": ""
+    },
+    "EventKillFeed": {
+      "AdminEnabled": false,
+      "AdminChannel": "",
+      "PlayersEnabled": false,
+      "PlayersChannel": ""
+    }
+  }
+}
