@@ -7,9 +7,6 @@ lifecycle — installation, Windows-service control, crash recovery, scheduled r
 Steam updates — and exposes everything through a themed **web dashboard** and a feature-rich
 **Discord bot** (live embeds, log feeds, leaderboards, account linking and per-player raid alerts).
 
-- 🌐 GitHub: <https://github.com/Spidees/SCUM-Server-Automation>
-- 💬 Discord: <https://playhub.cz/discord>
-
 ---
 
 ## Features
@@ -42,6 +39,8 @@ Steam updates — and exposes everything through a themed **web dashboard** and 
   for `EconomyOverride.json`, `RaidTimes.json` and `Notifications.json`
 - Live server-log tail over WebSocket
 
+![SCUM Server Automation - Dashboard](http://playhub.cz/scum/manager/dashboard.png)
+
 ### Discord bot (optional)
 - **Notifications** — server lifecycle, service status, backups, updates, performance alerts and
   restart/update warnings (admin vs. player channels, configurable per type)
@@ -56,6 +55,8 @@ Steam updates — and exposes everything through a themed **web dashboard** and 
   your **base protection** changes, your **base is being destroyed**, your **vehicle** is destroyed,
   your **chest** is taken, or your **lock** is picked — for your own property or your squad's
 - Slash commands for server control and detailed player stats
+
+![SCUM Server Automation - Dashboard](http://playhub.cz/scum/manager/discordbot.png)
 
 ---
 
