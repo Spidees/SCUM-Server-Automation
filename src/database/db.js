@@ -116,18 +116,59 @@ function hasMarkedForDeletionTable() {
   return markedDeletionExists;
 }
 
-const FILTERED_USER_PROFILE = 'FROM (SELECT * FROM user_profile WHERE id NOT IN '
-  + '(SELECT user_profile_id FROM user_profiles_marked_for_deletion WHERE user_profile_id IS NOT NULL))';
+// Admin Steam IDs from AdminUsers.ini, cached briefly. Handles UTF-8 / UTF-16 and
+// the "76561199509851252[godmode]" suffix form by just extracting 17-digit IDs.
+let adminCache = { ts: 0, ids: [] };
+
+function getAdminSteamIds() {
+  if (Date.now() - adminCache.ts < 60000) return adminCache.ids;
+  const ids = [];
+  try {
+    const file = path.join(paths.savedDir, 'Config', 'WindowsServer', 'AdminUsers.ini');
+    if (fs.existsSync(file)) {
+      // latin1 + strip NULs makes the digit IDs readable regardless of encoding.
+      const text = fs.readFileSync(file).toString('latin1').replace(/\0/g, '');
+      const re = /\b(\d{17})\b/g;
+      let m;
+      while ((m = re.exec(text)) !== null) ids.push(m[1]);
+    }
+  } catch { /* no admin file / unreadable — treat as no admins */ }
+  adminCache = { ts: Date.now(), ids: [...new Set(ids)] };
+  return adminCache.ids;
+}
+
+/** Build the `FROM (...)` replacement applying the requested user_profile filters. */
+function buildUserProfileFrom(excludeAdmins) {
+  const conds = [];
+  if (hasMarkedForDeletionTable()) {
+    conds.push('id NOT IN (SELECT user_profile_id FROM user_profiles_marked_for_deletion WHERE user_profile_id IS NOT NULL)');
+  }
+  if (excludeAdmins) {
+    const admins = getAdminSteamIds();
+    if (admins.length) conds.push(`user_id NOT IN (${admins.map((id) => `'${id}'`).join(',')})`);
+  }
+  if (!conds.length) return null;
+  return `FROM (SELECT * FROM user_profile WHERE ${conds.join(' AND ')})`;
+}
 
 /**
  * Rewrite a query so every `FROM user_profile` excludes profiles marked for
- * deletion (dead characters that no longer exist in-game but still have rows).
- * No-op on SCUM builds without that table. Stats/leaderboards then only count
- * the player's current, living character.
+ * deletion (dead characters). Stats/leaderboards then only count the player's
+ * current, living character. No-op when there's nothing to filter.
  */
 function excludeDeletedProfiles(sql) {
-  if (!hasMarkedForDeletionTable()) return sql;
-  return sql.replace(/FROM user_profile\b/g, FILTERED_USER_PROFILE);
+  const from = buildUserProfileFrom(false);
+  return from ? sql.replace(/FROM user_profile\b/g, from) : sql;
+}
+
+/**
+ * Like excludeDeletedProfiles but ALSO excludes admins (AdminUsers.ini) — used for
+ * leaderboards so server staff don't appear in the rankings. (Individual stat
+ * lookups still use excludeDeletedProfiles so admins can view their own stats.)
+ */
+function excludeDeletedAndAdmins(sql) {
+  const from = buildUserProfileFrom(true);
+  return from ? sql.replace(/FROM user_profile\b/g, from) : sql;
 }
 
 /**
@@ -162,6 +203,7 @@ module.exports = {
   getScumDbPath,
   isScumDbAvailable,
   excludeDeletedProfiles,
+  excludeDeletedAndAdmins,
   hasMarkedForDeletionTable,
   closeAll,
   WEEKLY_DB_PATH,

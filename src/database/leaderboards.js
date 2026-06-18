@@ -1,7 +1,7 @@
 'use strict';
 
 const logger = require('../core/logger');
-const { getScumDb, getWeeklyDb, excludeDeletedProfiles } = require('./db');
+const { getScumDb, getWeeklyDb, excludeDeletedAndAdmins } = require('./db');
 const { CATEGORIES, CATEGORIES_BY_KEY } = require('./leaderboardDefs');
 const { getCurrentWeekStart, toDateStr } = require('./weekly');
 
@@ -14,7 +14,7 @@ function getAllTimeLeaderboard(category, limit) {
   if (!db) return [];
 
   try {
-    const rows = db.prepare(excludeDeletedProfiles(category.allTime.sql)).all({ limit });
+    const rows = db.prepare(excludeDeletedAndAdmins(category.allTime.sql)).all({ limit });
     return rows.map((row) => ({
       Name: row.Name,
       Value: category.allTime.value(row.Score),
@@ -42,7 +42,7 @@ function getWeeklyLeaderboard(category, limit) {
 
   try {
     if (w.type === 'raw') {
-      const rows = scumDb.prepare(excludeDeletedProfiles(w.currentSql)).all();
+      const rows = scumDb.prepare(excludeDeletedAndAdmins(w.currentSql)).all();
       return rows
         .filter((row) => row.Score > 0)
         .sort((a, b) => b.Score - a.Score)
@@ -55,7 +55,7 @@ function getWeeklyLeaderboard(category, limit) {
     }
 
     const snapshotRows = weeklyDb.prepare('SELECT * FROM weekly_snapshots WHERE week_start_date = ?').all(weekStartStr);
-    const current = scumDb.prepare(excludeDeletedProfiles(w.currentSql)).all();
+    const current = scumDb.prepare(excludeDeletedAndAdmins(w.currentSql)).all();
 
     let computed;
 

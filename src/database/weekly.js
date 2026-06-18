@@ -1,7 +1,7 @@
 'use strict';
 
 const logger = require('../core/logger');
-const { getScumDb, getWeeklyDb, excludeDeletedProfiles } = require('./db');
+const { getScumDb, getWeeklyDb, excludeDeletedAndAdmins } = require('./db');
 
 /**
  * Get the start (Monday, 00:00) of the current week.
@@ -122,7 +122,7 @@ function updateWeeklySnapshot(weekStartDate = getCurrentWeekStart()) {
       VALUES (?, ?, ?)
     `).run(weekStartStr, weekEndStr, now);
 
-    const users = scumDb.prepare(excludeDeletedProfiles(SNAPSHOT_USER_QUERY)).all();
+    const users = scumDb.prepare(excludeDeletedAndAdmins(SNAPSHOT_USER_QUERY)).all();
     const squads = scumDb.prepare(SNAPSHOT_SQUAD_QUERY).all();
 
     const insertUser = weeklyDb.prepare(INSERT_USER_SNAPSHOT_SQL);
