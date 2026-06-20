@@ -183,6 +183,48 @@ function writeJson(filePath, obj) {
 }
 
 // ---------------------------------------------------------------------------
+// Restart-notification generator
+// ---------------------------------------------------------------------------
+
+/** Format minutes-from-midnight as SCUM's "H:MM" (midnight => "00:00"). */
+function formatNotifyTime(mins) {
+  const t = ((mins % 1440) + 1440) % 1440;
+  const h = Math.floor(t / 60);
+  const m = t % 60;
+  return `${h === 0 ? '00' : h}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Build Notifications.json warning blocks from the configured restart times.
+ * For a restart at T, players are warned 60/45/30/15 minutes before plus a
+ * final 5-minute countdown range (T-5 → T). Returns an array of notification
+ * objects (message `#RestartIn(T)`); invalid times are skipped.
+ */
+function buildRestartNotifications(times) {
+  const out = [];
+  for (const raw of times || []) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(raw).trim());
+    if (!m) continue;
+    const hour = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    if (hour > 23 || min > 59) continue;
+    const restart = hour * 60 + min;
+    out.push({
+      time: [
+        formatNotifyTime(restart - 60),
+        formatNotifyTime(restart - 45),
+        formatNotifyTime(restart - 30),
+        formatNotifyTime(restart - 15),
+        `${formatNotifyTime(restart - 5)}-${formatNotifyTime(restart)}`,
+      ],
+      color: '255-180-50',
+      message: `#RestartIn(${formatNotifyTime(restart)})`,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Public helpers (used by API route)
 // ---------------------------------------------------------------------------
 
@@ -217,4 +259,5 @@ module.exports = {
   writeLines,
   readJson,
   writeJson,
+  buildRestartNotifications,
 };

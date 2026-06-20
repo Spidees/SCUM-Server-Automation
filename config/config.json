@@ -174,7 +174,8 @@
       "PlayersEnabled": false,
       "PlayersChannel": "",
       "PlayersDelayEnabled": false,
-      "PlayersDelaySeconds": 30
+      "PlayersDelaySeconds": 30,
+      "PlayersShowLocation": false
     },
     "LoginFeed": {
       "Enabled": false,

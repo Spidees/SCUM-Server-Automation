@@ -185,6 +185,8 @@ function getPlayerStatsByName(name) {
     SELECT
       u.name                                    AS Name,
       u.user_id                                 AS SteamID,
+      (SELECT sq.name FROM squad_member sm JOIN squad sq ON sm.squad_id = sq.id
+         WHERE sm.user_profile_id = u.id LIMIT 1) AS SquadName,
       COALESCE(u.fame_points, 0)                AS FamePoints,
       COALESCE(u.play_time, 0)                  AS PlayTime,
       u.last_logout_time                        AS LastLogout,

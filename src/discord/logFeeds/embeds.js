@@ -316,7 +316,7 @@ const KILL_WEAPON_TYPE_META = {
   default: { emoji: ':crossed_swords:', title: 'PvP Kill', color: COLORS.KillPvP },
 };
 
-function buildKillFields(event, { includeIds }) {
+function buildKillFields(event, { includeIds, showLocation = true }) {
   const fields = [];
   if (event.type === 'suicide') {
     fields.push({ name: '👤 Player', value: event.playerName || 'Unknown', inline: true });
@@ -324,9 +324,11 @@ function buildKillFields(event, { includeIds }) {
       fields.push({ name: '🆔 Player ID', value: String(event.playerId ?? 'N/A'), inline: true });
       fields.push({ name: '🎮 Steam ID', value: event.steamId || 'N/A', inline: true });
     }
-    const loc = locationField(event.location);
-    if (loc) fields.push(loc);
-    else if (event.locationText) fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
+    if (showLocation) {
+      const loc = locationField(event.location);
+      if (loc) fields.push(loc);
+      else if (event.locationText) fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
+    }
     return fields;
   }
 
@@ -348,7 +350,7 @@ function buildKillFields(event, { includeIds }) {
   if (event.distance !== undefined && event.weaponType !== 'explosion') {
     fields.push({ name: '📏 Distance', value: `${event.distance} m`, inline: true });
   }
-  if (event.locationText) fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
+  if (showLocation && event.locationText) fields.push({ name: '📍 Location', value: linkifyLocationText(event.locationText), inline: false });
   return fields;
 }
 
@@ -368,7 +370,7 @@ function buildKillEmbed(event) {
   return embed;
 }
 
-function buildKillEmbedSimple(event, delayInfo) {
+function buildKillEmbedSimple(event, delayInfo, showLocation = false) {
   let embed;
   if (event.type === 'suicide') {
     embed = baseEmbed(':skull: Suicide', COLORS.KillSuicide);
@@ -376,7 +378,7 @@ function buildKillEmbedSimple(event, delayInfo) {
     const meta = KILL_WEAPON_TYPE_META[(event.weaponType || '').toLowerCase()] || KILL_WEAPON_TYPE_META.default;
     embed = baseEmbed(`${meta.emoji} ${meta.title}`, meta.color);
   }
-  const fields = buildKillFields(event, { includeIds: false });
+  const fields = buildKillFields(event, { includeIds: false, showLocation });
   if (delayInfo && delayInfo.delaySeconds) {
     fields.push({ name: 'Delay Info', value: `:clock3: Delayed by ${delayInfo.delaySeconds}s`, inline: true });
   }

@@ -165,7 +165,7 @@ function buildPlayerStatsEmbed(stats, online, lastSeen) {
     .setImage('https://playhub.cz/scum/13.gif')
     .setTimestamp()
     .addFields(
-      { name: '🆔 Steam ID', value: stats.SteamID || '-', inline: true },
+      { name: '🛡️ Squad', value: stats.SquadName || '*No squad*', inline: true },
       { name: '📡 Status', value: online ? 'Online' : 'Offline', inline: true },
       { name: '🕓 Last Seen', value: lastSeen, inline: true },
 

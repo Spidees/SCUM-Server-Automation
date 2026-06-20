@@ -206,7 +206,7 @@ async function handle(event, client, config) {
     if (feedCfg.PlayersDelayEnabled && feedCfg.PlayersDelaySeconds > 0) {
       playersDelayQueue.push({ event, queuedAt: Date.now() });
     } else {
-      const embed = buildKillEmbedSimple(event, null);
+      const embed = buildKillEmbedSimple(event, null, !!feedCfg.PlayersShowLocation);
       await sendToChannel(client, feedCfg.PlayersChannel, [], embed);
     }
   }
@@ -231,7 +231,7 @@ async function processDelayQueue(client, config) {
 
   for (const item of ready) {
     const delaySeconds = Math.round((now - item.queuedAt) / 1000);
-    const embed = buildKillEmbedSimple(item.event, { delaySeconds });
+    const embed = buildKillEmbedSimple(item.event, { delaySeconds }, !!feedCfg.PlayersShowLocation);
     await sendToChannel(client, feedCfg.PlayersChannel, [], embed);
   }
 }

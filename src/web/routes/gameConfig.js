@@ -82,4 +82,32 @@ router.post('/json/:key', (req, res) => {
   }
 });
 
+// --- Sync restart warnings into Notifications.json ---------------------------
+
+router.post('/sync-restart-notifications', (req, res) => {
+  const filePath = gc.resolveJsonPath('notifications');
+  if (!filePath) return res.status(500).json({ error: 'Cannot resolve Notifications.json path' });
+  try {
+    const times = Array.isArray(req.body.times) ? req.body.times : [];
+    const restartNotifs = gc.buildRestartNotifications(times);
+    if (!restartNotifs.length) {
+      return res.status(400).json({ error: 'No valid restart times to sync (expected "HH:MM").' });
+    }
+
+    // Preserve any custom (non-restart) notifications already in the file.
+    let existing = { Notifications: [] };
+    if (fs.existsSync(filePath)) {
+      try { existing = gc.readJson(filePath); } catch { /* unreadable -> start fresh */ }
+    }
+    const kept = Array.isArray(existing.Notifications)
+      ? existing.Notifications.filter((n) => !(typeof n.message === 'string' && n.message.startsWith('#RestartIn')))
+      : [];
+
+    gc.writeJson(filePath, { Notifications: [...kept, ...restartNotifs] });
+    res.json({ success: true, count: restartNotifs.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

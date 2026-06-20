@@ -495,6 +495,52 @@
     }
 
     input.dataset.path = JSON.stringify(pathArr);
+
+    if (key === 'restartTimes') {
+      const hint = document.createElement('span');
+      hint.className = 'ini-desc';
+      hint.textContent = 'Generate matching in-game restart warnings (60/45/30/15 min + a 5-min '
+        + 'countdown) into Notifications.json. Replaces previous restart warnings; other '
+        + 'notifications are kept.';
+      wrapper.appendChild(hint);
+
+      const syncBtn = document.createElement('button');
+      syncBtn.type = 'button';
+      syncBtn.className = 'sync-notify-btn';
+      syncBtn.textContent = '⟳ Sync server notifications';
+      syncBtn.addEventListener('click', async () => {
+        const times = input.value.split('\n').map((s) => s.trim()).filter(Boolean);
+        const msgEl = document.getElementById('settings-message');
+        if (!times.length) {
+          if (msgEl) { msgEl.textContent = 'Add at least one restart time first.'; msgEl.className = 'settings-message error'; }
+          return;
+        }
+        syncBtn.disabled = true;
+        try {
+          const res = await fetch('/api/game-config/sync-restart-notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ times }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (msgEl) {
+            if (res.ok) {
+              msgEl.textContent = `Synced ${data.count} restart warning${data.count === 1 ? '' : 's'} to Notifications.json. Applied live — no restart needed.`;
+              msgEl.className = 'settings-message success';
+            } else {
+              msgEl.textContent = `Sync failed: ${data.error || res.statusText}`;
+              msgEl.className = 'settings-message error';
+            }
+          }
+        } catch (err) {
+          if (msgEl) { msgEl.textContent = `Sync failed: ${err.message}`; msgEl.className = 'settings-message error'; }
+        } finally {
+          syncBtn.disabled = false;
+        }
+      });
+      wrapper.appendChild(syncBtn);
+    }
+
     return wrapper;
   }
 

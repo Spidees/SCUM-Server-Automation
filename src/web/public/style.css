@@ -828,6 +828,18 @@ header button.secondary,
 .settings-field.checkbox { flex-wrap: wrap; }
 .settings-field.checkbox .ini-desc { flex-basis: 100%; margin-top: 0.35rem; }
 
+.sync-notify-btn {
+  align-self: flex-start;
+  margin-top: 0.55rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.78rem;
+  background: var(--panel-2);
+  color: var(--amber);
+  border: 1px solid var(--line-amber);
+}
+.sync-notify-btn:hover { border-color: var(--amber-hi); color: var(--amber-hi); }
+.sync-notify-btn:disabled { opacity: 0.5; cursor: default; }
+
 .settings-group {
   background: var(--panel);
   border: 1px solid var(--line);
