@@ -2,7 +2,7 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildRaidProtectionEmbed } = require('./embeds');
-const { upsertRaidProtection, updateUserProfileFlagId, getSteamIdByFlagId } = require('../../database/serverDb');
+const { upsertRaidProtection, getRaidProtection, updateUserProfileFlagId, getSteamIdByFlagId } = require('../../database/serverDb');
 const database = require('../../database');
 const raidNotify = require('../raidNotify');
 
@@ -94,6 +94,14 @@ async function handle(event, client, config) {
     ProtectionExpired: 'finished',
   };
 
+  // SCUM re-emits "Flag protection finished ... user logged in" for every squad
+  // member that logs in, even long after protection ended. Only treat an "ended"
+  // event as a real transition (and notify) if protection was active before.
+  const isEndingEvent = event.eventType === 'ProtectionEnded' || event.eventType === 'ProtectionExpired';
+  const prevType = (getRaidProtection(event.flagId) || {}).protection_type || null;
+  const wasActive = prevType === 'set' || prevType === 'started';
+  const suppressEndedNotification = isEndingEvent && !wasActive;
+
   upsertRaidProtection(event.flagId, {
     ownerUserId: event.ownerId || null,
     x: event.locationX || null,
@@ -135,7 +143,7 @@ async function handle(event, client, config) {
     },
   };
   const alert = RAID_ALERTS[event.eventType];
-  if (alert) {
+  if (alert && !suppressEndedNotification) {
     // owner id is a SCUM user_profile.id; resolve to its Steam ID.
     const ownerSteam = database.getSteamIdByProfileId(event.ownerId) || getSteamIdByFlagId(event.flagId);
     if (ownerSteam) {
@@ -149,6 +157,8 @@ async function handle(event, client, config) {
       });
     }
   }
+
+  if (suppressEndedNotification) return;
 
   const feedCfg = (config.SCUMLogFeatures || {}).RaidProtectionFeed || {};
   if (!feedCfg.Enabled || !feedCfg.Channel) return;

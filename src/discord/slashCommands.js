@@ -879,20 +879,38 @@ function buildNotifySettingsPayload(prefs) {
       { label: 'My squad too', value: 'squad', emoji: '👥', default: prefs.scope === 'squad' },
     );
 
+  const lines = [
+    'Get a **direct message** when something happens to property you own.',
+    '',
+    `🛡️ Raid Protection — **${prefs.raid ? 'On' : 'Off'}**`,
+    `🚗 Vehicles — **${prefs.vehicle ? 'On' : 'Off'}**`,
+    `📦 Chests — **${prefs.chest ? 'On' : 'Off'}**`,
+    `🔒 Locks — **${prefs.lock ? 'On' : 'Off'}**`,
+    `👥 Scope — **${prefs.scope === 'squad' ? 'My squad too' : 'My stuff only'}**`,
+  ];
+
+  // Inform the user when the server restricts these alerts to the flag area.
+  const flagFilter = ((config.SCUMLogFeatures || {}).OwnerAlertFlagFilter) || {};
+  if (flagFilter.Enabled) {
+    const typeLabels = [];
+    if (flagFilter.Vehicles) typeLabels.push('🚗');
+    if (flagFilter.Chests) typeLabels.push('📦');
+    if (flagFilter.Locks) typeLabels.push('🔒');
+    if (typeLabels.length) {
+      const radius = Number(flagFilter.RadiusMeters) > 0 ? Number(flagFilter.RadiusMeters) : 50;
+      lines.push(
+        '',
+        `📍 ${typeLabels.join(' ')} alerts are sent **only inside your flag area** (~${radius} m).`,
+      );
+    }
+  }
+
+  lines.push('', '*Use the menus below — changes save automatically.*');
+
   const embed = applyBranding(new EmbedBuilder()
     .setTitle('⚙️ Raid Notification Settings')
     .setColor(COLORS.blue)
-    .setDescription([
-      'Get a **direct message** when something happens to property you own.',
-      '',
-      `🛡️ Raid Protection — **${prefs.raid ? 'On' : 'Off'}**`,
-      `🚗 Vehicles — **${prefs.vehicle ? 'On' : 'Off'}**`,
-      `📦 Chests — **${prefs.chest ? 'On' : 'Off'}**`,
-      `🔒 Locks — **${prefs.lock ? 'On' : 'Off'}**`,
-      `👥 Scope — **${prefs.scope === 'squad' ? 'My squad too' : 'My stuff only'}**`,
-      '',
-      '*Use the menus below — changes save automatically.*',
-    ].join('\n')));
+    .setDescription(lines.join('\n')));
 
   return {
     embeds: [embed],

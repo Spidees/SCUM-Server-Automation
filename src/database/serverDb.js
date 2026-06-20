@@ -155,6 +155,16 @@ function upsertRaidProtection(flagId, {
 }
 
 /**
+ * Read the currently stored raid protection record for a flag, or null.
+ * Used to detect whether protection was active before an "ended" event.
+ */
+function getRaidProtection(flagId) {
+  if (flagId == null) return null;
+  const db = getServerDb();
+  return db.prepare('SELECT * FROM a_raid_protection WHERE flag_id = ?').get(String(flagId)) || null;
+}
+
+/**
  * Associate a flag id with a user's profile. Mirrors Update-UserProfileFlagId,
  * called when a ProtectionEnded event identifies the logged-in owner.
  */
@@ -348,6 +358,7 @@ module.exports = {
   upsertLoginEvent,
   upsertLogoutEvent,
   upsertRaidProtection,
+  getRaidProtection,
   updateUserProfileFlagId,
   getPlayerProfileByName,
   createPendingRegistration,

@@ -364,12 +364,69 @@ function getBaseElementOwnerProfileId(x, y, z, maxDist = 5000) {
   }
 }
 
+/**
+ * SCUM user_profile.id values that make up an owner's "base side": the player
+ * themselves plus every member of their squad. Used to decide whether a location
+ * belongs to that player's territory/flag area.
+ */
+function getOwnerAreaProfileIds(steamId) {
+  const db = getScumDb();
+  if (!db || steamId == null) return [];
+  const ids = new Set();
+  try {
+    const own = db.prepare(excludeDeletedProfiles(
+      'SELECT id AS Id FROM user_profile WHERE user_id = ?',
+    )).get(String(steamId));
+    if (own && own.Id != null) ids.add(own.Id);
+  } catch { /* ignore */ }
+  try {
+    const squadId = getSquadIdBySteamId(steamId);
+    if (squadId != null) {
+      const rows = db.prepare(excludeDeletedProfiles(
+        `SELECT u.id AS Id FROM user_profile u
+         JOIN squad_member sm ON u.id = sm.user_profile_id
+         WHERE sm.squad_id = ?`,
+      )).all(squadId);
+      for (const r of rows) if (r.Id != null) ids.add(r.Id);
+    }
+  } catch { /* ignore */ }
+  return [...ids];
+}
+
+/**
+ * True if (x,y) lies within `radius` game units (cm) of any base element owned by
+ * the player or their squad — i.e. inside their territory flag area. Horizontal
+ * distance only (flag zones are cylindrical). Returns false if the player has no
+ * known base elements, which conservatively means "not in their flag area".
+ */
+function isLocationInOwnerArea(steamId, x, y, radius = 5000) {
+  const db = getScumDb();
+  if (!db || x == null || y == null) return false;
+  const profileIds = getOwnerAreaProfileIds(steamId);
+  if (!profileIds.length) return false;
+  try {
+    const placeholders = profileIds.map(() => '?').join(',');
+    const row = db.prepare(`
+      SELECT ((location_x - ?) * (location_x - ?) + (location_y - ?) * (location_y - ?)) AS d2
+      FROM base_element
+      WHERE owner_profile_id IN (${placeholders})
+      ORDER BY d2 ASC LIMIT 1
+    `).get(x, x, y, y, ...profileIds);
+    if (!row || row.d2 == null) return false;
+    return Math.sqrt(row.d2) <= radius;
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   getOnlinePlayers,
   getTotalPlayerCount,
   getSquadIdBySteamId,
   getSquadMemberSteamIds,
   getSteamIdByProfileId,
+  getOwnerAreaProfileIds,
+  isLocationInOwnerArea,
   getEntityDisplayName,
   getBaseElementOwnerProfileId,
   getOnlinePlayerCount,

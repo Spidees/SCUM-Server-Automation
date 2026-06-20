@@ -6,8 +6,37 @@
 
 const { EmbedBuilder } = require('discord.js');
 const logger = require('../core/logger');
+const { config } = require('../core/config');
 const database = require('../database');
 const { applyBranding } = require('./branding');
+
+// Map alert type -> config flag that restricts it to the owner's flag area.
+const FLAG_FILTER_TYPE_KEY = { vehicle: 'Vehicles', chest: 'Chests', lock: 'Locks' };
+
+/**
+ * When the flag-area filter is enabled, drop alerts for property that is not
+ * inside the owner's (or their squad's) territory flag area. Only the property
+ * types listed in config are filtered; 'raid' alerts are always delivered.
+ */
+function passesFlagAreaFilter(alert) {
+  const cfg = ((config.SCUMLogFeatures || {}).OwnerAlertFlagFilter) || {};
+  if (!cfg.Enabled) return true;
+  const key = FLAG_FILTER_TYPE_KEY[alert.type];
+  if (!key || !cfg[key]) return true; // type not filtered
+
+  const loc = alert.location || {};
+  if (loc.x == null || loc.y == null) return true; // no location -> can't filter, allow
+  if (alert.ownerSteamId == null) return true;
+
+  const radiusMeters = Number(cfg.RadiusMeters);
+  const radiusCm = (Number.isFinite(radiusMeters) && radiusMeters > 0 ? radiusMeters : 50) * 100;
+  try {
+    return database.isLocationInOwnerArea(alert.ownerSteamId, Number(loc.x), Number(loc.y), radiusCm);
+  } catch (err) {
+    logger.warn(`[RaidNotify] Flag-area filter failed, allowing alert: ${err.message}`);
+    return true;
+  }
+}
 
 function mapLink(loc) {
   if (!loc || loc.x == null || loc.y == null || loc.z == null) return null;
@@ -26,6 +55,8 @@ const cooldowns = new Map();
  */
 async function dispatchOwnerAlert(client, alert) {
   if (!client || !alert || !alert.type) return;
+
+  if (!passesFlagAreaFilter(alert)) return;
 
   if (alert.cooldownKey && alert.cooldownMs) {
     const last = cooldowns.get(alert.cooldownKey) || 0;

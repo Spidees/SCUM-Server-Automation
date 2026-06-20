@@ -168,6 +168,13 @@
   },
   "SCUMLogFeatures": {
     "UpdateInterval": 10,
+    "OwnerAlertFlagFilter": {
+      "Enabled": true,
+      "RadiusMeters": 50,
+      "Vehicles": true,
+      "Chests": true,
+      "Locks": true
+    },    
     "KillFeed": {
       "AdminEnabled": false,
       "AdminChannel": "",
