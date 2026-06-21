@@ -253,6 +253,7 @@ function buildServerAppParameters(serverArgs) {
   if (args.queryPort) parts.push(`-QueryPort=${args.queryPort}`);
   if (args.maxPlayers) parts.push(`-MaxPlayers=${args.maxPlayers}`);
   if (args.noBattleye) parts.push('-nobattleye');
+  if (args.fileopenlog) parts.push('-fileopenlog');
   return parts.join(' ');
 }
 
