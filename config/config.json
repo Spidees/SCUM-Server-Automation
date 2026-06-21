@@ -6,7 +6,8 @@
     "port": 7777,
     "queryPort": 7778,
     "maxPlayers": 64,
-    "noBattleye": false
+    "noBattleye": false,
+    "fileopenlog": false
   },
   "serverDir": "./server",
   "savedDir": "./server/SCUM/Saved",
