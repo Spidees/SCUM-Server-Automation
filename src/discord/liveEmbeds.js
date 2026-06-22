@@ -9,6 +9,7 @@ const monitoring = require('../server/monitoring');
 const scheduling = require('../automation/scheduling');
 const database = require('../database');
 const bunkerState = require('./bunkerState');
+const economyState = require('./economyState');
 
 // In-memory message refs, keyed by a logical embed name. Mirrors the
 // {ChannelId, MessageId, LastUpdate} tracking in live-embeds-manager.psm1.
@@ -16,6 +17,7 @@ const trackedMessages = {
   status: { messageId: null, lastUpdate: 0, lastState: null },
   players: { messageId: null, lastUpdate: 0 },
   bunkers: { messageId: null, lastUpdate: 0 },
+  economy: { messageId: null, lastUpdate: 0 },
   leaderboardWeekly: { messageId: null, lastUpdate: 0 },
   leaderboardAllTime: { messageId: null, lastUpdate: 0 },
 };
@@ -371,6 +373,131 @@ async function updateBunkerEmbed(client) {
 }
 
 /**
+ * Build the economy live embed: current special deals, per-trader funds (named by
+ * location/type from the economy log), gold buy/sell capacity and the restock
+ * rotation info. Trader funds come from the log because SCUM.db only stores them
+ * under nameless GUIDs.
+ */
+function buildEconomyOverviewEmbed() {
+  const liveCfg = (config.Discord && config.Discord.LiveEmbeds) || {};
+  const num = (n) => Number(n || 0).toLocaleString('en-US');
+  const money = (n) => `${num(n)} $`;
+  const goldAmt = (n) => `${num(n)} gold`;
+
+  const embed = new EmbedBuilder()
+    .setTitle(':moneybag: Economy')
+    .setColor(COLORS.gold)
+    .setTimestamp(new Date());
+
+  if (!database.isScumDbAvailable()) {
+    embed.setDescription('SCUM database not found yet.');
+    return embed;
+  }
+
+  // --- Special deals (what's on sale) ---
+  let deals = [];
+  try { deals = database.getSpecialDeals(12) || []; } catch { deals = []; }
+  if (deals.length) {
+    const value = deals.map((d) => {
+      const where = [d.location, d.sector, d.trader].filter(Boolean)[0] || '';
+      const extras = [
+        `💰 ${money(d.price)}`,
+        `📦 ${num(d.stock)}`,
+        d.fameRequired ? `⭐ ${num(d.fameRequired)}` : '',
+        where ? `📍 ${where}` : '',
+      ].filter(Boolean).join(' · ');
+      return `🏷️ **${d.item}** — ${extras}`;
+    }).join('\n').slice(0, 1024);
+    embed.addFields({ name: `🏷️ On Sale  ·  ${deals.length}`, value, inline: false });
+  } else {
+    embed.addFields({ name: '🏷️ On Sale', value: '*No special deals right now.*', inline: false });
+  }
+
+  // --- Trader funds (from the economy log) — one block per outpost ---
+  economyState.seedFromLog();
+  const traders = economyState.getTraderFunds();
+  if (traders.length) {
+    const total = traders.reduce((s, t) => s + (t.funds || 0), 0);
+    // Header row for the whole section. The note makes clear these are the last known
+    // balances from the economy log, refreshed only when a player actually trades.
+    embed.addFields({
+      name: `💰 Trader Funds  ·  ${money(total)}`,
+      value: '*Last known amounts — updated whenever a player makes a trade.*',
+      inline: false,
+    });
+
+    const byLoc = new Map();
+    for (const t of traders) {
+      if (!byLoc.has(t.location)) byLoc.set(t.location, []);
+      const fundsLabel = t.funds == null ? 'Unknown' : money(t.funds);
+      byLoc.get(t.location).push(`${t.type} — ${fundsLabel}`);
+    }
+    // Each outpost is a full-width field, so they stack vertically (not in columns).
+    for (const [loc, list] of byLoc) {
+      embed.addFields({ name: `🏪 Outpost ${loc}`, value: list.join('\n').slice(0, 1024) || '​', inline: false });
+    }
+  } else {
+    embed.addFields({
+      name: '💰 Trader Funds',
+      value: '*No trader activity recorded yet — fills in as players trade.*',
+      inline: false,
+    });
+  }
+
+  // --- Gold (buy capacity is money the outpost pays you; sell capacity is gold stock) ---
+  let gold = null;
+  try { gold = database.getGoldCapacity(); } catch { gold = null; }
+  if (gold && gold.outposts) {
+    embed.addFields({
+      name: '🪙 Gold',
+      value: `Buy capacity: **${money(gold.buyFunds)}**\nSell capacity: **${goldAmt(gold.sellFunds)}**`,
+      inline: false,
+    });
+  }
+
+  // --- Stock rotation / restock (only show what's actually meaningful here) ---
+  let timing = null;
+  try { timing = database.getEconomyTiming(); } catch { timing = null; }
+  if (timing) {
+    const parts = [];
+    if (timing.rotationEnabled && timing.rotationHoursMin != null && timing.rotationHoursMax != null) {
+      parts.push(`🔄 Items rotate every **${timing.rotationHoursMin}–${timing.rotationHoursMax}** in-game hours`);
+    }
+    if (timing.fullRestockHours != null) parts.push(`📦 Sold-out stock refills in **${timing.fullRestockHours} h**`);
+    // A full economy reset only matters when it's actually scheduled (> 0); a value
+    // of -1 means it's disabled, so we hide it (and the confusing "last reset" line).
+    if (timing.resetTimeHours != null && timing.resetTimeHours > 0) {
+      parts.push(`🔁 Full economy reset every **${timing.resetTimeHours} h**`);
+      if (timing.secondsSinceReset != null) {
+        const h = Math.floor(timing.secondsSinceReset / 3600);
+        const m = Math.floor((timing.secondsSinceReset % 3600) / 60);
+        parts.push(`⏱️ Last reset **${h}h ${m}m** ago`);
+      }
+    }
+    if (parts.length) embed.addFields({ name: '♻️ Stock Rotation', value: parts.join('\n'), inline: false });
+  }
+
+  if (liveCfg.Images && liveCfg.Images.Economy) embed.setImage(liveCfg.Images.Economy);
+  return embed;
+}
+
+/**
+ * Update (or create) the economy live embed if its interval has elapsed.
+ */
+async function updateEconomyEmbed(client) {
+  const liveCfg = (config.Discord && config.Discord.LiveEmbeds) || {};
+  const channelId = liveCfg.EconomyChannel;
+  if (!channelId) return;
+
+  const intervalMs = (liveCfg.EconomyUpdateInterval || liveCfg.UpdateInterval || 120) * 1000;
+  const tracked = trackedMessages.economy;
+  if (tracked.messageId && Date.now() - tracked.lastUpdate < intervalMs) return;
+
+  await upsertEmbed(client, channelId, ':moneybag: Economy', tracked, buildEconomyOverviewEmbed());
+  tracked.lastUpdate = Date.now();
+}
+
+/**
  * Update (or create) the server status live embed if its interval has elapsed,
  * or immediately if the actual server state changed. Mirrors
  * Update-ServerStatusEmbed's rate-limit + force-update logic.
@@ -442,6 +569,11 @@ function startLiveEmbeds(client) {
       logger.warn(`[Discord] Bunker embed update failed: ${err.message}`);
     }
     try {
+      await updateEconomyEmbed(client);
+    } catch (err) {
+      logger.warn(`[Discord] Economy embed update failed: ${err.message}`);
+    }
+    try {
       await updateLeaderboardEmbeds(client);
     } catch (err) {
       logger.warn(`[Discord] Leaderboard embed update failed: ${err.message}`);
@@ -458,4 +590,4 @@ function stopLiveEmbeds() {
   tickTimer = null;
 }
 
-module.exports = { startLiveEmbeds, stopLiveEmbeds, buildStatusEmbed, buildLeaderboardEmbed, buildPlayersEmbed, buildBunkerEmbed };
+module.exports = { startLiveEmbeds, stopLiveEmbeds, buildStatusEmbed, buildLeaderboardEmbed, buildPlayersEmbed, buildBunkerEmbed, buildEconomyOverviewEmbed };

@@ -6,6 +6,7 @@ const fsExtra = require('fs-extra');
 const Database = require('better-sqlite3');
 const logger = require('../core/logger');
 const { paths } = require('../core/config');
+const cache = require('./cache');
 
 const WEEKLY_DB_PATH = path.join(paths.root, 'data', 'weekly_leaderboards.db');
 
@@ -89,7 +90,11 @@ function getScumDb() {
     scumDb = null;
   }
 
+  // New connection (possibly a different save file) — drop every memoized read and
+  // the SQL-transform cache so nothing stale from the previous DB survives.
   markedDeletionChecked = false;
+  transformCache.clear();
+  cache.clear();
   scumDb = new Database(dbPath, { readonly: true, fileMustExist: true });
   scumDbPath = dbPath;
   logger.info(`[Database] Opened SCUM database (read-only): ${dbPath}`);
@@ -151,14 +156,36 @@ function buildUserProfileFrom(excludeAdmins) {
   return `FROM (SELECT * FROM user_profile WHERE ${conds.join(' AND ')})`;
 }
 
+// The `FROM user_profile` rewrite is the same for every call until the marked-for-
+// deletion table or the admin list changes, but it ran a regex replace + subquery
+// rebuild on every query. Memoize the transformed SQL, keyed by the input string,
+// and revalidate against a cheap signature so a changed admin list still takes effect.
+const transformCache = new Map(); // cacheKey -> { sig, out }
+
+function transformSignature(excludeAdmins) {
+  const marked = hasMarkedForDeletionTable() ? '1' : '0';
+  if (!excludeAdmins) return `m${marked}`;
+  return `m${marked}|a${getAdminSteamIds().join(',')}`;
+}
+
+function transformUserProfileFrom(sql, excludeAdmins) {
+  const sig = transformSignature(excludeAdmins);
+  const cacheKey = (excludeAdmins ? 'A:' : 'D:') + sql;
+  const hit = transformCache.get(cacheKey);
+  if (hit && hit.sig === sig) return hit.out;
+  const from = buildUserProfileFrom(excludeAdmins);
+  const out = from ? sql.replace(/FROM user_profile\b/g, from) : sql;
+  transformCache.set(cacheKey, { sig, out });
+  return out;
+}
+
 /**
  * Rewrite a query so every `FROM user_profile` excludes profiles marked for
  * deletion (dead characters). Stats/leaderboards then only count the player's
  * current, living character. No-op when there's nothing to filter.
  */
 function excludeDeletedProfiles(sql) {
-  const from = buildUserProfileFrom(false);
-  return from ? sql.replace(/FROM user_profile\b/g, from) : sql;
+  return transformUserProfileFrom(sql, false);
 }
 
 /**
@@ -167,8 +194,7 @@ function excludeDeletedProfiles(sql) {
  * lookups still use excludeDeletedProfiles so admins can view their own stats.)
  */
 function excludeDeletedAndAdmins(sql) {
-  const from = buildUserProfileFrom(true);
-  return from ? sql.replace(/FROM user_profile\b/g, from) : sql;
+  return transformUserProfileFrom(sql, true);
 }
 
 /**
@@ -186,6 +212,8 @@ function getWeeklyDb() {
 }
 
 function closeAll() {
+  transformCache.clear();
+  cache.clear();
   if (scumDb) {
     try { scumDb.close(); } catch { /* ignore */ }
     scumDb = null;

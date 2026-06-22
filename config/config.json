@@ -6,7 +6,8 @@
     "port": 7777,
     "queryPort": 7778,
     "maxPlayers": 64,
-    "noBattleye": false
+    "noBattleye": false,
+    "customArgs": ""    
   },
   "serverDir": "./server",
   "savedDir": "./server/SCUM/Saved",
@@ -71,17 +72,20 @@
       "PlayersChannel": "",
       "BunkerChannel": "",
       "LeaderboardsChannel": "",
+      "EconomyChannel": "",
       "UpdateInterval": 30,
       "PlayersUpdateInterval": 60,
       "BunkerUpdateInterval": 60,
       "LeaderboardUpdateInterval": 120,
+      "EconomyUpdateInterval": 120,
       "Images": {
         "ServerStatus": "https://playhub.cz/scum/3.gif",
         "Players": "https://playhub.cz/scum/8.gif",
         "Bunker": "https://playhub.cz/scum/5.gif",
+        "Economy": "https://playhub.cz/scum/16.gif",
         "Leaderboards": {
           "Weekly": "https://playhub.cz/scum/2.gif",
-          "AllTime": "https://playhub.cz/scum/4.gif"
+          "AllTime": "https://playhub.cz/scum/17.gif"
         }
       }
     },
@@ -174,7 +178,7 @@
       "Vehicles": true,
       "Chests": true,
       "Locks": true
-    },    
+    },
     "KillFeed": {
       "AdminEnabled": false,
       "AdminChannel": "",

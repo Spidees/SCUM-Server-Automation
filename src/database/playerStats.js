@@ -3,6 +3,7 @@
 const fs = require('fs');
 const logger = require('../core/logger');
 const { getScumDb, getScumDbPath, excludeDeletedProfiles } = require('./db');
+const { memo, memoPersistent } = require('./cache');
 const { round } = require('./leaderboardDefs');
 
 /**
@@ -33,45 +34,67 @@ function getOnlinePlayers() {
   const db = getScumDb();
   if (!db) return [];
 
-  const rows = tryQueries(db, [
-    `SELECT name as PlayerName, user_id as SteamID, last_login_time, last_logout_time FROM user_profile WHERE last_login_time > last_logout_time OR last_logout_time IS NULL`,
-    `SELECT * FROM Players WHERE IsOnline = 1`,
-    `SELECT * FROM PlayerData WHERE Online = 1`,
-  ]);
+  return memo('onlinePlayers', 5000, () => {
+    const rows = tryQueries(db, [
+      `SELECT name as PlayerName, user_id as SteamID, last_login_time, last_logout_time FROM user_profile WHERE last_login_time > last_logout_time OR last_logout_time IS NULL`,
+      `SELECT * FROM Players WHERE IsOnline = 1`,
+      `SELECT * FROM PlayerData WHERE Online = 1`,
+    ]);
+    return rows || [];
+  });
+}
 
-  return rows || [];
+/**
+ * Total and online player counts in a single pass over user_profile. Both numbers
+ * are needed together by the status embed / API, and the online count is also
+ * polled by the monitoring loop — one cached query now serves all of them instead
+ * of two separate full scans per caller.
+ */
+function getPlayerCounts() {
+  const db = getScumDb();
+  if (!db) return { total: 0, online: 0 };
+  return memo('playerCounts', 5000, () => {
+    const row = tryQueriesGet(db, [
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN last_login_time > last_logout_time OR last_logout_time IS NULL THEN 1 ELSE 0 END) as online
+       FROM user_profile`,
+    ]);
+    return { total: row ? (row.total || 0) : 0, online: row ? (row.online || 0) : 0 };
+  });
 }
 
 /**
  * Mirrors Get-TotalPlayerCount.
  */
 function getTotalPlayerCount() {
-  const db = getScumDb();
-  if (!db) return 0;
-  const row = tryQueriesGet(db, [`SELECT COUNT(*) as TotalCount FROM user_profile`]);
-  return row ? row.TotalCount : 0;
+  return getPlayerCounts().total;
 }
 
 /**
  * Mirrors Get-OnlinePlayerCount.
  */
 function getOnlinePlayerCount() {
+  return getPlayerCounts().online;
+}
+
+/**
+ * Read the single weather_parameters row once (time + both temperatures). The
+ * status embed and API need game time and temperature together, which used to be
+ * two separate queries against the same one-row table — now one cached read.
+ */
+function getWeatherSnapshot() {
   const db = getScumDb();
-  if (!db) return 0;
-  const row = tryQueriesGet(db, [
-    `SELECT COUNT(*) as OnlineCount FROM user_profile WHERE last_login_time > last_logout_time OR last_logout_time IS NULL`,
-  ]);
-  return row ? row.OnlineCount : 0;
+  if (!db) return null;
+  return memo('weatherSnapshot', 5000, () => tryQueriesGet(db, [
+    `SELECT time_of_day, base_air_temperature, water_temperature FROM weather_parameters LIMIT 1`,
+  ]));
 }
 
 /**
  * Mirrors Get-GameTimeData.
  */
 function getGameTimeData() {
-  const db = getScumDb();
-  if (!db) return { Success: false, FormattedTime: 'N/A' };
-
-  const row = tryQueriesGet(db, [`SELECT time_of_day FROM weather_parameters LIMIT 1`]);
+  const row = getWeatherSnapshot();
   if (!row) return { Success: false, FormattedTime: 'N/A' };
 
   const timeOfDay = Number(row.time_of_day);
@@ -89,10 +112,7 @@ function getGameTimeData() {
  * Mirrors Get-WeatherData.
  */
 function getWeatherData() {
-  const db = getScumDb();
-  if (!db) return { Success: false, FormattedTemperature: 'N/A' };
-
-  const row = tryQueriesGet(db, [`SELECT base_air_temperature, water_temperature FROM weather_parameters LIMIT 1`]);
+  const row = getWeatherSnapshot();
   if (!row) return { Success: false, FormattedTemperature: 'N/A' };
 
   const airTemp = round(Number(row.base_air_temperature), 1);
@@ -112,10 +132,12 @@ function getWeatherData() {
 function getActiveSquadCount() {
   const db = getScumDb();
   if (!db) return 0;
-  const row = tryQueriesGet(db, [
-    `SELECT COUNT(DISTINCT squad_id) as total FROM squad_member WHERE squad_id IS NOT NULL AND squad_id != ''`,
-  ]);
-  return row ? row.total : 0;
+  return memo('activeSquadCount', 10000, () => {
+    const row = tryQueriesGet(db, [
+      `SELECT COUNT(DISTINCT squad_id) as total FROM squad_member WHERE squad_id IS NOT NULL AND squad_id != ''`,
+    ]);
+    return row ? row.total : 0;
+  });
 }
 
 /**
@@ -124,11 +146,13 @@ function getActiveSquadCount() {
 function getVehicleCount() {
   const db = getScumDb();
   if (!db) return 0;
-  const row = tryQueriesGet(db, [
-    `SELECT COUNT(*) as VehicleCount FROM vehicle_entity`,
-    `SELECT COUNT(*) as VehicleCount FROM Vehicles WHERE IsDestroyed = 0`,
-  ]);
-  return row ? row.VehicleCount : 0;
+  return memo('vehicleCount', 10000, () => {
+    const row = tryQueriesGet(db, [
+      `SELECT COUNT(*) as VehicleCount FROM vehicle_entity`,
+      `SELECT COUNT(*) as VehicleCount FROM Vehicles WHERE IsDestroyed = 0`,
+    ]);
+    return row ? row.VehicleCount : 0;
+  });
 }
 
 /**
@@ -137,11 +161,13 @@ function getVehicleCount() {
 function getBaseCount() {
   const db = getScumDb();
   if (!db) return 0;
-  const row = tryQueriesGet(db, [
-    `SELECT COUNT(*) as BaseCount FROM base`,
-    `SELECT COUNT(DISTINCT OwnerID) as BaseCount FROM Buildings WHERE IsDestroyed = 0`,
-  ]);
-  return row ? row.BaseCount : 0;
+  return memo('baseCount', 10000, () => {
+    const row = tryQueriesGet(db, [
+      `SELECT COUNT(*) as BaseCount FROM base`,
+      `SELECT COUNT(DISTINCT OwnerID) as BaseCount FROM Buildings WHERE IsDestroyed = 0`,
+    ]);
+    return row ? row.BaseCount : 0;
+  });
 }
 
 /**
@@ -288,57 +314,67 @@ function searchPlayersBySteamId(steamId) {
 function getSquadIdBySteamId(steamId) {
   const db = getScumDb();
   if (!db || steamId == null) return null;
-  try {
-    const row = db.prepare(excludeDeletedProfiles(
-      `SELECT sm.squad_id AS SquadId FROM user_profile u
-       JOIN squad_member sm ON u.id = sm.user_profile_id
-       WHERE u.user_id = ? LIMIT 1`,
-    )).get(String(steamId));
-    return row ? row.SquadId : null;
-  } catch {
-    return null;
-  }
+  return memo(`squadIdBySteam:${steamId}`, 15000, () => {
+    try {
+      const row = db.prepare(excludeDeletedProfiles(
+        `SELECT sm.squad_id AS SquadId FROM user_profile u
+         JOIN squad_member sm ON u.id = sm.user_profile_id
+         WHERE u.user_id = ? LIMIT 1`,
+      )).get(String(steamId));
+      return row ? row.SquadId : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 /** Steam IDs of all members of a squad. */
 function getSquadMemberSteamIds(squadId) {
   const db = getScumDb();
   if (!db || squadId == null) return [];
-  try {
-    const rows = db.prepare(excludeDeletedProfiles(
-      `SELECT u.user_id AS SteamID FROM user_profile u
-       JOIN squad_member sm ON u.id = sm.user_profile_id
-       WHERE sm.squad_id = ?`,
-    )).all(squadId);
-    return rows.map((r) => String(r.SteamID));
-  } catch {
-    return [];
-  }
+  return memo(`squadMembers:${squadId}`, 15000, () => {
+    try {
+      const rows = db.prepare(excludeDeletedProfiles(
+        `SELECT u.user_id AS SteamID FROM user_profile u
+         JOIN squad_member sm ON u.id = sm.user_profile_id
+         WHERE sm.squad_id = ?`,
+      )).all(squadId);
+      return rows.map((r) => String(r.SteamID));
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** Steam ID (user_profile.user_id) for a SCUM user_profile.id, or null. */
 function getSteamIdByProfileId(profileId) {
   const db = getScumDb();
   if (!db || profileId == null) return null;
-  try {
-    const row = db.prepare('SELECT user_id AS SteamID FROM user_profile WHERE id = ?').get(Number(profileId));
-    return row ? String(row.SteamID) : null;
-  } catch {
-    return null;
-  }
+  // A profile id maps to one steam id for the life of the save file.
+  return memoPersistent(`steamByProfile:${profileId}`, () => {
+    try {
+      const row = db.prepare('SELECT user_id AS SteamID FROM user_profile WHERE id = ?').get(Number(profileId));
+      return row ? String(row.SteamID) : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 /** Human-readable name for an entity id (e.g. 'Wolfswagen Item Container'), or null. */
 function getEntityDisplayName(entityId) {
   const db = getScumDb();
   if (!db || entityId == null) return null;
-  try {
-    const row = db.prepare('SELECT class AS Class FROM entity WHERE id = ?').get(Number(entityId));
-    if (!row || !row.Class) return null;
-    return String(row.Class).replace(/_ES$/, '').replace(/_C$/, '').replace(/_/g, ' ').trim();
-  } catch {
-    return null;
-  }
+  // An entity's class never changes once the row exists.
+  return memoPersistent(`entityName:${entityId}`, () => {
+    try {
+      const row = db.prepare('SELECT class AS Class FROM entity WHERE id = ?').get(Number(entityId));
+      if (!row || !row.Class) return null;
+      return String(row.Class).replace(/_ES$/, '').replace(/_C$/, '').replace(/_/g, ' ').trim();
+    } catch {
+      return null;
+    }
+  });
 }
 
 /**
@@ -350,12 +386,18 @@ function getBaseElementOwnerProfileId(x, y, z, maxDist = 5000) {
   const db = getScumDb();
   if (!db || x == null || y == null || z == null) return null;
   try {
+    // Pre-filter to an x/y box of half-width maxDist before the distance sort.
+    // Any element within maxDist (3D) is necessarily within maxDist horizontally,
+    // so it stays inside the box — the nearest-within-maxDist result is unchanged,
+    // but SQLite sorts far fewer rows instead of the whole base_element table.
     const row = db.prepare(`
       SELECT owner_profile_id AS OwnerProfileId,
         ((location_x - ?) * (location_x - ?) + (location_y - ?) * (location_y - ?)
          + (location_z - ?) * (location_z - ?)) AS d2
-      FROM base_element ORDER BY d2 ASC LIMIT 1
-    `).get(x, x, y, y, z, z);
+      FROM base_element
+      WHERE location_x BETWEEN ? AND ? AND location_y BETWEEN ? AND ?
+      ORDER BY d2 ASC LIMIT 1
+    `).get(x, x, y, y, z, z, x - maxDist, x + maxDist, y - maxDist, y + maxDist);
     if (!row || row.OwnerProfileId == null) return null;
     if (Math.sqrt(row.d2) > maxDist) return null;
     return row.OwnerProfileId;
@@ -372,25 +414,27 @@ function getBaseElementOwnerProfileId(x, y, z, maxDist = 5000) {
 function getOwnerAreaProfileIds(steamId) {
   const db = getScumDb();
   if (!db || steamId == null) return [];
-  const ids = new Set();
-  try {
-    const own = db.prepare(excludeDeletedProfiles(
-      'SELECT id AS Id FROM user_profile WHERE user_id = ?',
-    )).get(String(steamId));
-    if (own && own.Id != null) ids.add(own.Id);
-  } catch { /* ignore */ }
-  try {
-    const squadId = getSquadIdBySteamId(steamId);
-    if (squadId != null) {
-      const rows = db.prepare(excludeDeletedProfiles(
-        `SELECT u.id AS Id FROM user_profile u
-         JOIN squad_member sm ON u.id = sm.user_profile_id
-         WHERE sm.squad_id = ?`,
-      )).all(squadId);
-      for (const r of rows) if (r.Id != null) ids.add(r.Id);
-    }
-  } catch { /* ignore */ }
-  return [...ids];
+  return memo(`ownerAreaProfileIds:${steamId}`, 15000, () => {
+    const ids = new Set();
+    try {
+      const own = db.prepare(excludeDeletedProfiles(
+        'SELECT id AS Id FROM user_profile WHERE user_id = ?',
+      )).get(String(steamId));
+      if (own && own.Id != null) ids.add(own.Id);
+    } catch { /* ignore */ }
+    try {
+      const squadId = getSquadIdBySteamId(steamId);
+      if (squadId != null) {
+        const rows = db.prepare(excludeDeletedProfiles(
+          `SELECT u.id AS Id FROM user_profile u
+           JOIN squad_member sm ON u.id = sm.user_profile_id
+           WHERE sm.squad_id = ?`,
+        )).all(squadId);
+        for (const r of rows) if (r.Id != null) ids.add(r.Id);
+      }
+    } catch { /* ignore */ }
+    return [...ids];
+  });
 }
 
 /**
@@ -406,12 +450,16 @@ function isLocationInOwnerArea(steamId, x, y, radius = 5000) {
   if (!profileIds.length) return false;
   try {
     const placeholders = profileIds.map(() => '?').join(',');
+    // Bound the scan to an x/y box of half-width `radius`: anything within `radius`
+    // is inside the box, so the nearest-within-radius decision is identical while
+    // SQLite scans far fewer base_element rows.
     const row = db.prepare(`
       SELECT ((location_x - ?) * (location_x - ?) + (location_y - ?) * (location_y - ?)) AS d2
       FROM base_element
       WHERE owner_profile_id IN (${placeholders})
+        AND location_x BETWEEN ? AND ? AND location_y BETWEEN ? AND ?
       ORDER BY d2 ASC LIMIT 1
-    `).get(x, x, y, y, ...profileIds);
+    `).get(x, x, y, y, ...profileIds, x - radius, x + radius, y - radius, y + radius);
     if (!row || row.d2 == null) return false;
     return Math.sqrt(row.d2) <= radius;
   } catch {

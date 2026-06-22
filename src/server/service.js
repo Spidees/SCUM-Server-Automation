@@ -253,6 +253,11 @@ function buildServerAppParameters(serverArgs) {
   if (args.queryPort) parts.push(`-QueryPort=${args.queryPort}`);
   if (args.maxPlayers) parts.push(`-MaxPlayers=${args.maxPlayers}`);
   if (args.noBattleye) parts.push('-nobattleye');
+  // User-supplied extra launch arguments are appended verbatim so admins can pass
+  // any flag SCUMServer.exe supports without a code change.
+  if (args.customArgs && String(args.customArgs).trim()) {
+    parts.push(String(args.customArgs).trim());
+  }
   return parts.join(' ');
 }
 

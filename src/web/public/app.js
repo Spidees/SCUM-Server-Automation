@@ -311,6 +311,7 @@
       queryPort: document.getElementById('su-queryPort').value.trim(),
       maxPlayers: document.getElementById('su-maxPlayers').value.trim(),
       noBattleye: document.getElementById('su-nobattleye').checked,
+      customArgs: document.getElementById('su-customArgs').value.trim(),
       webPort: document.getElementById('su-webPort').value.trim(),
       webPassword: document.getElementById('su-webPassword').value,
       discordToken: document.getElementById('su-discordToken').value.trim(),

@@ -2,14 +2,27 @@
 
 const logger = require('../core/logger');
 const { getScumDb, getWeeklyDb, excludeDeletedAndAdmins } = require('./db');
+const { memo } = require('./cache');
 const { CATEGORIES, CATEGORIES_BY_KEY } = require('./leaderboardDefs');
 const { getCurrentWeekStart, toDateStr } = require('./weekly');
+
+// Each leaderboard category is a full scan + sort over user_profile and its stat
+// tables. The live embeds rebuild every category twice (weekly + all-time) on each
+// refresh, and the web API computes all 30 categories per request. Caching the
+// computed rows for a short window (< the embed refresh cadence) keeps the output
+// identical while collapsing bursts of identical queries into one.
+const LEADERBOARD_TTL_MS = 60000;
 
 /**
  * Run the all-time leaderboard query for a category.
  * Mirrors the Get-Top* functions (all-time branch).
  */
 function getAllTimeLeaderboard(category, limit) {
+  return memo(`lb:all:${category.key}:${limit}`, LEADERBOARD_TTL_MS,
+    () => computeAllTimeLeaderboard(category, limit));
+}
+
+function computeAllTimeLeaderboard(category, limit) {
   const db = getScumDb();
   if (!db) return [];
 
@@ -31,6 +44,12 @@ function getAllTimeLeaderboard(category, limit) {
  * Mirrors Get-WeeklyLeaderboard for each category's delta formula.
  */
 function getWeeklyLeaderboard(category, limit) {
+  if (!category.weekly) return [];
+  return memo(`lb:week:${category.key}:${limit}`, LEADERBOARD_TTL_MS,
+    () => computeWeeklyLeaderboard(category, limit));
+}
+
+function computeWeeklyLeaderboard(category, limit) {
   const w = category.weekly;
   if (!w) return [];
 

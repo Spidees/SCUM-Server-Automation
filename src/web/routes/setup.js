@@ -19,7 +19,7 @@ router.post('/save', (req, res) => {
     const { saveSetup } = require('../../setup');
     const { reloadConfig, env } = require('../../core/config');
     const {
-      serverDir, backupRoot, publicIP, serviceName, serverPort, queryPort, maxPlayers, noBattleye,
+      serverDir, backupRoot, publicIP, serviceName, serverPort, queryPort, maxPlayers, noBattleye, customArgs,
       webPort, webPassword, discordToken, guildId,
     } = req.body || {};
 
@@ -27,7 +27,7 @@ router.post('/save', (req, res) => {
     if (!webPassword) return res.status(400).json({ error: 'Admin password is required.' });
 
     saveSetup({
-      serverDir, backupRoot, publicIP, serviceName, serverPort, queryPort, maxPlayers, noBattleye,
+      serverDir, backupRoot, publicIP, serviceName, serverPort, queryPort, maxPlayers, noBattleye, customArgs,
       webPort, webPassword, discordToken, guildId,
     });
     reloadConfig();

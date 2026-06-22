@@ -2,8 +2,15 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildEconomyEmbed } = require('./embeds');
+const economyState = require('../economyState');
 
 const TIMESTAMP_RE = /^([\d.-]+):\s+(.+)$/;
+
+// Financial-state line printed after every trade; it names the trader and its
+// running balance, e.g. "[Trade] After tradeable sale to trader C_2_Armory, player
+// ... and trader has 8900 funds." We use it to track per-trader funds for the
+// economy embed (these lines are not posted to the public feed).
+const TRADER_FUNDS_RE = /^\[Trade\]\s+After\b.*?\btrader\s+([A-Za-z0-9_]+).*?\btrader has\s+(\d+)\s+funds/;
 
 const TRADE_RE = /^\[Trade\]\s+Tradeable\s+\((.+?)\)\s+(sold by|purchased by)\s+(.+?)\((\d+)\)\s+for\s+(\d+)\s+.*?(to|from)\s+trader\s+([^,]+)/;
 const MECHANIC_RE = /^\[Trade-Mechanic\]\s+Service\s+\((.+?)\)\s+purchased by\s+(.+?)\((\d+)\)\s+for\s+(\d+)\s+money\s+from\s+trader\s+([^,]+)/;
@@ -22,9 +29,20 @@ const SQUAD_PENALTY_RE = /^\[SquadPenalties\]\s+Squad\s+leaving\s+penalty\s+carr
 function parseLine(line) {
   const tm = TIMESTAMP_RE.exec(line);
   if (!tm) return null;
+  const timestamp = tm[1];
   const content = tm[2].trim();
 
   let m;
+  // Trader balance update (state only — never posted to the public feed).
+  if ((m = TRADER_FUNDS_RE.exec(content))) {
+    return {
+      type: 'trader_state',
+      trader: m[1],
+      funds: parseInt(m[2], 10),
+      timestamp,
+    };
+  }
+
   if ((m = TRADE_RE.exec(content))) {
     const item = m[1];
     const isSell = m[2] === 'sold by';
@@ -139,17 +157,32 @@ function parseLine(line) {
 }
 
 async function handle(event, client, config) {
-  const feedCfg = config.SCUMLogFeatures.EconomyFeed;
+  // Trader balance updates feed the economy embed, not the public economy feed.
+  if (event.type === 'trader_state') {
+    economyState.recordTraderFunds(event.trader, event.funds, event.timestamp);
+    return;
+  }
+
+  const feedCfg = (config.SCUMLogFeatures && config.SCUMLogFeatures.EconomyFeed) || {};
   if (!feedCfg.Enabled || !feedCfg.Channel) return;
 
   const embed = buildEconomyEmbed(event);
   await sendToChannel(client, feedCfg.Channel, [], embed);
 }
 
+// Tail the economy log when the public feed is on OR the economy embed is configured
+// (the embed needs the per-trader fund lines even when the feed itself is off).
+function isEnabled(config) {
+  const feat = config.SCUMLogFeatures || {};
+  const economyFeedOn = !!(feat.EconomyFeed && feat.EconomyFeed.Enabled);
+  const economyEmbedOn = !!(((config.Discord || {}).LiveEmbeds || {}).EconomyChannel);
+  return economyFeedOn || economyEmbedOn;
+}
+
 module.exports = {
   name: 'economy',
   logPrefix: 'economy_',
-  isEnabled: (config) => !!(config.SCUMLogFeatures.EconomyFeed && config.SCUMLogFeatures.EconomyFeed.Enabled),
+  isEnabled,
   parseLine,
   handle,
 };

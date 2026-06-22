@@ -18,7 +18,7 @@ function isSetupNeeded() {
   return false;
 }
 
-function saveSetup({ serverDir, backupRoot, publicIP, serviceName, serverPort, queryPort, maxPlayers, noBattleye, webPort, webPassword, discordToken, guildId }) {
+function saveSetup({ serverDir, backupRoot, publicIP, serviceName, serverPort, queryPort, maxPlayers, noBattleye, customArgs, webPort, webPassword, discordToken, guildId }) {
   // Preserve the existing SESSION_SECRET so the already-running server's sessions stay valid
   let sessionSecret = null;
   try {
@@ -50,6 +50,7 @@ function saveSetup({ serverDir, backupRoot, publicIP, serviceName, serverPort, q
     queryPort: parseInt(queryPort, 10) || 7043,
     maxPlayers: parseInt(maxPlayers, 10) || 64,
     noBattleye: noBattleye === true || noBattleye === 'true',
+    customArgs: (customArgs || '').trim(),
   };
   if (!cfg.web) cfg.web = {};
   cfg.web.port = parseInt(webPort, 10) || 8080;
