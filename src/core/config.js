@@ -49,6 +49,12 @@ const env = {
   discordToken: process.env.DISCORD_TOKEN || '',
   webAdminPassword: process.env.WEB_ADMIN_PASSWORD || 'changeme',
   sessionSecret: process.env.SESSION_SECRET || 'changeme',
+  // Discord OAuth2 for the public "Login with Discord" (player) flow.
+  discordClientId: process.env.DISCORD_CLIENT_ID || '',
+  discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
+  // Full callback URL registered in the Discord Developer Portal, e.g.
+  // https://your-domain/api/auth/discord/callback
+  discordOAuthRedirect: process.env.DISCORD_OAUTH_REDIRECT || '',
 };
 
 function reloadConfig() {
@@ -71,6 +77,12 @@ function reloadConfig() {
       const tok = readVar('DISCORD_TOKEN');
       if (pw !== null) env.webAdminPassword = pw;
       if (tok !== null) env.discordToken = tok;
+      const cid = readVar('DISCORD_CLIENT_ID');
+      const csec = readVar('DISCORD_CLIENT_SECRET');
+      const credir = readVar('DISCORD_OAUTH_REDIRECT');
+      if (cid !== null) env.discordClientId = cid;
+      if (csec !== null) env.discordClientSecret = csec;
+      if (credir !== null) env.discordOAuthRedirect = credir;
     } catch {}
   } catch { /* keep existing config if reload fails */ }
 }

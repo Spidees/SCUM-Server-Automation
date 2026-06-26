@@ -10,6 +10,8 @@
 // footer + logo via applyBranding().
 // ════════════════════════════════════════════════════════════════════════
 
+const { config } = require('../core/config');
+
 const BRAND_NAME = 'SCUM Server Automation';
 const LOGO_URL = 'https://playhub.cz/scum/manager/server_automation_discord.png';
 
@@ -154,4 +156,21 @@ function brandPayload(payload) {
   return payload;
 }
 
-module.exports = { BRAND_NAME, LOGO_URL, EMOJI, emojify, standardFooter, applyBranding, brandPayload };
+/** Public Field Console (web dashboard) URL, if the operator exposed it. */
+function getFieldConsoleUrl() {
+  const u = config.web && config.web.publicUrl;
+  return u && String(u).trim() ? String(u).trim() : null;
+}
+
+/** Append a "Field Console" link field to an embed when a public URL is configured. */
+function addFieldConsole(embed) {
+  const url = getFieldConsoleUrl();
+  if (!url) return embed;
+  const fields = (embed.data && embed.data.fields) || [];
+  if (fields.length < 25) {
+    embed.addFields({ name: '🖥️ Field Console', value: `[Open the live web dashboard →](${url})`, inline: false });
+  }
+  return embed;
+}
+
+module.exports = { BRAND_NAME, LOGO_URL, EMOJI, emojify, standardFooter, applyBranding, brandPayload, getFieldConsoleUrl, addFieldConsole };

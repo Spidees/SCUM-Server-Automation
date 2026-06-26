@@ -203,11 +203,9 @@ function getServerStatistics() {
  * Mirrors Get-PlayerByName / Get-PlayerBySteamID from prisoner.psm1 combined
  * with the leaderboard JOIN patterns from leaderboardDefs.js.
  */
-function getPlayerStatsByName(name) {
-  const db = getScumDb();
-  if (!db) return null;
-
-  const sql = `
+// Shared SELECT for a single player's full stat sheet. Append a WHERE clause
+// (by name or by Steam ID) plus `LIMIT 1`.
+const PLAYER_STATS_SELECT = `
     SELECT
       u.name                                    AS Name,
       u.user_id                                 AS SteamID,
@@ -219,8 +217,17 @@ function getPlayerStatsByName(name) {
       CASE WHEN u.last_login_time > u.last_logout_time
                 OR u.last_logout_time IS NULL
            THEN 1 ELSE 0 END                    AS IsOnline,
-      COALESCE(e.enemy_kills, 0)                AS Kills,
-      COALESCE(e.deaths, 0)                     AS Deaths,
+      -- Kills/Deaths live in survival_stats on current SCUM saves (events_stats is
+      -- the Events-mode table and is all-zero on survival servers). Fall back to
+      -- events_stats only when survival_stats has nothing.
+      (CASE WHEN COALESCE(s.kills, 0)  > 0 THEN s.kills  ELSE COALESCE(e.enemy_kills, 0) END) AS Kills,
+      (CASE WHEN COALESCE(s.deaths, 0) > 0 THEN s.deaths ELSE COALESCE(e.deaths, 0)      END) AS Deaths,
+      COALESCE(s.prisoner_kills, 0)             AS PvpKills,
+      COALESCE(s.firearm_kills, 0)              AS FirearmKills,
+      COALESCE(s.deaths_by_prisoners, 0)        AS PvpDeaths,
+      COALESCE(s.players_knocked_out, 0)        AS KnockedOut,
+      COALESCE(s.shots_fired, 0)                AS ShotsFired,
+      COALESCE(s.shots_hit, 0)                  AS ShotsHit,
       COALESCE(e.team_kills, 0)                 AS TeamKills,
       COALESCE(e.events_won, 0)                 AS EventsWon,
       COALESCE(s.headshots, 0)                  AS Headshots,
@@ -247,16 +254,42 @@ function getPlayerStatsByName(name) {
            ON u.id = bar.account_owner_user_profile_id
     LEFT JOIN bank_account_registry_currencies barc
            ON bar.id = barc.bank_account_id AND barc.currency_type = 1
-    WHERE LOWER(u.name) = LOWER(?)
-    LIMIT 1
-  `;
+`;
 
-  try {
-    const row = db.prepare(excludeDeletedProfiles(sql)).get(name);
-    return row || null;
-  } catch {
-    return null;
-  }
+function getPlayerStatsByName(name) {
+  const db = getScumDb();
+  if (!db || name == null) return null;
+  // Cached briefly — hit by the public player-profile click and admin lookups,
+  // and the stat sheet is a multi-join scan.
+  return memo(`statsByName:${String(name).toLowerCase()}`, 15000, () => {
+    const sql = `${PLAYER_STATS_SELECT} WHERE LOWER(u.name) = LOWER(?) LIMIT 1`;
+    try {
+      const row = db.prepare(excludeDeletedProfiles(sql)).get(name);
+      return row || null;
+    } catch {
+      return null;
+    }
+  });
+}
+
+/**
+ * Same full stat sheet as getPlayerStatsByName but keyed on Steam ID — used for a
+ * linked player's own stats, where names may collide or change.
+ */
+function getPlayerStatsBySteamId(steamId) {
+  const db = getScumDb();
+  if (!db || steamId == null) return null;
+  // Cached briefly: a linked player's panel may poll this, and the stat sheet is
+  // a multi-join scan — one query per player per 15s is plenty.
+  return memo(`statsBySteam:${steamId}`, 15000, () => {
+    const sql = `${PLAYER_STATS_SELECT} WHERE u.user_id = ? LIMIT 1`;
+    try {
+      const row = db.prepare(excludeDeletedProfiles(sql)).get(String(steamId));
+      return row || null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 /**
@@ -328,6 +361,95 @@ function getSquadIdBySteamId(steamId) {
   });
 }
 
+const SQUAD_RANKS = { 4: 'Leader', 3: 'Officer', 2: 'Member', 1: 'Recruit' };
+
+/**
+ * A player's own squad: name, score and members (name, rank, online, last seen).
+ * No Steam IDs are returned. Keyed on the player's Steam ID.
+ */
+function getSquadInfoBySteamId(steamId) {
+  const db = getScumDb();
+  if (!db || steamId == null) return null;
+  return memo(`squadInfo:${steamId}`, 15000, () => {
+    try {
+      const sq = db.prepare(excludeDeletedProfiles(
+        `SELECT s.id AS Id, s.name AS Name, COALESCE(s.score, 0) AS Score
+         FROM user_profile u
+         JOIN squad_member sm ON u.id = sm.user_profile_id
+         JOIN squad s ON s.id = sm.squad_id
+         WHERE u.user_id = ? LIMIT 1`,
+      )).get(String(steamId));
+      if (!sq) return null;
+      const members = db.prepare(excludeDeletedProfiles(
+        `SELECT u.name AS name, sm.rank AS rank,
+                CASE WHEN u.last_login_time > u.last_logout_time OR u.last_logout_time IS NULL
+                     THEN 1 ELSE 0 END AS online,
+                u.last_login_time AS lastLogin, u.last_logout_time AS lastLogout
+         FROM squad_member sm JOIN user_profile u ON u.id = sm.user_profile_id
+         WHERE sm.squad_id = ?
+         ORDER BY online DESC, sm.rank DESC, u.name`,
+      )).all(sq.Id);
+      return {
+        name: sq.Name,
+        score: sq.Score,
+        memberCount: members.length,
+        members: members.map((m) => ({
+          name: m.name,
+          rank: SQUAD_RANKS[m.rank] || 'Member',
+          online: !!m.online,
+          lastSeen: m.online ? null : (m.lastLogout || m.lastLogin || null),
+        })),
+      };
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** Public squad list: name, score, member count. No per-member data. */
+function getSquadList(limit = 60) {
+  const db = getScumDb();
+  if (!db) return [];
+  return memo(`squadList:${limit}`, 30000, () => {
+    try {
+      return db.prepare(
+        `SELECT s.id AS id, s.name AS name, COALESCE(s.score, 0) AS score,
+                COUNT(m.user_profile_id) AS memberCount
+         FROM squad s LEFT JOIN squad_member m ON m.squad_id = s.id
+         GROUP BY s.id, s.name HAVING memberCount > 0
+         ORDER BY score DESC LIMIT ?`,
+      ).all(limit);
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** Public squad detail: name, score, members (name + rank only — no online/last-seen). */
+function getSquadDetailById(squadId) {
+  const db = getScumDb();
+  if (!db || squadId == null) return null;
+  return memo(`squadDetail:${squadId}`, 30000, () => {
+    try {
+      const sq = db.prepare('SELECT name, COALESCE(score, 0) AS score FROM squad WHERE id = ?').get(Number(squadId));
+      if (!sq) return null;
+      const members = db.prepare(excludeDeletedProfiles(
+        `SELECT u.name AS name, sm.rank AS rank
+         FROM squad_member sm JOIN user_profile u ON u.id = sm.user_profile_id
+         WHERE sm.squad_id = ? ORDER BY sm.rank DESC, u.name`,
+      )).all(Number(squadId));
+      return {
+        name: sq.name,
+        score: sq.score,
+        memberCount: members.length,
+        members: members.map((m) => ({ name: m.name, rank: SQUAD_RANKS[m.rank] || 'Member' })),
+      };
+    } catch {
+      return null;
+    }
+  });
+}
+
 /** Steam IDs of all members of a squad. */
 function getSquadMemberSteamIds(squadId) {
   const db = getScumDb();
@@ -355,6 +477,21 @@ function getSteamIdByProfileId(profileId) {
     try {
       const row = db.prepare('SELECT user_id AS SteamID FROM user_profile WHERE id = ?').get(Number(profileId));
       return row ? String(row.SteamID) : null;
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** Player name for a SCUM user_profile.id, or null. */
+function getPlayerNameByProfileId(profileId) {
+  const db = getScumDb();
+  if (!db || profileId == null) return null;
+  // A profile's name can change, so don't cache it persistently.
+  return memo(`nameByProfile:${profileId}`, 15000, () => {
+    try {
+      const row = db.prepare('SELECT name AS Name FROM user_profile WHERE id = ?').get(Number(profileId));
+      return row && row.Name ? String(row.Name) : null;
     } catch {
       return null;
     }
@@ -472,7 +609,11 @@ module.exports = {
   getTotalPlayerCount,
   getSquadIdBySteamId,
   getSquadMemberSteamIds,
+  getSquadInfoBySteamId,
+  getSquadList,
+  getSquadDetailById,
   getSteamIdByProfileId,
+  getPlayerNameByProfileId,
   getOwnerAreaProfileIds,
   isLocationInOwnerArea,
   getEntityDisplayName,
@@ -485,6 +626,7 @@ module.exports = {
   getBaseCount,
   getServerStatistics,
   getPlayerStatsByName,
+  getPlayerStatsBySteamId,
   searchPlayersByName,
   searchPlayersBySteamId,
 };

@@ -6,8 +6,10 @@ const playerStats = require('./playerStats');
 const weekly = require('./weekly');
 const serverDb = require('./serverDb');
 const economy = require('./economy');
+const leaderboardSnapshot = require('./leaderboardSnapshot');
 
 function closeAll() {
+  leaderboardSnapshot.stopSnapshotRefresh();
   db.closeAll();
   serverDb.closeAll();
 }
@@ -19,5 +21,6 @@ module.exports = {
   ...weekly,
   ...serverDb,
   ...economy,
+  ...leaderboardSnapshot,
   closeAll,
 };

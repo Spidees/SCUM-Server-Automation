@@ -11,7 +11,7 @@ const { config, env, paths } = require('../core/config');
 const { schedulingState } = require('../core/state');
 const database = require('../database');
 const { COLORS, FOOTER } = require('./embeds');
-const { applyBranding, brandPayload } = require('./branding');
+const { applyBranding, brandPayload, getFieldConsoleUrl } = require('./branding');
 const { parseChatLine } = require('./chatRelay');
 const monitoring = require('../server/monitoring');
 const service = require('../server/service');
@@ -164,6 +164,8 @@ function buildPlayerStatsEmbed(stats, online, lastSeen) {
     .setColor(online ? COLORS.green : COLORS.grey)
     .setImage('https://playhub.cz/scum/13.gif')
     .setTimestamp()
+    // 24 fields (8 rows of 3) — within Discord's 25-field embed limit. Kept in
+    // sync with the dashboard "My Stats" panel so both show the same metrics.
     .addFields(
       { name: '🛡️ Squad', value: stats.SquadName || '*No squad*', inline: true },
       { name: '📡 Status', value: online ? 'Online' : 'Offline', inline: true },
@@ -173,25 +175,25 @@ function buildPlayerStatsEmbed(stats, online, lastSeen) {
       { name: '💀 Deaths', value: fmtNum(stats.Deaths), inline: true },
       { name: '📊 K/D', value: kdr, inline: true },
 
+      { name: '🔫 PvP Kills', value: fmtNum(stats.PvpKills), inline: true },
+      { name: '☠️ PvP Deaths', value: fmtNum(stats.PvpDeaths), inline: true },
       { name: '🎯 Headshots', value: fmtNum(stats.Headshots), inline: true },
-      { name: '🔭 Longest Kill', value: `${fmtNum(stats.LongestKill)} m`, inline: true },
-      { name: '🤝 Team Kills', value: fmtNum(stats.TeamKills), inline: true },
 
+      { name: '🧟 Puppet Kills', value: fmtNum(stats.ZombieKills), inline: true },
+      { name: '🐾 Animal Kills', value: fmtNum(stats.AnimalKills), inline: true },
+      { name: '🔭 Longest Kill', value: `${fmtNum(stats.LongestKill)} m`, inline: true },
+
+      { name: '🔥 Firearm Kills', value: fmtNum(stats.FirearmKills), inline: true },
       { name: '🔪 Melee Kills', value: fmtNum(stats.MeleeKills), inline: true },
       { name: '🏹 Archery Kills', value: fmtNum(stats.ArcheryKills), inline: true },
-      { name: '🧟 Puppet Kills', value: fmtNum(stats.ZombieKills), inline: true },
 
-      { name: '🐾 Animal Kills', value: fmtNum(stats.AnimalKills), inline: true },
       { name: '⏱️ Survived', value: `${survivedH} h`, inline: true },
       { name: '👣 Distance', value: `${distanceKm} km`, inline: true },
-
       { name: '📦 Looted', value: fmtNum(stats.Looted), inline: true },
-      { name: '🎣 Fish Caught', value: fmtNum(stats.FishCaught), inline: true },
-      { name: '🩹 Wounds Patched', value: fmtNum(stats.WoundsPatched), inline: true },
 
-      { name: '🔨 Items Crafted', value: fmtNum(stats.Crafted), inline: true },
       { name: '🔓 Locks Picked', value: fmtNum(stats.LocksPicked), inline: true },
-      { name: '🏆 Events Won', value: fmtNum(stats.EventsWon), inline: true },
+      { name: '🔨 Items Crafted', value: fmtNum(stats.Crafted), inline: true },
+      { name: '🎣 Fish Caught', value: fmtNum(stats.FishCaught), inline: true },
 
       { name: '⭐ Fame', value: fmtNum(stats.FamePoints), inline: true },
       { name: '💰 Money', value: fmtNum(stats.Money), inline: true },
@@ -844,12 +846,18 @@ function buildLinkingPanelEmbed() {
 }
 
 function buildLinkingPanelRow() {
-  return new ActionRowBuilder().addComponents(
+  const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('link_account').setLabel('Link Account').setStyle(ButtonStyle.Success).setEmoji('🔗'),
     new ButtonBuilder().setCustomId('check_status').setLabel('Check Status').setStyle(ButtonStyle.Secondary).setEmoji('📊'),
     new ButtonBuilder().setCustomId('notify_settings').setLabel('Notifications').setStyle(ButtonStyle.Primary).setEmoji('⚙️'),
     new ButtonBuilder().setCustomId('unlink_account').setLabel('Unlink Account').setStyle(ButtonStyle.Danger).setEmoji('🔓'),
   );
+  // Link out to the public web dashboard when it's exposed for players.
+  const fcUrl = getFieldConsoleUrl();
+  if (fcUrl) {
+    row.addComponents(new ButtonBuilder().setLabel('Field Console').setStyle(ButtonStyle.Link).setURL(fcUrl).setEmoji('🖥️'));
+  }
+  return row;
 }
 
 /**

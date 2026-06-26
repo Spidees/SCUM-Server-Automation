@@ -119,21 +119,32 @@ async function handle(event, client, config) {
     updateUserProfileFlagId(event.userId, event.flagId);
   }
 
+  // Resolve the player who interrupted protection by logging in (squad member).
+  if (event.eventType === 'ProtectionEnded' && event.userId) {
+    event.userName = database.getPlayerNameByProfileId(event.userId) || null;
+  }
+
+  // Discord relative timestamp (<t:…:R>) — a live countdown that updates in the
+  // client, e.g. "in 60 minutes". `offsetSec` is seconds from now.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const relTs = (offsetSec) => `<t:${nowSec + Math.max(0, Math.round(offsetSec))}:R>`;
+  const absTs = (offsetSec) => `<t:${nowSec + Math.max(0, Math.round(offsetSec))}:f>`;
+
   // DM the flag owner about any raid-protection change to their base.
   const RAID_ALERTS = {
     ProtectionScheduled: {
       title: ':hourglass: Raid Protection Scheduled',
-      description: (e) => `Your base protection will activate${e.startDelay ? ` in **${Math.round(e.startDelay / 60)} min**` : ''} (all owners offline).`,
+      description: (e) => `Your base protection will activate${e.startDelay ? ` ${relTs(e.startDelay)}` : ''} (all owners offline).`,
       color: 0xfee75c,
     },
     ProtectionActivated: {
       title: ':shield: Raid Protection Activated',
-      description: () => 'Your base is now **under raid protection**.',
+      description: (e) => `Your base is now **under raid protection**${e.duration ? ` — active until ${absTs(e.duration)} (${relTs(e.duration)})` : ''}.`,
       color: 0x57f287,
     },
     ProtectionEnded: {
       title: ':door: Raid Protection Ended',
-      description: () => 'Your base **raid protection has ended** — your base can now be raided.',
+      description: (e) => `Your base **raid protection has ended**${e.userName ? ` — **${e.userName}** logged in` : ''} — your base can now be raided.`,
       color: 0xe67e22,
     },
     ProtectionExpired: {

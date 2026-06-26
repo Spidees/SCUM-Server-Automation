@@ -2,6 +2,7 @@
 
 const { sendToChannel } = require('../notifications');
 const { buildKillEmbed, buildKillEmbedSimple } = require('./embeds');
+const recentKills = require('../recentKills');
 
 const TIMESTAMP_RE = /^([\d.-]+):\s+(.+)/;
 
@@ -196,6 +197,9 @@ const playersDelayQueue = [];
 
 async function handle(event, client, config) {
   const feedCfg = config.SCUMLogFeatures.KillFeed;
+
+  // Record for the public site's live kill feed (independent of Discord output).
+  recentKills.record(event);
 
   if (feedCfg.AdminEnabled && feedCfg.AdminChannel) {
     const embed = buildKillEmbed(event);

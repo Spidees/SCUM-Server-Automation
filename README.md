@@ -9,6 +9,28 @@ Steam updates — and exposes everything through a themed **web dashboard** and 
 
 ---
 
+## 📚 Documentation
+
+Full docs live in the **[Wiki](https://github.com/Spidees/SCUM-Server-Automation/wiki)**:
+
+**For users** —
+[Installation](https://github.com/Spidees/SCUM-Server-Automation/wiki/Installation) ·
+[Configuration](https://github.com/Spidees/SCUM-Server-Automation/wiki/Configuration) ·
+[Web Interface](https://github.com/Spidees/SCUM-Server-Automation/wiki/Web-Interface) ·
+[Public Field Console](https://github.com/Spidees/SCUM-Server-Automation/wiki/Public-Field-Console) ·
+[Exposing to the Internet](https://github.com/Spidees/SCUM-Server-Automation/wiki/Exposing-to-the-Internet) ·
+[Discord Bot](https://github.com/Spidees/SCUM-Server-Automation/wiki/Discord-Bot) ·
+[Player Management & Bans](https://github.com/Spidees/SCUM-Server-Automation/wiki/Player-Management) ·
+[FAQ & Troubleshooting](https://github.com/Spidees/SCUM-Server-Automation/wiki/FAQ)
+
+**For developers** —
+[Architecture](https://github.com/Spidees/SCUM-Server-Automation/wiki/Developer-Architecture) ·
+[HTTP API & Realtime](https://github.com/Spidees/SCUM-Server-Automation/wiki/Developer-HTTP-API) ·
+[Database & Caching](https://github.com/Spidees/SCUM-Server-Automation/wiki/Developer-Database) ·
+[Contributing](https://github.com/Spidees/SCUM-Server-Automation/wiki/Developer-Contributing)
+
+---
+
 ## Features
 
 ### Server management
@@ -26,20 +48,37 @@ Steam updates — and exposes everything through a themed **web dashboard** and 
 - Automatic Steam update detection with a configurable delay and countdown warnings
 - Manual *validate files* and *check & update* actions (with confirmation on Discord)
 
-### Web dashboard — `http://localhost:8080`
-- Distinctive "TEC1 terminal" theme; consistent header, footer (GitHub / Discord links) on every screen
+### Web interface
+
+The web server (default `http://localhost:8080`) serves **two faces** that share one tactical
+"field terminal" theme:
+
+**Admin dashboard — `/admin`** (password-protected, for server staff)
 - Live status: state, players, **system CPU & RAM (used / total)**, server FPS, entities, service status
 - Server controls (start / stop / restart / backup / validate / check & update)
 - Scheduling & backup info, next restart (incl. pending **manual** restarts) and skip toggle
-- Leaderboards (29 categories, all-time & weekly) and online players
-- **Settings** screen: every `config/config.json` option, grouped into collapsible categories with
-  search and expand/collapse
-- **Game Settings** screen: `ServerSettings.ini` editor (correct field types + descriptions from a
-  community reference), user lists (admin / banned / exclusive / whitelisted), and raw-JSON editors
-  for `EconomyOverride.json`, `RaidTimes.json` and `Notifications.json`
-- Live server-log tail over WebSocket
+- **Players** screen — search by **name / Steam ID / IP**, open a full player profile (all stats,
+  Steam ID, IP, last login/logout, Discord link) and **ban / unban** (writes `BannedUsers.ini`)
+- **Settings** — every `config/config.json` option, grouped & searchable
+- **Game Settings** — `ServerSettings.ini` editor, user lists (admin / banned / exclusive /
+  whitelisted), raw-JSON editors for `EconomyOverride.json`, `RaidTimes.json`, `Notifications.json`
+- **Discord** screen — post the account-linking panel, view linked accounts (click → player profile)
+- Live server-log tail over WebSocket (admin-only)
+
+**Public Field Console — `/`** (community-facing, optional Discord login)
+- **Overview** (public): server name, connect address, FPS, next restart, in-game time/weather,
+  total players, active squads, top squads
+- **Login with Discord** (OAuth) — everything below is gated behind login:
+  **Leaderboards** (filterable, click a player → their stats), **Squads** (roster, click for detail),
+  **My Stats** (full character sheet + leaderboard ranks + your squad + **DM-alert settings & history**),
+  **Bunkers**, **Economy** (mirrors the Discord embed), **Kill Feed**
+- Optional **link in the Discord embeds** to the live Field Console (set `web.publicUrl`)
 
 ![SCUM Server Automation - Dashboard](http://playhub.cz/scum/manager/dashboard.png)
+
+> **Exposing it to the internet?** See **[Exposing to the Internet](https://github.com/Spidees/SCUM-Server-Automation/wiki/Exposing-to-the-Internet)**
+> for domain + HTTPS (reverse proxy or built-in TLS), `bindAddress`, rate limiting and the security
+> checklist.
 
 ### Discord bot (optional)
 - **Notifications** — server lifecycle, service status, backups, updates, performance alerts and
@@ -116,19 +155,31 @@ All non-secret settings — editable directly or from the dashboard **Settings**
 | `autoRestart` | `true` | Auto-restart on crash detection |
 | `backupIntervalMinutes` | `60` | Periodic backup interval |
 | `updateCheckIntervalMinutes` | `15` | How often to check for Steam updates |
-| `web.port` | `8080` | Web dashboard port |
+| `web.port` | `8080` | Web server port (serves both `/` and `/admin`) |
+| `web.publicUrl` | `""` | Public URL of the Field Console; when set, Discord embeds link to it |
+| `web.bindAddress` | `0.0.0.0` | Interface to bind (set to a LAN IP / `127.0.0.1` to keep it off the open net) |
+| `web.trustProxy` | `false` | Set `true` behind a reverse proxy so the real client IP is used |
+| `web.cookieSecure` | `false` | Set `true` when served over HTTPS |
+| `web.adminAllowlist` | `[]` | Optional IP/CIDR allowlist for admin requests |
+| `web.httpRedirectPort` | `null` | With built-in TLS, an HTTP port (e.g. `80`) that 301s to HTTPS |
+| `web.ssl` | `{enabled,keyFile,certFile}` | Serve HTTPS directly without a reverse proxy |
 | `Discord` | … | Bot presence, notifications, live embeds, chat relay, log feeds |
 
 > Players connect on **game port + 2** (e.g. `-port=7042` → connect on `7042` … the in-game/server
 > address shown in the status embed uses the +2 connect port automatically).
 
 ### `.env`
-Secrets generated by the wizard — never commit this file.
+Secrets — never commit this file. The wizard generates the first three.
 
 ```env
-DISCORD_TOKEN=        # bot token — leave empty to disable Discord
-WEB_ADMIN_PASSWORD=   # dashboard login password
-SESSION_SECRET=       # random string (auto-generated)
+DISCORD_TOKEN=          # bot token — leave empty to disable the Discord bot
+WEB_ADMIN_PASSWORD=     # admin dashboard (/admin) login password
+SESSION_SECRET=         # random string (auto-generated)
+
+# Optional "Login with Discord" for the public Field Console (OAuth2)
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_OAUTH_REDIRECT= # e.g. https://your-domain/api/auth/discord/callback
 ```
 
 To reconfigure from scratch, delete `.env` and restart.
@@ -212,9 +263,11 @@ public channel is off**.
 │   ├── database/    # SCUM.db (read-only), leaderboards, weekly snapshots, server_database.db
 │   ├── discord/     # bot, notifications, live embeds, chat relay, slash commands, raid alerts,
 │   │   └── logFeeds/    #   bunker tracker, 13 log-feed modules + tailer & embed builders
-│   └── web/         # Express + socket.io dashboard
-│       ├── public/      #   index.html, app.js, style.css, logo, serverSettingsMeta.json
-│       └── routes/      #   auth, api, game-config, setup
+│   └── web/         # Express + socket.io web server
+│       ├── public/       #   admin dashboard SPA (served at /admin)
+│       ├── public-site/  #   public Field Console SPA (served at /)
+│       └── routes/       #   auth (admin), discordAuth (player OAuth), api (admin),
+│                         #   public, player, game-config, setup
 └── package.json
 ```
 

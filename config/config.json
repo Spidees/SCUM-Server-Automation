@@ -55,7 +55,18 @@
   },
   "web": {
     "port": 8080,
-    "enabled": true
+    "enabled": true,
+    "publicUrl": "",
+    "bindAddress": "0.0.0.0",
+    "adminAllowlist": [],
+    "trustProxy": false,
+    "cookieSecure": false,
+    "httpRedirectPort": null,
+    "ssl": {
+      "enabled": false,
+      "keyFile": "",
+      "certFile": ""
+    }
   },
   "Discord": {
     "GuildId": "",

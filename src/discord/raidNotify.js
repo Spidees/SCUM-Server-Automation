@@ -110,6 +110,11 @@ async function dispatchOwnerAlert(client, alert) {
     try {
       const user = await client.users.fetch(t.discordUserId);
       await user.send({ embeds: [embed] });
+      database.logNotificationSent(t.discordUserId, t.steamId, {
+        type: alert.type,
+        title: alert.title || 'Alert',
+        body: alert.description || '',
+      });
     } catch (err) {
       logger.warn(`[RaidNotify] Failed to DM ${t.discordUserId}: ${err.message}`);
     }

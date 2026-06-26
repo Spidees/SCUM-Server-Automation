@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0d0e0a" />
+  <title>SCUM Server — Field Console</title>
+  <link rel="icon" href="logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <svg width="0" height="0" class="svg-defs" aria-hidden="true">
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9M6.6 6.6a8 8 0 1 0 10.8 0"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4zM9.5 20v-5h5v5"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4zM9 4v14M15 6v14"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.2 11h10l2-7H6.5"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19 11a7 7 0 1 0-1.8 5.4M19 5v6h-6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 6.5a3 3 0 0 1 0 5.8M16.5 19a5 5 0 0 0-1.6-3.4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 2.5v5c0 4.7-3 8-7 10-4-2-7-5.3-7-10v-5z"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2.5 6.5h10v9h-10zM12.5 9.5h4l3 3v3h-7z"/><circle cx="6.5" cy="17.5" r="1.6"/><circle cx="16.5" cy="17.5" r="1.6"/></symbol>
+    <symbol id="i-base" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4zM9.5 20v-5h5v5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-temp" viewBox="0 0 24 24"><path d="M12 4.5a2 2 0 0 1 2 2v7.2a3.6 3.6 0 1 1-4 0V6.5a2 2 0 0 1 2-2z"/></symbol>
+    <symbol id="i-skull" viewBox="0 0 24 24"><path d="M12 3a8 8 0 0 0-5 14.2V20h10v-2.8A8 8 0 0 0 12 3z"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/></symbol>
+    <symbol id="i-grave" viewBox="0 0 24 24"><path d="M6 21V9a6 6 0 0 1 12 0v12zM9.5 8h5M12 5.5v5"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></symbol>
+    <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9" rx="1.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+    <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="7" rx="6.5" ry="3"/><path d="M5.5 7v5c0 1.7 2.9 3 6.5 3s6.5-1.3 6.5-3V7M5.5 12v5c0 1.7 2.9 3 6.5 3s6.5-1.3 6.5-3v-5"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v4a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M10 13.5v3M14 13.5v3M8 20h8M9 17h6v3H9z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></symbol>
+    <symbol id="i-discord" viewBox="0 0 24 24"><path d="M19 6.5A16 16 0 0 0 15 5.3l-.4.8a13 13 0 0 1 3.6 1.1A12 12 0 0 0 6 7.2 13 13 0 0 1 9.4 6L9 5.3A16 16 0 0 0 5 6.5C3 9.5 2.5 12.4 2.7 15.3A16 16 0 0 0 7.6 18l.8-1.3-1.7-.8.4-.3a9 9 0 0 0 9.8 0l.4.3-1.7.8.8 1.3a16 16 0 0 0 4.9-2.7c.3-3.4-.5-6.3-2.6-8.8zM9 13.6c-.8 0-1.5-.8-1.5-1.7S8.2 10.2 9 10.2s1.5.8 1.5 1.7-.6 1.7-1.5 1.7zm6 0c-.8 0-1.5-.8-1.5-1.7s.7-1.7 1.5-1.7 1.5.8 1.5 1.7-.6 1.7-1.5 1.7z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 6V4.5H5v15H14V18M10 12h10M16.5 8.5 20 12l-3.5 3.5"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8M11 6H6v12h12v-5"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5zM10 18.5a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-gun" viewBox="0 0 24 24"><path d="M3 8h13v4h-3l-2 3H8l1-3H3zM6 12v3M16 9h4v2h-4"/></symbol>
+    <symbol id="i-foot" viewBox="0 0 24 24"><path d="M9 3c2 0 3 2.5 3 6s-1 5-3 5-3-2-3-4 1-7 3-7zM7 16c0 2.5 1 4 3 4s3-1 3-3"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3 4 7v10l8 4 8-4V7zM4 7l8 4 8-4M12 11v10"/></symbol>
+  </svg>
+
+  <!-- ── Header ───────────────────────────────────────────────────────────── -->
+  <header class="hud-top">
+    <div class="brand">
+      <img src="logo.png" alt="" />
+      <div class="brand-text">
+        <span class="brand-name" id="brand-name">SCUM</span>
+        <span class="brand-sub">Server Automation</span>
+      </div>
+    </div>
+
+    <div class="readout" id="readout">
+      <span class="readout-dot" id="status-dot"></span>
+      <div class="readout-pop">
+        <span class="readout-num" id="status-players">— / —</span>
+        <span class="readout-cap">survivors online</span>
+      </div>
+      <div class="readout-state-wrap">
+        <span class="readout-state" id="status-text">CONNECTING</span>
+        <span class="readout-sub" id="status-updated">syncing…</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <a class="player-chip" id="player-chip" href="#mystats" hidden></a>
+      <a class="admin-link" href="/admin/" title="Admin control panel">
+        <svg class="ico"><use href="#i-ext"/></svg><span>Admin</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- ── Main nav ─────────────────────────────────────────────────────────── -->
+  <nav class="mainnav" id="mainnav">
+    <button class="nav-btn active" data-view="overview"><svg class="ico"><use href="#i-home"/></svg><span>Overview</span></button>
+    <button class="nav-btn" data-view="leaderboards"><svg class="ico"><use href="#i-trophy"/></svg><span>Leaderboards</span></button>
+    <button class="nav-btn" data-view="squads"><svg class="ico"><use href="#i-shield"/></svg><span>Squads</span></button>
+    <button class="nav-btn" data-view="mystats"><svg class="ico"><use href="#i-user"/></svg><span>My Stats</span></button>
+    <button class="nav-btn" data-view="bunkers"><svg class="ico"><use href="#i-map"/></svg><span>Bunkers</span></button>
+    <button class="nav-btn" data-view="economy"><svg class="ico"><use href="#i-cart"/></svg><span>Economy</span></button>
+    <button class="nav-btn" data-view="killfeed"><svg class="ico"><use href="#i-skull"/></svg><span>Kill Feed</span></button>
+  </nav>
+
+  <main>
+    <!-- ── Overview ───────────────────────────────────────────────────────── -->
+    <section class="view active" id="view-overview">
+      <div class="ov-top">
+        <div class="panel ov-card">
+          <h2><svg class="ico"><use href="#i-power"/></svg> Server</h2>
+          <table class="srv-table"><tbody>
+            <tr><th>Name</th><td id="srv-name">-</td></tr>
+            <tr><th>Connect</th><td id="srv-ip">-</td></tr>
+            <tr><th>Status</th><td id="srv-state">-</td></tr>
+            <tr><th>Performance</th><td id="srv-fps">-</td></tr>
+          </tbody></table>
+        </div>
+        <div class="panel ov-card">
+          <h2><svg class="ico"><use href="#i-refresh"/></svg> Next restart</h2>
+          <div class="ov-restart">
+            <span class="ov-big" id="ov-restart-rel">-</span>
+            <span class="muted small" id="ov-restart-abs"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tiles" id="overview-tiles">
+        <div class="tile"><svg class="ico"><use href="#i-users"/></svg><div class="tile-t"><span class="tile-v" id="tm-players">-</span><span class="tile-k">Total Players</span></div></div>
+        <div class="tile"><svg class="ico"><use href="#i-shield"/></svg><div class="tile-t"><span class="tile-v" id="tm-squads">-</span><span class="tile-k">Active Squads</span></div></div>
+        <div class="tile"><svg class="ico"><use href="#i-clock"/></svg><div class="tile-t"><span class="tile-v" id="tm-time">-</span><span class="tile-k">island time</span></div></div>
+        <div class="tile"><svg class="ico"><use href="#i-temp"/></svg><div class="tile-t"><span class="tile-v" id="tm-temp">-</span><span class="tile-k">air / water</span></div></div>
+      </div>
+
+      <div class="panel ov-card">
+        <h2><svg class="ico"><use href="#i-trophy"/></svg> Top squads</h2>
+        <ol class="ov-squads" id="ov-squads"><li class="muted small">-</li></ol>
+      </div>
+    </section>
+
+    <!-- ── Leaderboards ───────────────────────────────────────────────────── -->
+    <section class="view" id="view-leaderboards" hidden>
+      <div class="panel lb">
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-trophy"/></svg> Leaderboards</h2>
+          <div class="lb-tools">
+            <label class="search"><svg class="ico"><use href="#i-search"/></svg><input type="text" id="lb-search" placeholder="Filter player…" autocomplete="off" /></label>
+            <select id="lb-category" aria-label="Leaderboard category"></select>
+            <div class="seg">
+              <button class="seg-btn active" data-weekly="0">All-time</button>
+              <button class="seg-btn" data-weekly="1">Weekly</button>
+            </div>
+          </div>
+        </div>
+        <ol class="lb-list" id="lb-list"><li class="lb-empty">Loading…</li></ol>
+        <p class="stamp" id="lb-updated"></p>
+      </div>
+    </section>
+
+    <!-- ── My Stats ───────────────────────────────────────────────────────── -->
+    <section class="view" id="view-squads" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-shield"/></svg> Squads</h2>
+          <button class="btn btn-ghost btn-icon" data-refresh="squads" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
+        </div>
+        <p class="muted small">Click a squad to see its members.</p>
+        <ul class="squad-list" id="squad-list"><li class="muted">Loading…</li></ul>
+      </div>
+    </section>
+
+    <section class="view" id="view-mystats" hidden>
+      <div class="panel dossier">
+        <div class="dossier-tab">DOSSIER</div>
+
+        <div id="me-loggedout" class="dossier-body">
+          <p class="muted">Identify yourself to pull your inmate record — full stats, rankings, squad and base-alert subscriptions.</p>
+          <a class="btn btn-discord" id="login-btn" href="/api/auth/discord"><svg class="ico"><use href="#i-discord"/></svg><span>Login with Discord</span></a>
+          <p class="muted small" id="oauth-disabled" hidden>Discord login isn't configured on this server.</p>
+        </div>
+
+        <div id="me-unlinked" class="dossier-body" hidden>
+          <p class="muted">Signed in as <strong id="me-discord-unlinked"></strong> — but no SCUM character is linked to this Discord yet.</p>
+          <p class="muted small">Link your account from the panel in the community Discord, then reload.</p>
+          <button class="btn btn-ghost" id="logout-btn-unlinked"><svg class="ico"><use href="#i-logout"/></svg><span>Log out</span></button>
+        </div>
+
+        <div id="me-linked" class="dossier-body" hidden>
+          <div class="record">
+            <div class="record-id">
+              <span class="record-label">Inmate</span>
+              <span class="record-name" id="me-name">-</span>
+              <span class="record-meta" id="me-meta"></span>
+            </div>
+            <div class="record-actions">
+              <button class="btn btn-ghost" id="notif-toggle"><svg class="ico"><use href="#i-bell"/></svg><span>Notifications</span></button>
+              <button class="btn btn-ghost btn-icon" id="logout-btn" title="Log out"><svg class="ico"><use href="#i-logout"/></svg></button>
+            </div>
+          </div>
+
+          <div class="ms-grid">
+            <div><h3><svg class="ico"><use href="#i-crosshair"/></svg> Combat</h3><div class="dstats" id="stats-combat"></div></div>
+            <div><h3><svg class="ico"><use href="#i-foot"/></svg> Survival</h3><div class="dstats" id="stats-survival"></div></div>
+          </div>
+
+          <h3><svg class="ico"><use href="#i-trophy"/></svg> Rankings</h3>
+          <ul class="ranks" id="me-ranks"><li class="muted small">-</li></ul>
+
+          <h3><svg class="ico"><use href="#i-shield"/></svg> Squad</h3>
+          <div id="me-squad" class="squad-block"><p class="muted small">-</p></div>
+        </div>
+      </div>
+
+      <div class="panel" id="notif-panel" hidden>
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-bell"/></svg> Base alert notifications</h2>
+          <button class="btn btn-ghost" id="notif-close">Close</button>
+        </div>
+        <p class="muted small">Get a Discord DM when something happens to your property.</p>
+        <form id="notif-form" class="notif">
+          <label class="switch"><input type="checkbox" name="raid"><span class="track"></span><span class="lbl">Raid protection</span></label>
+          <label class="switch"><input type="checkbox" name="vehicle"><span class="track"></span><span class="lbl">Vehicles</span></label>
+          <label class="switch"><input type="checkbox" name="chest"><span class="track"></span><span class="lbl">Containers</span></label>
+          <label class="switch"><input type="checkbox" name="lock"><span class="track"></span><span class="lbl">Locks</span></label>
+          <label class="scope">Scope
+            <select name="scope"><option value="own">My property only</option><option value="squad">My squad's property</option></select>
+          </label>
+          <div class="notif-actions"><button class="btn" type="submit">Save alerts</button><span class="save-msg" id="notif-msg"></span></div>
+        </form>
+        <h3><svg class="ico"><use href="#i-bell"/></svg> Sent history</h3>
+        <ul class="notif-history" id="notif-history"><li class="muted small">No notifications sent yet.</li></ul>
+      </div>
+    </section>
+
+    <!-- ── Bunkers ────────────────────────────────────────────────────────── -->
+    <section class="view" id="view-bunkers" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-map"/></svg> Abandoned Bunkers</h2>
+          <button class="btn btn-ghost btn-icon" data-refresh="bunkers" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
+        </div>
+        <div class="bunker-grid" id="bunker-grid"><div class="muted">Loading…</div></div>
+      </div>
+    </section>
+
+    <!-- ── Economy ────────────────────────────────────────────────────────── -->
+    <section class="view" id="view-economy" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-cart"/></svg> Economy</h2>
+          <button class="btn btn-ghost btn-icon" data-refresh="economy" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
+        </div>
+        <h3><svg class="ico"><use href="#i-cart"/></svg> On sale <span id="econ-deals-count" class="muted small"></span></h3>
+        <ul class="econ-deals" id="econ-deals"><li class="muted small">Loading...</li></ul>
+        <h3><svg class="ico"><use href="#i-coins"/></svg> Trader funds <span id="econ-traders-total" class="muted small"></span></h3>
+        <p class="muted small">Last known amounts &mdash; updated whenever a player makes a trade.</p>
+        <div class="econ-traders" id="econ-traders"></div>
+        <h3><svg class="ico"><use href="#i-coins"/></svg> Gold</h3>
+        <div class="econ-gold econ-meta" id="econ-gold"></div>
+        <h3><svg class="ico"><use href="#i-refresh"/></svg> Stock rotation</h3>
+        <ul class="econ-rotation" id="econ-rotation"></ul>
+      </div>
+    </section>
+
+    <!-- ── Kill feed ──────────────────────────────────────────────────────── -->
+    <section class="view" id="view-killfeed" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-skull"/></svg> Kill Feed</h2>
+          <button class="btn btn-ghost btn-icon" data-refresh="killfeed" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
+        </div>
+        <ul class="killfeed" id="killfeed-list"><li class="muted">Loading…</li></ul>
+        <p class="stamp">Live feed needs the kill feed feature enabled.</p>
+      </div>
+    </section>
+
+    <!-- ── Login gate (shown for non-public tabs when not logged in) ───────── -->
+    <div class="gate-view" id="login-gate" hidden>
+      <div class="panel gate-card">
+        <svg class="ico gate-ico"><use href="#i-discord"/></svg>
+        <h2>Members area</h2>
+        <p class="muted">Log in with Discord to access leaderboards, squads, your character stats, bunkers, the economy and the kill feed.</p>
+        <a class="btn btn-discord" id="gate-login" href="/api/auth/discord"><svg class="ico"><use href="#i-discord"/></svg><span>Login with Discord</span></a>
+        <p class="muted small" id="gate-oauth-disabled" hidden>Discord login isn't configured on this server.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="foot-cols">
+      <div class="foot-col foot-brand">
+        <span class="foot-h"><img src="logo.png" alt="" class="foot-logo" /> SCUM Server Automation</span>
+        <span class="muted small">Community field console — live status, leaderboards, character stats, economy and kill feed.</span>
+      </div>
+      <div class="foot-col">
+        <span class="foot-h">Navigate</span>
+        <nav class="foot-nav">
+          <a href="#overview">Overview</a>
+          <a href="#leaderboards">Leaderboards</a>
+          <a href="#mystats">My Stats</a>
+          <a href="#bunkers">Bunkers</a>
+          <a href="#economy">Economy</a>
+          <a href="#killfeed">Kill Feed</a>
+        </nav>
+      </div>
+      <div class="foot-col">
+        <span class="foot-h">Account</span>
+        <a href="/api/auth/discord"><svg class="ico"><use href="#i-discord"/></svg> Login with Discord</a>
+        <a href="/admin/"><svg class="ico"><use href="#i-ext"/></svg> Admin login</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="muted small">Powered by SCUM Server Automation</span>
+      <div class="foot-social">
+        <a href="https://playhub.cz/discord" target="_blank" rel="noopener noreferrer" title="Discord"><svg class="ico"><use href="#i-discord"/></svg> Discord</a>
+        <a href="https://github.com/Spidees/SCUM-Server-Automation" target="_blank" rel="noopener noreferrer" title="GitHub"><svg class="ico"><use href="#i-ext"/></svg> GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" id="modal-close" title="Close">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

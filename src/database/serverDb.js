@@ -64,6 +64,25 @@ CREATE TABLE IF NOT EXISTS a_notification_prefs (
   scope TEXT DEFAULT 'own',
   last_update DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS a_banned_players (
+  steam_id TEXT PRIMARY KEY,
+  player_name TEXT,
+  note TEXT,
+  banned_by TEXT,
+  banned_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS a_notification_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  discord_user_id TEXT NOT NULL,
+  steam_id TEXT,
+  type TEXT,
+  title TEXT,
+  body TEXT,
+  sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_notif_log_user ON a_notification_log(discord_user_id, sent_at);
 `;
 
 let serverDb = null;
@@ -331,6 +350,74 @@ function getNotifyRecipients(type) {
   `).all();
 }
 
+// ===========================================================================
+// Ban metadata (names/notes for BannedUsers.ini, which only stores Steam IDs)
+// ===========================================================================
+
+function addBannedPlayer(steamId, { playerName, note, bannedBy } = {}) {
+  getServerDb().prepare(`
+    INSERT INTO a_banned_players (steam_id, player_name, note, banned_by, banned_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(steam_id) DO UPDATE SET
+      player_name = excluded.player_name,
+      note = excluded.note,
+      banned_by = excluded.banned_by,
+      banned_at = CURRENT_TIMESTAMP
+  `).run(String(steamId), playerName || null, note || null, bannedBy || null);
+}
+
+function removeBannedPlayer(steamId) {
+  getServerDb().prepare('DELETE FROM a_banned_players WHERE steam_id = ?').run(String(steamId));
+}
+
+function listBannedPlayerMeta() {
+  return getServerDb().prepare(
+    `SELECT steam_id AS steamId, player_name AS playerName, note, banned_by AS bannedBy, banned_at AS bannedAt
+     FROM a_banned_players`,
+  ).all();
+}
+
+/** Record a DM notification sent to a player (for their history view). */
+function logNotificationSent(discordUserId, steamId, { type, title, body } = {}) {
+  try {
+    const db = getServerDb();
+    db.prepare(
+      `INSERT INTO a_notification_log (discord_user_id, steam_id, type, title, body)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(String(discordUserId), steamId != null ? String(steamId) : null, type || null, title || null, body || null);
+    // Keep the log bounded per user (latest 100).
+    db.prepare(
+      `DELETE FROM a_notification_log WHERE discord_user_id = ? AND id NOT IN (
+         SELECT id FROM a_notification_log WHERE discord_user_id = ? ORDER BY id DESC LIMIT 100)`,
+    ).run(String(discordUserId), String(discordUserId));
+  } catch { /* logging must never break sending */ }
+}
+
+/** Recent DM notifications for a Discord user. Returns [{type,title,body,sentAt}]. */
+function getNotificationHistory(discordUserId, limit = 30) {
+  try {
+    return getServerDb().prepare(
+      `SELECT type, title, body, sent_at AS sentAt FROM a_notification_log
+       WHERE discord_user_id = ? ORDER BY id DESC LIMIT ?`,
+    ).all(String(discordUserId), limit);
+  } catch {
+    return [];
+  }
+}
+
+/** Search known player profiles by IP fragment. Returns [{Name, SteamID, ip, online}]. */
+function searchProfilesByIp(ipPart, limit = 25) {
+  try {
+    return getServerDb().prepare(
+      `SELECT user_name AS Name, steam_id AS SteamID, user_ip AS ip, user_is_online AS online
+       FROM a_user_profile WHERE user_ip LIKE ? AND steam_id IS NOT NULL
+       ORDER BY last_update DESC LIMIT ?`,
+    ).all(`%${ipPart}%`, limit);
+  } catch {
+    return [];
+  }
+}
+
 /** Resolve a player's Steam ID from a flag owner's user id / flag id (best effort). */
 function getSteamIdByUserId(userId) {
   if (userId == null) return null;
@@ -370,6 +457,12 @@ module.exports = {
   getNotifyPrefs,
   setNotifyPrefs,
   getNotifyRecipients,
+  addBannedPlayer,
+  removeBannedPlayer,
+  listBannedPlayerMeta,
+  searchProfilesByIp,
+  logNotificationSent,
+  getNotificationHistory,
   getSteamIdByUserId,
   getSteamIdByFlagId,
   closeAll,

@@ -4,7 +4,7 @@ const { EmbedBuilder } = require('discord.js');
 const logger = require('../core/logger');
 const { config } = require('../core/config');
 const { COLORS } = require('./embeds');
-const { applyBranding, emojify } = require('./branding');
+const { applyBranding, emojify, addFieldConsole } = require('./branding');
 const monitoring = require('../server/monitoring');
 const scheduling = require('../automation/scheduling');
 const database = require('../database');
@@ -159,6 +159,7 @@ async function buildStatusEmbed() {
   if (liveCfg.Images && liveCfg.Images.ServerStatus) {
     embed.setImage(liveCfg.Images.ServerStatus);
   }
+  addFieldConsole(embed);
 
   return { embed, actualServerState: status.ActualServerState };
 }
@@ -236,6 +237,7 @@ function buildLeaderboardEmbed(weekly) {
     embed.addFields({ name, value, inline: false });
   }
 
+  addFieldConsole(embed);
   return embed;
 }
 
@@ -354,6 +356,7 @@ function buildBunkerEmbed() {
   }
 
   if (liveCfg.Images && liveCfg.Images.Bunker) embed.setImage(liveCfg.Images.Bunker);
+  addFieldConsole(embed);
   return embed;
 }
 /**
@@ -406,7 +409,7 @@ function buildEconomyOverviewEmbed() {
         d.fameRequired ? `⭐ ${num(d.fameRequired)}` : '',
         where ? `📍 ${where}` : '',
       ].filter(Boolean).join(' · ');
-      return `🏷️ **${d.item}** — ${extras}`;
+      return `**${d.item}** — ${extras}`;
     }).join('\n').slice(0, 1024);
     embed.addFields({ name: `🏷️ On Sale  ·  ${deals.length}`, value, inline: false });
   } else {
@@ -478,6 +481,7 @@ function buildEconomyOverviewEmbed() {
   }
 
   if (liveCfg.Images && liveCfg.Images.Economy) embed.setImage(liveCfg.Images.Economy);
+  addFieldConsole(embed);
   return embed;
 }
 

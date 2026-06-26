@@ -33,8 +33,11 @@ SELECT
     COALESCE(u.play_time, 0) as play_time,
     COALESCE(u.fame_points, 0) as fame_points,
     COALESCE(barc.account_balance, 0) as money_balance,
-    COALESCE(e.enemy_kills, 0) as enemy_kills,
-    COALESCE(e.deaths, 0) as deaths,
+    -- Kills/deaths come from survival_stats (events_stats is the Events-mode
+    -- table and reads 0 on survival saves). Stored under the existing snapshot
+    -- column names so the weekly diff keeps working.
+    COALESCE(s.kills, 0) as enemy_kills,
+    COALESCE(s.deaths, 0) as deaths,
     COALESCE(e.events_won, 0) as events_won,
     COALESCE(e.team_kills, 0) as team_kills,
     COALESCE(s.headshots, 0) as headshots,

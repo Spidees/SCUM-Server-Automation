@@ -22,13 +22,13 @@ const CATEGORIES = [
     key: 'kills',
     label: 'Top Kills',
     allTime: {
-      sql: `SELECT u.name as Name, e.enemy_kills as Score FROM user_profile u LEFT JOIN events_stats e ON u.id = e.user_profile_id WHERE e.enemy_kills > 0 ORDER BY e.enemy_kills DESC LIMIT @limit`,
+      sql: `SELECT u.name as Name, s.kills as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id WHERE s.kills > 0 ORDER BY s.kills DESC LIMIT @limit`,
       value: (score) => Math.trunc(score),
       format: (score) => `${Math.trunc(score)} kills`,
     },
     weekly: {
       type: 'simple',
-      currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(e.enemy_kills, 0) as Score FROM user_profile u LEFT JOIN events_stats e ON u.id = e.user_profile_id`,
+      currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(s.kills, 0) as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id`,
       snapshotField: 'enemy_kills',
       value: (delta) => Math.trunc(delta),
       format: (delta) => `+${Math.trunc(delta)} kills`,
@@ -38,17 +38,37 @@ const CATEGORIES = [
     key: 'deaths',
     label: 'Top Deaths',
     allTime: {
-      sql: `SELECT u.name as Name, e.deaths as Score FROM user_profile u LEFT JOIN events_stats e ON u.id = e.user_profile_id WHERE e.deaths > 0 ORDER BY e.deaths DESC LIMIT @limit`,
+      sql: `SELECT u.name as Name, s.deaths as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id WHERE s.deaths > 0 ORDER BY s.deaths DESC LIMIT @limit`,
       value: (score) => Math.trunc(score),
       format: (score) => `${Math.trunc(score)} deaths`,
     },
     weekly: {
       type: 'simple',
-      currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(e.deaths, 0) as Score FROM user_profile u LEFT JOIN events_stats e ON u.id = e.user_profile_id`,
+      currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(s.deaths, 0) as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id`,
       snapshotField: 'deaths',
       value: (delta) => Math.trunc(delta),
       format: (delta) => `+${Math.trunc(delta)} deaths`,
     },
+  },
+  {
+    key: 'pvp_kills',
+    label: 'Top PvP Kills',
+    allTime: {
+      sql: `SELECT u.name as Name, s.prisoner_kills as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id WHERE s.prisoner_kills > 0 ORDER BY s.prisoner_kills DESC LIMIT @limit`,
+      value: (score) => Math.trunc(score),
+      format: (score) => `${Math.trunc(score)} PvP kills`,
+    },
+    weekly: null,
+  },
+  {
+    key: 'pvp_deaths',
+    label: 'Top PvP Deaths',
+    allTime: {
+      sql: `SELECT u.name as Name, s.deaths_by_prisoners as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id WHERE s.deaths_by_prisoners > 0 ORDER BY s.deaths_by_prisoners DESC LIMIT @limit`,
+      value: (score) => Math.trunc(score),
+      format: (score) => `${Math.trunc(score)} PvP deaths`,
+    },
+    weekly: null,
   },
   {
     key: 'playtime',
@@ -118,13 +138,13 @@ const CATEGORIES = [
     key: 'kdr',
     label: 'Top K/D Ratio',
     allTime: {
-      sql: `SELECT u.name as Name, CASE WHEN e.deaths > 0 THEN CAST(e.enemy_kills AS REAL) / e.deaths ELSE e.enemy_kills END as Score FROM user_profile u LEFT JOIN events_stats e ON u.id = e.user_profile_id WHERE e.enemy_kills > 0 ORDER BY Score DESC LIMIT @limit`,
+      sql: `SELECT u.name as Name, CASE WHEN s.deaths > 0 THEN CAST(s.kills AS REAL) / s.deaths ELSE s.kills END as Score FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id WHERE s.kills > 0 ORDER BY Score DESC LIMIT @limit`,
       value: (score) => round(score, 2),
       format: (score) => `${round(score, 2)} K/D`,
     },
     weekly: {
       type: 'kdr',
-      currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(e.enemy_kills, 0) as Kills, COALESCE(e.deaths, 0) as Deaths FROM user_profile u LEFT JOIN events_stats e ON u.id = e.user_profile_id`,
+      currentSql: `SELECT u.id as Id, u.name as Name, COALESCE(s.kills, 0) as Kills, COALESCE(s.deaths, 0) as Deaths FROM user_profile u LEFT JOIN survival_stats s ON u.id = s.user_profile_id`,
       value: (delta) => round(delta, 2),
       format: (delta) => `+${round(delta, 2)} K/D`,
     },

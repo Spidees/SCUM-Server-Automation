@@ -13,6 +13,7 @@ const backup = require('../../automation/backup');
 const scheduling = require('../../automation/scheduling');
 const update = require('../../automation/update');
 const database = require('../../database');
+const bans = require('../../server/bans');
 
 const router = express.Router();
 
@@ -213,7 +214,15 @@ router.get('/players/search', (req, res) => {
     const q = (req.query.q || '').trim();
     if (!q) { res.json({ players: [] }); return; }
     if (!database.isScumDbAvailable()) { res.json({ available: false, players: [] }); return; }
-    res.json({ available: true, players: database.searchPlayersByName(q) });
+    let players;
+    if (/^\d{17}$/.test(q)) {
+      players = database.searchPlayersBySteamId(q); // exact Steam ID
+    } else if (/\d+\.\d+/.test(q)) {
+      players = database.searchProfilesByIp(q); // IP fragment (our profile DB)
+    } else {
+      players = database.searchPlayersByName(q); // partial name
+    }
+    res.json({ available: true, players: players || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -225,9 +234,45 @@ router.get('/players/:name', (req, res) => {
     const stats = database.getPlayerStatsByName(req.params.name);
     if (!stats) { res.status(404).json({ error: 'Player not found' }); return; }
     const profile = database.getPlayerProfileByName(req.params.name);
-    res.json({ available: true, stats, profile: profile || null });
+    const steamId = stats.SteamID ? String(stats.SteamID) : null;
+    let discord = null;
+    let banned = false;
+    if (steamId) {
+      try { discord = database.getDiscordProfileBySteamId(steamId) || null; } catch { discord = null; }
+      try { banned = bans.getBanList().some((b) => b.steamId === steamId); } catch { banned = false; }
+    }
+    res.json({ available: true, stats, profile: profile || null, discord, banned });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/bans', (req, res) => {
+  try {
+    res.json({ bans: bans.getBanList() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/bans', (req, res) => {
+  try {
+    const { steamId, playerName, note } = req.body || {};
+    if (!steamId) return res.status(400).json({ success: false, error: 'steamId is required' });
+    const list = bans.banPlayer(steamId, { playerName, note, bannedBy: 'web panel' });
+    logger.info(`[API] Player ${steamId} banned via web panel`);
+    return res.json({ success: true, restartRequired: true, bans: list });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+router.delete('/bans/:steamId', (req, res) => {
+  try {
+    const list = bans.unbanPlayer(req.params.steamId);
+    return res.json({ success: true, restartRequired: true, bans: list });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 

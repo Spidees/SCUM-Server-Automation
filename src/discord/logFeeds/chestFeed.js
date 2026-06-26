@@ -92,6 +92,11 @@ async function handle(event, client, config) {
   let description = null;
   const itemName = database.getEntityDisplayName(event.entityId) || 'container';
   if (event.type === 'transfer') {
+    // Skip self-transfers: the owner re-claimed / acted on their own chest, so
+    // there is no "another player" — don't alarm them about their own action.
+    if (event.oldOwnerSteamId && event.oldOwnerSteamId === event.steamId) {
+      return;
+    }
     victimSteamId = event.oldOwnerSteamId;
     victimName = event.oldOwner;
     description = `Your **${itemName}** was **taken by another player**.`;

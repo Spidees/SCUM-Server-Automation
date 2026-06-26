@@ -10,7 +10,7 @@
       + '<a href="https://github.com/Spidees/SCUM-Server-Automation" target="_blank" rel="noopener noreferrer">▸ GitHub</a>'
       + '<a href="https://playhub.cz/discord" target="_blank" rel="noopener noreferrer">▸ Discord</a>'
       + '</nav></footer>';
-    ['dashboard-screen', 'settings-screen', 'game-settings-screen', 'discord-screen'].forEach((id) => {
+    ['dashboard-screen', 'players-screen', 'settings-screen', 'game-settings-screen', 'discord-screen'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.querySelector('.app-footer')) el.insertAdjacentHTML('beforeend', html);
     });
@@ -45,7 +45,6 @@
     refreshUpdateStatus();
     refreshGameStats();
     refreshPlayers();
-    loadLeaderboardCategories().then(refreshLeaderboard);
     loadLogTail();
   }
 
@@ -203,8 +202,10 @@
         return;
       }
       for (const p of data.players) {
+        const name = p.PlayerName || p.name;
         const li = document.createElement('li');
-        li.textContent = p.PlayerName || p.name || JSON.stringify(p);
+        li.textContent = name || JSON.stringify(p);
+        if (name) { li.className = 'clickable'; li.addEventListener('click', () => openPlayer(name)); }
         list.appendChild(li);
       }
     } catch {
@@ -212,51 +213,167 @@
     }
   }
 
-  async function loadLeaderboardCategories() {
-    try {
-      const res = await fetch('/api/leaderboards?limit=1');
-      if (!res.ok) return;
-      const data = await res.json();
-      const select = document.getElementById('leaderboard-category');
-      select.innerHTML = '';
-      for (const cat of data.categories) {
-        const opt = document.createElement('option');
-        opt.value = cat.key;
-        opt.textContent = cat.label;
-        select.appendChild(opt);
-      }
-    } catch {
-      // ignore
-    }
+  // ── Players & bans ───────────────────────────────────────────────────────
+  function escHtml(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  async function refreshLeaderboard() {
+  async function searchPlayers() {
+    const q = document.getElementById('player-search-input').value.trim();
+    const ul = document.getElementById('player-search-results');
+    document.getElementById('player-detail').classList.add('hidden');
+    if (!q) { ul.innerHTML = ''; return; }
+    ul.innerHTML = '<li class="muted">Searching…</li>';
     try {
-      const select = document.getElementById('leaderboard-category');
-      const category = select.value;
-      if (!category) return;
-      const weekly = document.getElementById('leaderboard-weekly').checked;
-      const res = await fetch(`/api/leaderboards/${category}?limit=10&weekly=${weekly ? '1' : '0'}`);
-      if (!res.ok) return;
+      const res = await fetch(`/api/players/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
-      const tbody = document.querySelector('#leaderboard-table tbody');
-      tbody.innerHTML = '';
-      if (!data.available || !data.data.length) {
-        tbody.innerHTML = '<tr><td colspan="3">No data</td></tr>';
-        return;
-      }
-      data.data.forEach((row, i) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${i + 1}</td><td>${row.Name}</td><td>${row.FormattedValue}</td>`;
-        tbody.appendChild(tr);
+      const players = data.players || [];
+      if (!players.length) { ul.innerHTML = '<li class="muted">No players found.</li>'; return; }
+      ul.innerHTML = '';
+      players.forEach((p) => {
+        const li = document.createElement('li');
+        li.className = 'player-result';
+        li.textContent = (p.Name || p.SteamID || '(unknown)') + (p.ip ? `  ·  ${p.ip}` : '');
+        if (p.Name) li.addEventListener('click', () => showPlayerDetail(p.Name));
+        else li.classList.add('muted');
+        ul.appendChild(li);
       });
-    } catch {
-      // ignore
-    }
+    } catch { ul.innerHTML = '<li class="muted">Search failed.</li>'; }
   }
 
-  document.getElementById('leaderboard-category').addEventListener('change', refreshLeaderboard);
-  document.getElementById('leaderboard-weekly').addEventListener('change', refreshLeaderboard);
+  async function showPlayerDetail(name) {
+    const box = document.getElementById('player-detail');
+    box.classList.remove('hidden');
+    box.textContent = 'Loading…';
+    try {
+      const res = await fetch(`/api/players/${encodeURIComponent(name)}`);
+      if (!res.ok) { box.textContent = 'Player not found.'; return; }
+      const d = await res.json();
+      const s = d.stats;
+      if (!s) { box.textContent = 'No stats for this player.'; return; }
+      const p = d.profile || {};
+      const n = (v) => (Number(v) || 0).toLocaleString();
+      const km = (v) => `${((Number(v) || 0) / 1000).toFixed(1)} km`;
+      const hMin = (v) => `${Math.round((Number(v) || 0) / 60).toLocaleString()} h`;
+      const hSec = (v) => `${Math.round((Number(v) || 0) / 3600).toLocaleString()} h`;
+      const kd = Number(s.Deaths) > 0 ? (s.Kills / s.Deaths).toFixed(2) : String(Math.trunc(Number(s.Kills) || 0));
+      const acc = Number(s.ShotsFired) > 0 ? `${Math.round((s.ShotsHit / s.ShotsFired) * 100)}%` : '—';
+      const online = s.IsOnline || p.user_is_online;
+
+      const idRows = [
+        ['Steam ID', s.SteamID || '—'], ['IP', p.user_ip || '—'], ['Squad', s.SquadName || '—'],
+        ['Discord', d.discord ? `@${d.discord.discord_username}` : 'not linked'],
+        ['Last login', p.last_login_time || '—'], ['Last logout', p.last_logout_time || '—'],
+      ];
+      const statRows = [
+        ['Kills', n(s.Kills)], ['Deaths', n(s.Deaths)], ['K/D', kd],
+        ['PvP kills', n(s.PvpKills)], ['PvP deaths', n(s.PvpDeaths)], ['Headshots', n(s.Headshots)],
+        ['Puppet kills', n(s.ZombieKills)], ['Animal kills', n(s.AnimalKills)], ['Longest kill', `${n(s.LongestKill)} m`],
+        ['Firearm', n(s.FirearmKills)], ['Melee', n(s.MeleeKills)], ['Archery', n(s.ArcheryKills)],
+        ['Accuracy', acc], ['Survived', hMin(s.MinutesSurvived)], ['On foot', km(s.Distance)],
+        ['Looted', n(s.Looted)], ['Locks picked', n(s.LocksPicked)], ['Crafted', n(s.Crafted)],
+        ['Fish', n(s.FishCaught)], ['Fame', n(s.FamePoints)], ['Money', n(s.Money)],
+        ['Playtime', hSec(s.PlayTime)], ['Wounds patched', n(s.WoundsPatched)], ['Events won', n(s.EventsWon)],
+      ];
+
+      box.innerHTML =
+        `<div class="pd-head"><span class="pd-name">${escHtml(s.Name)}</span>`
+        + `<span class="pd-online ${online ? 'on' : 'off'}">${online ? 'Online' : 'Offline'}</span>`
+        + (d.banned ? '<span class="pd-banned">Banned</span>' : '') + '</div>'
+        + `<div class="pd-id">${idRows.map(([k, v]) => `<span><i>${escHtml(k)}</i> ${escHtml(v)}</span>`).join('')}</div>`
+        + `<div class="pd-stats">${statRows.map(([k, v]) => `<span><i>${escHtml(k)}</i> <b>${escHtml(v)}</b></span>`).join('')}</div>`
+        + '<div class="pd-ban">'
+        + (d.banned
+          ? '<button id="unban-btn" class="secondary">Unban</button><span class="pd-ban-note">Lifts after next restart.</span>'
+          : '<input id="ban-note" type="text" placeholder="Reason / note (optional)" /><button id="ban-btn" class="danger">Ban player</button>')
+        + '<span id="ban-msg"></span></div>';
+
+      if (d.banned) {
+        document.getElementById('unban-btn').addEventListener('click', async () => { await unbanPlayer(s.SteamID); showPlayerDetail(name); });
+      } else {
+        document.getElementById('ban-btn').addEventListener('click', () => banPlayer(s.SteamID, s.Name, name));
+      }
+    } catch { box.textContent = 'Failed to load player.'; }
+  }
+
+  async function banPlayer(steamId, playerName, detailName) {
+    const noteEl = document.getElementById('ban-note');
+    const msg = document.getElementById('ban-msg');
+    if (msg) msg.textContent = 'Banning…';
+    try {
+      const res = await fetch('/api/bans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steamId, playerName, note: noteEl ? noteEl.value : '' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        renderBans(data.bans);
+        if (detailName) showPlayerDetail(detailName);
+      } else if (msg) {
+        msg.textContent = data.error || 'Ban failed';
+      }
+    } catch { if (msg) msg.textContent = 'Ban failed'; }
+  }
+
+  async function loadBans() {
+    try {
+      const res = await fetch('/api/bans');
+      if (!res.ok) return;
+      renderBans((await res.json()).bans || []);
+    } catch { /* ignore */ }
+  }
+
+  function renderBans(list) {
+    const tbody = document.querySelector('#bans-table tbody');
+    if (!tbody) return;
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">No bans.</td></tr>'; return; }
+    tbody.innerHTML = '';
+    list.forEach((b) => {
+      let when = '—';
+      if (b.bannedAt) { const d = new Date(b.bannedAt.replace(' ', 'T') + 'Z'); when = Number.isNaN(d.getTime()) ? b.bannedAt : d.toLocaleString(); }
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escHtml(b.playerName || '—')}</td><td class="mono">${escHtml(b.steamId)}</td>`
+        + `<td>${escHtml(b.note || '—')}</td><td>${escHtml(when)}</td><td></td>`;
+      const btn = document.createElement('button');
+      btn.className = 'secondary';
+      btn.textContent = 'Unban';
+      btn.addEventListener('click', () => unbanPlayer(b.steamId));
+      tr.lastChild.appendChild(btn);
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function unbanPlayer(steamId) {
+    try {
+      const res = await fetch(`/api/bans/${encodeURIComponent(steamId)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) renderBans(data.bans);
+    } catch { /* ignore */ }
+  }
+
+  document.getElementById('player-search-btn').addEventListener('click', searchPlayers);
+  document.getElementById('player-search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchPlayers(); } });
+
+  function showPlayersScreen() {
+    dashboardScreen.classList.add('hidden');
+    document.getElementById('players-screen').classList.remove('hidden');
+    loadBans();
+  }
+  function hidePlayersScreen() {
+    document.getElementById('players-screen').classList.add('hidden');
+    dashboardScreen.classList.remove('hidden');
+  }
+  function openPlayer(name) {
+    if (!name) return;
+    showPlayersScreen();
+    document.getElementById('player-search-input').value = name;
+    document.getElementById('player-search-results').innerHTML = '';
+    showPlayerDetail(name);
+  }
+  document.getElementById('players-btn').addEventListener('click', showPlayersScreen);
+  document.getElementById('players-close-btn').addEventListener('click', hidePlayersScreen);
 
   document.getElementById('skip-restart-toggle').addEventListener('change', async (e) => {
     const skip = e.target.checked;
@@ -434,7 +551,6 @@
     refreshUpdateStatus();
     refreshGameStats();
     refreshPlayers();
-    refreshLeaderboard();
   }
 
   checkSession();
@@ -1148,6 +1264,11 @@
         const tr = document.createElement('tr');
         const ts = p.linked_at ? new Date(p.linked_at).toLocaleString() : '-';
         tr.innerHTML = `<td style="padding:4px 8px">${esc(p.discord_username)}</td><td style="padding:4px 8px">${esc(p.player_name || '-')}</td><td style="padding:4px 8px;font-family:monospace;font-size:.8em">${esc(p.steam_id)}</td><td style="padding:4px 8px;font-size:.8em">${ts}</td>`;
+        if (p.player_name) {
+          tr.classList.add('clickable');
+          tr.title = 'Open player profile';
+          tr.addEventListener('click', () => openPlayer(p.player_name));
+        }
         tbody.appendChild(tr);
       }
     } catch (err) {

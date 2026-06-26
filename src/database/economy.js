@@ -16,6 +16,17 @@ function cleanAssetName(asset) {
 }
 
 /**
+ * Turn a vendor blueprint path (e.g.
+ * ".../BP_General_Goods_01.BP_General_Goods_01_C") into a readable trader name
+ * ("General Goods"). Strips the BP_ prefix and trailing index.
+ */
+function cleanTraderName(raw) {
+  if (!raw) return 'Trader';
+  const n = cleanAssetName(raw).replace(/^BP\s+/i, '').replace(/\s+\d+$/, '').trim();
+  return n || 'Trader';
+}
+
+/**
  * Current special deals ("on sale" items). Empty when no rotation deals are active.
  * Cached briefly — deals only change on the economy rotation timer.
  */
@@ -38,7 +49,7 @@ function getSpecialDeals(limit = 12) {
         stock: r.amount_in_store || 0,
         fameRequired: r.required_fame_points || 0,
         sector: r.sector || '',
-        trader: r.trader || '',
+        trader: cleanTraderName(r.trader),
       }));
     } catch {
       return [];
@@ -112,4 +123,4 @@ function getEconomyTiming() {
   };
 }
 
-module.exports = { getSpecialDeals, getGoldCapacity, getEconomyTiming, cleanAssetName };
+module.exports = { getSpecialDeals, getGoldCapacity, getEconomyTiming, cleanAssetName, cleanTraderName };
