@@ -5,6 +5,8 @@ The community-facing site. **Overview is public**; every other tab is gated behi
 
 > 🌐 **See it live:** **[scum.playhub.cz](https://scum.playhub.cz/)** (the author's own server).
 
+![Field Console — overview](http://playhub.cz/scum/manager/field_console_overview.png)
+
 ## Tabs
 
 | Tab | Access | Content |
@@ -20,6 +22,10 @@ The community-facing site. **Overview is public**; every other tab is gated behi
 
 Player names are clickable wherever they appear (leaderboards, squad rosters, My Stats) and open
 that player's profile in a modal. Profiles never expose Steam IDs, IPs, or per-member online/last-seen.
+
+![Field Console — leaderboards](http://playhub.cz/scum/manager/field_console_leaderboards.png)
+![Field Console — my stats](http://playhub.cz/scum/manager/field_console_mystats.png)
+![Field Console — economy](http://playhub.cz/scum/manager/field_console_economy.png)
 
 ## Login with Discord (OAuth2)
 

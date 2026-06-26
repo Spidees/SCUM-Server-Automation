@@ -13,6 +13,8 @@ back to `/admin`.
 
 Log in with `WEB_ADMIN_PASSWORD`. After **5 failed attempts** an IP is locked out for 15 minutes.
 
+![Admin dashboard — overview](http://playhub.cz/scum/manager/admin_overview.png)
+
 ### Dashboard
 - **Vitals** — state, players, server FPS, system CPU & RAM (used/total), entities, service status.
 - **Controls** — Start / Stop / Restart / Backup now / Validate files / Check & update.
@@ -31,6 +33,8 @@ Log in with `WEB_ADMIN_PASSWORD`. After **5 failed attempts** an IP is locked ou
 ### Settings
 Every `config/config.json` option, grouped into collapsible categories with search and expand/
 collapse. Saving rewrites `config.json`; launch-argument changes are pushed to the NSSM service.
+
+![Admin dashboard — settings](http://playhub.cz/scum/manager/admin_settings.png)
 
 ### Game Settings
 - `ServerSettings.ini` editor with correct field types and descriptions from a community reference.
