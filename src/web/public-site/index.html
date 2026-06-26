@@ -83,6 +83,7 @@
     <button class="nav-btn" data-view="bunkers"><svg class="ico"><use href="#i-map"/></svg><span>Bunkers</span></button>
     <button class="nav-btn" data-view="economy"><svg class="ico"><use href="#i-cart"/></svg><span>Economy</span></button>
     <button class="nav-btn" data-view="killfeed"><svg class="ico"><use href="#i-skull"/></svg><span>Kill Feed</span></button>
+    <button class="nav-btn" data-view="events"><svg class="ico"><use href="#i-star"/></svg><span>Events</span></button>
   </nav>
 
   <main>
@@ -146,7 +147,6 @@
           <h2><svg class="ico"><use href="#i-shield"/></svg> Squads</h2>
           <button class="btn btn-ghost btn-icon" data-refresh="squads" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
         </div>
-        <p class="muted small">Click a squad to see its members.</p>
         <ul class="squad-list" id="squad-list"><li class="muted">Loading…</li></ul>
       </div>
     </section>
@@ -163,7 +163,13 @@
 
         <div id="me-unlinked" class="dossier-body" hidden>
           <p class="muted">Signed in as <strong id="me-discord-unlinked"></strong> — but no SCUM character is linked to this Discord yet.</p>
-          <p class="muted small">Link your account from the panel in the community Discord, then reload.</p>
+          <button class="btn" id="link-start-btn"><svg class="ico"><use href="#i-user"/></svg><span>Link my SCUM account</span></button>
+          <div id="link-instructions" hidden>
+            <p class="muted small">Join the server and type this in chat:</p>
+            <div class="link-code" id="link-code">connect:------</div>
+            <p class="muted small">Code valid for 15 min · this page links you automatically once you type it.</p>
+          </div>
+          <p class="muted small" id="link-msg"></p>
           <button class="btn btn-ghost" id="logout-btn-unlinked"><svg class="ico"><use href="#i-logout"/></svg><span>Log out</span></button>
         </div>
 
@@ -176,6 +182,7 @@
             </div>
             <div class="record-actions">
               <button class="btn btn-ghost" id="notif-toggle"><svg class="ico"><use href="#i-bell"/></svg><span>Notifications</span></button>
+              <button class="btn btn-ghost" id="unlink-btn" title="Unlink this SCUM character">Unlink</button>
               <button class="btn btn-ghost btn-icon" id="logout-btn" title="Log out"><svg class="ico"><use href="#i-logout"/></svg></button>
             </div>
           </div>
@@ -252,7 +259,21 @@
           <button class="btn btn-ghost btn-icon" data-refresh="killfeed" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
         </div>
         <ul class="killfeed" id="killfeed-list"><li class="muted">Loading…</li></ul>
-        <p class="stamp">Live feed needs the kill feed feature enabled.</p>
+        <p class="stamp" id="killfeed-note" hidden>Live feed needs the kill feed feature enabled.</p>
+      </div>
+    </section>
+
+    <!-- ── Events ─────────────────────────────────────────────────────────── -->
+    <section class="view" id="view-events" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2><svg class="ico"><use href="#i-star"/></svg> Events</h2>
+          <button class="btn btn-ghost btn-icon" data-refresh="events" title="Refresh"><svg class="ico"><use href="#i-refresh"/></svg></button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th class="rank">#</th><th>Player</th><th class="num">Score</th><th class="num">Kills</th><th class="num">Deaths</th><th class="num">HS</th><th class="num">Wins</th></tr></thead>
+          <tbody id="events-body"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+        </table>
       </div>
     </section>
 
@@ -279,10 +300,12 @@
         <nav class="foot-nav">
           <a href="#overview">Overview</a>
           <a href="#leaderboards">Leaderboards</a>
+          <a href="#squads">Squads</a>
           <a href="#mystats">My Stats</a>
           <a href="#bunkers">Bunkers</a>
           <a href="#economy">Economy</a>
           <a href="#killfeed">Kill Feed</a>
+          <a href="#events">Events</a>
         </nav>
       </div>
       <div class="foot-col">

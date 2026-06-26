@@ -406,6 +406,31 @@ function getSquadInfoBySteamId(steamId) {
   });
 }
 
+/**
+ * Event ranking board from event_rankings_cached (+ events_stats wins). Shows only
+ * players with any event activity, so it's empty until an event has actually run.
+ */
+function getEventRankings(limit = 50) {
+  const db = getScumDb();
+  if (!db) return [];
+  return memo(`eventRankings:${limit}`, 30000, () => {
+    try {
+      return db.prepare(excludeDeletedProfiles(
+        `SELECT r.name AS Name, r.score AS Score, r.enemy_kills AS Kills, r.deaths AS Deaths,
+                r.headshots AS Headshots, r.assists AS Assists, r.ctf_captures AS Captures,
+                COALESCE(e.events_won, 0) AS Wins
+         FROM event_rankings_cached r
+         LEFT JOIN events_stats e ON e.user_profile_id = r.user_profile_id
+         JOIN user_profile u ON u.id = r.user_profile_id
+         WHERE r.score > 0 OR r.enemy_kills > 0 OR COALESCE(e.events_won, 0) > 0
+         ORDER BY r.score DESC, r.enemy_kills DESC LIMIT ?`,
+      )).all(limit);
+    } catch {
+      return [];
+    }
+  });
+}
+
 /** Public squad list: name, score, member count. No per-member data. */
 function getSquadList(limit = 60) {
   const db = getScumDb();
@@ -612,6 +637,7 @@ module.exports = {
   getSquadInfoBySteamId,
   getSquadList,
   getSquadDetailById,
+  getEventRankings,
   getSteamIdByProfileId,
   getPlayerNameByProfileId,
   getOwnerAreaProfileIds,

@@ -255,7 +255,20 @@ router.get('/economy', (req, res) => {
 // to be polling). Names + weapon + distance only — never coordinates.
 router.get('/killfeed', (req, res) => {
   const limit = clampLimit(req.query.limit);
-  return res.json({ kills: recentKills.getRecent(limit) });
+  const kf = config.SCUMLogFeatures && config.SCUMLogFeatures.KillFeed;
+  const enabled = !!(kf && (kf.AdminEnabled || kf.PlayersEnabled));
+  return res.json({ kills: recentKills.getRecent(limit), enabled });
+});
+
+// Event ranking board (event_rankings_cached). Empty until an event has run.
+router.get('/events', (req, res) => {
+  if (!database.isScumDbAvailable()) return res.json({ available: false, rankings: [] });
+  try {
+    return res.json({ available: true, rankings: database.getEventRankings(50) });
+  } catch (err) {
+    logger.error(`[API/public] /events error: ${err.message}`);
+    return res.status(500).json({ error: 'events_unavailable' });
+  }
 });
 
 // Squad list (name, score, member count) — no per-member data.

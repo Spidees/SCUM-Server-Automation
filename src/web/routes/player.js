@@ -92,6 +92,21 @@ router.get('/me/notifications/history', (req, res) => {
   }
 });
 
+// Unlink this player's SCUM character (same as the Discord /unlink-account command).
+router.post('/me/unlink', (req, res) => {
+  const p = req.session.player;
+  try {
+    database.unlinkAccount(p.discordUserId);
+    p.linked = false;
+    p.steamId = null;
+    p.playerName = null;
+    return req.session.save(() => res.json({ success: true }));
+  } catch (err) {
+    logger.error(`[API/player] /me/unlink error: ${err.message}`);
+    return res.status(500).json({ error: 'unlink_failed' });
+  }
+});
+
 router.get('/me/stats', (req, res) => {
   if (!database.isScumDbAvailable()) return res.json({ available: false, stats: null });
   try {

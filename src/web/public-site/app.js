@@ -42,7 +42,7 @@
   const loaders = {};
   const loaded = {};
   // Only Overview is public; everything else needs a Discord login.
-  const GATED = ['leaderboards', 'squads', 'mystats', 'bunkers', 'economy', 'killfeed'];
+  const GATED = ['leaderboards', 'squads', 'mystats', 'bunkers', 'economy', 'killfeed', 'events'];
   let currentView = 'overview';
   function switchView(name) {
     if (!document.getElementById(`view-${name}`)) name = 'overview';
@@ -419,10 +419,17 @@
   // ── Kill feed ────────────────────────────────────────────────────────────
   async function loadKillfeed() {
     const list = $('killfeed-list');
+    const note = $('killfeed-note');
     list.innerHTML = '<li class="muted">Loading…</li>';
     try {
-      const { kills } = await getJSON('/api/public/killfeed?limit=40');
-      if (!kills || !kills.length) { list.innerHTML = '<li class="muted">No kills recorded yet.</li>'; return; }
+      const data = await getJSON('/api/public/killfeed?limit=40');
+      const kills = data.kills || [];
+      // Only warn about the feature when it's genuinely off.
+      if (note) note.hidden = data.enabled !== false;
+      if (!kills.length) {
+        list.innerHTML = `<li class="muted">${data.enabled === false ? 'The kill feed is turned off.' : 'No kills recorded yet.'}</li>`;
+        return;
+      }
       list.innerHTML = kills.map((k) => {
         if (k.type === 'suicide') {
           return `<li class="kf">${icon('i-grave')}<div class="kf-main"><span class="kf-victim">${esc(k.victim)}</span> took their own life</div><span class="kf-time">${ago(k.at)}</span></li>`;
@@ -434,6 +441,19 @@
     } catch { list.innerHTML = '<li class="muted">Couldn\'t load the kill feed.</li>'; }
   }
 
+  async function loadEvents() {
+    const tb = $('events-body');
+    tb.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
+    try {
+      const data = await getJSON('/api/public/events');
+      const rows = data.rankings || [];
+      if (!data.available) { tb.innerHTML = '<tr><td colspan="7" class="muted">Events aren\'t available yet.</td></tr>'; return; }
+      tb.innerHTML = rows.length
+        ? rows.map((r, i) => `<tr><td class="rank">${i + 1}</td><td>${esc(r.Name)}</td><td class="num">${num(r.Score)}</td><td class="num">${num(r.Kills)}</td><td class="num">${num(r.Deaths)}</td><td class="num">${num(r.Headshots)}</td><td class="num">${num(r.Wins)}</td></tr>`).join('')
+        : '<tr><td colspan="7" class="muted">No events have taken place yet.</td></tr>';
+    } catch { tb.innerHTML = '<tr><td colspan="7" class="muted">Couldn\'t load events.</td></tr>'; }
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────────────
   loaders.leaderboards = () => loadLeaderboards(0);
   loaders.mystats = loadMyStats;
@@ -441,6 +461,7 @@
   loaders.economy = loadEconomy;
   loaders.killfeed = loadKillfeed;
   loaders.squads = loadSquads;
+  loaders.events = loadEvents;
 
   document.querySelectorAll('.nav-btn, .jump-card').forEach((el) => el.addEventListener('click', () => switchView(el.dataset.view)));
   $('player-chip').addEventListener('click', (e) => {
@@ -463,10 +484,39 @@
   $('notif-close').addEventListener('click', () => { $('notif-panel').hidden = true; });
   $('logout-btn').addEventListener('click', logout);
   $('logout-btn-unlinked').addEventListener('click', logout);
+  $('unlink-btn').addEventListener('click', async () => {
+    if (!window.confirm('Unlink your SCUM character from this Discord account?')) return;
+    try { await fetch('/api/player/me/unlink', { method: 'POST', credentials: 'same-origin' }); } catch { /* ignore */ }
+    window.location.reload();
+  });
   document.querySelectorAll('[data-refresh]').forEach((btn) => btn.addEventListener('click', () => {
     const v = btn.dataset.refresh; loaded[v] = true;
-    ({ bunkers: loadBunkers, economy: loadEconomy, killfeed: loadKillfeed, squads: loadSquads }[v] || (() => {}))();
+    ({ bunkers: loadBunkers, economy: loadEconomy, killfeed: loadKillfeed, squads: loadSquads, events: loadEvents }[v] || (() => {}))();
   }));
+
+  // Link a SCUM account from the web: get a connect code, then poll until linked.
+  let linkPoll = null;
+  $('link-start-btn').addEventListener('click', async () => {
+    const msg = $('link-msg');
+    msg.textContent = 'Generating code…';
+    try {
+      const res = await fetch('/api/auth/discord/link', { method: 'POST', credentials: 'same-origin' });
+      const d = await res.json();
+      if (d.alreadyLinked) { window.location.reload(); return; }
+      if (!d.code) { msg.textContent = d.error === 'not_authenticated' ? 'Please log in again.' : 'Could not start linking.'; return; }
+      $('link-code').textContent = `connect:${d.code}`;
+      $('link-instructions').hidden = false;
+      $('link-start-btn').setAttribute('hidden', '');
+      msg.textContent = '';
+      if (linkPoll) clearInterval(linkPoll);
+      linkPoll = setInterval(async () => {
+        try {
+          const s = await getJSON('/api/auth/discord/session');
+          if (s.player && s.player.linked) { clearInterval(linkPoll); window.location.reload(); }
+        } catch { /* keep polling */ }
+      }, 5000);
+    } catch { msg.textContent = 'Could not start linking.'; }
+  });
 
   // Click a leaderboard row → that player's profile (logged-in players only).
   $('lb-list').addEventListener('click', (e) => {

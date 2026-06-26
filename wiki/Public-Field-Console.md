@@ -3,6 +3,8 @@
 The community-facing site. **Overview is public**; every other tab is gated behind
 **Login with Discord**.
 
+> 🌐 **See it live:** **[scum.playhub.cz](https://scum.playhub.cz/)** (the author's own server).
+
 ## Tabs
 
 | Tab | Access | Content |
@@ -14,6 +16,7 @@ The community-facing site. **Overview is public**; every other tab is gated behi
 | **Bunkers** | Login | Abandoned-bunker status (active / locked + timers) |
 | **Economy** | Login | Special deals, trader funds per outpost, gold capacity, stock rotation — mirrors the Discord economy embed |
 | **Kill Feed** | Login | Recent kills (killer → victim, weapon, distance) |
+| **Events** | Login | Event ranking board (from `event_rankings_cached`); empty until an event runs |
 
 Player names are clickable wherever they appear (leaderboards, squad rosters, My Stats) and open
 that player's profile in a modal. Profiles never expose Steam IDs, IPs, or per-member online/last-seen.
@@ -33,9 +36,11 @@ falls back to the consent screen the first time). The scope requested is just `i
 
 ### Linking a SCUM character
 
-Discord login identifies the user; to see **My Stats** they must also link a SCUM character (via the
-bot's `/link-account` flow — see [Discord Bot](Discord-Bot)). Logged-in-but-unlinked users can still
-browse the other tabs.
+Discord login identifies the user; to see **My Stats** they must also link a SCUM character.
+**You can link right from the web** — the My Stats tab shows a *Link my SCUM account* button that
+gives you a `connect:XXXXXX` code to type in the in-game chat; the page links you automatically once
+you do (it polls and reloads). The Discord `/link-account` command does the same thing. Logged-in-
+but-unlinked users can still browse the other tabs.
 
 ## Linking from the Discord embeds
 

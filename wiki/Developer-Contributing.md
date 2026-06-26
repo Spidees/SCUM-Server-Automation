@@ -35,8 +35,7 @@ node src/index.js
 
 ### Add a leaderboard category
 Add an entry to `database/leaderboardDefs.js` (`allTime.sql` + optional `weekly`). It flows into the
-web snapshot, the API, and the Discord leaderboard embed automatically. Source stat columns from
-`survival_stats` (see [Database](Developer-Database)).
+web snapshot, the API, and the Discord leaderboard embed automatically.
 
 ### Add a Discord log feed
 Create a module in `discord/logFeeds/` exporting `{ name, logPrefix, isEnabled, parseLine, handle }`

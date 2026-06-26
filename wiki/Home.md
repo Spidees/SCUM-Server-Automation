@@ -5,8 +5,7 @@ service, recover from crashes, schedule restarts, back up, apply Steam updates �
 **web interface** (admin dashboard + public community "Field Console") and a feature-rich
 **Discord bot**.
 
-> These pages live in the GitHub Wiki. To edit them, clone `…/SCUM-Server-Automation.wiki.git`
-> (or copy the files from the repo's `wiki/` folder).
+> 🌐 **Live demo** of the public Field Console: **[scum.playhub.cz](https://scum.playhub.cz/)**
 
 ---
 

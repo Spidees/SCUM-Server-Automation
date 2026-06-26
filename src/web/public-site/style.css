@@ -44,7 +44,7 @@ a:hover { color: var(--amber-hi); }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
 .hud-top {
-  display: flex; align-items: center; gap: 1.25rem; padding: 0.75rem 1.5rem;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 1.25rem; padding: 0.75rem 1.5rem;
   border-bottom: 1px solid var(--line-amber);
   background: linear-gradient(180deg, var(--panel), var(--bg-2));
   position: sticky; top: 0; z-index: 30;
@@ -277,7 +277,17 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 .foot-social a { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.85rem; }
 .foot-social a:hover { color: var(--amber-hi); }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-@media (max-width: 640px) { .readout-state-wrap { display: none; } .mainnav { top: 62px; } }
+@media (max-width: 640px) {
+  .readout-state-wrap { display: none; }
+  /* On mobile let the header scroll away (not sticky) so its wrapped rows don't
+     overlap the nav, and stop content overflowing the viewport width. */
+  .hud-top { position: static; gap: 0.6rem 0.8rem; padding: 0.6rem 0.9rem; }
+  .mainnav { top: 0; }
+  .readout { margin-left: 0; flex: 1 1 auto; min-width: 0; }
+  .readout-pop { min-width: 0; }
+  .header-actions { margin-left: auto; }
+  .brand img { height: 32px; }
+}
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; scroll-behavior: auto; } }
 
 /* ── Economy (Discord-aligned) ────────────────────────────────────────────── */
@@ -292,7 +302,7 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 
 
 /* ── My Stats: combat|survival grid, squad, notifications ─────────────────── */
-.record-actions { display: flex; align-items: center; gap: 0.5rem; }
+.record-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; margin-top: 0.5rem; }
 .ms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; margin-top: 0.4rem; }
 @media (max-width: 760px) { .ms-grid { grid-template-columns: 1fr; } }
 
@@ -346,3 +356,7 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 /* Clickable player name (squad members → profile) */
 .pl-click { cursor: pointer; }
 .pl-click:hover { color: var(--amber-hi); }
+
+/* Account-linking code (My Stats unlinked state) */
+.link-code { font-family: var(--mono); font-size: 1.4rem; color: var(--amber-hi); background: var(--inset); border: 1px solid var(--line-amber); border-radius: var(--radius); padding: 0.6rem 0.9rem; display: inline-block; margin: 0.3rem 0; letter-spacing: 0.06em; user-select: all; }
+#link-instructions { margin: 0.6rem 0; }

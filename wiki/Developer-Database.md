@@ -16,13 +16,6 @@ applies query rewrites:
 - `excludeDeletedProfiles(sql)` — hides `user_profiles_marked_for_deletion` (dead characters).
 - `excludeDeletedAndAdmins(sql)` — also hides admins (for leaderboards). Used by `leaderboardDefs`.
 
-## Important data-source note
-
-On current SCUM saves, **`events_stats` is empty** (Events-mode table); real combat stats live in
-**`survival_stats`** (`kills`, `deaths`, `prisoner_kills`, `deaths_by_prisoners`, `headshots`, …).
-`playerStats.PLAYER_STATS_SELECT`, `leaderboardDefs` (kills/deaths/kdr + PvP categories) and the
-weekly snapshot all source from `survival_stats`. Keep this in mind when adding stat queries.
-
 > Inspect the live DB without installing deps:
 > `node --experimental-sqlite -e "const {DatabaseSync}=require('node:sqlite'); …"` (read-only).
 
