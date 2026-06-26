@@ -7,6 +7,9 @@ lifecycle — installation, Windows-service control, crash recovery, scheduled r
 Steam updates — and exposes everything through a themed **web dashboard** and a feature-rich
 **Discord bot** (live embeds, log feeds, leaderboards, account linking and per-player raid alerts).
 
+> 🌐 **Live demo** — see the public Field Console running on my own server:
+> **[scum.playhub.cz](https://scum.playhub.cz/)**
+
 ---
 
 ## 📚 Documentation
@@ -65,7 +68,10 @@ The web server (default `http://localhost:8080`) serves **two faces** that share
 - **Discord** screen — post the account-linking panel, view linked accounts (click → player profile)
 - Live server-log tail over WebSocket (admin-only)
 
-**Public Field Console — `/`** (community-facing, optional Discord login)
+![Admin dashboard — overview](http://playhub.cz/scum/manager/admin_overview.png)
+![Admin dashboard — settings](http://playhub.cz/scum/manager/admin_settings.png)
+
+**Public Field Console — `/`** (community-facing, optional Discord login) — [live demo: scum.playhub.cz](https://scum.playhub.cz/)
 - **Overview** (public): server name, connect address, FPS, next restart, in-game time/weather,
   total players, active squads, top squads
 - **Login with Discord** (OAuth) — everything below is gated behind login:
@@ -74,7 +80,10 @@ The web server (default `http://localhost:8080`) serves **two faces** that share
   **Bunkers**, **Economy** (mirrors the Discord embed), **Kill Feed**
 - Optional **link in the Discord embeds** to the live Field Console (set `web.publicUrl`)
 
-![SCUM Server Automation - Dashboard](http://playhub.cz/scum/manager/dashboard.png)
+![Field Console — overview](http://playhub.cz/scum/manager/field_console_overview.png)
+![Field Console — leaderboards](http://playhub.cz/scum/manager/field_console_leaderboards.png)
+![Field Console — my stats](http://playhub.cz/scum/manager/field_console_mystats.png)
+![Field Console — economy](http://playhub.cz/scum/manager/field_console_economy.png)
 
 > **Exposing it to the internet?** See **[Exposing to the Internet](https://github.com/Spidees/SCUM-Server-Automation/wiki/Exposing-to-the-Internet)**
 > for domain + HTTPS (reverse proxy or built-in TLS), `bindAddress`, rate limiting and the security
