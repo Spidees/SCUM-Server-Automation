@@ -542,7 +542,7 @@
       const pills = [];
       if (market.volume != null && market.count) pills.push(`<div class="econ-pill"><span class="v">${money(market.volume)}</span><span class="k">Recent volume</span></div>`);
       if (market.busiestTrader) pills.push(`<div class="econ-pill"><span class="v">${esc(market.busiestTrader.name)}</span><span class="k">Busiest trader</span></div>`);
-      (market.topItems || []).slice(0, 3).forEach((it) => pills.push(`<div class="econ-pill"><span class="v">${esc(it.item)}</span><span class="k">${money(it.value)} · ×${it.count}</span></div>`));
+      (market.topItems || []).slice(0, 6).forEach((it) => pills.push(`<div class="econ-pill"><span class="v">${esc(it.item)}</span><span class="k">${money(it.value)} · ×${it.count}</span></div>`));
       $('econ-market-stats').innerHTML = pills.join('');
       $('econ-trades').innerHTML = trades.length
         ? trades.map((t) => {
@@ -767,6 +767,19 @@
     }
     if (disabledTabs.has(currentView)) switchView('overview');
   }
+
+  // Auto-hide the sticky topbar on scroll-down, reveal on scroll-up (mobile-friendly).
+  (function autoHideTopbar() {
+    const bar = document.querySelector('.topbar');
+    if (!bar) return;
+    let last = window.scrollY;
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY;
+      if (y > last && y > 90) bar.classList.add('nav-hidden');
+      else if (y < last) bar.classList.remove('nav-hidden');
+      last = y;
+    }, { passive: true });
+  })();
 
   // ── Init ─────────────────────────────────────────────────────────────────
   applySiteConfig();

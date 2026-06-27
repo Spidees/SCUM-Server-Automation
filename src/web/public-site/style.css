@@ -45,7 +45,8 @@ a:hover { color: var(--amber-hi); }
 /* ── Header ─────────────────────────────────────────────────────────────── */
 /* Header + nav stick together as one unit, so the nav can't slide under the
    header from a mismatched offset. */
-.topbar { position: sticky; top: 0; z-index: 30; }
+.topbar { position: sticky; top: 0; z-index: 30; transition: transform 0.25s ease; }
+.topbar.nav-hidden { transform: translateY(-100%); }
 .hud-top {
   display: flex; align-items: center; flex-wrap: wrap; gap: 1.25rem; padding: 0.75rem 1.5rem;
   border-bottom: 1px solid var(--line-amber);
@@ -104,7 +105,7 @@ a:hover { color: var(--amber-hi); }
 .nav-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
 .nav-btn .ico { font-size: 1.05rem; }
 
-main { width: 100%; max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
+main { width: 100%; max-width: 1600px; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; }
 .view[hidden] { display: none; }
 
 /* ── Panels ─────────────────────────────────────────────────────────────── */
@@ -114,7 +115,8 @@ main { width: 100%; max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
 .panel::after { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .panel h2 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
-.panel h3 { display: flex; align-items: center; gap: 0.45rem; margin: 1.2rem 0 0.55rem; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.panel h3 { display: flex; align-items: center; gap: 0.45rem; margin: 1.8rem 0 0.7rem; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.panel h3:first-child, .panel-head + h3 { margin-top: 0.4rem; }
 .panel h3 .ico { color: var(--amber); }
 /* My Stats + player/squad modal section headings — match other tabs' section titles. */
 #view-mystats h3, #modal-body h3 { font-size: 0.95rem; color: var(--amber); margin-top: 1.6rem; }
@@ -129,9 +131,9 @@ main { width: 100%; max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
 .tile-k { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
 .ov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1.25rem; align-items: start; }
 .ov-card h2 { font-size: 0.85rem; }
-.ov-top { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.25rem; align-items: stretch; }
+.ov-top { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.75rem; align-items: stretch; }
 @media (max-width: 720px) { .ov-top { grid-template-columns: 1fr; } }
-.tiles { margin-bottom: 1.25rem; }
+.tiles { margin-bottom: 1.75rem; }
 .srv-table { width: 100%; border-collapse: collapse; }
 .srv-table th, .srv-table td { border-bottom: 1px solid var(--line); padding: 0.45rem 0; }
 .srv-table th { text-align: left; font-weight: 400; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; padding-right: 0.9rem; white-space: nowrap; vertical-align: top; width: 1%; }
@@ -261,7 +263,7 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 /* ── Trader funds ───────────────────────────────────────────────────────── */
 .econ-traders { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.6rem; margin-bottom: 0.4rem; }
 .trader-card { padding: 0.7rem 0.85rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
-.trader-loc { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); margin-bottom: 0.35rem; }
+.trader-loc { font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--amber); margin-bottom: 0.5rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--line-amber); }
 .trader-row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; padding: 0.12rem 0; }
 .trader-row .v { font-family: var(--mono); color: var(--text); }
 
@@ -337,7 +339,7 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 /* ── Modal (player profile / squad detail) ────────────────────────────────── */
 .modal { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.72); display: flex; align-items: flex-start; justify-content: center; padding: 5vh 1rem; overflow: auto; }
 .modal[hidden] { display: none; }
-.modal-card { position: relative; width: 100%; max-width: 920px; background: var(--panel); border: 1px solid var(--line-amber); border-radius: var(--radius); padding: 1.5rem 1.6rem; }
+.modal-card { position: relative; width: 100%; max-width: 1320px; background: var(--panel); border: 1px solid var(--line-amber); border-radius: var(--radius); padding: 1.5rem 1.6rem; }
 .modal-close { position: absolute; top: 0.5rem; right: 0.8rem; background: transparent; border: 0; color: var(--muted); font-size: 1.7rem; line-height: 1; cursor: pointer; }
 .modal-close:hover { color: var(--amber-hi); }
 #modal-body h3 { display: flex; align-items: center; gap: 0.45rem; margin: 1.2rem 0 0.55rem; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
@@ -381,7 +383,7 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 
 .ov-squad-row.sq-click { cursor: pointer; }
 .ov-squad-row.sq-click:hover .sq-name { color: var(--amber-hi); }
-#view-overview > .panel + .panel { margin-top: 1.25rem; }
+#view-overview > .panel + .panel { margin-top: 1.75rem; }
 
 /* Clickable category (overview leaders / my-stats rankings) → leaderboard category */
 .cat-click { cursor: pointer; }
@@ -389,8 +391,8 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 .rank-chip > .ico { color: var(--amber); flex: none; }
 
 /* ── My Stats: prisoner skills ────────────────────────────────────────────── */
-.skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; align-items: start; }
-.skill-group { display: flex; flex-direction: column; gap: 0.55rem; }
+.skills { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem; }
+.skill-group { display: flex; flex-direction: column; gap: 0.55rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.85rem 0.9rem; }
 .sg-head { display: flex; flex-direction: column; align-items: center; gap: 0.45rem; border-bottom: 1px solid var(--line-amber); padding-bottom: 0.55rem; margin-bottom: 0.35rem; }
 .sg-titlewrap { display: flex; align-items: center; gap: 0.45rem; }
 .sg-titlewrap > .ico { color: var(--amber); font-size: 1.15rem; }
@@ -414,7 +416,7 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 
 /* ── Economy: market activity (recent trades) ─────────────────────────────── */
 .econ-market-stats { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.8rem; }
-.econ-trades { list-style: none; margin: 0 0 1.1rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.econ-trades { list-style: none; margin: 0 0 1.1rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; max-height: 460px; overflow-y: auto; }
 .etr { display: grid; grid-template-columns: auto auto 1fr auto; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.5rem 0.65rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
 .etr-img { grid-column: 1; grid-row: 1 / 3; align-self: center; width: 32px; height: 32px; object-fit: contain; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px; }
 .etr-img-x { display: flex; align-items: center; justify-content: center; color: var(--faint); }

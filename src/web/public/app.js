@@ -459,6 +459,18 @@
   // Persistent tab bar (replaces the old per-screen nav + back buttons).
   document.querySelectorAll('.anav-btn').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   { const brand = document.querySelector('#app-shell .brand'); if (brand) brand.addEventListener('click', () => showTab('dashboard')); }
+  // Auto-hide the sticky topbar on scroll-down, reveal on scroll-up (mobile-friendly).
+  (function autoHideTopbar() {
+    const bar = document.querySelector('.topbar');
+    if (!bar) return;
+    let last = window.scrollY;
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY;
+      if (y > last && y > 90) bar.classList.add('nav-hidden');
+      else if (y < last) bar.classList.remove('nav-hidden');
+      last = y;
+    }, { passive: true });
+  })();
   // Click a squad member in the player detail → open that player.
   document.addEventListener('click', (e) => {
     const m = e.target.closest('.pd-member[data-player]');

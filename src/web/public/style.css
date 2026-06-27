@@ -149,7 +149,8 @@ header {
 
 /* ── Persistent topbar + tab nav (Field-Console-style) ─────────────────────── */
 #app-shell { display: flex; flex-direction: column; min-height: 100vh; }
-.topbar { position: sticky; top: 0; z-index: 30; }
+.topbar { position: sticky; top: 0; z-index: 30; transition: transform 0.25s ease; }
+.topbar.nav-hidden { transform: translateY(-100%); }
 .header-actions { display: flex; align-items: center; gap: 0.5rem; }
 .admin-nav { display: flex; gap: 0.25rem; padding: 0 1.5rem; background: var(--bg-2); border-bottom: 1px solid var(--line-amber); overflow-x: auto; }
 .anav-btn {
@@ -1261,8 +1262,8 @@ textarea:focus-visible,
 /* Skills & attributes (grouped by attribute, with the attribute value) */
 .pd-sec-title { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0 0.7rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); font-weight: 700; }
 .pd-sec-title .ico { color: var(--amber); }
-.pd-skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.1rem; margin-bottom: 0.9rem; }
-.pd-sg { display: flex; flex-direction: column; gap: 0.4rem; }
+.pd-skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.8rem; margin-bottom: 0.9rem; }
+.pd-sg { display: flex; flex-direction: column; gap: 0.4rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.8rem 0.85rem; }
 .pd-sg-head { display: flex; align-items: center; gap: 0.4rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--line-amber); }
 .pd-sg-head .ico { color: var(--amber); }
 .pd-sg-head b { color: var(--amber); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }

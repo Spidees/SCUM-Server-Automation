@@ -280,7 +280,7 @@ router.get('/economy', (req, res) => {
     let market = null;
     try {
       economyTrades.seedFromLog();
-      recentTrades = economyTrades.getRecentTrades(15).map((t) => ({ ...t, item: getItemDisplayName(t.code) || t.item, image: getItemImageUrl(t.code) }));
+      recentTrades = economyTrades.getRecentTrades(30).map((t) => ({ ...t, item: getItemDisplayName(t.code) || t.item, image: getItemImageUrl(t.code) }));
       market = economyTrades.getMarketStats();
     } catch { recentTrades = []; market = null; }
     const deals = (database.getSpecialDeals(12) || []).map((d) => ({ ...d, item: getItemDisplayName(d.code) || d.item, image: getItemImageUrl(d.code) }));
