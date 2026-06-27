@@ -6,16 +6,17 @@ All under the single web server (`web.port`). Responses are JSON unless noted.
 
 | Method · Path | Returns |
 |---|---|
-| `GET /overview` | `{ status{online,players,maxPlayers,fps,state}, server{name,address}, counts, world, nextRestart, topSquads }` (cached ~15 s) |
+| `GET /overview` | `{ status, server, counts, world, nextRestart, topSquads, categoryLeaders, onlinePlayers }` (cached ~15 s; `onlinePlayers` is `null` when disabled) |
+| `GET /site-config` | `{ fieldConsole:{showOnlinePlayers, tabs{…}} }` — read on load to hide disabled tabs / the online list |
 | `GET /status` | slim status `{Status,IsOnline,OnlinePlayers,MaxPlayers,LastUpdate}` |
 | `GET /game-stats` | aggregate counts + time/weather |
-| `GET /players` | online player **names** only |
+| `GET /players` | online player **names** only (empty when `web.fieldConsole.showOnlinePlayers` is off) |
 | `GET /leaderboards?weekly=&limit=` | `{available,generatedAt,categories,leaderboards}` from the snapshot |
 | `GET /leaderboards/:category?weekly=&limit=` | one category |
 | `GET /squads` | `{available,squads:[{id,name,score,memberCount}]}` |
 | `GET /squads/:id` | `{available,squad:{name,score,memberCount,members:[{name,rank}]}}` (id validated) |
 | `GET /bunkers` | `{bunkers:[{sector,state,activeSince,nextActivation}]}` |
-| `GET /economy` | `{available,deals,traders,gold,timing}` (mirrors the Discord embed) |
+| `GET /economy` | `{available,deals,traders,gold,timing,recentTrades,market}` — deals/trades carry item name+image (from `scum_items.json`); `market`/`recentTrades` from the in-memory trade buffer |
 | `GET /killfeed?limit=` | `{kills:[…]}` from the in-memory ring buffer |
 
 No Steam IDs, IPs or coordinates are exposed here.
@@ -34,17 +35,18 @@ No Steam IDs, IPs or coordinates are exposed here.
 | Method · Path | Returns |
 |---|---|
 | `GET /me` | identity |
-| `GET /me/overview` | identity + stats + ranks + squad + notification prefs |
+| `GET /me/overview` | identity + stats + ranks + **skills** (+attributes) + **finances** (bank/cards/gold/account) + squad + notification prefs |
 | `GET /me/stats` | full stat sheet (own) |
 | `GET /me/notifications` · `POST` | DM-alert prefs |
 | `GET /me/notifications/history` | recent DM alerts sent to this player |
-| `GET /profile/:name` | another player's profile — **strips** Steam ID, last-logout, and member online/last-seen |
+| `GET /profile/:name` | another player's profile — **strips** Steam ID, last-logout, member online/last-seen; **skills are included only if the caller is a squadmate**; no finances |
 
 ## Admin API — `/api/*` (`requireAuth`) & `/api/game-config/*`
 
 Server controls (`/control/start|stop|restart|backup|validate|update|restart-skip`), `status`,
 `scheduling`, `backups`, `update/status`, `config` (GET/POST), `logs/tail`, `players/search`,
-`players/:name` (full, incl. Steam ID/IP/discord/ban), `bans` (GET/POST, `DELETE /bans/:steamId`),
+`players/:name` (everything: stats, Steam ID/IP/discord/ban, **skills, finances incl. card PINs,
+and squad with members**), `bans` (GET/POST, `DELETE /bans/:steamId`),
 `account-linking/*`, and the game-config INI/JSON/list editors. These are admin-only; never mount
 them publicly.
 

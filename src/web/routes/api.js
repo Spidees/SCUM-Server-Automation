@@ -6,6 +6,7 @@ const express = require('express');
 const logger = require('../../core/logger');
 const events = require('../../core/events');
 const { config, paths } = require('../../core/config');
+const { itemImageUrl } = require('../../discord/items');
 const { schedulingState } = require('../../core/state');
 const service = require('../../server/service');
 const monitoring = require('../../server/monitoring');
@@ -237,11 +238,22 @@ router.get('/players/:name', (req, res) => {
     const steamId = stats.SteamID ? String(stats.SteamID) : null;
     let discord = null;
     let banned = false;
+    let skills = null;
+    let finances = null;
+    let squad = null;
     if (steamId) {
+      try { squad = database.getSquadInfoBySteamId(steamId); } catch { squad = null; }
       try { discord = database.getDiscordProfileBySteamId(steamId) || null; } catch { discord = null; }
       try { banned = bans.getBanList().some((b) => b.steamId === steamId); } catch { banned = false; }
+      try { skills = database.getPlayerSkillsBySteamId(steamId); } catch { skills = null; }
+      try {
+        finances = database.getPlayerFinancesBySteamId(steamId);
+        if (finances && Array.isArray(finances.cards)) {
+          finances = { ...finances, cards: finances.cards.map((c) => ({ ...c, image: itemImageUrl(`${c.type}_Bank_Card.png`) })) };
+        }
+      } catch { finances = null; }
     }
-    res.json({ available: true, stats, profile: profile || null, discord, banned });
+    res.json({ available: true, stats, profile: profile || null, discord, banned, skills, finances, squad });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

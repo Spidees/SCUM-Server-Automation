@@ -292,6 +292,89 @@ function getPlayerStatsBySteamId(steamId) {
   });
 }
 
+/** Parse the four core attributes (1.0-5.0) out of user_profile.template_xml. */
+function parseAttributes(xml) {
+  if (!xml) return null;
+  const num = (re) => { const m = re.exec(xml); return m ? parseFloat(m[1]) : null; };
+  const a = {
+    strength: num(/Strength="([0-9.]+)"/),
+    constitution: num(/Constitution="([0-9.]+)"/),
+    dexterity: num(/Dexterity="([0-9.]+)"/),
+    intelligence: num(/Intelligence="([0-9.]+)"/),
+  };
+  return Object.values(a).every((v) => v == null) ? null : a;
+}
+
+/**
+ * A linked player's prisoner skills + core attributes. Skills hang off the prisoner
+ * (level 0-4 = No Skill → Advanced+); attributes (1-5) live in user_profile.template_xml.
+ * Returns { attributes, list }.
+ */
+function getPlayerSkillsBySteamId(steamId) {
+  const db = getScumDb();
+  if (!db || steamId == null) return { attributes: null, list: [] };
+  return memo(`skillsBySteam:${steamId}`, 15000, () => {
+    try {
+      const prof = db.prepare('SELECT prisoner_id, template_xml FROM user_profile WHERE user_id = ?').get(String(steamId));
+      if (!prof) return { attributes: null, list: [] };
+      const list = db.prepare(
+        'SELECT name AS Name, level AS Level, experience AS Xp FROM prisoner_skill WHERE prisoner_id = ? ORDER BY level DESC, experience DESC',
+      ).all(prof.prisoner_id) || [];
+      return { attributes: parseAttributes(prof.template_xml), list };
+    } catch {
+      return { attributes: null, list: [] };
+    }
+  });
+}
+
+/**
+ * A linked player's finances: cash on hand, bank balance, gold and bank cards.
+ * Private data — only ever returned for the caller's own (My Stats), never for
+ * another player's profile. currency_type 1 = account credits, 2 = gold.
+ */
+function getPlayerFinancesBySteamId(steamId) {
+  const db = getScumDb();
+  if (!db || steamId == null) return null;
+  return memo(`financesBySteam:${steamId}`, 15000, () => {
+    try {
+      const row = db.prepare(`
+        SELECT
+          u.money_balance AS cash,
+          (SELECT c.account_balance FROM bank_account_registry bar
+             JOIN bank_account_registry_currencies c ON c.bank_account_id = bar.id
+            WHERE bar.account_owner_user_profile_id = u.id AND c.currency_type = 1 LIMIT 1) AS bank,
+          (SELECT c.account_balance FROM bank_account_registry bar
+             JOIN bank_account_registry_currencies c ON c.bank_account_id = bar.id
+            WHERE bar.account_owner_user_profile_id = u.id AND c.currency_type = 2 LIMIT 1) AS gold,
+          (SELECT bar.bank_account_number FROM bank_account_registry bar
+            WHERE bar.account_owner_user_profile_id = u.id LIMIT 1) AS accountNumber
+        FROM user_profile u WHERE u.user_id = ? LIMIT 1
+      `).get(String(steamId));
+      if (!row) return null;
+      const cards = db.prepare(`
+        SELECT cd.card_type AS type, cd.pin_number AS pin,
+               cd.daily_withdraw_amount_remaining AS withdrawLeft,
+               cd.daily_deposit_amount_remaining AS depositLeft,
+               cd.wrong_pins_remaining AS pinTries,
+               cd.free_renewals_remaining AS renewals
+        FROM user_profile u
+        JOIN bank_account_registry bar ON bar.account_owner_user_profile_id = u.id
+        JOIN bank_account_registry_cards cd ON cd.bank_account_id = bar.id
+        WHERE u.user_id = ? ORDER BY cd.card_type
+      `).all(String(steamId)) || [];
+      return {
+        cash: row.cash != null ? Math.round(row.cash) : null,
+        bank: row.bank != null ? Math.round(row.bank) : 0,
+        gold: row.gold != null ? Math.round(row.gold) : 0,
+        accountNumber: row.accountNumber || null,
+        cards,
+      };
+    } catch {
+      return null;
+    }
+  });
+}
+
 /**
  * Search players by partial name (up to 10 results).
  * Used by the web API player search endpoint.
@@ -653,6 +736,8 @@ module.exports = {
   getServerStatistics,
   getPlayerStatsByName,
   getPlayerStatsBySteamId,
+  getPlayerSkillsBySteamId,
+  getPlayerFinancesBySteamId,
   searchPlayersByName,
   searchPlayersBySteamId,
 };

@@ -47,6 +47,7 @@ Two files: **`config/config.json`** (non-secret, editable from the dashboard Set
 | `web.adminAllowlist` | `[]` | Optional IP / IPv4-CIDR allowlist applied to admin requests (loopback always allowed) |
 | `web.httpRedirectPort` | `null` | With built-in TLS, an HTTP port (e.g. `80`) that 301-redirects to HTTPS |
 | `web.ssl` | `{enabled:false, keyFile:"", certFile:""}` | Serve HTTPS directly (no reverse proxy) |
+| `web.fieldConsole` | `{showOnlinePlayers:true, tabs:{…}}` | Field Console visibility: show the online-players list, and each tab (`leaderboards`, `squads`, `myStats`, `bunkers`, `economy`, `killFeed`, `events`). All default `true`; disabled tabs are hidden and their data isn't served |
 
 See [Exposing to the Internet](Exposing-to-the-Internet) for how these fit together.
 

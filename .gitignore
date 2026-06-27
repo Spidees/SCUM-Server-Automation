@@ -1,0 +1,27 @@
+# ── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Secrets (never commit) ───────────────────────────────────────────────────
+.env
+
+# ── SCUM server install, saves & logs (huge + contains player data: Steam IDs,
+#    IPs, SCUM.db, chat/kill logs). NEVER commit. ───────────────────────────────
+server/
+backups/
+steamcmd/
+
+# ── Binaries fetched/placed at install time ──────────────────────────────────
+nssm.exe
+
+# ── Runtime/generated app data (keep the tracked data/scum_items.json) ────────
+data/*.db
+data/*_state.json
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Editor / OS noise ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp

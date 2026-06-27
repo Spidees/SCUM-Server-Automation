@@ -8,11 +8,21 @@
 const express = require('express');
 const logger = require('../../core/logger');
 const database = require('../../database');
+const { itemImageUrl } = require('../../discord/items');
 const { requirePlayer } = require('./discordAuth');
 
 const router = express.Router();
 
 router.use(requirePlayer);
+
+// Attach the bank-card icon URL to each card (Classic/Gold/Starter → <type>_Bank_Card.png).
+function withCardImages(finances) {
+  if (!finances || !Array.isArray(finances.cards)) return finances;
+  return {
+    ...finances,
+    cards: finances.cards.map((c) => ({ ...c, image: itemImageUrl(`${c.type}_Bank_Card.png`) })),
+  };
+}
 
 router.get('/me', (req, res) => {
   const p = req.session.player;
@@ -42,6 +52,8 @@ router.get('/me/overview', (req, res) => {
       available: dbAvailable,
       stats: stats || null,
       ranks,
+      skills: dbAvailable ? database.getPlayerSkillsBySteamId(p.steamId) : [],
+      finances: dbAvailable ? withCardImages(database.getPlayerFinancesBySteamId(p.steamId)) : null,
       squad: dbAvailable ? database.getSquadInfoBySteamId(p.steamId) : null,
       notifications: database.getNotifyPrefs(p.discordUserId),
     });
@@ -72,10 +84,18 @@ router.get('/profile/:name', (req, res) => {
         };
       }
     }
+    // Skills (+ attributes) are only revealed to a squadmate of the viewed player.
+    let skills = null;
+    const viewer = req.session.player;
+    if (stats.SteamID && viewer && viewer.steamId) {
+      const vSquad = database.getSquadIdBySteamId(viewer.steamId);
+      const tSquad = database.getSquadIdBySteamId(stats.SteamID);
+      if (vSquad != null && vSquad === tSquad) skills = database.getPlayerSkillsBySteamId(stats.SteamID);
+    }
     const safe = { ...stats };
     delete safe.SteamID;
     delete safe.LastLogout;
-    return res.json({ available: true, name: stats.Name, stats: safe, ranks, squad });
+    return res.json({ available: true, name: stats.Name, stats: safe, ranks, squad, skills });
   } catch (err) {
     logger.error(`[API/player] /profile error: ${err.message}`);
     return res.status(500).json({ error: 'profile_unavailable' });

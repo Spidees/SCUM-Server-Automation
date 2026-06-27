@@ -463,21 +463,27 @@ function buildEconomyOverviewEmbed() {
   try { timing = database.getEconomyTiming(); } catch { timing = null; }
   if (timing) {
     const parts = [];
+    const hh = (x) => `${Number.isInteger(x) ? x : Number(x).toFixed(1)} h`;
     if (timing.rotationEnabled && timing.rotationHoursMin != null && timing.rotationHoursMax != null) {
-      parts.push(`🔄 Items rotate every **${timing.rotationHoursMin}–${timing.rotationHoursMax}** in-game hours`);
+      parts.push(`🔄 Offered items rotate every **${timing.rotationHoursMin}–${timing.rotationHoursMax}** in-game hours`);
     }
-    if (timing.fullRestockHours != null) parts.push(`📦 Sold-out stock refills in **${timing.fullRestockHours} h**`);
+    if (timing.fullRestockHours != null && timing.fullRestockHours > 0) parts.push(`📦 Sold-out stock refills in **${hh(timing.fullRestockHours)}**`);
+    if (timing.unlimitedStock) parts.push('📦 Trader stock **never runs out**');
+    if (timing.traderFundsRefillHours != null) parts.push(`💰 Depleted trader funds refill in **${hh(timing.traderFundsRefillHours)}**`);
+    if (timing.unlimitedFunds) parts.push('💰 Trader funds **never run out** when players sell');
+    if (timing.pricesRandomizationHours != null && timing.pricesRandomizationHours > 0) parts.push(`🔀 Store prices re-roll every **${hh(timing.pricesRandomizationHours)}**`);
+    if (timing.pricesSubjectToPlayerCount) parts.push('👥 Prices scale with **player count**');
     // A full economy reset only matters when it's actually scheduled (> 0); a value
     // of -1 means it's disabled, so we hide it (and the confusing "last reset" line).
     if (timing.resetTimeHours != null && timing.resetTimeHours > 0) {
-      parts.push(`🔁 Full economy reset every **${timing.resetTimeHours} h**`);
+      parts.push(`🔁 Full economy reset every **${hh(timing.resetTimeHours)}**`);
       if (timing.secondsSinceReset != null) {
         const h = Math.floor(timing.secondsSinceReset / 3600);
         const m = Math.floor((timing.secondsSinceReset % 3600) / 60);
         parts.push(`⏱️ Last reset **${h}h ${m}m** ago`);
       }
     }
-    if (parts.length) embed.addFields({ name: '♻️ Stock Rotation', value: parts.join('\n'), inline: false });
+    if (parts.length) embed.addFields({ name: '♻️ Economy Timing', value: parts.join('\n'), inline: false });
   }
 
   if (liveCfg.Images && liveCfg.Images.Economy) embed.setImage(liveCfg.Images.Economy);

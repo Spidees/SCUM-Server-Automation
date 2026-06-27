@@ -5,15 +5,19 @@
   // and Discord — defined once here instead of duplicated in the markup.
   (function injectFooters() {
     const html = '<footer class="app-footer">'
-      + '<span class="app-footer-brand">SCUM Server Automation</span>'
-      + '<nav class="app-footer-links">'
-      + '<a href="https://github.com/Spidees/SCUM-Server-Automation" target="_blank" rel="noopener noreferrer">▸ GitHub</a>'
-      + '<a href="https://playhub.cz/discord" target="_blank" rel="noopener noreferrer">▸ Discord</a>'
-      + '</nav></footer>';
-    ['dashboard-screen', 'players-screen', 'settings-screen', 'game-settings-screen', 'discord-screen'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el && !el.querySelector('.app-footer')) el.insertAdjacentHTML('beforeend', html);
-    });
+      + '<div class="af-top">'
+      + '<span class="af-brand"><img src="logo.png" alt="" class="af-logo"> SCUM Server Automation</span>'
+      + '<span class="muted small">Admin control panel — server lifecycle, players, configuration &amp; live logs.</span>'
+      + '</div>'
+      + '<div class="af-bottom">'
+      + '<span class="muted small">Powered by SCUM Server Automation</span>'
+      + '<div class="af-social">'
+      + '<a href="/" title="Open the public Field Console"><svg class="ico"><use href="#i-ext"/></svg> Field Console</a>'
+      + '<a href="https://playhub.cz/discord" target="_blank" rel="noopener noreferrer"><svg class="ico"><use href="#i-discord"/></svg> Discord</a>'
+      + '<a href="https://github.com/Spidees/SCUM-Server-Automation" target="_blank" rel="noopener noreferrer"><svg class="ico"><use href="#i-ext"/></svg> GitHub</a>'
+      + '</div></div></footer>';
+    const shell = document.getElementById('app-shell');
+    if (shell && !shell.querySelector('.app-footer')) shell.insertAdjacentHTML('beforeend', html);
   })();
 
   const loginScreen = document.getElementById('login-screen');
@@ -35,9 +39,27 @@
 
   let socket = null;
 
+  const appShell = document.getElementById('app-shell');
+  const TABS = ['dashboard', 'players', 'discord', 'game-settings', 'settings'];
+
+  // Field-Console-style persistent tabs: show one panel, mark the active tab and
+  // run that tab's data load. Replaces the old per-screen show/hide + back buttons.
+  function showTab(name) {
+    if (!TABS.includes(name)) name = 'dashboard';
+    TABS.forEach((t) => { const el = document.getElementById(`${t}-screen`); if (el) el.classList.toggle('hidden', t !== name); });
+    document.querySelectorAll('.anav-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+    if (name === 'players') loadBans();
+    else if (name === 'discord') { const m = document.getElementById('discord-message'); if (m) m.textContent = ''; loadLinkedProfiles(); }
+    else if (name === 'game-settings') { const m = document.getElementById('game-settings-message'); if (m) { m.textContent = ''; m.className = 'settings-message'; } loadGameSettings(); }
+    else if (name === 'settings') { const m = document.getElementById('settings-message'); if (m) { m.textContent = ''; m.className = 'settings-message'; } loadSettings(); }
+    window.scrollTo({ top: 0 });
+  }
+
   function showDashboard() {
     loginScreen.classList.add('hidden');
-    dashboardScreen.classList.remove('hidden');
+    setupScreen.classList.add('hidden');
+    appShell.classList.remove('hidden');
+    showTab('dashboard');
     if (!socket) initSocket();
     refreshStatus();
     refreshScheduling();
@@ -49,14 +71,14 @@
   }
 
   function showLogin() {
-    dashboardScreen.classList.add('hidden');
+    appShell.classList.add('hidden');
     setupScreen.classList.add('hidden');
     loginScreen.classList.remove('hidden');
   }
 
   function showSetup() {
     loginScreen.classList.add('hidden');
-    dashboardScreen.classList.add('hidden');
+    appShell.classList.add('hidden');
     setupScreen.classList.remove('hidden');
   }
 
@@ -152,7 +174,7 @@
       if (!res.ok) return;
       const data = await res.json();
       document.getElementById('backup-stats-value').textContent = `${data.BackupCount} (${data.TotalSizeText})`;
-      document.getElementById('last-backup-value').textContent = data.LatestBackup || '-';
+      { const lb = document.getElementById('last-backup-value'); lb.textContent = data.LatestBackup || '-'; lb.title = data.LatestBackup || ''; }
     } catch {
       // ignore
     }
@@ -233,13 +255,80 @@
       ul.innerHTML = '';
       players.forEach((p) => {
         const li = document.createElement('li');
-        li.className = 'player-result';
-        li.textContent = (p.Name || p.SteamID || '(unknown)') + (p.ip ? `  ·  ${p.ip}` : '');
+        li.className = 'player-result' + (p.Name ? ' clickable' : ' muted');
+        const meta = [p.SteamID, p.ip].filter(Boolean).join('  ·  ');
+        li.innerHTML = `<span class="pr-name">${escHtml(p.Name || '(unknown)')}</span>${meta ? `<span class="pr-meta">${escHtml(meta)}</span>` : ''}`;
         if (p.Name) li.addEventListener('click', () => showPlayerDetail(p.Name));
-        else li.classList.add('muted');
         ul.appendChild(li);
       });
     } catch { ul.innerHTML = '<li class="muted">Search failed.</li>'; }
+  }
+
+  // Skills grouped by attribute (with the attribute value) — admin sees everyone's.
+  const SKILL_GROUPS_ADMIN = [
+    ['Strength', 'i-strength', ['Boxing', 'MeleeWeapons', 'Archery', 'Rifles', 'Handgun']],
+    ['Constitution', 'i-heart', ['Running', 'Endurance', 'Resistance']],
+    ['Dexterity', 'i-bolt', ['Thievery', 'Demolition', 'Motorcycle', 'Driving', 'Stealth', 'Aviation']],
+    ['Intelligence', 'i-bulb', ['Awareness', 'Camouflage', 'Engineering', 'Sniping', 'Survival', 'Medical', 'Tactics', 'Cooking', 'Farming']],
+  ];
+  const SKILL_TIERS_ADMIN = ['No Skill', 'Basic', 'Medium', 'Advanced', 'Advanced+'];
+  const cleanSkill = (nm) => String(nm).replace(/Skill$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+  function skillsHtmlAdmin(sk) {
+    if (!sk || !(sk.list || []).length) return '';
+    const attrs = sk.attributes || {};
+    const byBase = {};
+    sk.list.forEach((s) => { byBase[String(s.Name).replace(/Skill$/, '')] = s; });
+    const grp = (title, ic, bases) => {
+      const items = bases.map((b) => byBase[b]).filter(Boolean);
+      if (!items.length) return '';
+      const val = attrs[title.toLowerCase()];
+      const head = `<div class="pd-sg-head"><svg class="ico"><use href="#${ic}"/></svg><b>${title}</b>${val != null ? `<span class="pd-attr">${val}</span>` : ''}</div>`;
+      const rows = items.map((s) => {
+        const lv = Math.max(0, Math.min(4, s.Level | 0));
+        const threshold = lv >= 4 ? 0 : Math.pow(10, lv + 4);
+        const pct = threshold ? Math.max(0, Math.min(100, (s.Xp / threshold) * 100)) : 100;
+        return `<div class="pd-sk sk-l${lv}"><span class="pd-sk-name">${escHtml(cleanSkill(s.Name))}</span><span class="pd-sk-tier">${SKILL_TIERS_ADMIN[lv]}</span><span class="pd-sk-bar"><span style="width:${pct.toFixed(0)}%"></span></span></div>`;
+      }).join('');
+      return `<div class="pd-sg">${head}${rows}</div>`;
+    };
+    const groups = SKILL_GROUPS_ADMIN.map(([t, ic, b]) => grp(t, ic, b)).join('');
+    return `<div class="pd-sec-title"><svg class="ico"><use href="#i-star"/></svg> Skills &amp; attributes</div><div class="pd-skills">${groups}</div>`;
+  }
+
+  // Bank & cards for the admin player detail — admin sees everything, incl. the PIN.
+  function financesHtmlAdmin(f) {
+    if (!f) return '';
+    const n = (v) => (Number(v) || 0).toLocaleString();
+    const amt = (v) => (Number(v) < 0 ? '∞' : `${n(v)} $`);
+    const cnt = (v) => (Number(v) < 0 ? '∞' : n(v));
+    const stat = (ic, k, v) => `<span><svg class="ico"><use href="#${ic}"/></svg><i>${escHtml(k)}</i> <b>${escHtml(v)}</b></span>`;
+    const money = [stat('i-coins', 'Bank balance', `${n(f.bank)} $`), stat('i-coins', 'Gold', n(f.gold))];
+    if (f.cash != null) money.push(stat('i-coins', 'Cash', `${n(f.cash)} $`));
+    if (f.accountNumber) money.push(stat('i-list', 'Account no.', String(f.accountNumber)));
+    let html = `<div class="pd-sec-title"><svg class="ico"><use href="#i-coins"/></svg> Bank &amp; cards</div><div class="pd-stats">${money.join('')}</div>`;
+    if ((f.cards || []).length) {
+      html += '<div class="pd-cards">' + f.cards.map((c) => {
+        const img = c.image ? `<img class="pd-card-img" src="${escHtml(c.image)}" alt="" onerror="this.remove()">` : '';
+        const rows = [];
+        if (c.pin != null && Number(c.pin) >= 0) rows.push(`<span>PIN <b>${escHtml(String(c.pin))}</b></span>`);
+        if (c.withdrawLeft != null) rows.push(`<span>Withdraw left <b>${amt(c.withdrawLeft)}</b></span>`);
+        if (c.depositLeft != null) rows.push(`<span>Deposit left <b>${amt(c.depositLeft)}</b></span>`);
+        if (c.renewals != null) rows.push(`<span>Renewals <b>${cnt(c.renewals)}</b></span>`);
+        if (c.pinTries != null) rows.push(`<span>PIN tries <b>${cnt(c.pinTries)}</b></span>`);
+        return `<div class="pd-card">${img}<div class="pd-card-body"><span class="pd-card-type">${escHtml(c.type)} card</span><div class="pd-card-rows">${rows.join('')}</div></div></div>`;
+      }).join('') + '</div>';
+    }
+    return html;
+  }
+
+  // Squad block for the admin player detail — members are click-through to their profile.
+  function squadHtmlAdmin(sq) {
+    if (!sq) return '';
+    const score = (Number(sq.score) || 0).toLocaleString();
+    const head = `<div class="pd-squad-head"><span class="pd-squad-name">${escHtml(sq.name || 'Squad')}</span><span class="pd-squad-meta">${sq.memberCount || 0} members · ${score} score</span></div>`;
+    const members = (sq.members || []).map((m) =>
+      `<button class="pd-member" data-player="${escHtml(m.name)}"><span class="pd-m-dot ${m.online ? 'on' : ''}"></span><span class="pd-m-name">${escHtml(m.name)}</span><span class="pd-m-rank">${escHtml(m.rank || '')}</span></button>`).join('');
+    return `<div class="pd-sec-title"><svg class="ico"><use href="#i-shield"/></svg> Squad</div>${head}<div class="pd-members">${members}</div>`;
   }
 
   async function showPlayerDetail(name) {
@@ -262,19 +351,20 @@
       const online = s.IsOnline || p.user_is_online;
 
       const idRows = [
-        ['Steam ID', s.SteamID || '—'], ['IP', p.user_ip || '—'], ['Squad', s.SquadName || '—'],
+        ['Steam ID', s.SteamID || '—'], ['IP', p.user_ip || '—'],
         ['Discord', d.discord ? `@${d.discord.discord_username}` : 'not linked'],
         ['Last login', p.last_login_time || '—'], ['Last logout', p.last_logout_time || '—'],
       ];
+      // [label, value, icon] — icons & labels match the public Field Console My Stats.
       const statRows = [
-        ['Kills', n(s.Kills)], ['Deaths', n(s.Deaths)], ['K/D', kd],
-        ['PvP kills', n(s.PvpKills)], ['PvP deaths', n(s.PvpDeaths)], ['Headshots', n(s.Headshots)],
-        ['Puppet kills', n(s.ZombieKills)], ['Animal kills', n(s.AnimalKills)], ['Longest kill', `${n(s.LongestKill)} m`],
-        ['Firearm', n(s.FirearmKills)], ['Melee', n(s.MeleeKills)], ['Archery', n(s.ArcheryKills)],
-        ['Accuracy', acc], ['Survived', hMin(s.MinutesSurvived)], ['On foot', km(s.Distance)],
-        ['Looted', n(s.Looted)], ['Locks picked', n(s.LocksPicked)], ['Crafted', n(s.Crafted)],
-        ['Fish', n(s.FishCaught)], ['Fame', n(s.FamePoints)], ['Money', n(s.Money)],
-        ['Playtime', hSec(s.PlayTime)], ['Wounds patched', n(s.WoundsPatched)], ['Events won', n(s.EventsWon)],
+        ['Kills', n(s.Kills), 'i-skull'], ['Deaths', n(s.Deaths), 'i-grave'], ['K/D', kd, 'i-scale'],
+        ['PvP kills', n(s.PvpKills), 'i-gun'], ['PvP deaths', n(s.PvpDeaths), 'i-grave'], ['Headshots', n(s.Headshots), 'i-crosshair'],
+        ['Puppet kills', n(s.ZombieKills), 'i-zombie'], ['Animal kills', n(s.AnimalKills), 'i-paw'], ['Longest kill', `${n(s.LongestKill)} m`, 'i-scope'],
+        ['Firearm', n(s.FirearmKills), 'i-gun'], ['Melee', n(s.MeleeKills), 'i-knife'], ['Archery', n(s.ArcheryKills), 'i-bow'],
+        ['Accuracy', acc, 'i-target'], ['Survived', hMin(s.MinutesSurvived), 'i-clock'], ['On foot', km(s.Distance), 'i-foot'],
+        ['Looted', n(s.Looted), 'i-box'], ['Locks picked', n(s.LocksPicked), 'i-lock'], ['Crafted', n(s.Crafted), 'i-anvil'],
+        ['Fish', n(s.FishCaught), 'i-fish'], ['Fame', n(s.FamePoints), 'i-star'], ['Money', n(s.Money), 'i-coins'],
+        ['Playtime', hSec(s.PlayTime), 'i-hourglass'], ['Wounds patched', n(s.WoundsPatched), 'i-bandage'], ['Events won', n(s.EventsWon), 'i-trophy'],
       ];
 
       box.innerHTML =
@@ -282,7 +372,10 @@
         + `<span class="pd-online ${online ? 'on' : 'off'}">${online ? 'Online' : 'Offline'}</span>`
         + (d.banned ? '<span class="pd-banned">Banned</span>' : '') + '</div>'
         + `<div class="pd-id">${idRows.map(([k, v]) => `<span><i>${escHtml(k)}</i> ${escHtml(v)}</span>`).join('')}</div>`
-        + `<div class="pd-stats">${statRows.map(([k, v]) => `<span><i>${escHtml(k)}</i> <b>${escHtml(v)}</b></span>`).join('')}</div>`
+        + `<div class="pd-stats">${statRows.map(([k, v, ic]) => `<span><svg class="ico"><use href="#${ic}"/></svg><i>${escHtml(k)}</i> <b>${escHtml(v)}</b></span>`).join('')}</div>`
+        + squadHtmlAdmin(d.squad)
+        + financesHtmlAdmin(d.finances)
+        + skillsHtmlAdmin(d.skills)
         + '<div class="pd-ban">'
         + (d.banned
           ? '<button id="unban-btn" class="secondary">Unban</button><span class="pd-ban-note">Lifts after next restart.</span>'
@@ -356,24 +449,21 @@
   document.getElementById('player-search-btn').addEventListener('click', searchPlayers);
   document.getElementById('player-search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchPlayers(); } });
 
-  function showPlayersScreen() {
-    dashboardScreen.classList.add('hidden');
-    document.getElementById('players-screen').classList.remove('hidden');
-    loadBans();
-  }
-  function hidePlayersScreen() {
-    document.getElementById('players-screen').classList.add('hidden');
-    dashboardScreen.classList.remove('hidden');
-  }
   function openPlayer(name) {
     if (!name) return;
-    showPlayersScreen();
+    showTab('players');
     document.getElementById('player-search-input').value = name;
     document.getElementById('player-search-results').innerHTML = '';
     showPlayerDetail(name);
   }
-  document.getElementById('players-btn').addEventListener('click', showPlayersScreen);
-  document.getElementById('players-close-btn').addEventListener('click', hidePlayersScreen);
+  // Persistent tab bar (replaces the old per-screen nav + back buttons).
+  document.querySelectorAll('.anav-btn').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  { const brand = document.querySelector('#app-shell .brand'); if (brand) brand.addEventListener('click', () => showTab('dashboard')); }
+  // Click a squad member in the player detail → open that player.
+  document.addEventListener('click', (e) => {
+    const m = e.target.closest('.pd-member[data-player]');
+    if (m) openPlayer(m.dataset.player);
+  });
 
   document.getElementById('skip-restart-toggle').addEventListener('change', async (e) => {
     const skip = e.target.checked;
@@ -613,6 +703,15 @@
 
     input.dataset.path = JSON.stringify(pathArr);
 
+    // Per-field help text (what this setting does).
+    const help = window.SETTINGS_HELP ? window.SETTINGS_HELP(pathArr.join('.')) : null;
+    if (help) {
+      const desc = document.createElement('span');
+      desc.className = 'ini-desc';
+      desc.textContent = help;
+      wrapper.appendChild(desc);
+    }
+
     if (key === 'restartTimes') {
       const hint = document.createElement('span');
       hint.className = 'ini-desc';
@@ -840,19 +939,6 @@
     return result;
   }
 
-  document.getElementById('settings-btn').addEventListener('click', () => {
-    dashboardScreen.classList.add('hidden');
-    settingsScreen.classList.remove('hidden');
-    document.getElementById('settings-message').textContent = '';
-    document.getElementById('settings-message').className = 'settings-message';
-    loadSettings();
-  });
-
-  document.getElementById('settings-close-btn').addEventListener('click', () => {
-    settingsScreen.classList.add('hidden');
-    dashboardScreen.classList.remove('hidden');
-  });
-
   document.getElementById('settings-search').addEventListener('input', (e) => {
     applySettingsFilter(e.target.value);
   });
@@ -910,8 +996,6 @@
     gameSettingsLoaded = false;
   }
 
-  document.getElementById('game-settings-btn').addEventListener('click', showGameSettings);
-  document.getElementById('game-settings-close-btn').addEventListener('click', hideGameSettings);
 
   // Tab switching
   document.querySelectorAll('.gs-tab').forEach((btn) => {
@@ -1243,8 +1327,6 @@
     dashboardScreen.classList.remove('hidden');
   }
 
-  document.getElementById('discord-btn').addEventListener('click', showDiscordScreen);
-  document.getElementById('discord-close-btn').addEventListener('click', hideDiscordScreen);
 
   async function loadLinkedProfiles() {
     const countEl = document.getElementById('dc-linked-count');

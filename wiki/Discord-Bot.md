@@ -21,8 +21,8 @@ DMs. Set `DISCORD_TOKEN` in `.env` and the bot starts automatically.
 | Command | Who | Description |
 |---|---|---|
 | `/link-account` · `/unlink-account` | Anyone | Link / unlink your SCUM character |
-| `/my-stats` | Linked | Your detailed SCUM stats |
-| `/player-stats <name>` · `/player-search <query>` | Anyone | Look up / search players |
+| `/my-stats` | Linked | Your detailed SCUM stats, **skills & attributes** |
+| `/player-stats <name>` · `/player-search <query>` | Anyone | Look up / search players (skills shown only to squadmates) |
 | `/server-info` · `/player-online` | Anyone | Current status / online players |
 | `/server-status` | Admin | Full live status embed |
 | `/server-start` · `/server-stop [min]` · `/server-restart [min]` | Admin | Lifecycle (immediate → confirm button, or delayed with warnings) |

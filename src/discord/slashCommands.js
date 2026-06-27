@@ -154,16 +154,55 @@ function fmtNum(n) {
   return Math.trunc(Number(n) || 0).toLocaleString('en-US');
 }
 
-function buildPlayerStatsEmbed(stats, online, lastSeen) {
+// Tier names match the web My Stats (DB skill level 0-4).
+const SKILL_TIER_NAMES = ['No Skill', 'Basic', 'Medium', 'Advanced', 'Advanced+'];
+const cleanSkillName = (n) => String(n).replace(/Skill$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+
+/** Attributes line + skills grouped by tier, for the embed description. Mirrors the web. */
+function skillsAttrText(sk) {
+  if (!sk) return null;
+  const lines = [];
+  const a = sk.attributes;
+  if (a) {
+    const p = [];
+    if (a.strength != null) p.push(`💪 Strength **${a.strength}**`);
+    if (a.constitution != null) p.push(`❤️ Constitution **${a.constitution}**`);
+    if (a.dexterity != null) p.push(`⚡ Dexterity **${a.dexterity}**`);
+    if (a.intelligence != null) p.push(`💡 Intelligence **${a.intelligence}**`);
+    if (p.length) lines.push(p.join('  '));
+  }
+  const tierEmoji = ['', '⚪', '🔵', '🟠', '🟡'];
+  for (let lv = 4; lv >= 1; lv--) {
+    const names = (sk.list || []).filter((s) => (s.Level | 0) === lv).map((s) => cleanSkillName(s.Name));
+    if (names.length) lines.push(`${tierEmoji[lv]} **${SKILL_TIER_NAMES[lv]}**: ${names.join(', ')}`);
+  }
+  return lines.length ? lines.join('\n') : null;
+}
+
+/** Whether a Discord user is a SCUM squadmate of the target (for gating skills). */
+function viewerIsSquadmate(discordUserId, targetSteamId) {
+  const prof = database.getDiscordProfile(discordUserId);
+  if (!prof || !prof.steam_id || !targetSteamId) return false;
+  const v = database.getSquadIdBySteamId(prof.steam_id);
+  const t = database.getSquadIdBySteamId(targetSteamId);
+  return v != null && v === t;
+}
+
+function buildPlayerStatsEmbed(stats, online, lastSeen, skills) {
   const kdr = fmtKdr(stats.Kills, stats.Deaths);
   const survivedH = (Number(stats.MinutesSurvived || 0) / 60).toFixed(1);
   const distanceKm = (Number(stats.Distance || 0) / 1000).toFixed(1);
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setTitle(`${online ? '🟢' : '⚫'} ${stats.Name}`)
     .setColor(online ? COLORS.green : COLORS.grey)
     .setImage('https://playhub.cz/scum/13.gif')
-    .setTimestamp()
+    .setTimestamp();
+
+  const desc = skillsAttrText(skills);
+  if (desc) embed.setDescription(desc);
+
+  return embed
     // 24 fields (8 rows of 3) — within Discord's 25-field embed limit. Kept in
     // sync with the dashboard "My Stats" panel so both show the same metrics.
     .addFields(
@@ -301,7 +340,8 @@ async function handleMyStats(interaction) {
   if (error === 'db_unavailable') { await interaction.editReply({ content: ':x: Game database is not available.' }); return; }
   if (error === 'not_found') { await interaction.editReply({ content: `:x: Stats for \`${linked.player_name}\` not found in game database.` }); return; }
 
-  await interaction.editReply({ embeds: [buildPlayerStatsEmbed(stats, online, lastSeen)] });
+  const skills = database.getPlayerSkillsBySteamId(stats.SteamID);
+  await interaction.editReply({ embeds: [buildPlayerStatsEmbed(stats, online, lastSeen, skills)] });
 }
 
 async function handleSlashPlayerStats(interaction) {
@@ -312,7 +352,10 @@ async function handleSlashPlayerStats(interaction) {
   if (error === 'db_unavailable') { await interaction.editReply({ content: ':x: Game database is not available.' }); return; }
   if (error === 'not_found') { await interaction.editReply({ content: `:x: Player \`${name}\` not found.` }); return; }
 
-  await interaction.editReply({ embeds: [buildPlayerStatsEmbed(stats, online, lastSeen)] });
+  // Skills/attributes only for a squadmate of the target (mirrors the web profile).
+  const skills = viewerIsSquadmate(interaction.user.id, stats.SteamID)
+    ? database.getPlayerSkillsBySteamId(stats.SteamID) : null;
+  await interaction.editReply({ embeds: [buildPlayerStatsEmbed(stats, online, lastSeen, skills)] });
 }
 
 async function handleSlashPlayerSearch(interaction) {

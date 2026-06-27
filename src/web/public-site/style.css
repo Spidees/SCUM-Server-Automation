@@ -43,14 +43,16 @@ a:hover { color: var(--amber-hi); }
 .ico { width: 1.05em; height: 1.05em; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
+/* Header + nav stick together as one unit, so the nav can't slide under the
+   header from a mismatched offset. */
+.topbar { position: sticky; top: 0; z-index: 30; }
 .hud-top {
   display: flex; align-items: center; flex-wrap: wrap; gap: 1.25rem; padding: 0.75rem 1.5rem;
   border-bottom: 1px solid var(--line-amber);
   background: linear-gradient(180deg, var(--panel), var(--bg-2));
-  position: sticky; top: 0; z-index: 30;
 }
-.brand { display: flex; align-items: center; gap: 0.7rem; }
-.brand img { height: 38px; filter: drop-shadow(0 0 6px rgba(240,130,12,0.25)); }
+.brand { display: flex; align-items: center; gap: 0.7rem; cursor: pointer; }
+.brand img { height: 50px; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-name { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.04em; }
 .brand-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--amber); letter-spacing: 0.32em; }
@@ -90,7 +92,7 @@ a:hover { color: var(--amber-hi); }
 /* ── Main nav ───────────────────────────────────────────────────────────── */
 .mainnav {
   display: flex; gap: 0.25rem; padding: 0 1.5rem; background: var(--bg-2);
-  border-bottom: 1px solid var(--line); position: sticky; top: 66px; z-index: 25; overflow-x: auto;
+  border-bottom: 1px solid var(--line); overflow-x: auto;
 }
 .nav-btn {
   display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; white-space: nowrap;
@@ -114,6 +116,8 @@ main { width: 100%; max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
 .panel h2 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 0.95rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
 .panel h3 { display: flex; align-items: center; gap: 0.45rem; margin: 1.2rem 0 0.55rem; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .panel h3 .ico { color: var(--amber); }
+/* My Stats + player/squad modal section headings — match other tabs' section titles. */
+#view-mystats h3, #modal-body h3 { font-size: 0.95rem; color: var(--amber); margin-top: 1.6rem; }
 .stamp { margin: 0.8rem 0 0; font-family: var(--mono); font-size: 0.7rem; color: var(--faint); letter-spacing: 0.06em; }
 
 /* ── Overview tiles + jump cards ────────────────────────────────────────── */
@@ -279,25 +283,29 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 @media (max-width: 640px) {
   .readout-state-wrap { display: none; }
-  /* On mobile let the header scroll away (not sticky) so its wrapped rows don't
-     overlap the nav, and stop content overflowing the viewport width. */
-  .hud-top { position: static; gap: 0.6rem 0.8rem; padding: 0.6rem 0.9rem; }
-  .mainnav { top: 0; }
+  .hud-top { gap: 0.6rem 0.8rem; padding: 0.6rem 0.9rem; }
   .readout { margin-left: 0; flex: 1 1 auto; min-width: 0; }
   .readout-pop { min-width: 0; }
   .header-actions { margin-left: auto; }
-  .brand img { height: 32px; }
+  .brand img { height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; scroll-behavior: auto; } }
 
 /* ── Economy (Discord-aligned) ────────────────────────────────────────────── */
 .econ-deals { list-style: none; margin: 0 0 0.4rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 0.5rem; }
-.econ-deals .ed { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.6rem 0.8rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.econ-deals .ed { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.8rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.econ-deals .ed-img { width: 46px; height: 46px; flex: none; object-fit: contain; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px; }
+.econ-deals .ed-img-x { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+.econ-deals .ed-img-x .ico { width: 1.4rem; height: 1.4rem; }
+.econ-deals .ed-body { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; flex: 1; }
 .econ-deals .ed-item { font-weight: 600; word-break: break-word; line-height: 1.25; }
-.econ-deals .ed-extras { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+.econ-deals .ed-extras { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+.econ-deals .ed-x { display: inline-flex; align-items: center; gap: 0.3rem; }
+.econ-deals .ed-x .ico { color: var(--amber); }
 .econ-gold { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .econ-rotation { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-.econ-rotation li { font-size: 0.9rem; color: var(--text); }
+.econ-rotation li { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--text); }
+.econ-rotation li .ico { color: var(--amber); flex: none; }
 .econ-rotation b { color: var(--amber); font-family: var(--mono); }
 
 
@@ -310,16 +318,16 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 .squad-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
 .squad-name { font-size: 1.05rem; font-weight: 700; }
 .squad-meta { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); }
-.squad-members { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.35rem; }
-.sm-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.55rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
-.sm-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.squad-members { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.4rem; }
+.sm-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.1rem 0.55rem; padding: 0.5rem 0.65rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.sm-dot { grid-column: 1; grid-row: 1 / span 2; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .sm-dot.on { background: var(--online); box-shadow: 0 0 7px var(--online); }
-.sm-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sm-rank { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--amber); }
-.sm-seen { margin-left: auto; font-family: var(--mono); font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+.sm-name { grid-column: 2; grid-row: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-rank { grid-column: 3; grid-row: 1; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--amber); white-space: nowrap; }
+.sm-seen { grid-column: 2 / -1; grid-row: 2; font-family: var(--mono); font-size: 0.74rem; color: var(--muted); }
 
 #notif-panel { margin-top: 1.25rem; }
-.notif-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.notif-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; max-height: 340px; overflow-y: auto; }
 .nh-row { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 0.55rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
 .nh-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .nh-title { font-weight: 600; font-size: 0.9rem; }
@@ -360,3 +368,101 @@ select#lb-category { background: var(--inset); color: var(--text); border: 1px s
 /* Account-linking code (My Stats unlinked state) */
 .link-code { font-family: var(--mono); font-size: 1.4rem; color: var(--amber-hi); background: var(--inset); border: 1px solid var(--line-amber); border-radius: var(--radius); padding: 0.6rem 0.9rem; display: inline-block; margin: 0.3rem 0; letter-spacing: 0.06em; user-select: all; }
 #link-instructions { margin: 0.6rem 0; }
+
+/* ── Overview: category leaders (#1 per category) ─────────────────────────── */
+.cat-leaders { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.6rem; }
+.cl-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0.75rem; padding: 0.7rem 0.85rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.cl-row > .ico { color: var(--amber); font-size: 1.6rem; }
+.cl-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.cl-cat { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.cl-line { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; min-width: 0; }
+.cl-name { font-weight: 600; font-size: 1.02rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-val { font-family: var(--mono); color: var(--amber); white-space: nowrap; }
+
+.ov-squad-row.sq-click { cursor: pointer; }
+.ov-squad-row.sq-click:hover .sq-name { color: var(--amber-hi); }
+#view-overview > .panel + .panel { margin-top: 1.25rem; }
+
+/* Clickable category (overview leaders / my-stats rankings) → leaderboard category */
+.cat-click { cursor: pointer; }
+.cl-row.cat-click:hover, .rank-chip.cat-click:hover { border-color: var(--line-amber); }
+.rank-chip > .ico { color: var(--amber); flex: none; }
+
+/* ── My Stats: prisoner skills ────────────────────────────────────────────── */
+.skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; align-items: start; }
+.skill-group { display: flex; flex-direction: column; gap: 0.55rem; }
+.sg-head { display: flex; flex-direction: column; align-items: center; gap: 0.45rem; border-bottom: 1px solid var(--line-amber); padding-bottom: 0.55rem; margin-bottom: 0.35rem; }
+.sg-titlewrap { display: flex; align-items: center; gap: 0.45rem; }
+.sg-titlewrap > .ico { color: var(--amber); font-size: 1.15rem; }
+.sg-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--amber); font-weight: 700; }
+.attr-ring { width: 58px; height: 58px; }
+.ar-bg { fill: none; stroke: var(--line); stroke-width: 5; }
+.ar-fg { fill: none; stroke: var(--amber); stroke-width: 5; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset 0.5s ease; }
+.ar-num { fill: var(--text); font-family: var(--mono); font-size: 17px; text-anchor: middle; dominant-baseline: central; }
+.skill-row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0.2rem 0.6rem; }
+.sk-name { font-weight: 600; }
+.sk-tier { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.sk-bar { grid-column: 1 / -1; height: 5px; background: var(--inset); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.sk-fill { display: block; height: 100%; background: var(--amber); }
+.sk-l0 .sk-fill { background: var(--faint); }
+.sk-l1 .sk-fill { background: var(--standby); }
+.sk-l2 .sk-fill { background: var(--silver); }
+.sk-l3 .sk-fill { background: var(--amber); }
+.sk-l4 .sk-fill { background: var(--gold); }
+.sk-l3 .sk-tier { color: var(--amber); }
+.sk-l4 .sk-tier { color: var(--gold); }
+
+/* ── Economy: market activity (recent trades) ─────────────────────────────── */
+.econ-market-stats { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.8rem; }
+.econ-trades { list-style: none; margin: 0 0 1.1rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.etr { display: grid; grid-template-columns: auto auto 1fr auto; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.5rem 0.65rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.etr-img { grid-column: 1; grid-row: 1 / 3; align-self: center; width: 32px; height: 32px; object-fit: contain; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px; }
+.etr-img-x { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+.etr-act { grid-column: 2; grid-row: 1; font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.etr.etr-sell .etr-act { color: var(--online); }
+.etr.etr-buy .etr-act { color: var(--amber); }
+.etr-item { grid-column: 3; grid-row: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etr-price { grid-column: 4; grid-row: 1; font-family: var(--mono); color: var(--amber-hi); white-space: nowrap; }
+.etr-sub { grid-column: 2 / -1; grid-row: 2; font-size: 0.74rem; color: var(--muted); font-family: var(--mono); }
+
+/* ── Overview: online players ─────────────────────────────────────────────── */
+.online-players { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.op-chip { display: inline-flex; align-items: center; padding: 0.32rem 0.65rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); font-size: 0.85rem; font-weight: 600; }
+.op-chip.pl-click { cursor: pointer; }
+.op-chip.pl-click:hover { border-color: var(--line-amber); color: var(--amber-hi); }
+
+/* ── My Stats: bank cards ─────────────────────────────────────────────────── */
+.bank-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.7rem; margin-top: 0.9rem; }
+.bank-card { display: flex; gap: 0.85rem; padding: 0.75rem 0.85rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.bank-card-img { width: 88px; height: 56px; flex: none; object-fit: contain; align-self: center; }
+.bank-card-body { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.bank-card-type { font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.85rem; }
+.bank-card-rows { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: var(--muted); }
+.bank-card-rows b { color: var(--text); font-family: var(--mono); }
+.pin-btn { cursor: pointer; background: var(--panel-2); border: 1px solid var(--line-amber); border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.08em; padding: 0.08rem 0.5rem; }
+.pin-btn em { font-style: normal; color: var(--muted); font-size: 0.68rem; letter-spacing: 0; margin-left: 0.2rem; }
+.pin-btn.revealed { color: var(--amber-hi); border-color: var(--amber); }
+
+.fin-acc { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.7rem; padding: 0.6rem 0.8rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.fin-acc > .ico { color: var(--amber); font-size: 1.35rem; flex: none; }
+.fin-acc-t { display: flex; flex-direction: column; min-width: 0; }
+.fin-acc-k { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.fin-acc-v { font-family: var(--mono); font-size: 1.05rem; overflow-wrap: anywhere; }
+
+/* ── Mobile polish: reclaim width + collapse wide grids so nothing overflows ─ */
+@media (max-width: 600px) {
+  main { padding: 1rem 0.8rem; }
+  .panel { padding: 0.95rem 0.85rem; }
+  .bank-card-img { width: 70px; height: 46px; }
+  .modal { padding: 3vh 0.55rem; }
+  .modal-card { padding: 1.15rem 1rem; }
+  .record-name { font-size: 1.3rem; }
+  .foot-cols { padding: 1.2rem 0.9rem 1rem; gap: 1.1rem; }
+  .foot-bottom { padding-left: 0.9rem; padding-right: 0.9rem; }
+}
+@media (max-width: 480px) {
+  .econ-deals, .cat-leaders, .squad-members, .bank-cards, .skills { grid-template-columns: 1fr; }
+}
+@media (max-width: 400px) {
+  .dstats { grid-template-columns: 1fr; }
+}

@@ -66,6 +66,18 @@
       "enabled": false,
       "keyFile": "",
       "certFile": ""
+    },
+    "fieldConsole": {
+      "showOnlinePlayers": true,
+      "tabs": {
+        "leaderboards": true,
+        "squads": true,
+        "myStats": true,
+        "bunkers": true,
+        "economy": true,
+        "killFeed": true,
+        "events": true
+      }
     }
   },
   "Discord": {

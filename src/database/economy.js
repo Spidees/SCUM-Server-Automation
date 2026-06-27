@@ -15,6 +15,13 @@ function cleanAssetName(asset) {
   return name.replace(/_C$/, '').replace(/_ES$/, '').replace(/_/g, ' ').trim() || 'Unknown';
 }
 
+/** The asset code (scum_items.json id) from a tradeable asset path, e.g. "Vitamins_02_C". */
+function assetCode(asset) {
+  if (!asset) return '';
+  const seg = String(asset).split('/').pop() || String(asset);
+  return seg.split('.')[0];
+}
+
 /**
  * Turn a vendor blueprint path (e.g.
  * ".../BP_General_Goods_01.BP_General_Goods_01_C") into a readable trader name
@@ -45,6 +52,7 @@ function getSpecialDeals(limit = 12) {
       `).all(limit);
       return rows.map((r) => ({
         item: cleanAssetName(r.tradeable_asset),
+        code: assetCode(r.tradeable_asset),
         price: r.base_purchase_price || 0,
         stock: r.amount_in_store || 0,
         fameRequired: r.required_fame_points || 0,
@@ -113,13 +121,23 @@ function getEconomyTiming() {
     });
   }
 
+  const isOn = (v) => v === '1' || v === 1 || v === true;
+  const fundsMult = num(ov['trader-funds-change-rate-per-hour-multiplier']);
+
   return {
     secondsSinceReset,
     resetTimeHours: num(ov['economy-reset-time-hours']),
     rotationHoursMin: num(ov['tradeable-rotation-time-ingame-hours-min']),
     rotationHoursMax: num(ov['tradeable-rotation-time-ingame-hours-max']),
     fullRestockHours: num(ov['fully-restock-tradeable-hours']),
-    rotationEnabled: ov['tradeable-rotation-enabled'] === '1' || ov['tradeable-rotation-enabled'] === 1,
+    rotationEnabled: isOn(ov['tradeable-rotation-enabled']),
+    // How often store prices re-roll (hours; -1 = never).
+    pricesRandomizationHours: num(ov['prices-randomization-time-hours']),
+    // A trader at default rate (1.0) refills depleted funds in 1h; 2.0 → 0.5h, etc.
+    traderFundsRefillHours: fundsMult && fundsMult > 0 ? 1 / fundsMult : null,
+    unlimitedFunds: isOn(ov['traders-unlimited-funds']),
+    unlimitedStock: isOn(ov['traders-unlimited-stock']),
+    pricesSubjectToPlayerCount: isOn(ov['prices-subject-to-player-count']),
   };
 }
 

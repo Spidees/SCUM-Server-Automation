@@ -11,17 +11,25 @@ The community-facing site. **Overview is public**; every other tab is gated behi
 
 | Tab | Access | Content |
 |---|---|---|
-| **Overview** | Public | Server card (name, connect address, FPS, status), next restart, in-game time/weather, total players, active squads, top squads |
+| **Overview** | Public | Server card (name, connect address, FPS, status), next restart, in-game time/weather, counts, **top squads**, **online players** (toggleable), and **category leaders** — the #1 player of every leaderboard category, click → that category |
 | **Leaderboards** | Login | All categories, all-time & weekly, live name filter; **click a player → their stats** |
 | **Squads** | Login | Squad list (name / members / score); click → squad detail (members + ranks) |
-| **My Stats** | Login + linked | Full character sheet (Combat / Survival), leaderboard ranks, your squad (members, online, last-seen), **DM-alert settings + sent history** |
+| **My Stats** | Login + linked | Full character sheet (Combat / Survival); **Skills & attributes** grouped by attribute, each with a value ring (attributes are read from the character template); **Bank** — balance, gold, cash, account number, and your cards (image, reveal-on-click PIN, daily limits, renewals); leaderboard ranks (click → category); your squad; **DM-alert settings + sent history** |
 | **Bunkers** | Login | Abandoned-bunker status (active / locked + timers) |
-| **Economy** | Login | Special deals, trader funds per outpost, gold capacity, stock rotation — mirrors the Discord economy embed |
+| **Economy** | Login | Special deals & **market activity** (recent trades, hot items — with item images & names from `scum_items.json`), trader funds per outpost, gold capacity, and **economy timing** (rotation, restock, trader-funds refill, price re-roll, resets) — mirrors the Discord economy embed |
 | **Kill Feed** | Login | Recent kills (killer → victim, weapon, distance) |
 | **Events** | Login | Event ranking board (from `event_rankings_cached`); empty until an event runs |
 
-Player names are clickable wherever they appear (leaderboards, squad rosters, My Stats) and open
-that player's profile in a modal. Profiles never expose Steam IDs, IPs, or per-member online/last-seen.
+Player names are clickable wherever they appear (leaderboards, squad rosters, My Stats, category
+leaders, online players) and open that player's profile in a modal. Profiles never expose Steam IDs,
+IPs, or per-member online/last-seen — **except** that squadmates can see each other's skills.
+
+## Admin-controlled visibility
+
+`web.fieldConsole` in `config/config.json` (editable from the admin **Settings** screen) toggles the
+**online-players list** and **each tab** (leaderboards / squads / myStats / bunkers / economy /
+killFeed / events). Disabled tabs are hidden from the nav and footer, and disabling the online list
+also stops the server from sending names. Everything defaults to **on**.
 
 ![Field Console — leaderboards](http://playhub.cz/scum/manager/field_console_leaderboards.png)
 ![Field Console — my stats](http://playhub.cz/scum/manager/field_console_mystats.png)

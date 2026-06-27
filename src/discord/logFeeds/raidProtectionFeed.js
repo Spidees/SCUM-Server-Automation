@@ -94,20 +94,26 @@ async function handle(event, client, config) {
     ProtectionExpired: 'finished',
   };
 
-  // SCUM re-emits "Flag protection finished ... user logged in" for every squad
-  // member that logs in, even long after protection ended. Only treat an "ended"
-  // event as a real transition (and notify) if protection was active before.
+  const newType = protectionTypeMap[event.eventType] || 'unknown';
   const isEndingEvent = event.eventType === 'ProtectionEnded' || event.eventType === 'ProtectionExpired';
   const prevType = (getRaidProtection(event.flagId) || {}).protection_type || null;
   const wasActive = prevType === 'set' || prevType === 'started';
-  const suppressEndedNotification = isEndingEvent && !wasActive;
+
+  // Suppress anything that isn't a real state transition, to avoid duplicate DMs:
+  //  - SCUM re-emits "Flag protection finished ... user logged in" for every squad
+  //    member that logs in (only notify the first one, while protection was active);
+  //  - any event whose target state already equals the current state is a duplicate
+  //    / re-processed log line — e.g. the same "started" written twice, or the whole
+  //    file re-read after a log rotation. `prevType` is read before the upsert below,
+  //    so the second of two identical events sees the state the first one set.
+  const suppressEndedNotification = (isEndingEvent && !wasActive) || (prevType === newType);
 
   upsertRaidProtection(event.flagId, {
     ownerUserId: event.ownerId || null,
     x: event.locationX || null,
     y: event.locationY || null,
     z: event.locationZ || null,
-    type: protectionTypeMap[event.eventType] || 'unknown',
+    type: newType,
     duration: event.duration !== undefined ? event.duration : null,
     startDelay: event.startDelay !== undefined ? event.startDelay : null,
     lastLoggedInUserId: event.userId || null,
@@ -134,7 +140,7 @@ async function handle(event, client, config) {
   const RAID_ALERTS = {
     ProtectionScheduled: {
       title: ':hourglass: Raid Protection Scheduled',
-      description: (e) => `Your base protection will activate${e.startDelay ? ` ${relTs(e.startDelay)}` : ''} (all owners offline).`,
+      description: (e) => `Your base protection will activate${e.startDelay ? ` ${absTs(e.startDelay)} (${relTs(e.startDelay)})` : ''} (all owners offline).`,
       color: 0xfee75c,
     },
     ProtectionActivated: {

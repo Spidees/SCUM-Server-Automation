@@ -37,10 +37,11 @@ service, recover from crashes, schedule restarts, back up, apply Steam updates �
 
 - **Server lifecycle** — SteamCMD install, NSSM service control, crash auto-repair, scheduled
   restarts with warnings, backups, Steam updates.
-- **Admin dashboard** (`/admin`, password) — live status, controls, config & game-config editors,
-  player search/ban, log tail.
-- **Public Field Console** (`/`, optional Discord login) — overview is public; leaderboards, squads,
-  My Stats, bunkers, economy and kill feed are gated behind **Login with Discord**.
+- **Admin dashboard** (`/admin`, password) — tabbed UI; live status, controls, config (with per-field
+  help) & game-config editors, rich player profiles (stats, skills, bank & cards, squad), log tail.
+- **Public Field Console** (`/`, optional Discord login) — public overview (incl. online players &
+  category leaders); leaderboards, squads, **My Stats** (skills, attributes, bank), bunkers, economy
+  (market activity) and kill feed gated behind **Login with Discord**; admins toggle what's shown.
 - **Discord bot** — live embeds, 13 log feeds, chat relay, account linking, per-player raid DMs.
 
 See the [README](https://github.com/Spidees/SCUM-Server-Automation) for the short version.

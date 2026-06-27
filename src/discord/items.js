@@ -77,7 +77,13 @@ function getItemImageUrl(itemId) {
   return null;
 }
 
+/** Full icon URL for a raw image filename (e.g. "Gold_Bank_Card.png"), or null. */
+function itemImageUrl(filename) {
+  return filename ? `${ICON_BASE_URL}${filename}` : null;
+}
+
 module.exports = {
   getItemDisplayName,
   getItemImageUrl,
+  itemImageUrl,
 };

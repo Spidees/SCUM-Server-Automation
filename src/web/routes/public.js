@@ -15,6 +15,8 @@ const monitoring = require('../../server/monitoring');
 const bunkerState = require('../../discord/bunkerState');
 const recentKills = require('../../discord/recentKills');
 const economyState = require('../../discord/economyState');
+const economyTrades = require('../../discord/economyTrades');
+const { getItemImageUrl, getItemDisplayName } = require('../../discord/items');
 const { config, paths } = require('../../core/config');
 const common = require('../../core/common');
 
@@ -71,6 +73,21 @@ function sliceLeaderboards(board, limit) {
 const OVERVIEW_TTL_MS = 15000;
 let overviewCache = { ts: 0, data: null };
 
+// Field Console visibility toggles (admin-configurable). Everything defaults ON,
+// so an absent/partial config keeps the full site.
+function fieldConsoleConfig() {
+  const fc = ((config.web || {}).fieldConsole) || {};
+  const tabs = fc.tabs || {};
+  const on = (v) => v !== false;
+  return {
+    showOnlinePlayers: on(fc.showOnlinePlayers),
+    tabs: {
+      leaderboards: on(tabs.leaderboards), squads: on(tabs.squads), myStats: on(tabs.myStats),
+      bunkers: on(tabs.bunkers), economy: on(tabs.economy), killFeed: on(tabs.killFeed), events: on(tabs.events),
+    },
+  };
+}
+
 async function buildOverview() {
   let status = null;
   try {
@@ -94,14 +111,24 @@ async function buildOverview() {
   } catch { nextRestart = null; }
 
   if (!database.isScumDbAvailable()) {
-    return { available: false, status, server, world: null, counts: null, nextRestart, topSquads: [] };
+    return { available: false, status, server, world: null, counts: null, nextRestart, topSquads: [], categoryLeaders: [] };
   }
 
   let topSquads = [];
+  let categoryLeaders = [];
   try {
-    const entry = (database.getSnapshot().allTime || {}).squad_score;
-    topSquads = ((entry && entry.data) || []).slice(0, 5).map((r) => ({ name: r.Name, value: r.FormattedValue != null ? r.FormattedValue : r.Value }));
-  } catch { topSquads = []; }
+    const snap = database.getSnapshot();
+    // From getSquadList (has the squad id) so the overview can link to squad detail.
+    topSquads = (database.getSquadList(5) || []).map((s) => ({ id: s.id, name: s.name, value: s.score }));
+    // #1 of every leaderboard category (from the in-memory snapshot — no DB hit).
+    categoryLeaders = (snap.categories || [])
+      .filter((c) => c.key !== 'squad_score' && c.key !== 'squad_members')
+      .map((c) => {
+        const top = ((snap.allTime || {})[c.key] || {}).data || [];
+        return top[0] ? { key: c.key, label: c.label, name: top[0].Name, value: top[0].FormattedValue != null ? top[0].FormattedValue : top[0].Value } : null;
+      })
+      .filter(Boolean);
+  } catch { topSquads = []; categoryLeaders = []; }
 
   const stats = database.getServerStatistics();
   return {
@@ -121,6 +148,10 @@ async function buildOverview() {
     },
     nextRestart,
     topSquads,
+    categoryLeaders,
+    onlinePlayers: fieldConsoleConfig().showOnlinePlayers
+      ? (database.getOnlinePlayers() || []).map((p) => p.PlayerName).filter(Boolean).sort((a, b) => a.localeCompare(b))
+      : null,
   };
 }
 
@@ -134,6 +165,12 @@ router.get('/overview', async (req, res) => {
     logger.error(`[API/public] /overview error: ${err.message}`);
     return res.status(500).json({ error: 'overview_unavailable' });
   }
+});
+
+// Which Field Console sections/tabs are enabled (admin-configurable). The frontend
+// reads this on load to hide disabled tabs and the online-players list.
+router.get('/site-config', (req, res) => {
+  res.json({ fieldConsole: fieldConsoleConfig() });
 });
 
 // Slim, non-sensitive status. Omits ProcessId/ProcessName/ServiceStatus and the
@@ -181,6 +218,7 @@ router.get('/game-stats', (req, res) => {
 // Online players — names only. SteamIDs from getOnlinePlayers() are stripped.
 router.get('/players', (req, res) => {
   if (!database.isScumDbAvailable()) return res.json({ available: false, players: [] });
+  if (!fieldConsoleConfig().showOnlinePlayers) return res.json({ available: true, players: [] });
   try {
     const players = (database.getOnlinePlayers() || []).map((p) => ({ name: p.PlayerName }));
     return res.json({ available: true, players });
@@ -238,12 +276,22 @@ router.get('/economy', (req, res) => {
       economyState.seedFromLog();
       traders = (economyState.getTraderFunds() || []).map((t) => ({ location: t.location, type: t.type, funds: t.funds }));
     } catch { traders = []; }
+    let recentTrades = [];
+    let market = null;
+    try {
+      economyTrades.seedFromLog();
+      recentTrades = economyTrades.getRecentTrades(15).map((t) => ({ ...t, item: getItemDisplayName(t.code) || t.item, image: getItemImageUrl(t.code) }));
+      market = economyTrades.getMarketStats();
+    } catch { recentTrades = []; market = null; }
+    const deals = (database.getSpecialDeals(12) || []).map((d) => ({ ...d, item: getItemDisplayName(d.code) || d.item, image: getItemImageUrl(d.code) }));
     return res.json({
       available: true,
-      deals: database.getSpecialDeals(12),
+      deals,
       traders,
       gold: database.getGoldCapacity(),
       timing: database.getEconomyTiming(),
+      recentTrades,
+      market,
     });
   } catch (err) {
     logger.error(`[API/public] /economy error: ${err.message}`);

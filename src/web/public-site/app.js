@@ -9,7 +9,70 @@
   }
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const icon = (id) => `<svg class="ico"><use href="#${id}"/></svg>`;
+  // Leaderboard category key → icon (for the Overview category leaders).
+  // Covers EVERY leaderboard category key (see database/leaderboardDefs.js) so none
+  // falls back. Same concept uses the same icon as the My Stats grids below.
+  const CATEGORY_ICONS = {
+    kills: 'i-skull', deaths: 'i-grave', pvp_kills: 'i-gun', pvp_deaths: 'i-grave',
+    playtime: 'i-hourglass', fame: 'i-star', money: 'i-coins', events: 'i-trophy',
+    kdr: 'i-scale', headshots: 'i-crosshair', team_kills: 'i-team', animal_kills: 'i-paw',
+    puppet_kills: 'i-zombie', drone_kills: 'i-drone', sentry_kills: 'i-turret',
+    locks_picked: 'i-lock', guns_crafted: 'i-gun', bullets_crafted: 'i-bullet',
+    melee_crafted: 'i-anvil', clothing_crafted: 'i-shirt', fish_caught: 'i-fish',
+    squad_score: 'i-shield', squad_members: 'i-users',
+    distance: 'i-foot', sniper: 'i-scope', melee_warriors: 'i-knife', archers: 'i-bow',
+    survivors: 'i-clock', medics: 'i-bandage', looters: 'i-box', all_crafters: 'i-anvil',
+  };
+  const catIcon = (key) => CATEGORY_ICONS[key] || 'i-trophy';
   const num = (v) => (typeof v === 'number' ? Math.round(v).toLocaleString() : (v == null ? '0' : v));
+
+  // Prisoner skills: DB level 0-4 maps to a tier; experience is in-level progress and
+  // the XP needed to reach the next level is 10^(level+4) (10k → 100k → 1M → 10M).
+  const SKILL_TIERS = ['No Skill', 'Basic', 'Medium', 'Advanced', 'Advanced+'];
+  // Skills grouped under their SCUM attribute (base name = DB name minus "Skill").
+  const SKILL_GROUPS = [
+    ['Strength', 'i-strength', ['Boxing', 'MeleeWeapons', 'Archery', 'Rifles', 'Handgun']],
+    ['Constitution', 'i-heart', ['Running', 'Endurance', 'Resistance']],
+    ['Dexterity', 'i-bolt', ['Thievery', 'Demolition', 'Motorcycle', 'Driving', 'Stealth', 'Aviation']],
+    ['Intelligence', 'i-bulb', ['Awareness', 'Camouflage', 'Engineering', 'Sniping', 'Survival', 'Medical', 'Tactics', 'Cooking', 'Farming']],
+  ];
+  const skillLabel = (n) => String(n).replace(/Skill$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+  const skillLevel = (sk) => Math.max(0, Math.min(4, sk.Level | 0));
+  function skillRow(sk) {
+    const lvl = skillLevel(sk);
+    const threshold = lvl >= 4 ? 0 : Math.pow(10, lvl + 4);
+    const pct = threshold ? Math.max(0, Math.min(100, (sk.Xp / threshold) * 100)) : 100;
+    return `<div class="skill-row sk-l${lvl}"><span class="sk-name">${esc(skillLabel(sk.Name))}</span><span class="sk-tier">${esc(SKILL_TIERS[lvl])}</span><span class="sk-bar"><span class="sk-fill" style="width:${pct.toFixed(0)}%"></span></span></div>`;
+  }
+  // Attribute ring (value out of 5) with the number in the middle.
+  function attrRing(value) {
+    const r = 24, c = 2 * Math.PI * r;
+    const pct = value == null ? 0 : Math.max(0, Math.min(1, value / 5));
+    const off = c * (1 - pct);
+    return `<svg class="attr-ring" viewBox="0 0 56 56" aria-hidden="true">`
+      + `<circle class="ar-bg" cx="28" cy="28" r="${r}"/>`
+      + `<circle class="ar-fg" cx="28" cy="28" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>`
+      + `<text class="ar-num" x="28" y="28">${value == null ? '–' : value}</text></svg>`;
+  }
+  function skillsHtml(data) {
+    const list = (data && data.list) || [];
+    const attrs = (data && data.attributes) || {};
+    if (!list.length) return '<p class="muted small">No skill data.</p>';
+    const byBase = {};
+    list.forEach((sk) => { byBase[String(sk.Name).replace(/Skill$/, '')] = sk; });
+    const used = new Set();
+    const group = (title, ico, bases) => {
+      const items = bases.map((b) => byBase[b]).filter(Boolean);
+      if (!items.length) return '';
+      items.forEach((sk) => used.add(String(sk.Name).replace(/Skill$/, '')));
+      const val = attrs[title.toLowerCase()];
+      return `<div class="skill-group"><div class="sg-head">${attrRing(val == null ? null : val)}<div class="sg-titlewrap">${icon(ico)}<span class="sg-title">${title}</span></div></div>${items.map(skillRow).join('')}</div>`;
+    };
+    let html = SKILL_GROUPS.map(([t, ic, b]) => group(t, ic, b)).join('');
+    const rest = list.filter((sk) => !used.has(String(sk.Name).replace(/Skill$/, '')));
+    if (rest.length) html += `<div class="skill-group"><div class="sg-head"><div class="sg-titlewrap">${icon('i-star')}<span class="sg-title">Other</span></div></div>${rest.map(skillRow).join('')}</div>`;
+    return html;
+  }
 
   function fmtStat(v, kind) {
     const n = Number(v) || 0;
@@ -43,9 +106,10 @@
   const loaded = {};
   // Only Overview is public; everything else needs a Discord login.
   const GATED = ['leaderboards', 'squads', 'mystats', 'bunkers', 'economy', 'killfeed', 'events'];
+  let disabledTabs = new Set(); // tabs hidden by the admin (web.fieldConsole.tabs)
   let currentView = 'overview';
   function switchView(name) {
-    if (!document.getElementById(`view-${name}`)) name = 'overview';
+    if (!document.getElementById(`view-${name}`) || disabledTabs.has(name)) name = 'overview';
     currentView = name;
     const gated = GATED.includes(name) && !isLoggedIn;
     document.querySelectorAll('.view').forEach((v) => { v.hidden = true; });
@@ -80,6 +144,19 @@
     $('tm-time').textContent = w.time || '—';
     $('tm-temp').textContent = w.temperature ? w.temperature.replace(/A:\s*/, '').replace(/\s*\|\s*W:\s*/, ' / ') : '—';
 
+    // Online players (admin-toggleable; names are clickable for logged-in players)
+    const card = $('online-players-card');
+    if (o.onlinePlayers) {
+      card.hidden = false;
+      const list = o.onlinePlayers;
+      $('online-count').textContent = `· ${list.length}`;
+      $('online-players').innerHTML = list.length
+        ? list.map((n) => `<span class="op-chip pl-click" data-player="${esc(n)}">${esc(n)}</span>`).join('')
+        : '<span class="muted small">No one online right now.</span>';
+    } else {
+      card.hidden = true;
+    }
+
     // Next restart
     if (o.nextRestart) {
       const ms = new Date(o.nextRestart).getTime();
@@ -95,13 +172,22 @@
     $('srv-fps').textContent = (st.fps != null) ? `${st.fps} FPS` : '—';
     $('srv-state').textContent = st.online ? (st.state || 'Online') : 'Offline';
 
-    // Top squads
+    // Top squads — clickable (when logged in) to open the squad detail.
     const squads = o.topSquads || [];
-    $('ov-squads').innerHTML = squads.length ? squads.map((sq) => `<li><span class="sq-name">${esc(sq.name)}</span><span class="sq-val">${esc(num(sq.value))}</span></li>`).join('') : '<li class="muted small">No squads yet.</li>';
+    $('ov-squads').innerHTML = squads.length
+      ? squads.map((sq) => `<li class="ov-squad-row${sq.id ? ' sq-click' : ''}"${sq.id ? ` data-squad-id="${sq.id}"` : ''}><span class="sq-name">${esc(sq.name)}</span><span class="sq-val">${esc(num(sq.value))}</span></li>`).join('')
+      : '<li class="muted small">No squads yet.</li>';
+
+    // Category leaders (#1 of each leaderboard category) — names open the profile.
+    const leaders = o.categoryLeaders || [];
+    $('cat-leaders').innerHTML = leaders.length
+      ? leaders.map((c) => `<li class="cl-row cat-click" data-cat="${esc(c.key)}">${icon(catIcon(c.key))}<div class="cl-body"><span class="cl-cat">${esc(c.label)}</span><div class="cl-line"><span class="cl-name pl-click" data-player="${esc(c.name)}">${esc(c.name)}</span><span class="cl-val">${esc(num(c.value))}</span></div></div></li>`).join('')
+      : '<li class="muted small">No leaderboard data yet.</li>';
   }
 
   // ── Leaderboards ─────────────────────────────────────────────────────────
   let lbCache = null, lbRows = [];
+  let pendingLbCategory = null; // category to auto-select after the next load
   async function loadLeaderboards(weekly) {
     const list = $('lb-list');
     list.innerHTML = '<li class="lb-empty">Loading…</li>';
@@ -110,6 +196,9 @@
       lbCache = data;
       if (!$('lb-category').options.length) {
         $('lb-category').innerHTML = (data.categories || []).map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join('');
+      }
+      if (pendingLbCategory && [...$('lb-category').options].some((o) => o.value === pendingLbCategory)) {
+        $('lb-category').value = pendingLbCategory; pendingLbCategory = null;
       }
       buildRows();
       if (data.generatedAt) $('lb-updated').textContent = `SNAPSHOT // ${new Date(data.generatedAt).toLocaleTimeString()}`;
@@ -134,31 +223,72 @@
     }).join('');
   }
 
+  // Jump to the Leaderboards tab with a specific category selected (from the
+  // Overview category leaders or the My Stats rankings).
+  function openLeaderboardCategory(key) {
+    if (!isLoggedIn) { switchView('leaderboards'); return; } // gate is shown
+    const sel = $('lb-category');
+    if (loaded.leaderboards && lbCache && [...sel.options].some((o) => o.value === key)) {
+      sel.value = key; pendingLbCategory = null; switchView('leaderboards'); buildRows();
+    } else {
+      // Not loaded yet: remember the target first, then switchView triggers the
+      // load (loadLeaderboards applies pendingLbCategory once the options exist).
+      pendingLbCategory = key;
+      switchView('leaderboards');
+    }
+  }
+
   // ── My Stats (dossier) ───────────────────────────────────────────────────
   const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
   // Kept in sync with the Discord /player-stats embed (slashCommands.js).
   const COMBAT = [
-    ['Kills', 'Kills', 'i-skull', 'int'], ['Deaths', 'Deaths', 'i-grave', 'int'], ['__kd', 'K/D', 'i-target', 'raw'],
+    ['Kills', 'Kills', 'i-skull', 'int'], ['Deaths', 'Deaths', 'i-grave', 'int'], ['__kd', 'K/D', 'i-scale', 'raw'],
     ['PvpKills', 'PvP kills', 'i-gun', 'int'], ['PvpDeaths', 'PvP deaths', 'i-grave', 'int'], ['Headshots', 'Headshots', 'i-crosshair', 'int'],
-    ['ZombieKills', 'Puppet kills', 'i-skull', 'int'], ['AnimalKills', 'Animal kills', 'i-target', 'int'], ['LongestKill', 'Longest kill', 'i-target', 'meters'],
-    ['FirearmKills', 'Firearm kills', 'i-gun', 'int'], ['MeleeKills', 'Melee kills', 'i-crosshair', 'int'], ['ArcheryKills', 'Archery kills', 'i-crosshair', 'int'],
+    ['ZombieKills', 'Puppet kills', 'i-zombie', 'int'], ['AnimalKills', 'Animal kills', 'i-paw', 'int'], ['LongestKill', 'Longest kill', 'i-scope', 'meters'],
+    ['FirearmKills', 'Firearm kills', 'i-gun', 'int'], ['MeleeKills', 'Melee kills', 'i-knife', 'int'], ['ArcheryKills', 'Archery kills', 'i-bow', 'int'],
   ];
   const SURVIVAL = [
     ['MinutesSurvived', 'Survived', 'i-clock', 'hmin'], ['Distance', 'On foot', 'i-foot', 'km'], ['Looted', 'Looted', 'i-box', 'int'],
-    ['LocksPicked', 'Locks picked', 'i-lock', 'int'], ['Crafted', 'Crafted', 'i-box', 'int'], ['FishCaught', 'Fish caught', 'i-target', 'int'],
-    ['FamePoints', 'Fame', 'i-star', 'int'], ['Money', 'Money', 'i-coins', 'int'], ['PlayTime', 'Playtime', 'i-clock', 'hsec'],
+    ['LocksPicked', 'Locks picked', 'i-lock', 'int'], ['Crafted', 'Crafted', 'i-anvil', 'int'], ['FishCaught', 'Fish caught', 'i-fish', 'int'],
+    ['FamePoints', 'Fame', 'i-star', 'int'], ['Money', 'Money', 'i-coins', 'int'], ['PlayTime', 'Playtime', 'i-hourglass', 'hsec'],
   ];
   function statGridHtml(fields, s) {
     return fields.map(([k, label, ic, kind]) =>
       `<div class="ds">${icon(ic)}<div class="ds-txt"><span class="ds-v">${esc(fmtStat(s[k] != null ? s[k] : 0, kind))}</span><span class="ds-k">${label}</span></div></div>`).join('');
   }
+
+  // Bank / finances for My Stats (own data only): money cards + the bank cards
+  // themselves (image, limits, click-to-reveal PIN). Reuses the .ds stat-card look.
+  function bankCardHtml(c) {
+    const img = c.image ? `<img class="bank-card-img" src="${esc(c.image)}" alt="" loading="lazy" onerror="this.remove()">` : '';
+    const amt = (v) => (Number(v) < 0 ? '∞' : `${num(v)} $`); // -1 = unlimited
+    const cnt = (v) => (Number(v) < 0 ? '∞' : num(v));
+    const rows = [];
+    if (c.withdrawLeft != null) rows.push(`<span>Daily withdraw left <b>${amt(c.withdrawLeft)}</b></span>`);
+    if (c.depositLeft != null) rows.push(`<span>Daily deposit left <b>${amt(c.depositLeft)}</b></span>`);
+    if (c.renewals != null) rows.push(`<span>Free renewals <b>${cnt(c.renewals)}</b></span>`);
+    if (c.pinTries != null) rows.push(`<span>PIN tries left <b>${cnt(c.pinTries)}</b></span>`);
+    if (c.pin != null && Number(c.pin) >= 0) rows.push(`<span>PIN <button class="pin-btn" data-pin="${esc(String(c.pin))}">•••• <em>reveal</em></button></span>`);
+    return `<div class="bank-card">${img}<div class="bank-card-body"><span class="bank-card-type">${esc(c.type)} card</span><div class="bank-card-rows">${rows.join('')}</div></div></div>`;
+  }
+  function financesHtml(f) {
+    if (!f) return '<p class="muted small">No bank account.</p>';
+    const card = (ic, label, val) => `<div class="ds">${icon(ic)}<div class="ds-txt"><span class="ds-v">${esc(val)}</span><span class="ds-k">${esc(label)}</span></div></div>`;
+    const stats = [card('i-coins', 'Bank balance', `${num(f.bank)} $`), card('i-coins', 'Gold', `${num(f.gold)}`)];
+    if (f.cash != null) stats.push(card('i-coins', 'Cash', `${num(f.cash)} $`));
+    let html = `<div class="dstats">${stats.join('')}</div>`;
+    if (f.accountNumber) html += `<div class="fin-acc">${icon('i-list')}<div class="fin-acc-t"><span class="fin-acc-k">Account number</span><span class="fin-acc-v">${esc(String(f.accountNumber))}</span></div></div>`;
+    if ((f.cards || []).length) html += `<div class="bank-cards">${f.cards.map(bankCardHtml).join('')}</div>`;
+    return html;
+  }
   function statGrid(elId, fields, s) { $(elId).innerHTML = statGridHtml(fields, s); }
 
+  // All rankings, with the category icon, clickable → opens that leaderboard category.
   function ranksHtml(ranks) {
     if (!ranks || !ranks.length) return '<li class="muted small">No leaderboard placements yet.</li>';
-    return ranks.slice(0, 8).map((r) => {
+    return ranks.map((r) => {
       const pc = r.rank === 1 ? 'g' : r.rank === 2 ? 's' : r.rank === 3 ? 'b' : '';
-      return `<li class="rank-chip"><span class="rank-pos ${pc}">#${r.rank}</span><span class="rank-label">${esc(r.label)}</span><span class="rank-val">${esc(num(r.value))}</span></li>`;
+      return `<li class="rank-chip cat-click" data-cat="${esc(r.key)}">${icon(catIcon(r.key))}<span class="rank-pos ${pc}">#${r.rank}</span><span class="rank-label">${esc(r.label)}</span><span class="rank-val">${esc(num(r.value))}</span></li>`;
     }).join('');
   }
 
@@ -185,8 +315,13 @@
         squadHtml = `<div class="squad-head"><span class="squad-name">${esc(d.squad.name)}</span><span class="squad-meta">${d.squad.memberCount} members · ${num(d.squad.score)} score</span></div>`
           + `<ul class="squad-members">${(d.squad.members || []).map((m) => `<li class="sm-row"><span class="sm-name pl-click" data-player="${esc(m.name)}">${esc(m.name)}</span><span class="sm-rank">${esc(m.rank)}</span></li>`).join('')}</ul>`;
       }
+      // Skills are only returned for a squadmate of the viewed player.
+      const skillsBlock = (d.skills && (d.skills.list || []).length)
+        ? `<h3>${icon('i-star')} Skills</h3><div class="skills">${skillsHtml(d.skills)}</div>`
+        : '';
       openModal(
         `<div class="record"><div class="record-id"><span class="record-label">Inmate</span><span class="record-name">${esc(d.name)}</span></div></div>`
+        + skillsBlock
         + `<div class="ms-grid"><div><h3>${icon('i-crosshair')} Combat</h3><div class="dstats">${statGridHtml(COMBAT, s)}</div></div>`
         + `<div><h3>${icon('i-foot')} Survival</h3><div class="dstats">${statGridHtml(SURVIVAL, s)}</div></div></div>`
         + `<h3>${icon('i-trophy')} Rankings</h3><ul class="ranks">${ranksHtml(d.ranks)}</ul>`
@@ -253,9 +388,10 @@
     }
 
     const ranks = (data && data.ranks) || [];
-    $('me-ranks').innerHTML = ranks.length
-      ? ranks.slice(0, 8).map((r) => { const pc = r.rank === 1 ? 'g' : r.rank === 2 ? 's' : r.rank === 3 ? 'b' : ''; return `<li class="rank-chip"><span class="rank-pos ${pc}">#${r.rank}</span><span class="rank-label">${esc(r.label)}</span><span class="rank-val">${esc(num(r.value))}</span></li>`; }).join('')
-      : '<li class="muted small">Not in any leaderboard top 100 yet.</li>';
+    $('me-ranks').innerHTML = ranks.length ? ranksHtml(ranks) : '<li class="muted small">Not in any leaderboard top 100 yet.</li>';
+
+    $('me-skills').innerHTML = skillsHtml((data && data.skills) || {});
+    $('me-finances').innerHTML = financesHtml(data && data.finances);
 
     renderSquad(data && data.squad);
 
@@ -269,9 +405,35 @@
 
   function agoDate(s) {
     if (!s) return '';
-    let t = new Date(s).getTime();
-    if (Number.isNaN(t)) t = new Date(`${String(s).replace(' ', 'T')}Z`).getTime();
+    s = String(s);
+    // SQLite CURRENT_TIMESTAMP is UTC "YYYY-MM-DD HH:MM:SS" — JS would parse that
+    // space form as LOCAL time, so anchor it to UTC. ISO strings (with T/Z) parse as-is.
+    const iso = (s.includes(' ') && !s.includes('T')) ? `${s.replace(' ', 'T')}Z` : s;
+    let t = new Date(iso).getTime();
+    if (Number.isNaN(t)) t = new Date(s).getTime();
     return Number.isNaN(t) ? '' : ago(t);
+  }
+
+  // Discord-formatted notification text → readable web text: drop :emoji: shortcodes
+  // and **bold** markers, and turn <t:UNIX:x> tokens into local dates / relatives.
+  function relFromNow(ms) {
+    const diff = ms - Date.now(); const a = Math.abs(diff); const s = Math.floor(a / 1000);
+    const str = s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+    return diff >= 0 ? `in ${str}` : `${str} ago`;
+  }
+  const NOTIF_EMOJI = {
+    shield: '🛡️', hourglass: '⌛', hourglass_flowing_sand: '⏳', door: '🚪',
+    package: '📦', red_car: '🚗', rotating_light: '🚨', lock: '🔒', closed_lock_with_key: '🔐',
+  };
+  function cleanNotifText(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/<t:(\d+):R>/g, (m, ts) => relFromNow(Number(ts) * 1000))
+      .replace(/<t:(\d+):[a-zA-Z]>/g, (m, ts) => new Date(Number(ts) * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }))
+      .replace(/:([a-z0-9_+]+):/g, (m, code) => NOTIF_EMOJI[code] || '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   function renderSquad(sq) {
@@ -292,7 +454,7 @@
     try {
       const { history } = await getJSON('/api/player/me/notifications/history');
       el.innerHTML = (history && history.length)
-        ? history.map((h) => `<li class="nh-row"><div class="nh-main"><span class="nh-title">${esc(h.title || 'Alert')}</span><span class="nh-body">${esc(h.body || '')}</span></div><span class="nh-time">${agoDate(h.sentAt)}</span></li>`).join('')
+        ? history.map((h) => `<li class="nh-row"><div class="nh-main"><span class="nh-title">${esc(cleanNotifText(h.title) || 'Alert')}</span><span class="nh-body">${esc(cleanNotifText(h.body))}</span></div><span class="nh-time">${agoDate(h.sentAt)}</span></li>`).join('')
         : '<li class="muted small">No notifications sent yet.</li>';
     } catch { el.innerHTML = '<li class="muted small">Could not load history.</li>'; }
   }
@@ -373,13 +535,35 @@
         return;
       }
 
+      // Market activity (recent trades + hot items)
+      const market = e.market || {};
+      const trades = e.recentTrades || [];
+      $('econ-market-meta').textContent = market.count ? `· ${money(market.volume)} in ${market.count} trades` : '';
+      const pills = [];
+      if (market.volume != null && market.count) pills.push(`<div class="econ-pill"><span class="v">${money(market.volume)}</span><span class="k">Recent volume</span></div>`);
+      if (market.busiestTrader) pills.push(`<div class="econ-pill"><span class="v">${esc(market.busiestTrader.name)}</span><span class="k">Busiest trader</span></div>`);
+      (market.topItems || []).slice(0, 3).forEach((it) => pills.push(`<div class="econ-pill"><span class="v">${esc(it.item)}</span><span class="k">${money(it.value)} · ×${it.count}</span></div>`));
+      $('econ-market-stats').innerHTML = pills.join('');
+      $('econ-trades').innerHTML = trades.length
+        ? trades.map((t) => {
+          const thumb = t.image ? `<img class="etr-img" src="${esc(t.image)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="etr-img etr-img-x">${icon('i-box')}</span>`;
+          return `<li class="etr etr-${t.action}">${thumb}<span class="etr-act">${t.action === 'sell' ? '▲ sold' : '▼ bought'}</span><span class="etr-item">${esc(t.item)}</span><span class="etr-price">${money(t.price)}</span><span class="etr-sub">${esc(t.player)} · ${esc(t.trader)} · ${ago(t.ts)}</span></li>`;
+        }).join('')
+        : '<li class="muted small">No recent trades — fills in as players trade.</li>';
+
       // On sale
       const deals = e.deals || [];
       $('econ-deals-count').textContent = deals.length ? `· ${deals.length}` : '';
       dealsEl.innerHTML = deals.length ? deals.map((d) => {
         const where = d.sector || d.trader || '';
-        const extras = [`💰 ${money(d.price)}`, `📦 ${num(d.stock)}`, d.fameRequired ? `⭐ ${num(d.fameRequired)}` : '', where ? `📍 ${esc(where)}` : ''].filter(Boolean).join(' · ');
-        return `<li class="ed"><span class="ed-item">${esc(d.item)}</span><span class="ed-extras">${extras}</span></li>`;
+        const extras = [
+          `<span class="ed-x">${icon('i-coins')}${money(d.price)}</span>`,
+          `<span class="ed-x">${icon('i-box')}${num(d.stock)}</span>`,
+          d.fameRequired ? `<span class="ed-x">${icon('i-star')}${num(d.fameRequired)}</span>` : '',
+          where ? `<span class="ed-x">${icon('i-map')}${esc(where)}</span>` : '',
+        ].filter(Boolean).join('');
+        const thumb = d.image ? `<img class="ed-img" src="${esc(d.image)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ed-img ed-img-x">${icon('i-box')}</span>`;
+        return `<li class="ed">${thumb}<div class="ed-body"><span class="ed-item">${esc(d.item)}</span><span class="ed-extras">${extras}</span></div></li>`;
       }).join('') : '<li class="muted small">No special deals right now.</li>';
 
       // Trader funds
@@ -401,16 +585,34 @@
         ? `<div class="econ-pill"><span class="v">${money(g.buyFunds)}</span><span class="k">Buy capacity</span></div><div class="econ-pill"><span class="v">${num(g.sellFunds)} gold</span><span class="k">Sell capacity</span></div>`
         : '<div class="muted small">No gold outposts.</div>';
 
-      // Stock rotation
+      // Economy timing (from EconomyOverride.json) — each line has a hover tooltip.
       const t = e.timing || {};
-      const parts = [];
-      if (t.rotationEnabled && t.rotationHoursMin != null && t.rotationHoursMax != null) parts.push(`🔄 Items rotate every <b>${t.rotationHoursMin}–${t.rotationHoursMax}</b> in-game hours`);
-      if (t.fullRestockHours != null) parts.push(`📦 Sold-out stock refills in <b>${t.fullRestockHours} h</b>`);
-      if (t.resetTimeHours != null && t.resetTimeHours > 0) {
-        parts.push(`🔁 Full economy reset every <b>${t.resetTimeHours} h</b>`);
-        if (t.secondsSinceReset != null) parts.push(`⏱️ Last reset <b>${dur(t.secondsSinceReset)}</b> ago`);
+      const hh = (x) => `${Number.isInteger(x) ? x : Number(x).toFixed(1)} h`;
+      const parts = []; // [icon, html, tooltip]
+      if (t.rotationEnabled && t.rotationHoursMin != null && t.rotationHoursMax != null) {
+        parts.push([icon('i-refresh'), `Offered items rotate every <b>${t.rotationHoursMin}–${t.rotationHoursMax}</b> in-game hours`, 'Which tradeables each trader offers changes on this schedule.']);
       }
-      rotEl.innerHTML = parts.length ? parts.map((p) => `<li>${p}</li>`).join('') : '<li class="muted small">No rotation info.</li>';
+      if (t.fullRestockHours != null && t.fullRestockHours > 0) {
+        parts.push([icon('i-box'), `Sold-out stock refills in <b>${hh(t.fullRestockHours)}</b>`, 'How long a depleted trader takes to fully restock its stock organically.']);
+      }
+      if (t.unlimitedStock) parts.push([icon('i-box'), 'Trader stock <b>never runs out</b>', 'traders-unlimited-stock is on — stock never depletes.']);
+      if (t.traderFundsRefillHours != null) {
+        parts.push([icon('i-coins'), `Depleted trader funds refill in <b>${hh(t.traderFundsRefillHours)}</b>`, 'How fast a trader refills the money it pays out for items.']);
+      }
+      if (t.unlimitedFunds) parts.push([icon('i-coins'), 'Trader funds <b>never run out</b>', 'traders-unlimited-funds is on — funds never deplete when players sell.']);
+      if (t.pricesRandomizationHours != null && t.pricesRandomizationHours > 0) {
+        parts.push([icon('i-scale'), `Prices re-roll every <b>${hh(t.pricesRandomizationHours)}</b>`, 'How often store prices are randomized.']);
+      }
+      if (t.pricesSubjectToPlayerCount) parts.push([icon('i-users'), 'Prices scale with <b>player count</b>', 'Item prices are adjusted based on how many players are online.']);
+      if (t.resetTimeHours != null && t.resetTimeHours > 0) {
+        parts.push([icon('i-refresh'), `Full economy reset every <b>${hh(t.resetTimeHours)}</b>`, 'The whole economy instantly resets (full restock of stock and money) on this interval.']);
+        if (t.secondsSinceReset != null) parts.push([icon('i-clock'), `Last reset <b>${dur(t.secondsSinceReset)}</b> ago`, 'Time since the last full economy reset.']);
+      } else {
+        parts.push([icon('i-refresh'), 'No scheduled full resets', 'economy-reset-time-hours is -1 — the economy only regenerates organically, never instantly.']);
+      }
+      rotEl.innerHTML = parts.length
+        ? parts.map(([ic, txt, tip]) => `<li title="${esc(tip)}">${ic}<span>${txt}</span></li>`).join('')
+        : '<li class="muted small">No economy timing info.</li>';
     } catch {
       $('econ-deals').innerHTML = '<li class="muted small">Could not load economy.</li>';
     }
@@ -464,6 +666,7 @@
   loaders.events = loadEvents;
 
   document.querySelectorAll('.nav-btn, .jump-card').forEach((el) => el.addEventListener('click', () => switchView(el.dataset.view)));
+  { const brand = document.querySelector('.brand'); if (brand) brand.addEventListener('click', () => switchView('overview')); }
   $('player-chip').addEventListener('click', (e) => {
     if ($('player-chip').dataset.action === 'login') return; // navigate to Discord OAuth
     e.preventDefault(); switchView('mystats');
@@ -528,17 +731,45 @@
     const li = e.target.closest('.squad-row');
     if (li && li.dataset.id) openSquadDetail(li.dataset.id);
   });
+  // Top squads on the Overview → squad detail (logged-in players only).
+  $('ov-squads').addEventListener('click', (e) => {
+    const li = e.target.closest('.ov-squad-row');
+    if (!li || !li.dataset.squadId) return;
+    if (!isLoggedIn) { openModal('<p class="muted">Log in with Discord to view squad details.</p>'); return; }
+    openSquadDetail(li.dataset.squadId);
+  });
   $('modal-close').addEventListener('click', closeModal);
   $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
-  // Any player name marked [data-player] (squad members in My Stats / modals) opens
-  // that player's profile — same as clicking a leaderboard row.
+  // Delegated clicks: a player name [data-player] → that player's profile (takes
+  // priority); a category [data-cat] → that leaderboard category.
   document.addEventListener('click', (e) => {
-    const el = e.target.closest('[data-player]');
-    if (el) { e.preventDefault(); openPlayerProfile(el.dataset.player); }
+    const pin = e.target.closest('.pin-btn');
+    if (pin) { const show = pin.classList.toggle('revealed'); pin.innerHTML = show ? `${esc(pin.dataset.pin)} <em>hide</em>` : '•••• <em>reveal</em>'; return; }
+    const pl = e.target.closest('[data-player]');
+    if (pl) { e.preventDefault(); openPlayerProfile(pl.dataset.player); return; }
+    const cat = e.target.closest('[data-cat]');
+    if (cat) { e.preventDefault(); openLeaderboardCategory(cat.dataset.cat); }
   });
 
+  // Hide tabs the admin disabled (web.fieldConsole.tabs), in the nav + footer.
+  async function applySiteConfig() {
+    let cfg;
+    try { cfg = await getJSON('/api/public/site-config'); } catch { return; }
+    const tabs = (cfg.fieldConsole && cfg.fieldConsole.tabs) || {};
+    const TAB_MAP = { leaderboards: 'leaderboards', squads: 'squads', myStats: 'mystats', bunkers: 'bunkers', economy: 'economy', killFeed: 'killfeed', events: 'events' };
+    disabledTabs = new Set();
+    for (const [key, view] of Object.entries(TAB_MAP)) {
+      if (tabs[key] === false) {
+        disabledTabs.add(view);
+        document.querySelectorAll(`.nav-btn[data-view="${view}"], .foot-nav a[href="#${view}"]`).forEach((el) => { el.hidden = true; });
+      }
+    }
+    if (disabledTabs.has(currentView)) switchView('overview');
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
+  applySiteConfig();
   loadOverview();
   loadSession();
   setInterval(loadOverview, 30000);

@@ -13,6 +13,10 @@ back to `/admin`.
 
 Log in with `WEB_ADMIN_PASSWORD`. After **5 failed attempts** an IP is locked out for 15 minutes.
 
+The dashboard uses a persistent **tab bar** — **Dashboard · Players · Discord · Game Settings ·
+Settings** — sharing the Field Console's look (click the logo to return to the Dashboard). A
+**Field Console** link opens the public site.
+
 ![Admin dashboard — overview](http://playhub.cz/scum/manager/admin_overview.png)
 
 ### Dashboard
@@ -26,13 +30,19 @@ Log in with `WEB_ADMIN_PASSWORD`. After **5 failed attempts** an IP is locked ou
 
 ### Players
 - Search by **name**, **Steam ID** (17 digits) or **IP address**.
-- Click a result → full profile: all stats, Steam ID, IP, last login/logout, online state, Discord
-  link, ban status.
+- Click a result → full profile. The admin sees **everything**:
+  - All combat/survival stats (with icons), Steam ID, IP, last login/logout, online state, Discord link.
+  - **Skills & attributes** (grouped by attribute).
+  - **Bank account & cards** — balance, gold, cash, account number, and each card's type, **PIN**,
+    daily withdraw/deposit limits and renewals.
+  - **Squad** — name, score and members; **click a member to open their profile**.
 - **Ban** (with an optional note) or **Unban**. See [Player Management & Bans](Player-Management).
 
 ### Settings
 Every `config/config.json` option, grouped into collapsible categories with search and expand/
-collapse. Saving rewrites `config.json`; launch-argument changes are pushed to the NSSM service.
+collapse — **each field shows a one-line description of what it does**. Saving rewrites `config.json`;
+launch-argument changes are pushed to the NSSM service. Includes the **`web.fieldConsole`** toggles
+that control the public Field Console (online-players list + per-tab visibility).
 
 ![Admin dashboard — settings](http://playhub.cz/scum/manager/admin_settings.png)
 

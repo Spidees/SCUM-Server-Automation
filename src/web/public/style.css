@@ -33,8 +33,8 @@
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; font-size: 109%; }
-@media (max-width: 600px) { html { font-size: 104%; } }
+html { -webkit-text-size-adjust: 100%; font-size: 112.5%; }
+@media (max-width: 600px) { html { font-size: 106%; } }
 
 body {
   margin: 0;
@@ -104,13 +104,12 @@ code {
   align-items: center;
   gap: 0.85rem;
   min-width: 0;
+  cursor: pointer;
 }
 
 .brand-logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
+  height: 50px;
+  width: auto;
   flex-shrink: 0;
 }
 
@@ -123,8 +122,8 @@ code {
 
 .brand-title {
   font-weight: 700;
-  font-size: 1.3rem;
-  letter-spacing: 0.12em;
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
 }
 
 .brand-sub {
@@ -143,10 +142,33 @@ header {
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
-  padding: 1rem 1.5rem;
-  background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(180deg, var(--panel), var(--bg-2));
   border-bottom: 1px solid var(--line);
 }
+
+/* ── Persistent topbar + tab nav (Field-Console-style) ─────────────────────── */
+#app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.topbar { position: sticky; top: 0; z-index: 30; }
+.header-actions { display: flex; align-items: center; gap: 0.5rem; }
+.admin-nav { display: flex; gap: 0.25rem; padding: 0 1.5rem; background: var(--bg-2); border-bottom: 1px solid var(--line-amber); overflow-x: auto; }
+.anav-btn {
+  display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; white-space: nowrap;
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: var(--muted); font-family: var(--ui); font-weight: 600; font-size: 0.9rem;
+  padding: 0.8rem 0.9rem; letter-spacing: 0.02em; text-transform: none;
+}
+.anav-btn:hover { color: var(--text); border-color: transparent; background: transparent; }
+.anav-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
+.anav-btn .ico { font-size: 1.05rem; }
+.tab-panel { flex: 1 0 auto; }
+.tab-panel.hidden { display: none !important; }
+
+/* Slim per-screen title bar (replaces the old sub-screen headers) */
+.screen-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 1.25rem 1.5rem 0; }
+.screen-title { display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); }
+.screen-title .ico { color: var(--amber); }
+.screen-bar-actions { display: flex; gap: 0.5rem; }
 
 header h1 {
   margin: 0;
@@ -313,6 +335,7 @@ header button.secondary,
   gap: 0.3rem;
   padding-left: 0.7rem;
   border-left: 1px solid var(--line-2);
+  min-width: 0;   /* let long values wrap instead of overflowing the grid cell */
 }
 
 .status-item .label {
@@ -328,7 +351,11 @@ header button.secondary,
   font-size: 1.4rem;
   color: var(--text);
   letter-spacing: 0.01em;
+  min-width: 0;
+  overflow-wrap: anywhere;   /* break long strings (filenames) that have no spaces */
 }
+/* Backup filename is long and not a headline metric — smaller so it wraps neatly. */
+#last-backup-value { font-size: 0.92rem; line-height: 1.3; }
 
 /* ── Vitals badge ──────────────────────────────────────────────────────── */
 
@@ -558,21 +585,26 @@ header button.secondary,
 
 /* ── App footer ────────────────────────────────────────────────────────── */
 
+/* Footer styled to match the Field Console: full-width, amber top accent, a brand
+   line and a bottom bar with social links. */
 .app-footer {
-  margin: auto 1.5rem 1.25rem;   /* margin-top:auto pins it to the bottom of the screen */
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
+  margin-top: auto;   /* pin to the bottom of the screen */
+  border-top: 1px solid var(--line-amber);
+  background: linear-gradient(180deg, var(--bg-2), var(--bg));
 }
+.af-top {
+  display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem 2rem;
+  padding: 1.3rem 1.5rem 0.9rem;
+}
+.af-brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 700; letter-spacing: 0.04em; }
+.af-logo { width: 24px; height: 24px; }
+.af-bottom {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem;
+  padding: 0.7rem 1.5rem 1.1rem; border-top: 1px solid var(--line);
+}
+.af-social { display: flex; gap: 1.4rem; }
+.af-social a { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); }
+.af-social a:hover { color: var(--amber-hi); }
 
 /* page identifier chip shown in sub-screen headers */
 .page-tag {
@@ -1183,13 +1215,33 @@ textarea:focus-visible,
   flex: 1; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius);
   color: var(--text); font-family: var(--ui); padding: 0.5rem 0.7rem;
 }
-.player-results { list-style: none; margin: 0 0 0.75rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.player-results { list-style: none; margin: 0 0 0.9rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.4rem; }
 .player-results .player-result {
-  cursor: pointer; padding: 0.35rem 0.7rem; background: var(--inset);
-  border: 1px solid var(--line); border-radius: var(--radius); font-size: 0.9rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.8rem;
+  padding: 0.55rem 0.75rem; background: var(--inset);
+  border: 1px solid var(--line); border-radius: var(--radius);
 }
-.player-results .player-result:hover { border-color: var(--line-amber); color: var(--amber-hi); }
-.player-results .muted { color: var(--muted); }
+.player-results .player-result.clickable { cursor: pointer; }
+.player-results .player-result.clickable:hover { border-color: var(--line-amber); }
+.player-results .player-result.muted { color: var(--muted); }
+.pr-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-meta { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+
+/* Squad block in the player detail */
+.pd-squad-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.pd-squad-name { font-weight: 700; font-size: 1.05rem; }
+.pd-squad-meta { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.pd-members { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.4rem; margin-bottom: 0.9rem; }
+.pd-member {
+  display: flex; align-items: center; gap: 0.5rem; cursor: pointer; text-align: left;
+  padding: 0.45rem 0.6rem; background: var(--inset); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--text); font-family: var(--ui);
+}
+.pd-member:hover { border-color: var(--line-amber); }
+.pd-m-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.pd-m-dot.on { background: var(--online); box-shadow: 0 0 7px var(--online); }
+.pd-m-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-m-rank { margin-left: auto; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--amber); white-space: nowrap; }
 
 .player-detail { background: var(--inset); border: 1px solid var(--line-amber); border-radius: var(--radius); padding: 0.9rem 1rem; }
 .player-detail.hidden { display: none; }
@@ -1204,6 +1256,27 @@ textarea:focus-visible,
 .pd-id i, .pd-stats i { font-style: normal; color: var(--muted); margin-right: 0.3rem; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.04em; }
 .pd-id span { font-family: var(--mono); }
 .pd-stats b { color: var(--amber); font-family: var(--mono); }
+.pd-stats span { display: flex; align-items: center; }
+.pd-stats .ico { color: var(--amber); margin-right: 0.4rem; }
+/* Skills & attributes (grouped by attribute, with the attribute value) */
+.pd-sec-title { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0 0.7rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); font-weight: 700; }
+.pd-sec-title .ico { color: var(--amber); }
+.pd-skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.1rem; margin-bottom: 0.9rem; }
+.pd-sg { display: flex; flex-direction: column; gap: 0.4rem; }
+.pd-sg-head { display: flex; align-items: center; gap: 0.4rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--line-amber); }
+.pd-sg-head .ico { color: var(--amber); }
+.pd-sg-head b { color: var(--amber); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.pd-attr { margin-left: auto; font-family: var(--mono); color: var(--amber-hi); font-size: 0.95rem; }
+.pd-sk { display: grid; grid-template-columns: 1fr auto; gap: 0.1rem 0.5rem; font-size: 0.82rem; }
+.pd-sk-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-sk-tier { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.04em; }
+.pd-sk-bar { grid-column: 1 / -1; height: 4px; background: var(--inset); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.pd-sk-bar > span { display: block; height: 100%; background: var(--amber); }
+.pd-sk.sk-l0 .pd-sk-bar > span { background: var(--faint); }
+.pd-sk.sk-l1 .pd-sk-bar > span { background: var(--standby); }
+.pd-sk.sk-l2 .pd-sk-bar > span { background: #b8bcc2; }
+.pd-sk.sk-l3 .pd-sk-bar > span { background: var(--amber); }
+.pd-sk.sk-l4 .pd-sk-bar > span { background: var(--amber-hi); }
 .pd-ban-note { font-size: 0.82rem; color: var(--standby); }
 .pd-ban { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .pd-ban input { flex: 1; min-width: 180px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); font-family: var(--ui); padding: 0.45rem 0.6rem; }
@@ -1224,10 +1297,34 @@ textarea:focus-visible,
 .players-hint { color: var(--muted); font-size: 0.82rem; margin: 0 0 0.6rem; }
 
 /* ── Field Console link (back to public site) ─────────────────────────────── */
-.nav-actions .navlink {
+.nav-actions .navlink, .header-actions .navlink {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.5rem 1rem; border: 1px solid var(--line-amber); border-radius: var(--radius);
   background: var(--panel-2); color: var(--amber-hi);
   font-family: var(--ui); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.05em; text-transform: uppercase;
 }
-.nav-actions .navlink:hover { background: var(--panel); border-color: var(--amber); }
+.nav-actions .navlink:hover, .header-actions .navlink:hover { background: var(--panel); border-color: var(--amber); }
+
+/* ── Player detail: bank cards ────────────────────────────────────────────── */
+.pd-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.7rem; margin-bottom: 0.9rem; }
+.pd-card { display: flex; gap: 0.8rem; padding: 0.7rem 0.8rem; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); }
+.pd-card-img { width: 80px; height: 52px; flex: none; object-fit: contain; align-self: center; }
+.pd-card-body { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.pd-card-type { font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.82rem; }
+.pd-card-rows { display: flex; flex-wrap: wrap; gap: 0.1rem 1rem; font-size: 0.8rem; color: var(--muted); }
+.pd-card-rows b { color: var(--text); font-family: var(--mono); margin-left: 0.2rem; }
+
+/* ── Dashboard top menu: lighter, Field-Console-like nav (ghost buttons) ───── */
+#dashboard-screen .nav-actions .secondary,
+#dashboard-screen .nav-actions .navlink {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+}
+#dashboard-screen .nav-actions .secondary:hover,
+#dashboard-screen .nav-actions .navlink:hover {
+  color: var(--amber-hi);
+  border-color: var(--line-amber);
+  background: var(--panel-2);
+}
+#dashboard-screen .nav-actions #logout-btn:hover { color: var(--alarm); border-color: rgba(229,68,63,0.4); background: transparent; }

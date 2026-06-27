@@ -28,13 +28,20 @@ applies query rewrites:
 | `leaderboardSnapshot.js` | 60 s, **lazy** | Full snapshot of all categories; rebuilt on access only when stale — **zero DB load while idle** |
 | `/api/public/overview` | ~15 s | Combined status+counts+world, one rebuild per TTL |
 | `getPlayerStatsBySteamId` / `ByName` | 15 s | Multi-join stat sheet |
+| `getPlayerSkillsBySteamId` | 15 s | Prisoner skills + attributes (parsed from `template_xml`) |
+| `getPlayerFinancesBySteamId` | 15 s | Cash, bank balance, gold, account no. + cards (`bank_account_registry*`) |
 | `getSquadInfoBySteamId` | 15 s | Own squad + members |
 | `getSquadList` / `getSquadDetailById` | 30 s | Public squad list/detail |
 | economy (`getSpecialDeals`, `getGoldCapacity`, `getEconomyTiming`) | 30 s | — |
 | `getOnlinePlayers` / `getPlayerCounts` | 5 s | — |
 
 In-memory (no DB): `getPlayerRanks` (scans the snapshot), `bunkerState`, `recentKills`,
-`economyState` (trader funds from the log).
+`economyState` (trader funds from the log) and `economyTrades` (a rolling buffer of recent item
+trades, for the Field Console market-activity view).
+
+> Skills (`prisoner_skill`) and attributes (`user_profile.template_xml`), bank cards/PINs
+> (`bank_account_registry_cards`) and item images/names (`data/scum_items.json`) are all surfaced in
+> My Stats / the admin player profile. See [skills/attributes notes in the code](../tree/main/src/database/playerStats.js).
 
 Caches are cleared when the `SCUM.db` connection is (re)opened.
 

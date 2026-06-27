@@ -13,8 +13,11 @@ node src/index.js
 - Node.js 22+ (24 recommended). CommonJS modules.
 - You don't need a real SCUM server to work on the web/DB layers if you point `serverDir` at an
   existing save (the app opens `SCUM.db` read-only).
-- There's no build step for the frontends — `web/public` and `web/public-site` are plain
-  HTML/CSS/JS served statically.
+- There's no build step for the frontends — `web/public` (admin) and `web/public-site` (Field
+  Console) are plain HTML/CSS/JS served statically.
+- **Never commit runtime data.** `.gitignore` excludes `node_modules/`, `.env`, `server/` (the SCUM
+  install + saves + `SCUM.db`, which holds player Steam IDs / IPs), `backups/`, `steamcmd/`,
+  `nssm.exe`, `data/*.db` and `data/*_state.json`. Only `data/scum_items.json` is tracked under `data/`.
 
 ## Conventions
 

@@ -56,16 +56,20 @@ Full docs live in the **[Wiki](https://github.com/Spidees/SCUM-Server-Automation
 The web server (default `http://localhost:8080`) serves **two faces** that share one tactical
 "field terminal" theme:
 
-**Admin dashboard — `/admin`** (password-protected, for server staff)
+**Admin dashboard — `/admin`** (password-protected, for server staff). Persistent **tab navigation**
+(Dashboard · Players · Discord · Game Settings · Settings) sharing the Field Console look.
 - Live status: state, players, **system CPU & RAM (used / total)**, server FPS, entities, service status
 - Server controls (start / stop / restart / backup / validate / check & update)
 - Scheduling & backup info, next restart (incl. pending **manual** restarts) and skip toggle
-- **Players** screen — search by **name / Steam ID / IP**, open a full player profile (all stats,
-  Steam ID, IP, last login/logout, Discord link) and **ban / unban** (writes `BannedUsers.ini`)
-- **Settings** — every `config/config.json` option, grouped & searchable
+- **Players** — search by **name / Steam ID / IP**, then a full profile: all combat/survival stats
+  (with icons), **skills & attributes**, **bank account & cards** (balance, gold, cash, account no.,
+  card PINs/limits), **squad with click-through members**, Steam ID / IP / login times / Discord link,
+  and **ban / unban** (writes `BannedUsers.ini`)
+- **Settings** — every `config/config.json` option, grouped & searchable, **with a description on
+  every field**
 - **Game Settings** — `ServerSettings.ini` editor, user lists (admin / banned / exclusive /
   whitelisted), raw-JSON editors for `EconomyOverride.json`, `RaidTimes.json`, `Notifications.json`
-- **Discord** screen — post the account-linking panel, view linked accounts (click → player profile)
+- **Discord** — post the account-linking panel, view linked accounts (click → player profile)
 - Live server-log tail over WebSocket (admin-only)
 
 ![Admin dashboard — overview](http://playhub.cz/scum/manager/admin_overview.png)
@@ -73,11 +77,18 @@ The web server (default `http://localhost:8080`) serves **two faces** that share
 
 **Public Field Console — `/`** (community-facing, optional Discord login) — [live demo: scum.playhub.cz](https://scum.playhub.cz/)
 - **Overview** (public): server name, connect address, FPS, next restart, in-game time/weather,
-  total players, active squads, top squads
+  total players, active squads, **top squads**, **online players**, and **category leaders**
+  (the #1 player of every leaderboard category — click through to that category)
 - **Login with Discord** (OAuth) — everything below is gated behind login:
-  **Leaderboards** (filterable, click a player → their stats), **Squads** (roster, click for detail),
-  **My Stats** (full character sheet + leaderboard ranks + your squad + **DM-alert settings & history**),
-  **Bunkers**, **Economy** (mirrors the Discord embed), **Kill Feed**
+  - **Leaderboards** (filterable, click a player → their stats)
+  - **Squads** (roster, click for detail)
+  - **My Stats** — full character sheet, **skills & attributes** (grouped by attribute with a value
+    ring), **bank** (balance, gold, cash, account no., your cards with images + reveal-on-click PIN
+    and limits), leaderboard ranks (click → that category), your squad, **DM-alert settings & history**
+  - **Bunkers**, **Economy** (special deals, trader funds, gold, **economy timing** and a live
+    **market activity** ticker of recent trades + hot items, all with item images), **Kill Feed**, **Events**
+- Player names are **click-through** to profiles everywhere; squadmates also see each other's skills
+- Admins can **show/hide each tab and the online-players list** via `web.fieldConsole`
 - Optional **link in the Discord embeds** to the live Field Console (set `web.publicUrl`)
 
 ![Field Console — overview](http://playhub.cz/scum/manager/field_console_overview.png)
@@ -172,6 +183,7 @@ All non-secret settings — editable directly or from the dashboard **Settings**
 | `web.adminAllowlist` | `[]` | Optional IP/CIDR allowlist for admin requests |
 | `web.httpRedirectPort` | `null` | With built-in TLS, an HTTP port (e.g. `80`) that 301s to HTTPS |
 | `web.ssl` | `{enabled,keyFile,certFile}` | Serve HTTPS directly without a reverse proxy |
+| `web.fieldConsole` | `{showOnlinePlayers, tabs:{…}}` | Show/hide the Field Console online-players list and each tab (leaderboards / squads / myStats / bunkers / economy / killFeed / events) |
 | `Discord` | … | Bot presence, notifications, live embeds, chat relay, log feeds |
 
 > Players connect on **game port + 2** (e.g. `-port=7042` → connect on `7042` … the in-game/server
@@ -209,8 +221,8 @@ To reconfigure from scratch, delete `.env` and restart.
 | Command | Who | Description |
 |---|---|---|
 | `/link-account` · `/unlink-account` | Anyone | Link / unlink your SCUM character |
-| `/my-stats` | Linked | Your detailed SCUM stats |
-| `/player-stats <name>` · `/player-search <query>` | Anyone | Look up / search players |
+| `/my-stats` | Linked | Your detailed SCUM stats, **skills & attributes** |
+| `/player-stats <name>` · `/player-search <query>` | Anyone | Look up / search players (skills shown to squadmates) |
 | `/server-info` · `/player-online` | Anyone | Current status / online players |
 | `/server-status` | Admin | Full live status embed |
 | `/server-start` | Admin | Start the server |

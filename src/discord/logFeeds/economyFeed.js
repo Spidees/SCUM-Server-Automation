@@ -3,6 +3,7 @@
 const { sendToChannel } = require('../notifications');
 const { buildEconomyEmbed } = require('./embeds');
 const economyState = require('../economyState');
+const economyTrades = require('../economyTrades');
 
 const TIMESTAMP_RE = /^([\d.-]+):\s+(.+)$/;
 
@@ -57,6 +58,7 @@ function parseLine(line) {
       item,
       amount,
       trader,
+      timestamp,
     };
   }
 
@@ -162,6 +164,10 @@ async function handle(event, client, config) {
     economyState.recordTraderFunds(event.trader, event.funds, event.timestamp);
     return;
   }
+
+  // Track item trades for the Field Console market-activity view (independent of
+  // whether the public economy feed posts to Discord).
+  if (event.type === 'sell' || event.type === 'buy') economyTrades.recordTrade(event);
 
   const feedCfg = (config.SCUMLogFeatures && config.SCUMLogFeatures.EconomyFeed) || {};
   if (!feedCfg.Enabled || !feedCfg.Channel) return;
