@@ -317,6 +317,18 @@ You can contact me or join the community here:
 
 [![Discord Badge](https://img.shields.io/badge/Join%20us%20on-Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://playhub.cz/discord)
 
+### 🛠️ Need a hand? Hire me
+
+Stuck on the install, want a **custom feature**, or need **other IT / server work** done? I do that too:
+
+- 🚀 **Installation & setup** — get the manager *and* your SCUM server running end-to-end
+- 🧩 **Custom features** — tailor-made additions to this tool or your server
+- 🖥️ **Server administration** — Windows / Linux setup, hardening, optimization & automation
+- 🔒 **Networking & security** — firewall, reverse proxy, HTTPS / SSL, port forwarding, VPN
+- 🧰 **General IT services** — whatever your project needs
+
+📬 **Message me on [Discord](https://playhub.cz/discord)** and let's sort it out.
+
 ---
 
 ## 🙌 Support
