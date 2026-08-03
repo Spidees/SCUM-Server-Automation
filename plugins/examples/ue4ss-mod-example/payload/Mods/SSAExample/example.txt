@@ -1,0 +1,9 @@
+# SSAExample config — plain key=value, '#' starts a comment.
+# Edit it from the plugin's card (Config), or here. Changes apply on the next SERVER restart
+# (the mod reads this file live in its loop, so simple multipliers can also pick up without one).
+
+# how often the heartbeat loop runs, in milliseconds
+interval_ms = 10000
+
+# 1 = print to the UE4SS console, 0 = stay silent
+debug = 1

@@ -1,0 +1,19 @@
+/* Mine Protection — admin config UI (mirrors the manager's native card styling) */
+.mp-head{margin:0 0 1rem}
+#mp-body{display:flex;flex-direction:column;gap:1rem}
+.mp-card{margin:0}
+.mp-card-t{margin:0 0 .9rem;font-size:.95rem}
+.mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.mp-stack{display:flex;flex-direction:column;gap:12px}
+.mp-f{display:flex;flex-direction:column;gap:4px}
+.mp-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
+.mp-f input,.mp-f select,.mp-f textarea{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.mp-f textarea{resize:vertical;min-height:64px}
+.mp-hint{color:var(--muted,#8b9099);font-size:.72rem}
+.mp-checks{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+.mp-chk{display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
+.mp-chk input{width:16px;height:16px;cursor:pointer}
+.mp-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0}
+.mp-btn{font:inherit;cursor:pointer;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
+.mp-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
+.mp-btn:hover{filter:brightness(1.08)}

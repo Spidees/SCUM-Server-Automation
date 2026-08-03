@@ -1,0 +1,17 @@
+{
+  "id": "env-tuning",
+  "name": "Environment Control — Wetness & Dirt",
+  "type": "ue4ss",
+  "modName": "SSAEnv",
+  "version": "1.1.0",
+  "updated": "2026-08-03",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Control how fast players and their clothes dry, how fast they get wet (from water and rain), and how fast they get dirty — all with simple multipliers. Make survival harsher or more forgiving to fit your server. Runs on the server; changes apply live, no restart needed.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "config": "Mods/SSAEnv/env.txt",
+  "dependencies": [
+    "ue4ss"
+  ]
+}

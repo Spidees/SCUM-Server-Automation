@@ -1,0 +1,29 @@
+{
+  "id": "vehicle-rental",
+  "name": "Vehicle Rental System",
+  "type": "manager",
+  "version": "1.3.3",
+  "updated": "2026-08-03",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Players rent vehicles through the Discord bot — pick a vehicle, choose a duration, pay in-game money or gold, and the bot spawns it and manages the whole rental lifecycle (reminders, extensions, auto-removal). Fully admin-configurable.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "3.0.0",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "dependencies": [
+    {
+      "id": "embed-editor",
+      "min": "1.2.0"
+    },
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "premium": true
+}

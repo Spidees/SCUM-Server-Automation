@@ -1,0 +1,26 @@
+{
+  "id": "embed-styler",
+  "name": "Embed Styler",
+  "type": "manager",
+  "version": "1.16.0",
+  "updated": "2026-08-03",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Restyle the manager's own embeds (kill feed, economy, status, leaderboard…) AND build your own auto-updating live embeds. Load any embed, change colour/title/author/image, replace fields, and drop in {tokens} for live data (squad, online players, top player, leaderboards…). Custom embeds refresh themselves in a channel like the built-in status. Built on the Discord Embed Editor.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "3.1.3",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "dependencies": [
+    {
+      "id": "embed-editor",
+      "min": "1.2.0"
+    }
+  ],
+  "premium": true
+}

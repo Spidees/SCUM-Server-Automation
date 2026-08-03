@@ -1,0 +1,15 @@
+{
+  "id": "ue4ss-example",
+  "name": "UE4SS Example Mod",
+  "type": "ue4ss",
+  "modName": "SSAExample",
+  "version": "1.0.0",
+  "updated": "2026-08-03",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "A minimal, safe reference UE4SS (Lua) mod: reads its own config, runs a guarded periodic loop against a live game object, and logs to the UE4SS console. Shows how in-game mods are structured, deployed and paired with a manager plugin.",
+  "image": "icon.svg",
+  "dependencies": ["ue4ss"],
+  "config": "Mods/SSAExample/example.txt",
+  "readme": "README.md"
+}

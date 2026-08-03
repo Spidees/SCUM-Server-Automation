@@ -1,0 +1,23 @@
+{
+  "id": "mine-protection",
+  "name": "Mine Protection",
+  "type": "manager",
+  "version": "1.3.2",
+  "updated": "2026-08-03",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Punishes players who arm a mine or trap OUTSIDE their (or their squad's) flag area — teleports them onto their own armed mine. Squad-aware: a squadmate arming inside another member's flag is never punished. State survives restarts. Configure everything from its admin tab: watched classes, extra margin, action (teleport-to-mine or warn-only), first-offence warning, online requirement and exemptions.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "3.3.0",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "dependencies": [
+    "ssa-bridge"
+  ],
+  "premium": true
+}

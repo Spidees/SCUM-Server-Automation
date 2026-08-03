@@ -1,0 +1,33 @@
+/* Vehicle Rental — admin config UI */
+.vr-head{margin:0 0 1rem}
+#vr-body{display:flex;flex-direction:column;gap:1rem}
+.vr-card{margin:0}
+.vr-card-t{margin:0 0 .9rem;font-size:.95rem}
+.vr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.vr-stack{display:flex;flex-direction:column;gap:12px}
+.vr-f{display:flex;flex-direction:column;gap:4px}
+.vr-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
+.vr-f input,.vr-f select{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.vr-veh{position:relative;border:1px solid var(--line,#24272e);border-radius:8px;background:var(--bg,#0b0c0e);padding:12px;margin-bottom:12px}
+.vr-x{background:none;border:0;color:var(--alarm,#ff5c5c);cursor:pointer;font-size:1rem}
+.vr-x-top{position:absolute;top:8px;right:8px}
+.vr-opt-hd{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);margin:12px 0 6px;font-family:var(--ui,inherit)}
+.vr-opts{display:flex;flex-direction:column;gap:8px}
+.vr-opt{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end}
+.vr-opt.vr-opt-free{grid-template-columns:1fr auto}
+.vr-btn{font:inherit;cursor:pointer;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
+.vr-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
+.vr-btn.add{border-style:dashed;width:100%;margin-top:8px}
+.vr-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0}
+.vr-checks{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+.vr-chk{display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
+.vr-chk input{width:16px;height:16px;cursor:pointer}
+/* vehicle spawn-code typeahead */
+.vr-ac{position:relative}
+.vr-ac-menu{display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:40;max-height:280px;overflow:auto;background:var(--panel,#15171b);border:1px solid var(--line-2,#343943);border-radius:8px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.vr-ac-row{display:flex;align-items:center;gap:9px;padding:.4rem .6rem;cursor:pointer;border-bottom:1px solid var(--line,#20242b)}
+.vr-ac-row:last-child{border-bottom:0}
+.vr-ac-row:hover{background:rgba(230,185,106,.12)}
+.vr-ac-row img,.vr-ac-ph{width:34px;height:26px;object-fit:contain;flex:0 0 auto;border-radius:4px;background:rgba(255,255,255,.03)}
+.vr-ac-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem;color:var(--text,#f1f3f5)}
+.vr-ac-c{flex:0 0 auto;font-size:.72rem;color:var(--muted,#8b9099);font-family:var(--mono,monospace)}
