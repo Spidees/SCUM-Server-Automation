@@ -100,8 +100,9 @@ export interface Host {
     stop(reason?: string): Promise<boolean>;
     restart(reason?: string): Promise<boolean>;
     /** In-game command via the SSA Bridge (Premium). `opts.executor` = a SteamID to run it through
-     *  that online player (for commands with no Location arg). Returns { ok, error? } — check `ok`. */
-    command(cmd: string, opts?: { executor?: string }): Promise<{ ok: boolean; error?: string; output?: string }>;
+     *  that online player (for commands with no Location arg). `opts.caller` = a label recorded in the
+     *  Bridge's activity log (defaults to `plugin:<your-id>`). Returns { ok, error? } — check `ok`. */
+    command(cmd: string, opts?: { executor?: string; caller?: string }): Promise<{ ok: boolean; error?: string; output?: string }>;
     /** SSA Bridge health for a pre-flight check before spawning/charging. */
     bridge(): Promise<{ available: boolean; licensed: boolean; players?: any[]; version?: string; error?: string }>;
   };
@@ -233,6 +234,56 @@ export interface SSA {
   premium(): boolean;
   admin(): { isDefault?: boolean; permissions?: string[] } | null;
   refreshGates(): void;
+
+  // ── native UI building blocks (render plugin UIs that are pixel-identical to the panel) ──
+  /** A panel SVG sprite icon node: `<svg class="ico [cls]"><use href="#i-<id>"/></svg>`. Never use emoji. */
+  icon(id: string, cls?: string): SVGElement;
+  /** Native clickable table cells — identical markup/behaviour to the Log Viewer. */
+  cell: {
+    /** Player name → opens the native player modal on click (admin-actions if no name). */
+    player(name?: string | null, steamId?: string | null): Node;
+    /** World coordinate → centres the native Live Map on click. */
+    location(x: number, y: number, z?: number): Node;
+    /** Item code → shows the item-preview popover on click (same as the Log Viewer). */
+    item(code?: string | null, label?: string): Node;
+    /** Coloured status label. kind: 'ok'|'bad'|'warn'|'muted' or a number 0–5 (stable palette). */
+    tag(text: string, kind?: 'ok' | 'bad' | 'warn' | 'muted' | number): HTMLElement;
+  };
+  /** A full native data-table with search, click-to-sort headers and pagination. Returns { el, refresh }. */
+  table(opts: {
+    columns: Array<{ key: string; label: string; sort?: boolean; sortVal?: (row: any) => any; render: (row: any) => Node; tdClass?: string; thClass?: string }>;
+    rows: (() => any[]) | any[];
+    search?: (row: any) => string;
+    searchPlaceholder?: string;
+    pageSize?: number;
+    sort?: { key: string; dir?: 'asc' | 'desc' };
+    empty?: string | (() => string);
+    onRefresh?: () => void;   // adds a native refresh icon-button to the toolbar
+    toolbar?: Node[];         // extra toolbar buttons/nodes (placed before the count)
+  }): { el: HTMLElement; refresh: () => void; search: HTMLInputElement };
+
+  // ── native affordances (open the built-in UI a plugin can't rebuild) ──
+  openPlayer(name: string): void;                              // open a player's detail modal
+  openPlayerAdmin(steamIdOrName: string, name?: string): void; // open the admin-actions menu
+  showOnMap(x: number, y: number, z?: number): void;           // centre the Live Map on a coordinate
+  itemPreview(elOrCode: HTMLElement | string, anchor?: HTMLElement): void; // show the item-preview popover
+  showTab(name: string): void;                                 // switch to a native panel tab
+
+  // ── native pickers (Promise; also accept opts.onPick / opts.onCancel) ──
+  pickItem(opts?: { domain?: 'items' | 'vehicles'; category?: string; title?: string; onPick?: (it: any) => void; onCancel?: () => void }): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
+  pickVehicle(opts?: any): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
+  pickPlayer(opts?: { title?: string }): Promise<{ steamId: string; name: string } | null>;
+
+  // ── data helpers (same endpoints the panel uses) ──
+  onlinePlayers(): Promise<any[]>;
+  itemInfo(codes: string | string[]): Promise<any[]>;
+  searchItems(query: string, opts?: { domain?: 'items' | 'vehicles' }): Promise<any[]>;
+
+  // ── capability flags (feature-detect before wiring an affordance up) ──
+  canOpenPlayer(): boolean;
+  canShowOnMap(): boolean;
+  canItemPreview(): boolean;
+  canPickItem(): boolean;
 }
 
 // ── Public Field Console frontend: window.FC (payload/fc/plugin.js) ───────────

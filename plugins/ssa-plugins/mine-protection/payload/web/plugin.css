@@ -1,19 +1,71 @@
-/* Mine Protection — admin config UI (mirrors the manager's native card styling) */
+/* Mine Protection — admin config UI (mirrors the manager's native card + token styling). */
 .mp-head{margin:0 0 1rem}
-#mp-body{display:flex;flex-direction:column;gap:1rem}
+.mp-intro{margin:0;font-size:.86rem;color:var(--muted,#8b9099)}
+.mp-body{display:flex;flex-direction:column;gap:1rem}
+.mp-loading{color:var(--muted,#8b9099);font-size:.86rem}
 .mp-card{margin:0}
-.mp-card-t{margin:0 0 .9rem;font-size:.95rem}
-.mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.mp-card-t{margin:0 0 .25rem;font-size:.95rem}
+.mp-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099)}
+.mp-card-t + .mp-card-sub{margin-top:-.15rem}
+.mp-card > .mp-card-t:last-of-type{margin-bottom:.9rem}
+
+/* ── status header ── */
+.mp-status{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 1rem}
+.mp-badge{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.4rem .7rem;font-size:.78rem}
+.mp-badge-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
+.mp-badge-l{color:var(--muted,#8b9099);letter-spacing:.02em}
+.mp-badge .mp-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
+.mp-badge.ok{border-color:rgba(59,165,93,.4)} .mp-badge.ok .mp-dot{background:#3ba55d;box-shadow:0 0 8px rgba(59,165,93,.6)}
+.mp-badge.warn{border-color:rgba(250,166,26,.4)} .mp-badge.warn .mp-dot{background:#faa61a}
+.mp-badge.off .mp-dot{background:#8b9099}
+
+/* ── fields ── */
+.mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
 .mp-stack{display:flex;flex-direction:column;gap:12px}
-.mp-f{display:flex;flex-direction:column;gap:4px}
-.mp-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
-.mp-f input,.mp-f select,.mp-f textarea{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
-.mp-f textarea{resize:vertical;min-height:64px}
+.mp-f{display:flex;flex-direction:column;gap:5px}
+.mp-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.mp-f input,.mp-f select{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.mp-f input:focus,.mp-f select:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
 .mp-hint{color:var(--muted,#8b9099);font-size:.72rem}
-.mp-checks{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
-.mp-chk{display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
-.mp-chk input{width:16px;height:16px;cursor:pointer}
-.mp-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0}
-.mp-btn{font:inherit;cursor:pointer;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
-.mp-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
-.mp-btn:hover{filter:brightness(1.08)}
+.mp-checks{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}
+.mp-chk{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
+.mp-chk input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
+
+/* ── mine/trap picker ── */
+.mp-pick-quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.mp-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px}
+.mp-pi{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px 10px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:10px;color:var(--text,#f1f3f5);cursor:pointer;font:inherit;text-align:center;transition:border-color .12s,background .12s,transform .06s}
+.mp-pi:hover{border-color:var(--muted,#5a606b)}
+.mp-pi:active{transform:scale(.98)}
+.mp-pi.on{border-color:var(--accent,var(--amber,#ff6a1a));background:color-mix(in srgb,var(--accent,#ff6a1a) 12%,var(--bg,#0b0c0e))}
+.mp-pi-img{width:44px;height:44px;object-fit:contain;image-rendering:auto}
+.mp-pi-ph{width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted,#8b9099)}
+.mp-pi-ph .ico{width:26px;height:26px}
+.mp-pi-check .ico{width:12px;height:12px}
+.mp-pi-name{font-size:.78rem;font-weight:600;line-height:1.15}
+.mp-pi-meta{font-size:.66rem;color:var(--muted,#8b9099);letter-spacing:.02em}
+.mp-pi-check{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;background:transparent;border:1px solid var(--line-2,#343943);color:transparent}
+.mp-pi.on .mp-pi-check{background:var(--accent,var(--amber,#ff6a1a));border-color:transparent;color:var(--on-amber,#1a0d02)}
+
+/* ── chips / exemptions ── */
+.mp-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;min-height:1.4rem}
+.mp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.25rem .3rem .25rem .65rem;font-size:.8rem}
+.mp-chip code{font-size:.78rem;color:var(--text,#f1f3f5)}
+.mp-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font-size:.75rem;width:18px;height:18px;border-radius:50%;line-height:1}
+.mp-chip-x:hover{background:rgba(237,66,69,.16);color:#ed4245}
+.mp-ex-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mp-ex-in{flex:1;min-width:180px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.84rem;padding:.42rem .6rem}
+.mp-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:0}
+
+/* online-player picker (inside SSA modal) */
+.mp-online{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto}
+.mp-online-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:7px;padding:.5rem .7rem;color:var(--text,#f1f3f5);font:inherit;cursor:pointer;font-size:.84rem}
+.mp-online-row:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+.mp-online-row code{color:var(--muted,#8b9099);font-size:.76rem}
+
+/* the button row above each table (Refresh / Reset warnings / Clear history) + the Save bar. Tables,
+   pagination, search, player/location cells and status tags all use the manager's NATIVE classes
+   (.data-table, .th-sort, .player-search, .roster-pager, .gl-player, .gl-loc, .gl-tag-*, button.secondary). */
+.mp-rec-head{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px}
+.mp-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.mp-savemsg{font-size:.82rem;color:var(--muted,#8b9099)}
