@@ -1,0 +1,206 @@
+/* Chat Commands & Kits — admin UI (matches the manager's card + token styling). */
+.ck-wrap{display:flex;flex-direction:column;gap:14px}
+
+/* top bar: sub-nav + save */
+.ck-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 2px}
+.ck-nav{display:flex;gap:10px;flex-wrap:wrap}
+.ck-tab{display:inline-flex;align-items:center;gap:8px;font:inherit;cursor:pointer;font-size:.82rem;padding:.5rem 1rem;border-radius:8px;border:1px solid var(--line,#24272e);background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099)}
+.ck-tab .ico{width:15px;height:15px}
+.ck-noimg .ico{width:18px;height:18px;color:var(--muted,#8b9099)}
+.ck-tab:hover{color:var(--text,#f1f3f5);border-color:var(--line-2,#343943)}
+.ck-tab.active{color:var(--text,#f1f3f5);background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,var(--panel-2,#1c1f25));border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-tab.active .ico{color:var(--accent,var(--amber,#ff6a1a))}
+.ck-top-r{margin-left:auto;display:flex;align-items:center;gap:10px}
+.ck-status{font-size:.8rem;color:var(--muted,#8b9099)}
+.ck-view{display:flex;flex-direction:column;gap:16px}
+/* one view = a column of cards with clear separation, exactly like the mine-protection plugin */
+.ck-viewbody{display:flex;flex-direction:column;gap:16px}
+
+/* status header — same badge styling as the mine-protection plugin + the panel */
+.ck-statbar{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+.ck-stat{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.4rem .7rem;font-size:.78rem}
+.ck-stat-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
+.ck-stat-l{color:var(--muted,#8b9099);letter-spacing:.02em}
+.ck-stat-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
+.ck-stat.ok{border-color:rgba(59,165,93,.4)} .ck-stat.ok .ck-stat-dot{background:#3ba55d;box-shadow:0 0 8px rgba(59,165,93,.6)}
+.ck-stat.off .ck-stat-dot{background:#8b9099}
+.ck-stat.warn{border-color:rgba(250,166,26,.45)} .ck-stat.warn .ck-stat-v{color:#f5b942}
+
+/* activity log: failed-item names next to the result tag */
+.ck-result{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.ck-failed{color:#f0a8a8;font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
+
+/* buttons use the manager's NATIVE styles (plain <button> = primary, button.secondary, button.danger).
+   The unsaved-changes ring is the only custom bit, applied to the native Save button. */
+.ck-unsaved{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#ff6a1a) 45%,transparent)}
+/* content buttons pair their SVG icon + label with a consistent gap (like the native panel) */
+.ck-card button,.ck-bar button,.ck-sub button,.ck-chips button,.ck-view button{display:inline-flex;align-items:center;gap:.4rem}
+.ck-del{cursor:pointer;width:28px;height:28px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--line-2,#343943);background:transparent;color:var(--muted,#8b9099)}
+.ck-del .ico{width:14px;height:14px}
+.ck-del:hover{background:rgba(237,66,69,.16);color:#ff6b6e;border-color:transparent}
+
+/* section bar */
+.ck-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:.2rem 0 -.2rem}
+.ck-bar h3{margin:0;font-size:1rem;font-weight:600}
+.ck-spacer{flex:1}
+
+/* token palette */
+.ck-tok{background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:9px;padding:2px 12px}
+.ck-tok>summary{cursor:pointer;font-size:.78rem;color:var(--muted,#8b9099);padding:8px 0;list-style:none;user-select:none}
+.ck-tok>summary::-webkit-details-marker{display:none}
+.ck-tok-pal{display:flex;flex-direction:column;gap:8px;padding:4px 0 12px}
+.ck-tok-grp{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.ck-tok-lbl{font-size:.64rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099);min-width:92px}
+.ck-tokbtn{font:inherit;cursor:pointer;font-size:.74rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:.18rem .45rem;border-radius:5px;border:1px solid var(--line-2,#343943);background:var(--bg,#0b0c0e);color:var(--accent,var(--amber,#ff6a1a))}
+.ck-tokbtn:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+
+/* cards (collapsible command / pack) */
+/* section = a titled native card (like mine-protection); its command/pack rows sit inside as a list */
+.ck-sect{margin:0}
+.ck-sect-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 .25rem}
+.ck-sect-h .ck-card-t{margin:0}
+.ck-sect > .ck-card-sub{margin:-.05rem 0 1rem}
+.ck-sect-h .ck-search{width:170px;flex:0 1 170px;font-size:.82rem;padding:.4rem .55rem}
+.ck-list{display:flex;flex-direction:column;gap:10px}
+.ck-card{background:var(--panel,#15171b);border:1px solid var(--line,#24272e);border-radius:var(--radius-md,10px);overflow:hidden}
+/* command/pack rows nested inside a section read as raised list items */
+.ck-sect .ck-card{background:var(--panel-2,#1c1f25)}
+.ck-sect .ck-card.open .ck-card-b{background:var(--bg,#0b0c0e)}
+.ck-open-card,.ck-msgcard{padding:1.1rem 1.2rem}
+.ck-card-t{margin:0 0 .25rem;font-size:.95rem}
+.ck-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099)}
+.ck-card-h{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.ck-card.open .ck-card-h{border-bottom:1px solid var(--line,#24272e)}
+.ck-chev{cursor:pointer;background:none;border:0;color:var(--muted,#8b9099);width:22px;height:22px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.ck-chev .ico{width:14px;height:14px;transition:transform .13s}
+.ck-chev:not(.open) .ico{transform:rotate(-90deg)}
+.ck-chev:hover{color:var(--text,#f1f3f5)}
+.ck-card-title{display:flex;align-items:center;gap:2px;min-width:0}
+.ck-slash{color:var(--muted,#8b9099);font-family:ui-monospace,monospace;font-size:.9rem}
+.ck-name{width:auto;max-width:200px}
+.ck-badges{display:flex;gap:6px;flex-wrap:wrap}
+.ck-badge{font-size:.66rem;font-weight:600;letter-spacing:.02em;padding:.13rem .45rem;border-radius:999px;white-space:nowrap;background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099);border:1px solid var(--line-2,#343943)}
+.ck-badge.cost{background:rgba(250,166,26,.16);color:#f5b942;border-color:transparent}
+.ck-badge.trig{background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,transparent);color:var(--accent,#ff6a1a);border-color:transparent}
+.ck-card-b{padding:14px;display:flex;flex-direction:column;gap:14px;background:var(--bg,#0b0c0e)}
+
+/* fields */
+.ck-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;align-items:start}
+.ck-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ck-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ck-f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.ck-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.ck-inl{display:flex;flex-direction:column;gap:5px;min-width:0}
+.ck-inl>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.ck-in{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.ck-card-b .ck-in,.ck-open-card .ck-in{background:var(--panel,#15171b)}
+.ck-in:focus,.ck-area:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-in.ck-bad{border-color:#ed4245}
+.ck-num{max-width:96px}
+.ck-grow{width:100%}
+.ck-area{width:100%;background:var(--panel,#15171b);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.5rem .6rem;resize:vertical;min-height:52px}
+.ck-hint{color:var(--muted,#8b9099);font-size:.72rem}
+.ck-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:.2rem 0}
+.ck-cmdwrap{display:flex;align-items:center;gap:3px}
+
+/* switch */
+.ck-switch{position:relative;display:inline-flex;align-items:center;cursor:pointer;width:38px;height:22px;flex:none}
+.ck-switch input{position:absolute;opacity:0;width:0;height:0}
+.ck-switch-t{position:absolute;inset:0;border-radius:999px;background:var(--line-2,#343943);transition:background .15s}
+.ck-switch-t::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
+.ck-switch input:checked + .ck-switch-t{background:var(--accent,var(--amber,#ff6a1a))}
+.ck-switch input:checked + .ck-switch-t::after{transform:translateX(16px)}
+
+/* chips (allow/deny) */
+.ck-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ck-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.2rem .3rem .2rem .55rem;font-size:.78rem}
+.ck-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.ck-chip-x .ico{width:11px;height:11px}
+.ck-chip-x:hover{background:rgba(237,66,69,.16);color:#ed4245}
+
+/* sub-groups (actions, items, vehicles, inventories) */
+.ck-sub{background:var(--panel,#15171b);border:1px solid var(--line,#24272e);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.ck-sub-h{font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.ck-stack{display:flex;flex-direction:column;gap:8px}
+.ck-actrow{display:flex;align-items:end;gap:8px}
+.ck-itemrow{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;justify-content:space-between}
+/* name grows on the left; the qty + change + delete controls stay grouped and wrap together (never a
+   lone delete button dropping onto its own line) */
+.ck-item-main{display:flex;align-items:center;gap:8px;flex:1 1 130px;min-width:0}
+.ck-item-main .ck-picked{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-item-ctl{display:flex;align-items:center;gap:8px;flex:none}
+.ck-invrow{background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-radius:7px;padding:8px}
+.ck-thumb{width:32px;height:32px;border-radius:5px;object-fit:contain;background:var(--bg,#0b0c0e);flex:none}
+.ck-noimg{display:flex;align-items:center;justify-content:center;font-size:16px}
+.ck-picked{font-size:.82rem;min-width:80px;flex:1}
+.ck-times{color:var(--muted,#8b9099);font-size:.8rem}
+.ck-invrow .ck-num{max-width:60px}
+
+/* messages card */
+.ck-msgcard{display:flex;flex-direction:column;gap:12px}
+.ck-msggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+
+/* advanced */
+.ck-adv{padding:14px}
+.ck-adv>summary{cursor:pointer;font-size:.85rem;color:var(--muted,#8b9099);user-select:none}
+.ck-adv .ck-f{margin-top:12px}
+
+/* claims table uses the manager's NATIVE .data-table / .table-wrap / .gl-player / mono / dim classes. */
+.ck-pn{font-weight:600}
+
+/* pickers (modals) */
+.ck-ov{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px}
+.ck-modal{background:var(--panel,#15171b);border:1px solid var(--line-2,#343943);border-radius:12px;width:100%;max-width:560px;max-height:84vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+.ck-modal-h{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line,#24272e);font-size:.92rem}
+.ck-x{background:none;border:0;color:var(--muted,#8b9099);font-size:1.1rem;cursor:pointer}
+.ck-modal-search{padding:12px 16px 8px}
+.ck-row{display:flex;gap:8px}
+.ck-pick-grid{overflow:auto;padding:6px 16px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.ck-pick{display:flex;align-items:center;gap:9px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.5rem;cursor:pointer;font:inherit;color:var(--text,#f1f3f5);text-align:left}
+.ck-pick:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-pick-img{width:34px;height:34px;object-fit:contain;flex:none;border-radius:5px}
+.ck-pick-name{font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-plist{overflow:auto;padding:6px 16px 16px;display:flex;flex-direction:column;gap:6px}
+.ck-prow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:7px;padding:.5rem .7rem;cursor:pointer;font:inherit;color:var(--text,#f1f3f5)}
+.ck-prow:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-prow code{color:var(--muted,#8b9099);font-size:.76rem}
+
+/* command / kit name shown as ONE input-group pill (prefix glued to the field, never a floating glyph),
+   so the Commands and Kits card headers read consistently. */
+.ck-cmdfield{display:inline-flex;align-items:center;min-width:0;border:1px solid var(--line-2,#343943);border-radius:6px;background:var(--panel,#15171b);overflow:hidden}
+.ck-cmdfield:focus-within{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-cmdfield .ck-slash{display:inline-flex;align-items:center;padding:0 .12rem 0 .5rem;color:var(--muted,#8b9099);font-family:ui-monospace,monospace;font-size:.9rem}
+.ck-cmdfield .ck-kiticon{padding:0 .1rem 0 .45rem}
+.ck-cmdfield .ck-kiticon .ico{width:13px;height:13px}
+.ck-cmdfield .ck-in{border:0;background:transparent;border-radius:0;padding:.4rem .55rem .4rem .3rem}
+.ck-cmdfield .ck-in:focus{border:0}
+
+/* quantity: “×” glued to the number so it reads as one unit (× 3), not a stray floating symbol */
+.ck-qty{display:inline-flex;align-items:center;border:1px solid var(--line-2,#343943);border-radius:6px;background:var(--panel,#15171b);overflow:hidden;flex:none}
+.ck-qty:focus-within{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-qty-x{padding:0 .05rem 0 .5rem;color:var(--muted,#8b9099);font-size:.85rem}
+.ck-qty .ck-in{border:0;background:transparent;border-radius:0;max-width:62px;padding:.4rem .5rem .4rem .3rem}
+.ck-qty .ck-in:focus{border:0}
+
+/* token palette: leading bulb + a hover-hint tip on the right */
+.ck-tok>summary{display:flex;align-items:center;gap:7px}
+.ck-tok>summary .ico{width:14px;height:14px;color:var(--muted,#8b9099)}
+.ck-tok-tip{margin-left:auto;color:var(--muted,#8b9099);font-size:.7rem;opacity:.8}
+
+/* live delivery queue (Activity view) */
+.ck-queue{display:flex;flex-direction:column;gap:6px}
+.ck-q-cur{display:flex;align-items:center;gap:9px;font-size:.82rem;border-radius:7px;padding:.5rem .7rem;background:color-mix(in srgb,var(--accent,#ff6a1a) 10%,var(--panel-2,#1c1f25));border:1px solid color-mix(in srgb,var(--accent,#ff6a1a) 30%,transparent)}
+.ck-q-lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-q-spin{width:13px;height:13px;flex:none;border-radius:50%;border:2px solid color-mix(in srgb,var(--accent,#ff6a1a) 35%,transparent);border-top-color:var(--accent,#ff6a1a);animation:ck-spin .7s linear infinite}
+@keyframes ck-spin{to{transform:rotate(360deg)}}
+.ck-q-row{display:flex;align-items:center;gap:9px;font-size:.8rem;color:var(--muted,#8b9099);padding:.28rem .7rem}
+.ck-q-dot{width:6px;height:6px;border-radius:50%;background:var(--line-2,#343943);flex:none}
+@media (prefers-reduced-motion:reduce){.ck-q-spin{animation:none}}
+
+/* all-players picker (our modal over /players/all — online-marked, searchable) */
+.ck-pp-search{margin-bottom:10px}
+.ck-pp-name{display:flex;align-items:center;gap:8px;min-width:0}
+.ck-pp-dot{width:7px;height:7px;border-radius:50%;background:var(--line-2,#343943);flex:none}
+.ck-pp-dot.on{background:#3ba55d;box-shadow:0 0 7px rgba(59,165,93,.6)}
+
+@media (max-width:640px){ .ck-grid2,.ck-cols{grid-template-columns:1fr} }
