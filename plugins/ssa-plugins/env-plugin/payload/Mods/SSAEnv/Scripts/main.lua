@@ -16,6 +16,21 @@ local cfgpath = moddir .. "\\env.txt"
 local DBG = false
 local function log(s) if DBG then print("[SSAEnv] " .. tostring(s) .. "\n") end end
 
+-- Run `fn` on the GAME thread. UE4SS runs LoopAsync on its own worker thread, where reading or
+-- writing UObject properties races with the engine — and a Lua `pcall` cannot catch a native
+-- access violation. Stand down permanently if the hook isn't available on this build rather than
+-- touch the engine unsafely.
+local gameThreadOk = true
+local function onGameThread(fn)
+    if not gameThreadOk then return false end
+    local ok = pcall(function() ExecuteInGameThread(fn) end)
+    if not ok then
+        gameThreadOk = false
+        print("[SSAEnv] ExecuteInGameThread unavailable on this build — standing down\n")
+    end
+    return ok
+end
+
 local function readCfg()
     local c = { drying = 3.0, wetting = 0.5, rain = 0.5, dirtiness = 0.3, surface_wetness = 1.0, debug = 0 }
     local f = io.open(cfgpath, "r"); if not f then return c end
@@ -107,18 +122,22 @@ LoopAsync(10000, function()
     ticks = ticks + 1
     local c = readCfg(); DBG = (c.debug and c.debug ~= 0)
 
-    local mgr = FindFirstOf("WetnessManager")
-    if not (mgr and mgr:IsValid()) then return false end
+    -- The config read above is plain file I/O and stays off the game thread; everything that
+    -- touches the manager object runs on it.
+    onGameThread(function()
+        local mgr = FindFirstOf("WetnessManager")
+        if not (mgr and mgr:IsValid()) then return end
 
-    local name = nil; pcall(function() name = mgr:GetFullName() end)
-    if name ~= curMgrName then                       -- new manager (map change) → recapture defaults
-        curMgrName = name; baseWet = nil; baseSurf = {}; baseRain = nil; lastSig = nil
-    end
+        local name = nil; pcall(function() name = mgr:GetFullName() end)
+        if name ~= curMgrName then                   -- new manager (map change) → recapture defaults
+            curMgrName = name; baseWet = nil; baseSurf = {}; baseRain = nil; lastSig = nil
+        end
 
-    local s = sig(c)
-    if s ~= lastSig or ticks % 6 == 0 then           -- apply on config/manager change + a ~60s safety refresh
-        apply(mgr, c)
-        lastSig = s
-    end
+        local s = sig(c)
+        if s ~= lastSig or ticks % 6 == 0 then       -- apply on config/manager change + a ~60s safety refresh
+            apply(mgr, c)
+            lastSig = s
+        end
+    end)
     return false
 end)
