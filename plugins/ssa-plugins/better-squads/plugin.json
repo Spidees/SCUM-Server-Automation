@@ -1,0 +1,26 @@
+{
+  "id": "better-squads",
+  "name": "Better Squads",
+  "type": "manager",
+  "version": "2.0.1",
+  "updated": "2026-08-11",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Squad-only chat, in game. Alerts when a squadmate connects, disconnects, is killed, gets a kill, has their base raided, or the squad roster changes — every line a template with live tokens, including {sector} and reader-relative {distance}/{direction} that tell each member how far the event is from where THEY are standing. Plus a full in-game command set players run themselves: the roster with sectors and distances, rally, squad message, route to your base, squad info, and per-event self-mute — every subcommand renameable. Cooldown, quiet hours and admin mute on top. Nobody outside the squad sees a word. Requires the SSA Bridge.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "4.0.3",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "config": "config.json",
+  "dependencies": [
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "premium": true
+}

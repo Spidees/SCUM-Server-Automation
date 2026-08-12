@@ -74,6 +74,18 @@ export interface Host {
     bunkers(): any[];
     /** Is (x,y) inside the flag rectangle of that player's or their squad's bases? `margin` in cm. */
     isInOwnerArea(steamId: string, x: number, y: number, margin?: number): boolean;
+    /**
+     * World→map calibration from the host, or null when it has none. ASYNC.
+     * Never substitute your own bounds — a wrong calibration places things
+     * confidently in the wrong spot. Show nothing instead.
+     */
+    calibration?(): Promise<{ world: { minX: number; maxX: number; minY: number; maxY: number }; width?: number; height?: number } | null>;
+    /**
+     * A world point → its SCUM grid sector ("B3"), or null when uncalibrated. ASYNC.
+     * Uses the same grid the live map draws, so a plugin never invents a second
+     * coordinate system. Feature-detect: added after the first 4.0.x builds.
+     */
+    sector?(x: number, y: number): Promise<string | null>;
   };
 
   leaderboards: { get(cat: string, limit?: number, weeklyOnly?: boolean): any[]; all(limit?: number, weeklyOnly?: boolean): any; categories(): any[] };

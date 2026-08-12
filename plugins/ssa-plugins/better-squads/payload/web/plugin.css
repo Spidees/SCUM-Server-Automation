@@ -1,0 +1,82 @@
+/* Better Squads — admin config UI (mirrors the manager's native card + token styling). */
+.bs-body{display:flex;flex-direction:column;gap:1rem}
+.bs-loading{color:var(--muted,#8b9099);font-size:.86rem}
+.bs-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin:0}
+.bs-head h2{margin:0;font-size:1.05rem}
+.bs-intro{margin:.2rem 0 0;font-size:.86rem;color:var(--muted,#8b9099);max-width:60ch}
+.bs-head-r{flex:none;padding-top:.2rem}
+
+.bs-card{margin:0}
+.bs-card-t{margin:0 0 .25rem;font-size:.95rem}
+.bs-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099);max-width:72ch}
+.bs-card-t + .bs-card-sub{margin-top:-.15rem}
+.bs-card > .bs-card-t:last-of-type{margin-bottom:.9rem}
+
+/* ── status strip ── */
+.bs-stats{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.bs-stat{display:flex;flex-direction:column;gap:2px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.5rem .8rem;min-width:104px}
+.bs-stat-v{font-weight:700;font-size:1.05rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums;line-height:1.1}
+.bs-stat-l{font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+
+/* ── fields ── */
+.bs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.bs-f{display:flex;flex-direction:column;gap:5px}
+.bs-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.bs-f input,.bs-f select,.bs-f textarea{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.bs-f input:focus,.bs-f select:focus,.bs-f textarea:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+.bs-hint{color:var(--muted,#8b9099);font-size:.72rem}
+.bs-checks{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}
+.bs-chk{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
+.bs-chk input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
+
+/* ── one event row ── */
+.bs-ev{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--line,#24272e)}
+.bs-ev:last-of-type{border-bottom:0}
+.bs-ev-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.bs-ev-sub{color:var(--muted,#8b9099);font-size:.74rem}
+.bs-ev textarea{width:100%;min-height:2.4rem;resize:vertical;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem;line-height:1.4}
+.bs-ev textarea:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+
+/* ── token palette ── */
+.bs-tokens{display:flex;flex-wrap:wrap;gap:6px}
+.bs-token{background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:.72rem;padding:.2rem .45rem;transition:border-color .12s,color .12s}
+.bs-token:hover{border-color:var(--accent,var(--amber,#ff6a1a));color:var(--text,#f1f3f5)}
+
+/* ── chips (muted players) ── */
+.bs-chips{display:flex;flex-wrap:wrap;gap:8px;min-height:1.6rem}
+.bs-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.22rem .5rem .22rem .7rem;font-size:.8rem}
+.bs-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:1rem;line-height:1;padding:0 .1rem}
+.bs-chip-x:hover{color:var(--danger,#ed4245)}
+.bs-empty{color:var(--muted,#8b9099);font-size:.8rem}
+
+.bs-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+
+/* ── relative tokens stand out: they change how the message is delivered ── */
+.bs-token-rel{border-color:color-mix(in srgb,var(--accent,#ff6a1a) 45%,var(--line-2,#343943));color:var(--accent,var(--amber,#ff6a1a))}
+
+/* ── subcommand grid ── */
+.bs-subs{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+.bs-sub{display:flex;flex-direction:column;gap:4px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.6rem .7rem}
+.bs-sub-head{display:flex;align-items:center;gap:10px}
+.bs-sub-head .bs-chk{flex:1;min-width:0}
+.bs-sub-name{width:7.5rem;flex:none;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--text,#f1f3f5);font:inherit;font-size:.8rem;padding:.25rem .4rem}
+.bs-sub-name:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+
+/* ── command preview ── */
+.bs-prev-wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:.55rem .7rem;background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-radius:8px}
+.bs-prev-l{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);flex:none}
+.bs-prev{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem;color:var(--text,#f1f3f5);word-break:break-word}
+
+/* ── grouped reply texts ── */
+.bs-tgroup{padding:12px 0;border-bottom:1px solid var(--line,#24272e);display:flex;flex-direction:column;gap:10px}
+.bs-tgroup:last-of-type{border-bottom:0}
+.bs-tgroup-t{margin:0;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+
+/* ── warning strip in the status header ── */
+.bs-warn{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid rgba(250,166,26,.4);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;color:var(--muted,#8b9099)}
+.bs-warn .ico{width:15px;height:15px;color:#faa61a;flex:none}
+
+/* ── explanatory note inside a card ── */
+.bs-note{margin:0 0 12px;padding:.55rem .7rem;background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-left:2px solid var(--accent,var(--amber,#ff6a1a));border-radius:6px;font-size:.78rem;color:var(--muted,#8b9099);line-height:1.5}
+.bs-note b{color:var(--text,#f1f3f5);font-weight:600}
+.bs-note code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;color:var(--text,#f1f3f5);background:var(--panel-2,#1c1f25);border-radius:4px;padding:.05rem .3rem}

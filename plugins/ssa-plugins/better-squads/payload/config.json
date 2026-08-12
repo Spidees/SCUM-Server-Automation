@@ -1,0 +1,108 @@
+{
+  "enabled": true,
+  "channel": "squad",
+  "includeSelf": false,
+  "cooldownSeconds": 3,
+  "maxIndividualSends": 12,
+  "maxPerMinute": 300,
+  "rosterPollSeconds": 60,
+  "quietHours": {
+    "enabled": false,
+    "from": 2,
+    "to": 8
+  },
+  "mutedSteamIds": [],
+  "events": {
+    "join": {
+      "enabled": true,
+      "message": "{player} just connected."
+    },
+    "leave": {
+      "enabled": true,
+      "message": "{player} went offline."
+    },
+    "death": {
+      "enabled": true,
+      "message": "{player} was killed by {killer}[ in {sector}] — {weapon}, {shotdistance} m.[ {distance} m {direction} of you.]"
+    },
+    "suicide": {
+      "enabled": true,
+      "message": "{player} died[ in {sector}]."
+    },
+    "kill": {
+      "enabled": false,
+      "message": "{player} killed {victim}[ in {sector}] — {weapon}, {shotdistance} m."
+    },
+    "raid": {
+      "enabled": true,
+      "message": "Base under attack — {object}.[ {sector}.][ {distance} m {direction} of you.]"
+    },
+    "squadJoin": {
+      "enabled": true,
+      "message": "{player} joined the squad."
+    },
+    "squadLeave": {
+      "enabled": true,
+      "message": "{player} left the squad."
+    }
+  },
+  "commands": {
+    "enabled": true,
+    "root": "squad",
+    "subs": {
+      "help": {
+        "enabled": true,
+        "name": "help"
+      },
+      "off": {
+        "enabled": true,
+        "name": "off"
+      },
+      "on": {
+        "enabled": true,
+        "name": "on"
+      },
+      "mute": {
+        "enabled": true,
+        "name": "mute"
+      },
+      "here": {
+        "enabled": true,
+        "name": "here"
+      },
+      "msg": {
+        "enabled": true,
+        "name": "msg"
+      },
+      "base": {
+        "enabled": true,
+        "name": "base"
+      },
+      "info": {
+        "enabled": true,
+        "name": "info"
+      }
+    },
+    "texts": {
+      "rosterHeader": "{squad} — {squadonline}/{squadsize} online",
+      "rosterLine": "  {player}[ — {sector}][, {distance} m {direction}]",
+      "rosterEmpty": "Nobody else from {squad} is online.",
+      "notInSquad": "You are not in a squad.",
+      "help": "Squad commands: {list}",
+      "mutedOn": "Squad alerts are OFF for you. Use {root} {on} to turn them back on.",
+      "mutedOff": "Squad alerts are ON for you.",
+      "muteUsage": "Use: {root} {mute} <{events}|all|none>. Currently muted: {muted}",
+      "muteSet": "Muted: {muted}",
+      "here": "{player} is[ at {sector}] — rally up.",
+      "hereOk": "Told the squad where you are.",
+      "msgUsage": "Use: {root} {msg} <your message>",
+      "msgLine": "{player}: {text}",
+      "msgOk": "Sent to {count} squadmate(s).",
+      "base": "Your base is[ in {sector}][, {distance} m {direction} away].",
+      "baseNone": "No squad base found on the map.",
+      "info": "{squad} — {squadonline}/{squadsize} online, score {score}.",
+      "infoMotd": "MOTD: {motd}",
+      "nobodyOnline": "Nobody else from the squad is online."
+    }
+  }
+}
