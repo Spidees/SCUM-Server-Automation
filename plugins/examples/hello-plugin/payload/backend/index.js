@@ -155,7 +155,12 @@ module.exports = {
       );
       await host.discord.send(cfg.reportChannelId, { embeds: [embed], components: [row] });
     }
-    host.discord.onButton(`${host.info.id}:ping`, (i) => i.reply({ content: `Online: ${host.stats.onlineCount()}`, ephemeral: true }));
+    // Only the clicker sees this. Use the flag, not the old `ephemeral: true` option — discord.js
+    // deprecated it and logs a warning on every reply.
+    host.discord.onButton(`${host.info.id}:ping`, (i) => i.reply({
+      content: `Online: ${host.stats.onlineCount()}`,
+      flags: host.discord.js.MessageFlags.Ephemeral,
+    }));
     host.discord.registerSlash({ name: 'hello', description: 'Say hello' }, (i) => i.reply(`${cfg.greeting}!`));
     host.discord.onMessage((m) => { if (!m.author.bot && /ping/i.test(m.content)) m.reply('pong'); });
 

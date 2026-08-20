@@ -89,7 +89,32 @@ export interface Host {
   };
 
   leaderboards: { get(cat: string, limit?: number, weeklyOnly?: boolean): any[]; all(limit?: number, weeklyOnly?: boolean): any; categories(): any[] };
-  economy: { traderFunds(): any; outpost(): any; specialDeals(limit?: number): any[]; goldCapacity(): any };
+  /**
+   * Every value the manager knows, addressable as a {token}: server state, a player's gold, a
+   * leaderboard, an item image, map counts — and whatever other plugins publish.
+   * Declare a token once; the catalog and the resolver are the same list, so a picker always shows
+   * the real current value rather than a sample that can drift.
+   */
+  data: {
+    /** All tokens with their CURRENT values. ctx `{ steamId }` / `{ playerName }` scopes player ones. */
+    catalog(ctx?: DataCtx): DataToken[];
+    /** One token's value, or null if no such token exists. */
+    value(key: string, ctx?: DataCtx): string | null;
+    /** Replace every {token} in a string. Unknown tokens are left as-is. */
+    render(text: string, ctx?: DataCtx): string;
+    /** Same, for every string inside an object or array. */
+    renderDeep<T>(obj: T, ctx?: DataCtx): T;
+    /** Publish your own tokens; keys are namespaced with your plugin id. Returns the final keys. */
+    provide(tokens: Array<{ key: string; label?: string; group?: string; get(ctx: DataCtx): unknown }>): string[];
+  };
+  economy: {
+    traderFunds(): any;
+    outpost(): any;
+    /** @deprecated Always returns []. Special deals belong to individual players
+     *  (economy_special_deals is keyed by user_profile_id), so there is no server-wide list. */
+    specialDeals(limit?: number): any[];
+    goldCapacity(): any;
+  };
   stats: { server(): any; counts(): any; onlineCount(): number; gameTime(): any; weather(): any; vehicleCount(): number; baseCount(): number; squadCount(): number };
 
   /** Persistent key/value store (a JSON file in the plugin's dataDir). */
@@ -126,7 +151,9 @@ export interface Host {
     enabled(): boolean;
     /** The admin's configured live-embed image URLs (any may be null). */
     liveEmbedImages(): { status: string | null; players: string | null; bunker: string | null; leaderboard: string | null; economy: string | null };
-    embed(): any;                                   // discord.js EmbedBuilder
+    embed(): any;
+    /** Footer the manager stamps on its own embeds: `{ name, icon }`, or null. */
+    branding(): { name: string; icon: string } | null;                                   // discord.js EmbedBuilder
     button(o?: { id?: string; label?: string; style?: number; url?: string; emoji?: string; disabled?: boolean }): any;
     row(...components: any[]): any;                  // ActionRowBuilder
     channel(id: string): Promise<any | null>;
@@ -141,6 +168,14 @@ export interface Host {
     channels(): Record<string, any>;
     /** Add/modify fields on the manager's own embeds. fn may mutate or return an EmbedBuilder. */
     onEmbed(kind: EmbedKind, fn: (embed: any, ctx: any, kind: EmbedKind) => any): void;
+    /**
+     * Every styleable kind with the embed's REAL current shape. Use this instead of describing the
+     * manager's layouts yourself — the real ones are translated, have conditional fields, and
+     * format their values on the way out.
+     */
+    embedKinds(): EmbedKindInfo[];
+    /** The last embed the manager really sent for one kind, or null if it hasn't sent one. */
+    lastEmbed(kind: EmbedKind): { at: number; embed: EmbedKindInfo['sample']; ctx: any } | null;
   };
 
   /** In-game chat + /commands via the SSA Bridge (Premium). */
@@ -199,10 +234,57 @@ export type PluginEvent =
   | 'update:available' | 'update:failed' | 'backup:started' | 'backup:completed' | 'backup:failed'
   | 'kill' | 'economy' | 'player:join' | 'player:leave' | 'player:chat' | 'player:intel' | 'raid:alert';
 
+/**
+ * Every embed the manager sends can be transformed. The named kinds below are the fixed ones; the
+ * template literal types cover the generated families — one notification type, one property-alert
+ * sub-type or one intel action each. The narrower kind runs before its umbrella
+ * (`dm.raid.attack` → `dm.raid` → `dm`).
+ */
 export type EmbedKind =
-  | 'kill' | 'economy' | 'login' | 'gameplay' | 'chest' | 'vehicle'
-  | 'raid' | 'quest' | 'fame' | 'violation' | 'eventkill' | 'admin'
-  | 'status' | 'leaderboard' | 'players' | 'bunker';
+  | 'kill' | 'kill_public' | 'economy' | 'login' | 'gameplay' | 'chest' | 'vehicle'
+  | 'raid' | 'quest' | 'fame' | 'violation' | 'eventkill' | 'eventkill_public' | 'admin'
+  | 'status' | 'leaderboard' | 'players' | 'bunker'
+  | 'notification' | `notify.${string}`
+  | 'dm' | `dm.${string}`
+  | 'intel' | `intel.${string}`;
+
+/** Scopes the player-specific tokens ({gold}, {fame}, {stat_*}). Event ctx objects work as-is. */
+export interface DataCtx { steamId?: string | number; playerName?: string; [k: string]: unknown }
+
+/** One token, with the value it holds right now. */
+export interface DataToken {
+  key: string;
+  label: string;
+  /** 'Server' | 'Counts' | 'Player' | 'Player stats' | 'Leaderboards' | 'Economy' | … */
+  group: string;
+  value: string;
+  /** false when the value is currently empty (server offline, no data yet) or parametric. */
+  live: boolean;
+  /** true for shapes like `img:ITEM_CODE` that take an argument and cannot be enumerated. */
+  parametric?: boolean;
+}
+
+/** One styleable embed, with the shape the manager really produces for it. */
+export interface EmbedKindInfo {
+  key: EmbedKind;
+  label: string;
+  /** 'feeds' | 'live' | 'notifications' | 'dm' | 'intel' */
+  group: string;
+  /** true when `sample` is an embed the manager actually sent (rather than one built on demand). */
+  live: boolean;
+  at: number | null;
+  sample: {
+    title: string | null;
+    description: string | null;
+    color: number | null;
+    thumbnail: string | null;
+    image: string | null;
+    author: { name: string; iconURL: string | null } | null;
+    fields: Array<{ name: string; value: string; inline: boolean }>;
+  } | null;
+  /** Token names with the values they hold on that embed — real data, not illustrations. */
+  tokens: Array<{ t: string; label: string; value: string }>;
+}
 
 export interface PluginModule {
   register(host: Host): void | Promise<void>;
