@@ -1,0 +1,270 @@
+/* Discord Embed Editor */
+/* data-token bar (optional; shown when a host passes opts.tokens) */
+.ee-wrap{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+@media(max-width:900px){.ee-wrap{grid-template-columns:1fr}}
+.ee-col{min-width:0}
+.ee-sec{border:1px solid var(--line,#24272e);border-radius:8px;background:var(--panel,#15171b);margin-bottom:12px;overflow:hidden}
+.ee-sec>summary{cursor:pointer;padding:10px 14px;font-family:var(--ui,inherit);font-weight:600;font-size:.82rem;letter-spacing:.02em;text-transform:uppercase;color:var(--text,#f1f3f5);list-style:none;display:flex;align-items:center;justify-content:space-between}
+.ee-sec>summary::-webkit-details-marker{display:none}
+.ee-sec>summary::after{content:"▾";color:var(--muted,#8b9099);transition:.2s}
+.ee-sec[open]>summary::after{transform:rotate(180deg)}
+.ee-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.ee-f{display:flex;flex-direction:column;gap:4px}
+.ee-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
+.ee-f input,.ee-f textarea,.ee-f select{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.ee-f textarea{resize:vertical;min-height:64px;font-family:var(--mono,monospace)}
+.ee-f input[type=color]{padding:2px;height:34px;cursor:pointer}
+.ee-chk{display:flex;align-items:center;gap:7px;font-size:.82rem;color:var(--text,#f1f3f5)}
+/* .ee-item is defined once, in the "repeatable items" block below. */
+.ee-btn{font:inherit;cursor:pointer;padding:.45rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
+.ee-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
+.ee-btn.add{border-style:dashed;width:100%}
+.ee-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* preview — Discord-like */
+.ee-pv{background:#313338;border-radius:8px;padding:16px;color:#dbdee1;font-family:'gg sans',var(--sans,sans-serif);font-size:.9rem;line-height:1.4}
+.ee-embed{position:relative;display:grid;grid-template-columns:1fr auto;gap:8px;background:#2b2d31;border-left:4px solid var(--amber,#ff6a1a);border-radius:4px;padding:12px 16px 12px 12px;max-width:520px}
+.ee-embed .ee-main{min-width:0}
+.ee-embed .ee-author{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-weight:600;font-size:.85rem;color:#f2f3f5}
+.ee-embed .ee-author img{width:24px;height:24px;border-radius:50%}
+.ee-embed .ee-title{font-weight:700;color:#00a8fc;margin-bottom:6px}
+.ee-embed .ee-title.plain{color:#f2f3f5}
+.ee-embed .ee-desc{color:#dbdee1;white-space:pre-wrap;margin-bottom:8px;word-break:break-word}
+.ee-embed .ee-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.ee-embed .ee-field{min-width:0}
+.ee-embed .ee-field.wide{grid-column:1/-1}
+.ee-embed .ee-field b{display:block;color:#f2f3f5;font-size:.82rem;margin-bottom:2px}
+.ee-embed .ee-field span{color:#dbdee1;font-size:.82rem;white-space:pre-wrap;word-break:break-word}
+.ee-embed .ee-img{margin-top:4px}
+.ee-embed .ee-img img{max-width:100%;border-radius:4px;display:block}
+.ee-embed .ee-thumb img{width:72px;height:72px;object-fit:cover;border-radius:4px}
+.ee-embed .ee-footer{display:flex;align-items:center;gap:8px;margin-top:8px;color:#949ba4;font-size:.75rem}
+.ee-embed .ee-footer img{width:18px;height:18px;border-radius:50%}
+.ee-pv-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;max-width:520px}
+.ee-pv-btn{font-size:.82rem;font-weight:600;padding:.42rem .8rem;border-radius:4px;border:0;color:#fff;background:#4e5058}
+.ee-pv-btn.s1{background:#5865f2}.ee-pv-btn.s2{background:#4e5058}.ee-pv-btn.s3{background:#248046}.ee-pv-btn.s4{background:#da373c}.ee-pv-btn.s5{background:#4e5058;text-decoration:underline}
+.ee-empty{color:var(--muted,#8b9099);font-size:.85rem;padding:10px}
+
+/* ── page tabs (standalone only) ─────────────────────────────────────────────── */
+.ee-tabs { display: flex; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); }
+.ee-tab, .ee-tab:hover, .ee-tab:active {
+  padding: 7px 14px; cursor: pointer; font: inherit; font-size: .85rem; font-weight: 600; letter-spacing: 0;
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  color: var(--muted, #8e8f82); transform: none;
+}
+.ee-tab:hover { color: var(--text, #e4e2d6); }
+.ee-tab.active { color: var(--amber-hi, #ff9a2e); border-bottom-color: var(--amber, #f0820c); }
+.ee-page { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── per-field tools ─────────────────────────────────────────────────────────── */
+.ee-tools { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.ee-tool, .ee-tool:active {
+  min-width: 26px; height: 24px; padding: 0 6px; cursor: pointer;
+  font: inherit; font-size: .76rem; font-weight: 700; letter-spacing: 0; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2, #1c1d14); color: var(--muted, #8e8f82);
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 4px; transform: none;
+}
+.ee-tool:hover { background: var(--panel-2, #1c1d14); border-color: var(--amber, #f0820c); color: var(--amber-hi, #ff9a2e); }
+.ee-count { align-self: flex-end; font-size: .7rem; color: var(--muted, #8e8f82); font-variant-numeric: tabular-nums; }
+.ee-count.over { color: #ff8b80; font-weight: 700; }
+
+/* ── shared popover ──────────────────────────────────────────────────────────── */
+.ee-root { position: relative; }
+.ee-pop {
+  position: absolute; z-index: 50; width: min(620px, calc(100% - 8px)); max-height: 60vh; overflow: auto;
+  padding: 10px; background: var(--panel, #161710);
+  border: 1px solid var(--line-amber, var(--amber, #f0820c)); border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.55);
+}
+.ee-pop[hidden] { display: none; }
+.ee-pop-x, .ee-pop-x:hover {
+  position: absolute; top: 4px; right: 6px; padding: 0 4px; cursor: pointer;
+  background: none; border: 0; color: var(--muted, #8e8f82); font-size: 1rem; transform: none;
+}
+.ee-pop-x:hover { color: var(--amber-hi, #ff9a2e); }
+.ee-popsearch {
+  flex: 1; width: 100%; margin-bottom: 6px;
+  padding: 4px 6px; font-size: .8rem; background: var(--inset, #0b0c08); color: var(--text, #e4e2d6);
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 5px;
+}
+/* Plenty of room for the generated emoji set — a category runs to ~190 glyphs. */
+.ee-emogrid { display: flex; flex-wrap: wrap; gap: 3px; max-height: 34vh; overflow-y: auto; }
+.ee-emo, .ee-emo:active {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; font-size: 1.05rem; cursor: pointer; background: none;
+  border: 1px solid transparent; border-radius: 5px; transform: none;
+}
+.ee-emo:hover { background: var(--panel-2, #1c1d14); border-color: var(--amber, #f0820c); }
+.ee-emo img { max-width: 22px; max-height: 22px; }
+
+/* Three columns at this width, so a long catalog is scanned rather than scrolled. */
+.ee-tokgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; }
+.ee-tok, .ee-tok:active {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 7px;
+  cursor: pointer; text-align: left; font: inherit; letter-spacing: 0;
+  background: var(--panel-2, #1c1d14); color: var(--text, #e4e2d6);
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 5px; transform: none;
+}
+.ee-tok:hover { border-color: var(--amber, #f0820c); }
+.ee-tok b { font-size: .78rem; }
+.ee-tok span { font-size: .7rem; color: var(--muted, #8e8f82); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ee-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
+.ee-chip, .ee-chip:active {
+  padding: 3px 8px; cursor: pointer; font: inherit; font-size: .72rem; letter-spacing: 0;
+  background: var(--inset, #0b0c08); color: var(--muted, #8e8f82);
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 999px; transform: none;
+}
+.ee-chip.active, .ee-chip:hover { border-color: var(--amber, #f0820c); color: var(--amber-hi, #ff9a2e); }
+
+.ee-dbgrid { display: flex; flex-direction: column; gap: 2px; }
+.ee-dbrow { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-dbrow:first-child { border-top: 0; }
+.ee-dbrow img { width: 26px; height: 26px; object-fit: contain; }
+.ee-dbnoimg { width: 26px; text-align: center; color: var(--muted, #8e8f82); }
+.ee-dbname { flex: 1; min-width: 0; font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ee-btn.xs { padding: 2px 6px; font-size: .7rem; }
+
+/* ── repeatable items (fields / buttons) ─────────────────────────────────────── */
+/* Defined once, here. A second .ee-item block used to sit further up and the two half-overrode each
+   other — different padding and background depending on which property won, and a margin-bottom on
+   top of the parent's flex `gap`, which is where the uneven spacing came from. Spacing is the
+   parent's job (.ee-body sets gap); this only styles the box. */
+.ee-item { padding: 8px; background: var(--panel-2, #1c1d14); border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+.ee-itemhead { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.ee-itemhead b { flex: 1; font-size: .78rem; color: var(--muted, #8e8f82); }
+.ee-mini, .ee-mini:active {
+  width: 22px; height: 22px; padding: 0; cursor: pointer; font: inherit; font-size: .75rem; letter-spacing: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; color: var(--muted, #8e8f82);
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 4px; transform: none;
+}
+.ee-mini:hover { border-color: var(--amber, #f0820c); color: var(--amber-hi, #ff9a2e); }
+.ee-mini.danger:hover { border-color: #e5443f; color: #ff8b80; }
+
+/* ── limit warnings ──────────────────────────────────────────────────────────── */
+.ee-limits { display: none; }
+.ee-limits.bad {
+  display: block; margin: 0 0 8px; padding: 6px 9px; font-size: .78rem;
+  color: #ffb4a8; background: rgba(229, 68, 63, .12);
+  border: 1px solid rgba(229, 68, 63, .4); border-radius: 6px;
+}
+
+/* ── sent messages / template rows ───────────────────────────────────────────── */
+.ee-hrow { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-hrow:first-child { border-top: 0; }
+.ee-hmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ee-hmain b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ee-hmeta { font-size: .72rem; color: var(--muted, #8e8f82); }
+.ee-btn.danger { color: #ff8b80; }
+.ee-pvlabel { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #8e8f82); margin-bottom: 4px; }
+.ee-pv-content { margin-bottom: 6px; font-size: .86rem; white-space: pre-wrap; }
+
+/* ── markdown, as Discord renders it ─────────────────────────────────────────── */
+.ee-desc .ee-h1, .ee-field .ee-h1, .ee-pv-content .ee-h1 { font-size: 1.15rem; font-weight: 700; margin: 2px 0; }
+.ee-desc .ee-h2, .ee-field .ee-h2, .ee-pv-content .ee-h2 { font-size: 1.05rem; font-weight: 700; margin: 2px 0; }
+.ee-desc .ee-h3, .ee-field .ee-h3, .ee-pv-content .ee-h3 { font-size: .95rem; font-weight: 700; margin: 2px 0; }
+.ee-quote { border-left: 3px solid var(--line, rgba(255,255,255,.25)); padding-left: 8px; margin: 2px 0; }
+.ee-li { padding-left: 6px; }
+.ee-code {
+  margin: 3px 0; padding: 6px 8px; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--mono, monospace); font-size: .8rem;
+  background: #0b0c08; border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 5px;
+}
+.ee-inline { padding: 1px 4px; font-family: var(--mono, monospace); font-size: .82rem; background: #0b0c08; border-radius: 4px; }
+.ee-mention, .ee-emojitok, .ee-ts { padding: 0 3px; border-radius: 3px; background: rgba(88, 101, 242, .28); color: #cdd2ff; }
+.ee-spoiler { background: #202225; color: transparent; border-radius: 3px; }
+.ee-spoiler:hover { color: inherit; }
+.ee-link { color: #00a8fc; text-decoration: none; }
+.ee-link:hover { text-decoration: underline; }
+.ee-pop-body { display: block; }
+
+/* ── styler half ── */
+/* Embed Styler — admin config UI */
+.es-head { margin: 0 0 1rem; }
+#es-body { display: flex; flex-direction: column; gap: 1rem; }
+.es-card { margin: 0; }
+.es-warn { padding: 12px 14px; border: 1px solid var(--line, #24272e); border-radius: 8px; color: var(--muted, #8b9099); font-size: .88rem; }
+.es-bar { display: flex; align-items: end; gap: 20px; flex-wrap: wrap; }
+.es-f { display: flex; flex-direction: column; gap: 4px; }
+.es-f > span { font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #8b9099); font-family: var(--ui, inherit); }
+.es-sel { min-width: 220px; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .88rem; padding: .45rem .6rem; }
+.es-chk { display: flex; align-items: center; gap: 8px; font-size: .88rem; color: var(--text, #f1f3f5); cursor: pointer; padding-bottom: .2rem; }
+.es-chk input { width: 17px; height: 17px; cursor: pointer; }
+.es-note { margin: 12px 0 0; font-size: .78rem; color: var(--muted, #8b9099); line-height: 1.5; }
+.es-note code { font-family: var(--mono, monospace); font-size: .92em; color: var(--data-text, #b9c2ad); }
+.es-editor { transition: opacity .15s; }
+.es-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+/* custom live embeds */
+.ce-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 14px; }
+.ce-head-f { min-width: 150px; }
+.ce-head-f.grow { flex: 1 1 200px; }
+.ce-head .es-chk { padding-bottom: .4rem; }
+.ce-head input, .ce-head select { width: 100%; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .86rem; padding: .45rem .6rem; }
+.ce-acts { margin-top: 14px; border-top: 1px solid var(--line, #24272e); padding-top: 12px; }
+.ce-acts-h { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #8b9099); margin-bottom: 10px; }
+.ce-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ce-act-id { font-size: .82rem; color: var(--text, #f1f3f5); min-width: 150px; font-family: var(--mono, monospace); }
+.ce-act select, .ce-act input { background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .84rem; padding: .4rem .55rem; }
+.ce-act input { flex: 1 1 220px; min-width: 160px; }
+.es-btn { font: inherit; cursor: pointer; padding: .5rem 1rem; border-radius: 6px; border: 1px solid var(--line-2, #343943); background: var(--panel-2, #1c1f25); color: var(--text, #f1f3f5); font-size: .84rem; }
+.es-btn.primary { border: 0; background: var(--accent, var(--amber, #ff6a1a)); color: #1a0d02; font-weight: 600; }
+
+/* ── module head, identical on all three tabs ────────────────────────────────── */
+.ee-head { padding: 12px 0 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-head-t { display: flex; align-items: baseline; gap: 7px; }
+.ee-head-m { font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted, #8e8f82); }
+.ee-head-sep { color: var(--line, rgba(255,255,255,.25)); }
+.ee-head-s { font-size: 1.02rem; font-weight: 700; color: var(--text, #e4e2d6); }
+.ee-head-p { margin: 5px 0 0; font-size: .84rem; color: var(--muted, #8e8f82); }
+
+/* Live-data picker: the panel is plain, because it sits INSIDE the popover which already has a
+   border and a background — the old `.ee-tokwrap` was a bordered panel of its own, which is what
+   made this render as a pale box inside a box. */
+.ee-tokpanel { display: block; }
+.ee-tokhint { margin-bottom: 7px; font-size: .74rem; color: var(--muted, #8e8f82); line-height: 1.4; }
+/* A value that is really this server, versus an illustration for an event-only token. */
+.ee-tok.live span { color: var(--amber-hi, #ff9a2e); }
+.ee-tok:not(.live) span { opacity: .6; font-style: italic; }
+
+/* Load an existing message by link — sits under the send row, visually secondary to it. */
+.ee-loadrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-loadinp {
+  flex: 1 1 240px; min-width: 0; padding: .35rem .5rem; font-family: var(--ui); font-size: .8rem;
+  background: var(--inset, #0b0c08); color: var(--text, #e4e2d6);
+  border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: var(--radius, 6px);
+}
+.ee-loadinp:focus { outline: none; border-color: var(--amber, #f0820c); }
+
+/* Extra embeds in the preview — smaller cards under the first, so their order and colours read. */
+.ee-embed-x { margin-top: 8px; opacity: .95; }
+.ee-pv-extra:empty { display: none; }
+/* A select menu, roughly as Discord draws it. */
+.ee-pv-sel {
+  display: block; width: 100%; margin: 4px 0; padding: .5rem .7rem;
+  background: #1e1f22; border: 1px solid #2b2d31; border-radius: 6px;
+  color: #b5bac1; font-size: .84rem;
+}
+/* Option rows inside a select menu editor. */
+.ee-optrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; padding: 5px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-optrow:first-child { border-top: 0; }
+.ee-optrow .ee-f { flex: 1 1 120px; min-width: 0; }
+
+/* ── pagination ──────────────────────────────────────────────────────────────
+   Long result sets used to be cut to the first 60 rows with nothing said, which reads as "that is
+   all there is". The pager always states the range, so a bounded view is never mistaken for a
+   complete one. */
+.ee-pagerbox { margin-top: 6px; }
+.ee-pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding-top: 6px; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-pageinfo { font-size: .72rem; color: var(--muted, #8e8f82); font-variant-numeric: tabular-nums; }
+.ee-btn.xs[disabled] { opacity: .4; cursor: default; }
+
+/* ── embed picker (Manager embeds tab) ───────────────────────────────────────
+   Every embed the manager sends is editable, so the list is long enough to need filtering. */
+.es-f-grow { flex: 1 1 260px; min-width: 0; }
+.es-f-grow .es-sel { width: 100%; }
+.es-search {
+  min-width: 180px; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943);
+  border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .88rem; padding: .45rem .6rem;
+}
+.es-search:focus { outline: none; border-color: var(--amber, #f0820c); }

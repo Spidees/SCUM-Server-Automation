@@ -1,21 +1,23 @@
 'use strict';
 
-// Embed Styler — a real editor for the manager's OWN embeds.
+// The styler half of this plugin: restyling the manager's OWN embeds, and the custom live embeds
+// that keep themselves updated in a channel.
 //
-// Each embed "kind" has a CATALOG: data tokens (friendly label + a sample value used only for the
-// live preview) and a default template (fields and/or a description). The catalog is available
-// immediately — no waiting for an event — so picking a kind loads an editable layout that mirrors
-// the real embed. Change colour/title, and (with "Replace fields" on) add / remove / reorder fields
-// using {tokens}; the editor's preview shows the sample values so it reads like the real message.
-//
-// At send time each kind's resolver turns {tokens} into live values — from the event/live ctx the
-// manager passes AND from the manager itself (squad/fame by Steam id, top player, etc.). Footer,
-// timestamp and buttons stay manager-controlled — nothing here can bypass a premium feature.
+// This was a separate plugin (embed-styler) until the two were merged. They were already mutually
+// dependent — it mounted the editor's UI, and the editor takes its live-data catalog from the
+// `server-data` service registered here — which is a strong sign they were one thing all along.
+// Kept as its own FILE rather than folded into index.js: it is the most-iterated code here and
+// reads better whole; index.js just hands it the same host.
 
 function clean(v) { return (typeof v === 'string' && v.trim() !== '') ? v : undefined; }
 
 module.exports = {
   async register(host) {
+    // discord.js deprecated the `ephemeral: true` reply option in favour of the flag; the old one
+    // still works but warns on every reply. 64 is the flag's fixed value in Discord's API.
+    const EPHEMERAL = (() => {
+      try { return { flags: host.discord.js.MessageFlags.Ephemeral }; } catch { return { flags: 64 }; }
+    })();
     const editor = host.consume('embed-editor');
 
     // ── token helpers ───────────────────────────────────────────────────────────
@@ -65,35 +67,6 @@ module.exports = {
     const T = (t, label, sample) => ({ t: t, label: label, sample: sample });
     const T2 = (t, label, sample, group) => ({ t: t, label: label, sample: sample, group: group });
     const F = (name, token, inline) => ({ name: name, value: '{' + token + '}', inline: inline !== false });
-    // The full set of per-player stat fields (survival, combat, fishing, animals, crafting, money,
-    // gold…). Every one becomes {stat_<Field>} on a player-centric embed. Used as a fallback list
-    // for the token picker; the live fields are read from a real player when one is available.
-    const STAT_FIELDS = ['FamePoints', 'Money', 'cash', 'bank', 'gold', 'Level', 'Xp', 'Score', 'PlayTime', 'MinutesSurvived', 'LastLogin', 'LastLogout',
-      'Kills', 'Deaths', 'PvpKills', 'PvpDeaths', 'FirearmKills', 'MeleeKills', 'ArcheryKills', 'BareHandedKills', 'DroneKills', 'SentryKills', 'TeamKills',
-      'EventKills', 'EventDeaths', 'EventsWon', 'EventsLost', 'Wins', 'Headshots', 'Assists', 'Captures', 'CtfCaptures', 'ZombieKills', 'PuppetsKO',
-      'AnimalKills', 'AnimalsSkinned', 'LongestKill', 'LongestAnimalKill', 'ShotsFired', 'ShotsHit', 'MeleeHits', 'MeleeSwings', 'KnockedOut', 'Looted',
-      'ItemsPickedUp', 'ItemsStored', 'LocksPicked', 'DoorsClaimed', 'FoliageCut', 'LinesBroken', 'Crafted', 'ArrowsCrafted', 'BulletsCrafted', 'GunsCrafted',
-      'MeleeCrafted', 'ClothingCrafted', 'Distance', 'SwimDistance', 'VehicleDistance', 'BoatDistance', 'Calories', 'FoodEaten', 'LiquidDrank', 'AlcoholDrank',
-      'MushroomsEaten', 'Starvations', 'Overdoses', 'HeartAttacks', 'Diarrheas', 'Vomits', 'Defecations', 'Urinations', 'TeethLost', 'WoundsPatched',
-      'FishCaught', 'FishKept', 'FishReleased', 'HeaviestFish', 'LongestFish', 'AmurCaught', 'BassCaught', 'BleakCaught', 'CarpCaught', 'CatfishCaught',
-      'ChubCaught', 'CrucianCarpCaught', 'DentexCaught', 'OrataCaught', 'PikeCaught', 'PrussianCarpCaught', 'RuffeCaught', 'SardineCaught', 'TunaCaught',
-      'BearsKilled', 'BearMaulings', 'BoarsKilled', 'ChickensKilled', 'CrowsKilled', 'DeersKilled', 'DonkeysKilled', 'GoatsKilled', 'HorsesKilled',
-      'RabbitsKilled', 'SeagullsKilled', 'WolvesKilled', 'SharkBites', 'SharkEscapes'];
-    function humanizeField(k) { return String(k).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^./, (ch) => ch.toUpperCase()); }
-    function sampleSteamId() {
-      try { const on = host.players.online() || []; for (const p of on) { const s = p.SteamID || p.steamId || p.UserId || p.user_id; if (s) return String(s); } } catch {}
-      return null;
-    }
-    // Player-stat tokens for the picker: the LIVE fields (with real sample values) of a real player
-    // when one exists, else the full fallback list.
-    const STAT_SKIP = /^(Name|SteamID|Id|Class|Information|Message|Squad|SquadId|SquadName|OwnerProfileId|IsOnline|online|alive|x|y|z|type|pin|pinTries|rank|record|renewals|memberCount|MemberLimit|accountNumber|depositLeft|withdrawLeft|lastLogin|lastLogout|LastLogin|LastLogout)$/i;
-    function statTokens() {
-      let stats = null;
-      try { const sid = sampleSteamId(); if (sid) stats = host.players.stats(sid); } catch {}
-      const keys = (stats ? Object.keys(stats).filter((k) => (typeof stats[k] === 'number' || typeof stats[k] === 'string') && !STAT_SKIP.test(k)) : STAT_FIELDS);
-      return keys.map((k) => T2('stat_' + k, humanizeField(k) + ' (this embed’s player)', stats && stats[k] != null ? String(stats[k]) : '0', 'Player stats'));
-    }
-
     const TOK = {
       playerName: T('playerName', 'Player name', 'Jaruna'), steamId: T('steamId', 'Steam ID', '76561198000000000'),
       playerId: T('playerId', 'Player ID', '12'), location: T('location', 'Location (X Y Z)', 'X=-177569 Y=-161794 Z=1200'),
@@ -223,8 +196,72 @@ module.exports = {
       { key: 'players', label: 'Players', group: 'live' }, { key: 'bunker', label: 'Bunkers', group: 'live' },
     ];
 
+    // ── what the manager's embeds REALLY look like ──────────────────────────────
+    // The manager can hand over the actual shape of every embed it sends — the last one it really
+    // sent, or one built by its own builder. That is the only description that is translated like
+    // the real thing, carries the conditional fields, and formats values the way they go out
+    // ("2.0 hours", not 7200). Anything written here instead would be an English-only copy that
+    // drifts the moment a builder changes, so the manager wins wherever it can answer.
+    function realKinds() {
+      try {
+        if (!host.discord || typeof host.discord.embedKinds !== 'function') return null;   // older manager
+        const list = host.discord.embedKinds();
+        return Array.isArray(list) && list.length ? list : null;
+      } catch (e) { host.logger.debug('embedKinds unavailable: ' + e.message); return null; }
+    }
+
+    /**
+     * Turn a real embed into an editable template: where a field's text is exactly the value of a
+     * token, write the token back in so the owner can edit it as `{playerName}` rather than a frozen
+     * name. Only whole-value matches, and only values long enough to be unambiguous — a partial
+     * substitution would corrupt text that merely happens to contain "1".
+     */
+    function templateFromSample(sample, tokens) {
+      if (!sample || !Array.isArray(sample.fields)) return [];
+      const byValue = new Map();
+      for (const tk of (tokens || [])) {
+        const v = tk && tk.value != null ? String(tk.value) : '';
+        if (v.length >= 3 && !byValue.has(v)) byValue.set(v, tk.t);
+      }
+      return sample.fields.map((f) => {
+        const val = String(f.value == null ? '' : f.value);
+        const tok = byValue.get(val);
+        return { name: f.name, value: tok ? '{' + tok + '}' : val, inline: !!f.inline };
+      });
+    }
+
+    /** Kinds as the UI needs them, sourced from the manager. */
+    function kindsFromManager(list) {
+      const GROUP_LABEL = { feeds: 'Feeds', live: 'Live embeds', notifications: 'Notifications', dm: 'Player DM alerts', intel: 'Player Intel' };
+      return list.map((k) => {
+        const own = (k.tokens || []).map((tk) => ({ t: tk.t, label: tk.label || tk.t, sample: tk.value, group: 'This embed' }));
+        const seen = {}; own.forEach((tk) => { seen[tk.t] = 1; });
+        // The manager's registry already carries the whole {stat_*} set, so there is nothing to
+        // prepend here — a local copy would only shadow it with the same names.
+        const extra = globalTokenCatalog().filter((tk) => { if (seen[tk.t]) return false; seen[tk.t] = 1; return true; });
+        return {
+          key: k.key,
+          label: k.label,
+          group: k.group,
+          groupLabel: GROUP_LABEL[k.group] || k.group,
+          live: !!k.live,                       // shape came from an embed the manager really sent
+          seenAt: k.at || null,
+          tokens: own.concat(extra),
+          defaults: templateFromSample(k.sample, k.tokens),
+          sample: k.sample || null,             // the real embed, for the preview
+          description: (k.sample && k.sample.description) || null,
+          title: (k.sample && k.sample.title) || null,
+          styleOnly: false,
+        };
+      });
+    }
+
     // Build the serialisable kind list for the UI (leaderboard is expanded from live categories).
     function kindsForConfig() {
+      const real = realKinds();
+      if (real) return kindsFromManager(real);
+      // Fallback for a manager without the introspection API: the local descriptions below. Less
+      // accurate by construction — kept only so the tab still works rather than going blank.
       return KIND_META.map((k) => {
         const c = CATALOG[k.key] || {};
         let tokens = c.tokens || [];
@@ -242,10 +279,9 @@ module.exports = {
         // This embed's own event tokens (grouped) + the full global data set, so anything is insertable.
         const evtToks = (tokens || []).map((tk) => Object.assign({}, tk, { group: tk.group || 'This embed' }));
         const seen = {}; evtToks.forEach((tk) => { seen[tk.t] = 1; });
-        // player-centric embeds also get the FULL per-player stat set (survival, combat, gold…)
-        const PLAYER_KINDS = ['login', 'kill', 'eventkill', 'chest', 'fame', 'quest', 'violation', 'economy'];
-        let extra = globalTokenCatalog();
-        if (PLAYER_KINDS.indexOf(k.key) >= 0) extra = statTokens().concat(extra);
+        // The per-player stat set ({stat_*}) comes from the manager's registry along with
+        // everything else, so every kind gets it without a list here.
+        const extra = globalTokenCatalog();
         const allToks = evtToks.concat(extra.filter((tk) => { if (seen[tk.t]) return false; seen[tk.t] = 1; return true; }));
         return { key: k.key, label: k.label, group: k.group, tokens: allToks, defaults: defaults, description: c.description || null, title: c.title || null, styleOnly: false };
       });
@@ -313,7 +349,17 @@ module.exports = {
       } catch { /* best-effort */ }
     }
 
-    KIND_META.forEach((k) => host.discord.onEmbed(k.key, (embed, ctx) => { captureImage(k.key, embed); return applyStyle(embed, k.key, ctx); }));
+    // Register a transform for EVERY kind the manager reports, not a list kept here. The two used
+    // to be the same 18 entries; the moment the manager gained notification, DM-alert and intel
+    // kinds, a style saved against one of those would have been listed in the UI, saved to the
+    // store, and then silently never applied — the failure would look like "the plugin ignores me".
+    const styleable = (() => {
+      const real = realKinds();
+      if (real) return real.map((k) => k.key);
+      return KIND_META.map((k) => k.key);
+    })();
+    styleable.forEach((key) => host.discord.onEmbed(key, (embed, ctx) => { captureImage(key, embed); return applyStyle(embed, key, ctx); }));
+    host.logger.info(`embed styling active for ${styleable.length} embed kind(s)`);
 
     host.routes.get('/config', (req, res) => {
       let configured = {}; try { configured = host.discord.liveEmbedImages() || {}; } catch { /* optional */ }
@@ -330,124 +376,50 @@ module.exports = {
     // message there up to date (edits it in place) with live server data — just like the built-in
     // status embed. Tokens resolve from a GLOBAL data map (all sources), so you can put anything in.
 
-    function globalMap() {
-      const m = {};
-      try {
-        const s = host.server.status() || {};
-        const online = s.OnlinePlayers != null ? s.OnlinePlayers : (host.stats.onlineCount() || 0);
-        m.state = s.ActualServerState || s.Status || (s.IsRunning ? 'Online' : 'Offline');
-        m.running = s.IsRunning ? 'Online' : 'Offline';
-        m.online = String(online); m.max = s.MaxPlayers != null ? String(s.MaxPlayers) : '-';
-        m.onlineMax = `${online} / ${s.MaxPlayers != null ? s.MaxPlayers : '-'}`;
-        const p = s.Performance || {};
-        if (p.FPS != null) { m.fps = `${p.FPS} FPS`; m.fpsNum = String(p.FPS); }
-        if (p.CPU != null) m.cpu = `${p.CPU}%`;
-        if (p.Memory != null) m.memory = `${p.Memory} MB`;
-        if (p.MemoryTotal != null) m.memoryTotal = `${p.MemoryTotal} MB`;
-        if (p.Entities != null) m.entities = String(p.Entities);
-      } catch { /* optional */ }
-      try { const gt = host.stats.gameTime(); if (gt) { m.gameTime = gt.FormattedTime || '-'; if (gt.TimeOfDay != null) m.timeOfDay = String(Math.round(gt.TimeOfDay * 10) / 10); } } catch {}
-      try { const wt = host.stats.weather(); if (wt) { m.temperature = wt.FormattedTemperature || '-'; if (wt.AirTemperature != null) m.airTemp = `${wt.AirTemperature}°C`; if (wt.WaterTemperature != null) m.waterTemp = `${wt.WaterTemperature}°C`; } } catch {}
-      try { const st = host.stats.server(); if (st) { if (st.TotalPlayers != null) m.totalPlayers = String(st.TotalPlayers); if (st.DatabaseSize != null) m.dbSize = `${st.DatabaseSize} MB`; } } catch {}
-      try { m.activeSquads = String(host.stats.squadCount() || 0); m.vehicles = String(host.stats.vehicleCount() || 0); m.bases = String(host.stats.baseCount() || 0); } catch {}
-      try { const tp = topPlayer(); m.topPlayer = tp.name || '-'; m.topPlayerScore = tp.score != null ? String(tp.score) : '-'; } catch {}
-      try {
-        const online = host.players.online() || [];
-        const names = online.map((p) => p.PlayerName || p.name || '?');
-        m.onlineCount = String(names.length); m.onlineNames = names.join(', ') || '—';
-        m.onlineList = names.map((n, i) => '`' + String(i + 1).padStart(2, '0') + '.` ' + n).join('\n') || '—';
-      } catch {}
-      try {
-        const all = host.leaderboards.all(10) || {};
-        for (const key of Object.keys(all)) {
-          const rows = all[key] || [];
-          m['lb_' + key] = rows.map((r, i) => '`' + (i + 1) + '.` ' + (r.Name || r.name || '?') + ' — ' + (r.FormattedValue != null ? r.FormattedValue : (r.value != null ? r.value : ''))).join('\n') || '—';
-          m['lb_' + key + '_top'] = (rows[0] && (rows[0].Name || rows[0].name)) || '-';
-        }
-      } catch {}
-      try {
-        const si = host.server.info() || {};
-        if (si.name) m.serverName = si.name;
-        if (si.address) m.serverAddress = si.address;
-        if (si.publicIP) m.publicIP = si.publicIP;
-        if (si.port != null) m.port = String(si.port);
-        if (si.connectPort != null) m.connectPort = String(si.connectPort);
-        if (si.version) m.managerVersion = 'v' + si.version;
-        if (si.nextRestartUnix) { m.nextRestart = `<t:${si.nextRestartUnix}:R>`; m.nextRestartAt = `<t:${si.nextRestartUnix}:t>`; }
-      } catch {}
-      try {
-        const w = host.map.world() || {};
-        if (Array.isArray(w.players)) m.mapPlayers = String(w.players.length);
-        if (Array.isArray(w.vehicles)) m.mapVehicles = String(w.vehicles.length);
-        if (Array.isArray(w.bases)) m.mapBases = String(w.bases.length);
-        if (Array.isArray(w.chests)) m.mapChests = String(w.chests.length);
-        if (Array.isArray(w.flags)) m.mapFlags = String(w.flags.length);
-      } catch {}
-      try {
-        const e = host.economy;
-        if (e) {
-          if (e.traderFunds) { const v = e.traderFunds(); if (typeof v === 'number' || typeof v === 'string') m.traderFunds = String(v); }
-          if (e.goldCapacity) { const g = e.goldCapacity(); if (typeof g === 'number' || typeof g === 'string') m.goldCapacity = String(g); }
-          if (e.specialDeals) { const sd = e.specialDeals(10); if (Array.isArray(sd) && sd.length) m.specialDeals = sd.map((d) => '• ' + (d.name || d.item || d.Item || d.itemName || '?') + (d.price != null ? ' — ' + d.price : (d.Price != null ? ' — ' + d.Price : ''))).join('\n'); }
-        }
-      } catch {}
-      try {
-        const bk = (host.map.bunkers && host.map.bunkers()) || [];
-        const active = bk.filter((b) => b.state === 'active');
-        const locked = bk.filter((b) => b.state !== 'active');
-        m.bunkerActive = String(active.length); m.bunkerLocked = String(locked.length);
-        m.bunkerActiveSectors = active.map((b) => b.sector).join(', ') || '—';
-        m.bunkerLockedSectors = locked.map((b) => b.sector).join(', ') || '—';
-        m.bunkerActiveList = active.map((b) => '🟢 `' + b.sector + '`' + (b.activationUnix ? ' — open since <t:' + b.activationUnix + ':R>' : '')).join('\n') || '—';
-        m.bunkerLockedList = locked.map((b) => '🔒 `' + b.sector + '`' + ((b.etaUnix || b.eta) ? ' — opens <t:' + (b.etaUnix || b.eta) + ':R>' : ' — locked')).join('\n') || '—';
-      } catch {}
-      try {
-        const kills = (host.db && host.db.manager && host.db.manager.kills(10)) || [];
-        if (kills.length) {
-          m.recentKills = kills.map((k) => '💀 ' + (k.killer || '?') + ' → ' + (k.victim || '?') + (k.weapon ? ' (' + (host.items.name(k.weapon) || k.weapon) + ')' : '')).join('\n');
-          m.lastKiller = kills[0].killer || '-'; m.lastVictim = kills[0].victim || '-';
-        }
-      } catch {}
-      try {
-        const trades = (host.db && host.db.manager && host.db.manager.trades(10)) || [];
-        if (trades.length) m.recentTrades = trades.map((t) => '💰 ' + (t.player || '?') + ' ' + (t.action || '') + ' ' + (host.items.name(t.item || t.code) || t.item || t.code || '?') + (t.price != null ? ' — ' + t.price : '')).join('\n');
-      } catch {}
-      return m;
-    }
     // Short cache so a burst of feed embeds (e.g. many kills) doesn't re-query the DB each time.
     let _gm = null; let _gmAt = 0;
-    function globalMapCached() { const now = Date.now(); if (_gm && (now - _gmAt) < 5000) return _gm; _gm = globalMap(); _gmAt = now; return _gm; }
-    function globalTokenCatalog() {
-      const toks = [
-        T2('state', 'Server state', 'Online', 'Server'), T2('running', 'Online / Offline', 'Online', 'Server'), T2('online', 'Online players', '24', 'Server'), T2('max', 'Max players', '64', 'Server'),
-        T2('onlineMax', 'Online / max', '24 / 64', 'Server'), T2('fps', 'Server FPS', '58 FPS', 'Server'), T2('fpsNum', 'Server FPS (number)', '58', 'Server'),
-        T2('cpu', 'CPU load', '34%', 'Server'), T2('memory', 'Memory used', '9200 MB', 'Server'), T2('memoryTotal', 'Memory total', '16384 MB', 'Server'),
-        T2('entities', 'Entities (world)', '18450', 'Server'), T2('dbSize', 'Database size', '512 MB', 'Server'),
-        T2('gameTime', 'In-game time', '14:32', 'Time & Weather'), T2('timeOfDay', 'Time of day (hours)', '14.5', 'Time & Weather'),
-        T2('temperature', 'Temperature (A | W)', 'A: 18 | W: 12', 'Time & Weather'), T2('airTemp', 'Air temperature', '18°C', 'Time & Weather'), T2('waterTemp', 'Water temperature', '12°C', 'Time & Weather'),
-        T2('totalPlayers', 'Registered players', '1043', 'Counts'), T2('activeSquads', 'Active squads', '37', 'Counts'), T2('vehicles', 'Vehicles', '312', 'Counts'), T2('bases', 'Bases', '184', 'Counts'),
-        T2('topPlayer', 'Top player', 'Jaruna', 'Top'), T2('topPlayerScore', 'Top player score', '142', 'Top'),
-        T2('onlineCount', 'Online count', '24', 'Players'), T2('onlineList', 'Online list (numbered)', '`01.` Jaruna\n`02.` Bandit', 'Players'), T2('onlineNames', 'Online names (CSV)', 'Jaruna, Bandit', 'Players'),
-        T2('serverName', 'Server name', 'My SCUM Server', 'Server info'), T2('serverAddress', 'Connect address', '203.0.113.5:7044', 'Server info'), T2('publicIP', 'Public IP', '203.0.113.5', 'Server info'),
-        T2('port', 'Game port', '7042', 'Server info'), T2('connectPort', 'Connect port', '7044', 'Server info'), T2('managerVersion', 'Manager version', 'v3.1.1', 'Server info'),
-        T2('nextRestart', 'Next restart (relative)', 'in 3 hours', 'Server info'), T2('nextRestartAt', 'Next restart (time)', '18:00', 'Server info'),
-        T2('mapPlayers', 'Players on map', '24', 'Map'), T2('mapVehicles', 'Vehicles on map', '312', 'Map'), T2('mapBases', 'Bases on map', '184', 'Map'), T2('mapChests', 'Chests on map', '540', 'Map'), T2('mapFlags', 'Flags on map', '96', 'Map'),
-        T2('traderFunds', 'Trader funds', '1.2M', 'Economy'), T2('goldCapacity', 'Gold capacity', '5000', 'Economy'), T2('specialDeals', 'Special deals (list)', '• Bandage — 500\n• Ammo — 1200', 'Economy'),
-        T2('bunkerActive', 'Open bunkers (count)', '2', 'Bunkers'), T2('bunkerLocked', 'Locked bunkers (count)', '6', 'Bunkers'),
-        T2('bunkerActiveSectors', 'Open sectors', 'A1, C3', 'Bunkers'), T2('bunkerLockedSectors', 'Locked sectors', 'B2, D4', 'Bunkers'),
-        T2('bunkerActiveList', 'Open bunkers (list)', '🟢 `A1` — open', 'Bunkers'), T2('bunkerLockedList', 'Locked bunkers (list)', '🔒 `B2` — opens soon', 'Bunkers'),
-        T2('recentKills', 'Recent kills (list)', '💀 Jaruna → Bandit (M16A4)\n💀 Wolf → Nomad (AK-47)\n💀 Rex → Ghost (Crossbow)\n💀 Ace → Kilo (M9)\n💀 Zed → Vex (Katana)', 'Activity'), T2('lastKiller', 'Last killer', 'Jaruna', 'Activity'), T2('lastVictim', 'Last victim', 'Bandit', 'Activity'),
-        T2('recentTrades', 'Recent trades (list)', '💰 Jaruna bought Bandage — 500\n💰 Wolf sold Gold Bar — 12000\n💰 Rex bought 7.62mm — 1200', 'Activity'),
-        T2('img:ITEM_ID', 'Item image URL — replace ITEM_ID (e.g. Weapon_AK47)', 'https://…/Weapon_AK47.png', 'Items'),
-        T2('itemName:ITEM_ID', 'Item name — replace ITEM_ID', 'AK-47', 'Items'),
-        T2('pstat:PLAYER:FIELD', 'Any player stat — e.g. {pstat:Jaruna:Kills}', '142', 'Player stats'),
-      ];
-      for (const c of lbCategories()) {
-        toks.push(T2('lb_' + c.key, (c.label || c.key) + ' — top 5', '`1.` Jaruna — 142\n`2.` Bandit — 98\n`3.` Wolf — 76\n`4.` Nomad — 51\n`5.` Rex — 33', 'Leaderboard'));
-        toks.push(T2('lb_' + c.key + '_top', (c.label || c.key) + ' — #1', 'Jaruna', 'Leaderboard'));
+    /**
+     * Token name → current value.
+     *
+     * Prefers the manager's registry (host.data), which is the same set the picker lists, so a
+     * token that appears in the picker always resolves.
+     * fallback for a manager that predates it — it resolves fewer names, which is precisely the
+     * drift this replaced.
+     */
+    function globalMapCached() {
+      const now = Date.now();
+      if (_gm && (now - _gmAt) < 5000) return _gm;
+      const m = {};
+      try {
+        for (const t of host.data.catalog({})) { if (!t.parametric) m[t.key] = t.value; }
+      } catch (e) {
+        host.logger.error('host.data is unavailable — tokens cannot resolve: ' + e.message);
       }
-      return toks;
+      _gm = m;
+      _gmAt = now;
+      return _gm;
     }
+    /**
+     * Every token the MANAGER knows about, with its current value.
+     *
+     * This used to be a hand-written list of ~50 names with invented sample text, kept in step with
+     * a second hand-written function that resolved them — two lists, in this plugin, that any other
+     * plugin wanting the same data would have had to copy. The manager now owns one registry
+     * (host.data), so a token is declared once, the value shown in the picker is the real current
+     * one, and anything a plugin publishes shows up here too.
+     */
+    function globalTokenCatalog() {
+      try {
+        return host.data.catalog({})
+          .map((t) => ({ t: t.key, label: t.label, sample: t.value, group: t.group, live: t.live !== false }));
+      } catch (e) {
+        // No local copy to fall back to, on purpose: a second list is what this replaced, and a
+        // silent half-catalog is worse than an empty one that says why.
+        host.logger.error('host.data is unavailable — this plugin needs a manager that provides it: ' + e.message);
+        return [];
+      }
+    }
+
 
     const loadCustom = () => host.store.get('custom', []);
     const lastPost = {};
@@ -488,7 +460,7 @@ module.exports = {
         if (!act || !act.type) return;
         const m = globalMapCached();
         if (act.type === 'command') {
-          await i.reply({ content: '⏳ Running…', ephemeral: true });
+          await i.reply({ content: '⏳ Running…', ...EPHEMERAL });
           let ok = false; try { const r = await host.server.command(resolveTpl(act.value || '', m)); ok = !(r && r.ok === false); } catch { ok = false; }
           try { await i.editReply({ content: ok ? '✅ Done.' : '❌ Command failed (server / bridge?).' }); } catch {}
         } else if (act.type === 'message') {
@@ -496,9 +468,9 @@ module.exports = {
         } else if (act.type === 'announce') {
           const ch = await host.discord.channel(act.channelId || i.channelId);
           if (ch && ch.send) await ch.send(resolveTpl(act.value || '', m) || '…');
-          await i.reply({ content: '✅ Sent.', ephemeral: true });
+          await i.reply({ content: '✅ Sent.', ...EPHEMERAL });
         }
-      } catch (e) { try { if (i && !i.replied && i.reply) await i.reply({ content: 'Action error.', ephemeral: true }); } catch {} }
+      } catch (e) { try { if (i && !i.replied && i.reply) await i.reply({ content: 'Action error.', ...EPHEMERAL }); } catch {} }
     });
 
     host.routes.get('/custom', (req, res) => res.json({ items: loadCustom(), tokens: globalTokenCatalog() }));
@@ -532,6 +504,6 @@ module.exports = {
       catalog: () => globalTokenCatalog(),
     });
 
-    host.logger.info(`Embed Styler ready (${KIND_META.length} embed kinds + custom live embeds + server-data service)`);
+    host.logger.info(`styling half ready (${KIND_META.length} embed kinds + custom live embeds + server-data service)`);
   },
 };

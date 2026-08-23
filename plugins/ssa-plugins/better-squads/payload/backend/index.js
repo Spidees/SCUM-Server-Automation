@@ -32,9 +32,9 @@ const DEFAULTS = {
   events: {
     join:       { enabled: true,  message: '{player} just connected.' },
     leave:      { enabled: true,  message: '{player} went offline.' },
-    death:      { enabled: true,  message: '{player} was killed by {killer}[ in {sector}] — {weapon}, {shotdistance} m.[ {distance} m {direction} of you.]' },
+    death:      { enabled: true,  message: '{player} was killed by {killer}[ in {sector}] — {weapon}[, {shotdistance} m].[ {distance} m {direction} of you.]' },
     suicide:    { enabled: true,  message: '{player} died[ in {sector}].' },
-    kill:       { enabled: false, message: '{player} killed {victim}[ in {sector}] — {weapon}, {shotdistance} m.' },
+    kill:       { enabled: false, message: '{player} killed {victim}[ in {sector}] — {weapon}[, {shotdistance} m].' },
     raid:       { enabled: true,  message: 'Base under attack — {object}.[ {sector}.][ {distance} m {direction} of you.]' },
     squadJoin:  { enabled: true,  message: '{player} joined the squad.' },
     squadLeave: { enabled: true,  message: '{player} left the squad.' },
@@ -450,7 +450,20 @@ module.exports = {
       }
       const vSquad = squadOf(e.victimSteamId), kSquad = squadOf(e.killerSteamId);
       const sameSquad = vSquad && kSquad && vSquad.id === kSquad.id;
-      const shared = { weapon: e.weaponName || '', shotdistance: e.distance || 0 };
+      // The kill event carries the weapon as its raw game code ("Mine_01_C"), which is what the
+      // message printed. host.items.name() is the manager's one item resolver — it already knows
+      // every shape a code arrives in — so this reads "Anti-personnel mine". The raw code stays as
+      // the fallback for anything the item database has never heard of.
+      //
+      // shotdistance is EMPTY, not 0, when there is no shot: a mine, a fall or an explosion has no
+      // distance, and 0 is a value the optional-segment syntax cannot drop (it only drops empty
+      // ones), so "— Anti-personnel mine, 0 m." could not be avoided from a template. With this,
+      // writing it as `[, {shotdistance} m]` makes the whole clause disappear for those deaths.
+      const dist = Number(e.distance);
+      const shared = {
+        weapon: host.items.name(e.weaponName) || e.weaponName || '',
+        shotdistance: Number.isFinite(dist) && dist > 0 ? dist : '',
+      };
 
       announce('death', String(e.victimSteamId || ''), Object.assign({
         player: displayName(e.victimSteamId, e.victimName), victim: displayName(e.victimSteamId, e.victimName),

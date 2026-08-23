@@ -23,7 +23,7 @@
     },
     "death": {
       "enabled": true,
-      "message": "{player} was killed by {killer}[ in {sector}] — {weapon}, {shotdistance} m.[ {distance} m {direction} of you.]"
+      "message": "{player} was killed by {killer}[ in {sector}] — {weapon}[, {shotdistance} m].[ {distance} m {direction} of you.]"
     },
     "suicide": {
       "enabled": true,
@@ -31,7 +31,7 @@
     },
     "kill": {
       "enabled": false,
-      "message": "{player} killed {victim}[ in {sector}] — {weapon}, {shotdistance} m."
+      "message": "{player} killed {victim}[ in {sector}] — {weapon}[, {shotdistance} m]."
     },
     "raid": {
       "enabled": true,

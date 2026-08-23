@@ -116,6 +116,57 @@
         h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Command placeholders: {code} {x} {y} {z} {steamid} {vehId}. Set these to match your server / bridge. Payment is charged automatically with #ChangeCurrencyBalance.'),
       ]));
 
+      // ── in-game ──
+      // Everything a player can do or see without opening Discord. Kept in its own card because it
+      // is the half an owner tunes for their playerbase, separately from prices and limits.
+      body.appendChild(card('In-game', [
+        h('div', { class: 'vr-checks' }, [
+          chk('Send messages in-game', function () { return config.inGameNotify !== false; }, function (v) { config.inGameNotify = v; }),
+          chk('Enable in-game commands', function () { return config.inGameCommands !== false; }, function (v) { config.inGameCommands = v; }),
+          chk('Allow returning early', function () { return config.allowReturn !== false; }, function (v) { config.allowReturn = v; }),
+          chk('Check the vehicle still exists', function () { return config.verifyVehicle !== false; }, function (v) { config.verifyVehicle = v; }),
+        ]),
+        h('div', { class: 'vr-grid' }, [
+          (function () {
+            var sel = h('select', {});
+            ['local', 'global', 'squad', 'admin', 'server'].forEach(function (ch) {
+              sel.appendChild(h('option', { value: ch, selected: (config.inGameChannel || 'local') === ch }, ch));
+            });
+            sel.addEventListener('change', function () { config.inGameChannel = sel.value; });
+            return h('label', { class: 'vr-f' }, [h('span', {}, 'Chat channel'), sel]);
+          })(),
+          inp('Refund on early return (%)', function () { return config.refundPercent; }, function (v) { config.refundPercent = v; }, { type: 'number' }),
+          inp('Rent command', function () { return config.cmdRent; }, function (v) { config.cmdRent = v; }, { ph: 'rent' }),
+          inp('My rentals command', function () { return config.cmdMine; }, function (v) { config.cmdMine = v; }, { ph: 'myrent' }),
+          inp('Extend command', function () { return config.cmdExtend; }, function (v) { config.cmdExtend = v; }, { ph: 'extend' }),
+          inp('Return command', function () { return config.cmdReturn; }, function (v) { config.cmdReturn = v; }, { ph: 'return' }),
+        ]),
+        h('div', { class: 'vr-grid' }, [
+          inp('Allowed sectors (blank = anywhere)', function () { return (config.allowedSectors || []).join(', '); },
+            function (v) { config.allowedSectors = String(v).split(',').map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean); }, { ph: 'B2, C3' }),
+          inp('Blocked sectors', function () { return (config.blockedSectors || []).join(', '); },
+            function (v) { config.blockedSectors = String(v).split(',').map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean); }, { ph: 'A0, Z4' }),
+        ]),
+        h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Sector rules need the live map calibration; while it is unavailable renting is allowed everywhere rather than blocked for a reason players cannot see. Command names are written without the prefix.'),
+      ]));
+
+      // ── in-game wording ──
+      body.appendChild(card('In-game messages', [
+        h('div', { class: 'vr-stack' }, (function () {
+          var LINES = [
+            ['confirmed', 'Rental confirmed'], ['endingSoon', 'Ending soon'], ['ended', 'Rental ended'],
+            ['returned', 'Returned early'], ['rentUsage', 'Rent — usage / list'], ['noRentals', 'No active rentals'],
+            ['mineLine', 'One line of "my rentals"'], ['extendOk', 'Extended'], ['notAllowedHere', 'Sector not allowed'],
+            ['disabled', 'Rentals disabled'],
+          ];
+          if (!config.texts) config.texts = {};
+          return LINES.map(function (pair) {
+            return inp(pair[1], function () { return config.texts[pair[0]] || ''; }, function (v) { config.texts[pair[0]] = v; });
+          });
+        })()),
+        h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Tokens: {player} {vehicle} {duration} {price} {left} {sector} {cmd} {list}. Leave a line empty to use the built-in wording.'),
+      ]));
+
       // ── vehicles ──
       var vehBox = h('div', {});
       function renderVeh() {
