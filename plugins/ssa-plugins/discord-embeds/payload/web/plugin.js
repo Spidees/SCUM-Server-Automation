@@ -86,7 +86,10 @@
          .replace(/^#\s+(.*)$/gm, '<div class="ee-h1">$1</div>');
     t = t.replace(/^&gt;\s?(.*)$/gm, '<div class="ee-quote">$1</div>');
     t = t.replace(/^[-*]\s+(.*)$/gm, '<div class="ee-li">• $1</div>');
-    t = t.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="ee-spoiler">$1</span>');
+      // Tappable, not hover-only. A touch screen has no hover, so a spoiler in the preview could
+      // never be read on a phone at all — the preview claimed to show what Discord shows and then
+      // permanently hid part of it. The reveal class is toggled by the delegated handler below.
+    t = t.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="ee-spoiler" role="button" tabindex="0">$1</span>');
     t = t.replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<b><i>$1</i></b>')
          .replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>')
          .replace(/(^|[^*])\*([^*\r\n]+)\*/g, '$1<i>$2</i>')
@@ -100,13 +103,38 @@
 
   // Discord's own size limits. Nothing warned about these before, so an over-long embed was simply
   // rejected at send time with no clue which part was to blame.
-  var LIMITS = { title: 256, description: 4096, fieldName: 256, fieldValue: 1024, footer: 2048, author: 256, content: 2000, total: 6000, fields: 25 };
+  // Discord's own limits. `total` is per MESSAGE — every embed in it added together — and `rows`
+  // is the five component rows a message gets, where a select menu costs a whole row and
+  // buttons pack five to a row.
+  var LIMITS = { title: 256, description: 4096, fieldName: 256, fieldValue: 1024, footer: 2048, author: 256,
+    content: 2000, total: 6000, fields: 25, embeds: 10, rows: 5, buttonLabel: 80,
+    selectPlaceholder: 150, optionLabel: 100, optionDescription: 100, options: 25 };
+
+  // What the bot stamps on EVERY embed it sends. Module state, not per-editor: the Built-in Embeds
+  // tab rebuilds its editor on every kind you click, and a per-instance copy meant one HTTP request
+  // per click and a preview that was briefly wrong each time.
+  var brandFooter = { text: '', icon_url: '' };
+  var brandingReq = null;
+  function withBranding(then) {
+    if (brandFooter.text) { then(); return; }
+    if (!brandingReq) brandingReq = api('/branding');
+    brandingReq.then(function (b) {
+      if (b && b.text) brandFooter = { text: b.text, icon_url: b.icon_url || '' };
+      then();
+    });
+  }
 
   function buildEditor(container, opts) {
     opts = opts || {};
     var model = opts.value ? Object.assign(defaultModel(), clone(opts.value)) : defaultModel();
     container.innerHTML = '';
     container.classList.add('ee-root');
+    // Delegated once on the root: the preview is rebuilt on every keystroke, so a listener
+    // attached to a spoiler span would be thrown away with it.
+    container.addEventListener('click', function (ev) {
+      var sp = ev.target && ev.target.closest && ev.target.closest('.ee-spoiler');
+      if (sp) sp.classList.toggle('revealed');
+    });
 
     // Live data. Two sources, merged: whatever the HOST plugin knows about its own events (a
     // kill's weapon, a rental's price — only it can know those), plus the server-wide catalog the
@@ -168,7 +196,10 @@
       return String(s == null ? '' : s)
         .replace(/\{img:([^}]+)\}/g, function (_m, code) { return _itemLookup(code, 'img'); })
         .replace(/\{itemName:([^}]+)\}/g, function (_m, code) { return _itemLookup(code, 'name') || String(code).trim(); })
-        .replace(/\{(\w+)\}/g, function (mm, k) { return (k in sampleMap) ? sampleMap[k] : mm; });
+        // `[\w.]` and not `\w`: dotted tokens like {location.x} are offered by the picker, so the
+        // preview has to recognise them too — otherwise the box says "{location.x}" and the message
+        // says "148230", and the preview is lying about the one thing it exists to show.
+        .replace(/\{([\w.]+)\}/g, function (mm, k) { return (k in sampleMap) ? sampleMap[k] : mm; });
     }
 
     function changed() {
@@ -551,9 +582,43 @@
         if (len(f.name) > LIMITS.fieldName) out.push('Field ' + (i + 1) + ' name is ' + len(f.name) + '/' + LIMITS.fieldName);
         if (len(f.value) > LIMITS.fieldValue) out.push('Field ' + (i + 1) + ' value is ' + len(f.value) + '/' + LIMITS.fieldValue);
       });
-      var total = len(model.title) + len(model.description) + len(model.footer.text) + len(model.author.name)
-        + model.fields.reduce(function (a, f) { return a + len(f.name) + len(f.value); }, 0);
-      if (total > LIMITS.total) out.push('Embed totals ' + total + '/' + LIMITS.total + ' characters');
+      // Discord counts the 6000 across EVERY embed in the message, not per embed. Counting only the
+      // first one meant a message with extra embeds passed here and was refused by Discord, with
+      // nothing on screen having warned about it.
+      function embedChars(e) {
+        if (!e) return 0;
+        return len(e.title) + len(e.description) + len((e.footer || {}).text) + len((e.author || {}).name)
+          + (Array.isArray(e.fields) ? e.fields.reduce(function (a, f) { return a + len(f.name) + len(f.value); }, 0) : 0);
+      }
+      var total = embedChars(model) + (model.extraEmbeds || []).reduce(function (a, e) { return a + embedChars(e); }, 0);
+      if (total > LIMITS.total) {
+        out.push('All embeds total ' + total + '/' + LIMITS.total + ' characters');
+      }
+      if (1 + (model.extraEmbeds || []).length > LIMITS.embeds) {
+        out.push((1 + model.extraEmbeds.length) + ' embeds (max ' + LIMITS.embeds + ' per message)');
+      }
+
+      // Components. The backend silently drops whatever will not fit, which is the right thing for a
+      // send that must not fail — but the editor is where it can still be fixed, so it says so.
+      var btns = model.buttons || [];
+      var sels = model.selects || [];
+      var rows = sels.length + Math.ceil(btns.length / 5);
+      if (rows > LIMITS.rows) {
+        out.push(rows + ' component rows (max ' + LIMITS.rows + ') — a select takes a whole row, buttons go five to a row');
+      }
+      btns.forEach(function (b, i) {
+        if (len(b.label) > LIMITS.buttonLabel) out.push('Button ' + (i + 1) + ' label is ' + len(b.label) + '/' + LIMITS.buttonLabel);
+      });
+      sels.forEach(function (sl, i) {
+        if (len(sl.placeholder) > LIMITS.selectPlaceholder) out.push('Select ' + (i + 1) + ' placeholder is ' + len(sl.placeholder) + '/' + LIMITS.selectPlaceholder);
+        var opts = sl.options || [];
+        if (opts.length > LIMITS.options) out.push('Select ' + (i + 1) + ' has ' + opts.length + ' options (max ' + LIMITS.options + ')');
+        if (!opts.length) out.push('Select ' + (i + 1) + ' has no options — Discord refuses an empty menu');
+        opts.forEach(function (o, j) {
+          if (len(o.label) > LIMITS.optionLabel) out.push('Select ' + (i + 1) + ' option ' + (j + 1) + ' label is ' + len(o.label) + '/' + LIMITS.optionLabel);
+          if (len(o.description) > LIMITS.optionDescription) out.push('Select ' + (i + 1) + ' option ' + (j + 1) + ' description is ' + len(o.description) + '/' + LIMITS.optionDescription);
+        });
+      });
       return out;
     }
     var limitBox = h('div', { class: 'ee-limits' });
@@ -579,23 +644,35 @@
     ]));
     form.appendChild(sec('Content', [
       field('Title', function () { return model.title; }, function (v) { model.title = v; changed(); }, { md: true, max: LIMITS.title, ph: 'Embed title' }),
-      field('Title URL', function () { return model.url; }, function (v) { model.url = v; changed(); }, { ph: 'https://…' }),
+      field('Title URL', function () { return model.url; }, function (v) { model.url = v; changed(); }, { insert: true, ph: 'https://…' }),
       field('Description', function () { return model.description; }, function (v) { model.description = v; changed(); }, { type: 'textarea', md: true, max: LIMITS.description, ph: 'Supports **markdown**' }),
       h('label', { class: 'ee-f' }, [h('span', {}, 'Colour'), h('input', { type: 'color', value: model.color, oninput: function (e) { model.color = e.target.value; changed(); } })]),
     ], true));
     form.appendChild(sec('Author', [
-      field('Name', function () { return model.author.name; }, function (v) { model.author.name = v; changed(); }, { max: LIMITS.author }),
-      field('URL', function () { return model.author.url; }, function (v) { model.author.url = v; changed(); }),
+      field('Name', function () { return model.author.name; }, function (v) { model.author.name = v; changed(); }, { insert: true, max: LIMITS.author }),
+      field('URL', function () { return model.author.url; }, function (v) { model.author.url = v; changed(); }, { insert: true }),
       field('Icon URL', function () { return model.author.icon_url; }, function (v) { model.author.icon_url = v; changed(); }, { insert: true }),
     ]));
     form.appendChild(sec('Images', [
       field('Thumbnail URL', function () { return model.thumbnail.url; }, function (v) { model.thumbnail.url = v; changed(); }, { insert: true }),
       field('Image URL', function () { return model.image.url; }, function (v) { model.image.url = v; changed(); }, { insert: true }),
     ]));
+    // The footer is not editable, on ANY embed, and saying so is the whole point of this section.
+    //
+    // The manager stamps its branded footer and a timestamp on every embed as it goes out — its own
+    // and every one a plugin sends. A footer typed here was overwritten a moment later: the field
+    // looked like it worked, the preview even showed it, and Discord never did. It used to be worse
+    // than that — the same field DID survive on embeds this plugin sent, so whether it worked
+    // depended on which screen you were on, with nothing telling you which. Branding applies
+    // everywhere now, and the field is gone everywhere with it.
+    //
+    // The preview still draws the footer, because that IS what Discord will show.
     form.appendChild(sec('Footer', [
-      field('Footer text', function () { return model.footer.text; }, function (v) { model.footer.text = v; changed(); }, { max: LIMITS.footer }),
-      field('Footer icon URL', function () { return model.footer.icon_url; }, function (v) { model.footer.icon_url = v; changed(); }, { insert: true }),
-      h('label', { class: 'ee-chk' }, [(function () { var c = h('input', { type: 'checkbox', onchange: function (e) { model.timestamp = e.target.checked; changed(); } }); c.checked = !!model.timestamp; return c; })(), 'Show timestamp']),
+      h('p', { class: 'ee-note' },
+        'The footer and the timestamp come from your bot’s branding and are applied to every '
+        + 'embed as it is sent, so they cannot be set per embed — that is what keeps every '
+        + 'message the bot posts looking like the same bot. Change them by changing the branding '
+        + '(name and icon, with Premium). The preview below shows what Discord will show.'),
     ]));
 
     var fieldsBox = h('div', {});
@@ -632,7 +709,7 @@
             h('button', { class: 'ee-mini', type: 'button', title: 'Duplicate', onclick: function () { model.buttons.splice(i + 1, 0, clone(b)); renderBtns(); changed(); } }, '⧉'),
             h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove', onclick: function () { model.buttons.splice(i, 1); renderBtns(); changed(); } }, '✕'),
           ]),
-          field('Label', function () { return b.label; }, function (v) { b.label = v; changed(); }),
+          field('Label', function () { return b.label; }, function (v) { b.label = v; changed(); }, { insert: true, max: LIMITS.buttonLabel }),
           field('Style', function () { return b.style || '1'; }, function (v) { b.style = v; renderBtns(); changed(); }, { type: 'select', options: STYLES }),
           field(String(b.style) === '5' ? 'URL' : 'Custom id',
             function () { return String(b.style) === '5' ? b.url : b.custom_id; },
@@ -717,9 +794,9 @@
           optBox.innerHTML = '';
           (sel.options || (sel.options = [])).forEach(function (o, oi) {
             optBox.appendChild(h('div', { class: 'ee-optrow' }, [
-              field('Label', function () { return o.label; }, function (v) { o.label = v; changed(); }),
+              field('Label', function () { return o.label; }, function (v) { o.label = v; changed(); }, { insert: true, max: LIMITS.optionLabel }),
               field('Value (id)', function () { return o.value; }, function (v) { o.value = v; changed(); }),
-              field('Description', function () { return o.description; }, function (v) { o.description = v; changed(); }),
+              field('Description', function () { return o.description; }, function (v) { o.description = v; changed(); }, { insert: true, max: LIMITS.optionDescription }),
               h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove option', onclick: function () { sel.options.splice(oi, 1); renderOpts(); changed(); } }, '✕'),
             ]));
           });
@@ -731,7 +808,7 @@
             h('b', {}, 'Menu ' + (i + 1)),
             h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove', onclick: function () { list.splice(i, 1); renderSelects(box); changed(); } }, '✕'),
           ]),
-          field('Placeholder', function () { return sel.placeholder; }, function (v) { sel.placeholder = v; changed(); }, { ph: 'Choose…' }),
+          field('Placeholder', function () { return sel.placeholder; }, function (v) { sel.placeholder = v; changed(); }, { insert: true, max: LIMITS.selectPlaceholder, ph: 'Choose…' }),
           field('Custom id', function () { return sel.custom_id; }, function (v) { sel.custom_id = v; changed(); }, { ph: 'another plugin handles this id' }),
           optBox,
           h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (sel.options.length < 25) { sel.options.push({ label: 'Option', value: '' }); renderOpts(); changed(); } } }, '+ Add option'),
@@ -755,6 +832,36 @@
       } }, '+ Add another embed')]));
 
     // ── preview ─────────────────────────────────────────────────────────────────
+    // Discord groups CONSECUTIVE inline fields into rows of up to three, and a row shares its width
+    // between however many it holds — two inline fields are two half-width columns, not two thirds
+    // of a row with a gap where the third would be. A non-inline field breaks the run and takes a
+    // row to itself.
+    //
+    // One function, because the main embed and the extra embeds must lay out identically: two copies
+    // of this rule would disagree the first time one of them was corrected.
+    function fieldGrid(fields) {
+      var grid = h('div', { class: 'ee-fields' });
+      var rows = [];
+      var run = null;
+      (fields || []).forEach(function (f) {
+        if (!f.inline) { rows.push([f]); run = null; return; }
+        if (!run || run.length >= 3) { run = []; rows.push(run); }
+        run.push(f);
+      });
+      rows.forEach(function (r) {
+        var rowEl = h('div', { class: 'ee-frow' });
+        rowEl.style.gridTemplateColumns = 'repeat(' + r.length + ', 1fr)';
+        r.forEach(function (f) {
+          rowEl.appendChild(h('div', { class: 'ee-field' }, [
+            h('b', { html: mdToHtml(rs(f.name)) || '​' }),
+            h('span', { html: mdToHtml(rs(f.value)) || '​' }),
+          ]));
+        });
+        grid.appendChild(rowEl);
+      });
+      return grid;
+    }
+
     function renderPreview() {
       pvContent.innerHTML = model.content ? mdToHtml(rs(model.content)) : '';
       pvContent.style.display = model.content ? '' : 'none';
@@ -763,29 +870,44 @@
       if (model.author.name) main.appendChild(h('div', { class: 'ee-author' }, [model.author.icon_url ? h('img', { src: model.author.icon_url, onerror: function () { this.style.display = 'none'; } }) : null, rs(model.author.name)]));
       if (model.title) main.appendChild(h('div', { class: 'ee-title' + (model.url ? '' : ' plain'), html: mdToHtml(rs(model.title)) }));
       if (model.description) main.appendChild(h('div', { class: 'ee-desc', html: mdToHtml(rs(model.description)) }));
-      if (model.fields.length) {
-        var grid = h('div', { class: 'ee-fields' });
-        model.fields.forEach(function (f) { grid.appendChild(h('div', { class: 'ee-field' + (f.inline ? '' : ' wide') }, [h('b', { html: mdToHtml(rs(f.name)) || '​' }), h('span', { html: mdToHtml(rs(f.value)) || '​' })])); });
-        main.appendChild(grid);
-      }
+      if (model.fields.length) main.appendChild(fieldGrid(model.fields));
       if (model.image.url) main.appendChild(h('div', { class: 'ee-img' }, h('img', { src: model.image.url, onerror: function () { this.style.display = 'none'; } })));
-      if (model.footer.text || model.timestamp) {
-        main.appendChild(h('div', { class: 'ee-footer' }, [model.footer.icon_url ? h('img', { src: model.footer.icon_url, onerror: function () { this.style.display = 'none'; } }) : null, rs(model.footer.text || '') + (model.timestamp ? (model.footer.text ? ' • ' : '') + new Date().toLocaleString() : '')]));
-      }
+      // Discord stamps the branded footer and a timestamp on EVERY embed as it goes out, so the
+      // preview shows them unconditionally. It used to draw them only when the model happened to
+      // carry a footer, which is why the same built-in embed showed one here and not there — the
+      // preview was describing the model instead of describing the message.
+      var pvFoot = (model.footer.text || brandFooter.text || '');
+      var pvIcon = (model.footer.icon_url || brandFooter.icon_url || '');
+      main.appendChild(h('div', { class: 'ee-footer' }, [
+        pvIcon ? h('img', { src: pvIcon, onerror: function () { this.style.display = 'none'; } }) : null,
+        rs(pvFoot) + (pvFoot ? ' • ' : '') + new Date().toLocaleString(),
+      ]));
       preview.innerHTML = '';
       preview.appendChild(main);
       if (model.thumbnail.url) preview.appendChild(h('div', { class: 'ee-thumb' }, h('img', { src: model.thumbnail.url, onerror: function () { this.style.display = 'none'; } })));
       // Extra embeds render as smaller cards under the first — enough to see their order and
       // colours, which is what goes wrong once there is more than one.
       pvExtra.innerHTML = '';
+      // An extra embed can carry MORE than the four things its editor offers: adopting an existing
+      // multi-embed message with /fetch brings its author and fields along, and they are sent. The
+      // preview draws them for the same reason it draws the footer — it is supposed to show the
+      // message, not the subset of the message this editor happens to have inputs for.
       (model.extraEmbeds || []).forEach(function (ex) {
         var card = h('div', { class: 'ee-embed ee-embed-x' });
         card.style.borderLeftColor = ex.color || '#ff6a1a';
         var inner = h('div', { class: 'ee-main' });
-        if (ex.title) inner.appendChild(h('div', { class: 'ee-title plain', html: mdToHtml(rs(ex.title)) }));
+        if (ex.author && ex.author.name) {
+          inner.appendChild(h('div', { class: 'ee-author' }, [
+            ex.author.icon_url ? h('img', { src: ex.author.icon_url, onerror: function () { this.style.display = 'none'; } }) : null,
+            rs(ex.author.name),
+          ]));
+        }
+        if (ex.title) inner.appendChild(h('div', { class: 'ee-title' + (ex.url ? '' : ' plain'), html: mdToHtml(rs(ex.title)) }));
         if (ex.description) inner.appendChild(h('div', { class: 'ee-desc', html: mdToHtml(rs(ex.description)) }));
+        if (Array.isArray(ex.fields) && ex.fields.length) inner.appendChild(fieldGrid(ex.fields));
         if (ex.image && ex.image.url) inner.appendChild(h('div', { class: 'ee-img' }, h('img', { src: ex.image.url, onerror: function () { this.style.display = 'none'; } })));
         card.appendChild(inner);
+        if (ex.thumbnail && ex.thumbnail.url) card.appendChild(h('div', { class: 'ee-thumb' }, h('img', { src: ex.thumbnail.url, onerror: function () { this.style.display = 'none'; } })));
         pvExtra.appendChild(card);
       });
       pvBtns.innerHTML = '';
@@ -804,9 +926,16 @@
     };
 
     // Embedded in another plugin: just the editor. Its host owns saving and its own layout.
+    //
+    // The branding load has to happen HERE too, not only on the standalone path further down. This
+    // return used to come first, so Built-in Embeds and Custom Live Embeds — the two tabs that mount
+    // the editor this way — never learned the bot's footer and drew one containing nothing but a
+    // date. Which is exactly the "sometimes there is a footer, sometimes not" the preview was
+    // reported for: the ones that showed it were the kinds whose own sample happened to carry one.
     if (!opts.standalone) {
       container.appendChild(editorPane);
       renderPreview(); renderLimits();
+      withBranding(renderPreview);
       return editor;
     }
 
@@ -928,18 +1057,36 @@
         t = t || {};
         tplPane.innerHTML = '';
         var names = Object.keys(t);
+        // Templates accumulate the way saved files do, and are found by a name somebody half
+        // remembers — so the list gets the same search the embed picker has.
+        var tq = h('input', { class: 'es-search', type: 'search', placeholder: 'Search templates…' });
+        var tCount = h('span', { class: 'ee-empty' }, names.length + ' saved');
         tplPane.appendChild(h('div', { class: 'ee-actions' }, [
           h('button', { class: 'ee-btn primary', type: 'button', onclick: function () { var n = prompt('Save the current embed as:'); if (n) api('/templates', { method: 'POST', body: { name: n, data: clone(model) } }).then(loadTpls); } }, 'Save current embed'),
-          h('span', { class: 'ee-empty' }, names.length + ' saved'),
+          tq,
+          tCount,
         ]));
         if (!names.length) { tplPane.appendChild(h('div', { class: 'ee-empty' }, 'No templates yet. Build an embed on the Editor tab, then save it here.')); return; }
         var list = h('div', {});
         names.forEach(function (n) {
-          list.appendChild(h('div', { class: 'ee-hrow' }, [
+          var row = h('div', { class: 'ee-hrow' }, [
             h('div', { class: 'ee-hmain' }, [h('b', {}, n), h('span', { class: 'ee-hmeta' }, (t[n] && t[n].title) || '(no title)')]),
             h('button', { class: 'ee-btn', type: 'button', onclick: function () { editor.setValue(t[n]); } }, 'Load'),
             h('button', { class: 'ee-btn danger', type: 'button', onclick: function () { if (confirm('Delete "' + n + '"?')) api('/templates/delete', { method: 'POST', body: { name: n } }).then(loadTpls); } }, '✕'),
-          ]));
+          ]);
+          // The name AND the embed's own title: people look for either.
+          row.dataset.find = (n + ' ' + ((t[n] && t[n].title) || '')).toLowerCase();
+          list.appendChild(row);
+        });
+        tq.addEventListener('input', function () {
+          var q = tq.value.trim().toLowerCase();
+          var shown = 0;
+          Array.prototype.forEach.call(list.children, function (row) {
+            var hit = !q || (row.dataset.find || '').indexOf(q) >= 0;
+            row.style.display = hit ? '' : 'none';
+            if (hit) shown++;
+          });
+          tCount.textContent = q ? (shown + ' of ' + names.length + ' saved') : (names.length + ' saved');
         });
         tplPane.appendChild(list);
         tplPane.appendChild(h('details', { class: 'ee-sec' }, [h('summary', {}, 'JSON (import / export)'), h('div', { class: 'ee-body' }, (function () {
@@ -979,14 +1126,30 @@
       api('/history').then(function (list) {
         histBox.innerHTML = '';
         if (!list || !list.length) { histPane.appendChild(h('div', { class: 'ee-empty' }, 'Nothing sent yet.')); return; }
+        // This list only grows, and it is the one place an owner comes to find a message they sent
+        // last week. Scrolling for it is not a way to find anything. Matches the title and the
+        // channel, which is how somebody actually remembers a message.
+        var hq = h('input', { class: 'es-search', type: 'search', placeholder: 'Search sent messages…' });
+        var hCount = h('span', { class: 'ee-empty' }, list.length + ' message(s)');
         histBox.appendChild(h('div', { class: 'ee-actions' }, [
-          h('span', { class: 'ee-empty' }, list.length + ' message(s)'),
+          hCount,
+          hq,
           h('button', { class: 'ee-btn', type: 'button', onclick: function () { if (confirm('Clear the list? Messages in Discord are not touched.')) api('/history/clear', { method: 'POST', body: {} }).then(loadHistory); } }, 'Clear list'),
         ]));
+        hq.addEventListener('input', function () {
+          var n = hq.value.trim().toLowerCase();
+          var shown = 0;
+          Array.prototype.forEach.call(box.children, function (row) {
+            var hit = !n || (row.dataset.find || '').indexOf(n) >= 0;
+            row.style.display = hit ? '' : 'none';
+            if (hit) shown++;
+          });
+          hCount.textContent = n ? (shown + ' of ' + list.length + ' message(s)') : (list.length + ' message(s)');
+        });
         var box = h('div', {});
         list.forEach(function (entry) {
           var when = new Date(entry.editedAt || entry.sentAt).toLocaleString();
-          box.appendChild(h('div', { class: 'ee-hrow' }, [
+          var row = h('div', { class: 'ee-hrow' }, [
             h('div', { class: 'ee-hmain' }, [
               h('b', {}, entry.title || '(no title)'),
               h('span', { class: 'ee-hmeta' }, (entry.channelName ? '#' + entry.channelName + ' · ' : '') + when + (entry.editedAt ? ' · edited' : '')),
@@ -1001,7 +1164,11 @@
                 api('/delete', { method: 'POST', body: { channelId: entry.channelId, messageId: entry.messageId } })
                   .then(function () { if (editing && editing.messageId === entry.messageId) setEditing(null); loadHistory(); });
               } }, '✕'),
-          ]));
+          ]);
+          // What the row can be found by — title and channel, lower-cased once here rather than on
+          // every keystroke.
+          row.dataset.find = ((entry.title || '') + ' ' + (entry.channelName || '')).toLowerCase();
+          box.appendChild(row);
         });
         histBox.appendChild(box);
       });
@@ -1025,15 +1192,10 @@
     PAGES.forEach(function (p) { container.appendChild(p[2]); });
     go('edit');
 
-    // Start a NEW embed looking like the rest of the bot. Only fills an EMPTY footer — an embed the
-    // admin has already worded is never re-branded behind their back, and anything loaded from
-    // history or a template keeps exactly what it had.
-    api('/branding').then(function (b) {
-      if (!b || !b.text || model.footer.text || model.footer.icon_url) return;
-      model.footer.text = b.text;
-      model.footer.icon_url = b.icon_url || '';
-      editor.setValue(clone(model));
-    });
+    // The bot's footer, for the PREVIEW only. It is no longer written into the model: the manager
+    // stamps it at send time on every embed, so storing a copy in the template would just be a stale
+    // duplicate that goes wrong the moment the branding changes.
+    withBranding(renderPreview);
 
     renderPreview(); renderLimits();
     return editor;
@@ -1131,7 +1293,14 @@
           list.forEach(function (k) {
             // A kind the manager has not sent yet has no captured shape — say so rather than
             // letting an empty editor look like a bug.
-            og.appendChild(h('option', { value: k.key }, k.label + (k.live ? '' : ' — not seen yet')));
+            // "not seen yet" read as a fault. For most kinds the manager can now describe the embed
+            // without ever having sent one; what is left is the property alerts and intel cards,
+            // whose text only exists once a real event supplies it. Say that, not "not seen".
+            var note = '';
+            if (!k.live && !k.sample) note = (k.group === 'dm' || k.group === 'intel')
+              ? ' — shape after the first alert'
+              : ' — not captured yet';
+            og.appendChild(h('option', { value: k.key }, k.label + note));
             shown++;
           });
           sel.appendChild(og);
@@ -1151,19 +1320,37 @@
       var edBox = h('div', { class: 'es-editor' });
       var noteEl = h('p', { class: 'es-note' });
       var status = h('span', { class: 'muted', style: 'font-size:.85rem' });
-      var NOTE_NORMAL = 'Leave a field blank to keep the manager default. Applied: colour, title, description, author, thumbnail, image. Turn on “Replace fields” to fully control the field list — click a field, then a data token to insert it. Footer, timestamp and buttons stay manager / branding controlled.';
-      var NOTE_STYLE = 'This embed shows a generated list, so only its look is editable here (colour, title, author, image). It keeps the image you set in the manager unless you set one here.';
+      // This text has to match what applyStyle() really does. It used to end “buttons stay manager
+      // controlled”, which stopped being true the moment the send started delivering them — and a note
+      // that contradicts the behaviour is worse than no note, because it stops people trying.
+      var NOTE_NORMAL = 'Leave a field blank to keep the manager default. Applied: colour, title (and its link), description, author, thumbnail, image, the text above the embed, buttons, select menus and any extra embeds. Turn on “Replace fields” to fully control the field list — click a field, then a data token to insert it. The footer and timestamp come from your bot’s branding on every embed, so they are not editable here.';
+      var NOTE_STYLE = 'This embed shows a generated list, so its fields are not editable here — but everything around them is: colour, title, author, image, the text above the embed, buttons, select menus and extra embeds. It keeps the image you set in the manager unless you set one here.';
       var NOTE_PLAYER = 'This embed is tied to a player, so the {stat_…} tokens fill in with THAT player’s numbers when it fires. On embeds without a player (server status, leaderboards, custom live embeds) use {pstat:PlayerName:Field} instead to pull a specific player’s stat.';
 
       // Seed a kind's editor model from its catalog: default field template + (for live embeds) a
       // starting title, so picking a kind loads a real, editable layout — no event needed.
+      // Seed the editor from the kind's TEMPLATE — the captured embed with its live values turned
+      // back into {tokens}. Seeding from the raw sample is what made the editor open full of the
+      // numbers the manager happened to send last: a title reading "43/64" instead of
+      // "{online}/{max}", which saved as a literal and froze the embed at that moment forever.
       function seedModel(kd) {
         var m = edSvc.defaultModel();
-        if (kd && kd.title) m.title = kd.title;
-        if (kd && kd.description) m.description = kd.description;
-        if (kd && kd.key && liveImages[kd.key]) m.image = { url: liveImages[kd.key] };   // show the manager's live-embed image
-        if (kd && Array.isArray(kd.defaults) && kd.defaults.length) {
-          m.fields = kd.defaults.map(function (f) { return { name: f.name || '', value: f.value || '', inline: !!f.inline }; });
+        var t = (kd && kd.template) || null;
+        // `title`/`description`/`defaults` are the same template under their old names — kept so a
+        // manager serving the older shape still seeds something sensible.
+        var title = t ? t.title : (kd && kd.title);
+        var desc = t ? t.description : (kd && kd.description);
+        var fields = (t && t.fields) || (kd && kd.defaults) || [];
+        if (title) m.title = title;
+        if (desc) m.description = desc;
+        if (t && t.url) m.url = t.url;
+        if (t && t.color) m.color = t.color;
+        if (t && t.author && t.author.name) m.author = { name: t.author.name, url: t.author.url || '', icon_url: t.author.icon_url || '' };
+        if (t && t.thumbnail && t.thumbnail.url) m.thumbnail = { url: t.thumbnail.url };
+        if (t && t.image && t.image.url) m.image = { url: t.image.url };
+        if (kd && kd.key && liveImages[kd.key]) m.image = { url: liveImages[kd.key] };   // the manager's own live-embed image wins
+        if (fields.length) {
+          m.fields = fields.map(function (f) { return { name: f.name || '', value: f.value || '', inline: !!f.inline }; });
         }
         return m;
       }
@@ -1272,34 +1459,77 @@
       var edBox = h('div', {});
       var actionsBox = h('div', { class: 'ce-acts' });
       var st = h('span', { class: 'muted', style: 'font-size:.82rem' });
+      // Clicking through a dropdown is fine for three embeds and hopeless for thirty.
+      var search = h('input', { class: 'es-search', type: 'search', placeholder: 'Search embeds…' });
 
       // Wire each embed button (Custom ID, not a Link) to an action fired when a player clicks it.
       function renderActions() {
         actionsBox.innerHTML = '';
         var ce = items[cur]; if (!ce) return;
         ce.actions = ce.actions || {};
-        actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '⚡ Button actions'));
-        actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 10px' }, 'Step 1: add buttons in the “Buttons” section of the editor above. Step 2: each button shows up here — pick what it does when a player clicks it.'));
+        actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '⚡ Click actions'));
+        actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 10px' }, 'Step 1: add buttons or a select menu in the editor above. Step 2: each one shows up here — pick what it does when a player uses it.'));
+
+        // One action row, wherever it came from. `key` is what the backend looks the action up by:
+        // a button's Custom ID, or MENU_ID::OPTION_VALUE for one choice in a menu.
+        function actRow(key, label, hint) {
+          var act = ce.actions[key] = ce.actions[key] || { type: '', value: '' };
+          var typeSel = h('select', {}, [['', '— no action —'], ['command', 'Run in-game command'], ['message', 'Reply with a message'], ['announce', 'Post message to this channel']].map(function (o) { return h('option', { value: o[0] }, o[1]); }));
+          typeSel.value = act.type || ''; typeSel.addEventListener('change', function () { act.type = typeSel.value; renderActions(); });
+          var valInp = h('input', { type: 'text', value: act.value || '', placeholder: act.type === 'command' ? '#SpawnItem BP_... 1  (supports {tokens})' : (hint || 'Text (supports {tokens})') });
+          valInp.addEventListener('input', function () { act.value = valInp.value; });
+          actionsBox.appendChild(h('div', { class: 'ce-act' }, [h('span', { class: 'ce-act-id' }, label), typeSel, act.type ? valInp : null]));
+        }
+
         // every non-Link button gets an action row; auto-assign a Custom ID if the user left it blank
         var allBtns = ((ce.model && ce.model.buttons) || []).filter(function (b) { return String(b.style) !== '5'; });
         allBtns.forEach(function (b, i) { if (!(b.custom_id || b.customId)) b.custom_id = 'btn' + (i + 1); });
-        if (!allBtns.length) { actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.82rem;margin:0' }, 'No buttons yet — add one in the editor’s “Buttons” section (any style except “Link”).')); return; }
         allBtns.forEach(function (b) {
           var cid = b.custom_id || b.customId;
-          var act = ce.actions[cid] = ce.actions[cid] || { type: '', value: '' };
-          var typeSel = h('select', {}, [['', '— no action —'], ['command', 'Run in-game command'], ['message', 'Reply with a message'], ['announce', 'Post message to this channel']].map(function (o) { return h('option', { value: o[0] }, o[1]); }));
-          typeSel.value = act.type || ''; typeSel.addEventListener('change', function () { act.type = typeSel.value; renderActions(); });
-          var valInp = h('input', { type: 'text', value: act.value || '', placeholder: act.type === 'command' ? '#SpawnItem BP_... 1  (supports {tokens})' : 'Text (supports {tokens})' });
-          valInp.addEventListener('input', function () { act.value = valInp.value; });
-          actionsBox.appendChild(h('div', { class: 'ce-act' }, [h('span', { class: 'ce-act-id' }, (b.label || cid) + ' · ' + cid), typeSel, act.type ? valInp : null]));
+          actRow(cid, (b.label || cid) + ' · ' + cid);
         });
+
+        // Select menus. The editor has always offered them here; until an option could be given an
+        // action, picking one answered a player with Discord's own "This interaction failed".
+        var sels = (ce.model && ce.model.selects) || [];
+        sels.forEach(function (sl, si) {
+          if (!(sl.custom_id || sl.customId)) sl.custom_id = 'menu' + (si + 1);
+          var scid = sl.custom_id || sl.customId;
+          var opts = (sl.options || []).filter(function (o) { return o && o.label; });
+          actionsBox.appendChild(h('div', { class: 'ce-acts-sub' }, '▾ Menu · ' + scid + (sl.placeholder ? ' — “' + sl.placeholder + '”' : '')));
+          if (!opts.length) { actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 8px' }, 'This menu has no options yet — add some in the editor’s “Select menus” section.')); return; }
+          opts.forEach(function (o, oi) {
+            var val = o.value || ('opt_' + oi);
+            actRow(scid + '::' + val, o.label + ' · ' + val);
+          });
+          // The catch-all, so a long menu does not need an entry per option.
+          actRow(scid, 'Any other choice · ' + scid, 'Text — {picked} is the chosen option');
+        });
+
+        if (!allBtns.length && !sels.length) {
+          actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.82rem;margin:0' }, 'Nothing clickable yet — add a button (any style except “Link”) or a select menu in the editor above.'));
+        }
       }
 
       function optLabel(ce, i) { return (ce.name || ('Embed ' + (i + 1))) + (ce.enabled === false ? ' · off' : ''); }
+      // Find the option belonging to an item by its VALUE, never by position: once the list can be
+      // filtered, the nth option is no longer the nth embed, and renaming one would relabel another.
+      function optFor(i) { return sel.querySelector('option[value="' + i + '"]'); }
       function refreshSel() {
+        var q = (search.value || '').trim().toLowerCase();
         sel.innerHTML = '';
-        items.forEach(function (ce, i) { sel.appendChild(h('option', { value: String(i) }, optLabel(ce, i))); });
+        var shown = 0;
+        items.forEach(function (ce, i) {
+          var label = optLabel(ce, i);
+          if (q && label.toLowerCase().indexOf(q) < 0) return;
+          sel.appendChild(h('option', { value: String(i) }, label));
+          shown++;
+        });
         if (!items.length) sel.appendChild(h('option', { value: '' }, '— no embeds —'));
+        else if (!shown) sel.appendChild(h('option', { value: '' }, 'No embed matches “' + search.value + '”'));
+        // Keep showing whatever is open even when the filter hides it — a search box that silently
+        // switched you to a different embed while you were editing one would lose work.
+        if (shown && !optFor(cur) && items[cur]) sel.appendChild(h('option', { value: String(cur) }, optLabel(items[cur], cur) + ' · editing'));
         sel.value = String(cur);
       }
       function showOne() {
@@ -1317,16 +1547,18 @@
       chanSel.appendChild(h('option', { value: '' }, '— pick a channel —'));
       channels.forEach(function (c) { chanSel.appendChild(h('option', { value: c.id }, '#' + c.name)); });
 
-      sel.addEventListener('change', function () { cur = +sel.value || 0; showOne(); });
-      nameInp.addEventListener('input', function () { if (items[cur]) { items[cur].name = nameInp.value; if (sel.options[cur]) sel.options[cur].textContent = optLabel(items[cur], cur); } });
+      sel.addEventListener('change', function () { if (sel.value === '') return; cur = +sel.value || 0; showOne(); });
+      search.addEventListener('input', refreshSel);
+      nameInp.addEventListener('input', function () { if (items[cur]) { items[cur].name = nameInp.value; var o = optFor(cur); if (o) o.textContent = optLabel(items[cur], cur); } });
       chanSel.addEventListener('change', function () { if (items[cur]) items[cur].channelId = chanSel.value; });
       iv.addEventListener('input', function () { if (items[cur]) items[cur].intervalSec = Number(iv.value) || 60; });
-      active.addEventListener('change', function () { if (items[cur]) { items[cur].enabled = active.checked; if (sel.options[cur]) sel.options[cur].textContent = optLabel(items[cur], cur); } });
+      active.addEventListener('change', function () { if (items[cur]) { items[cur].enabled = active.checked; var o = optFor(cur); if (o) o.textContent = optLabel(items[cur], cur); } });
 
       body.appendChild(h('div', { class: 'card es-card' }, [
         h('div', { class: 'es-bar' }, [
           h('label', { class: 'es-f', style: 'flex:1 1 180px' }, [h('span', {}, 'Embed'), sel]),
-          h('button', { class: 'es-btn', onclick: function () { items.push({ id: 'ce_' + Date.now(), name: 'Live status', channelId: '', intervalSec: 60, enabled: true, model: starterModel() }); cur = items.length - 1; refreshSel(); showOne(); } }, '+ Add'),
+          h('label', { class: 'es-f', style: 'flex:1 1 150px' }, [h('span', {}, 'Find'), search]),
+          h('button', { class: 'es-btn', onclick: function () { items.push({ id: 'ce_' + Date.now(), name: 'Live status', channelId: '', intervalSec: 60, enabled: true, model: starterModel() }); cur = items.length - 1; search.value = ''; refreshSel(); showOne(); } }, '+ Add'),
           h('button', { class: 'es-btn', onclick: function () { if (items[cur]) { items.splice(cur, 1); cur = Math.max(0, cur - 1); refreshSel(); showOne(); saveAll(); } } }, 'Remove'),
           h('button', { class: 'es-btn primary', onclick: function () { saveAll(function () { SSA.toast('Saved'); }); } }, 'Save all'),
         ]),

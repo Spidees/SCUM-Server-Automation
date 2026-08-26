@@ -6,7 +6,15 @@
   function api(p, opts) {
     opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
     if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) { return r.json().catch(function () { return {}; }); });
+    return fetch(API + p, init).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        // The HTTP status matters. A 401 after the session expired is valid JSON, so collapsing every
+        // response to its body meant a failed save was reported as "Saved ✓" — and the unsaved-changes
+        // guard was cleared at the same time, so closing the tab lost the work silently.
+        if (!r.ok) return { _httpError: r.status, error: (body && body.error) || ('HTTP ' + r.status) };
+        return body;
+      });
+    });
   }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
@@ -57,7 +65,10 @@
               h('span', { class: 'vr-ac-n' }, nm),
               h('span', { class: 'vr-ac-c' }, code),
             ]);
-            row.addEventListener('mousedown', function (e) {
+            // pointerdown, not mousedown: a touch device only synthesises mousedown after the
+            // finger lifts, and only if the tap never turned into a scroll — so picking a vehicle
+            // from this list raced the blur that hides it and usually did nothing on a phone.
+            row.addEventListener('pointerdown', function (e) {
               e.preventDefault();
               v.code = code; if (!v.name) v.name = nm; if (!v.image && img) v.image = img;
               refresh();
@@ -78,7 +89,14 @@
     el.innerHTML = '<div class="vr-head"><p class="muted" style="font-size:.86rem;margin:0">Players rent vehicles through the Discord bot. Configure everything below, design the menu embed, then post it.</p></div><div id="vr-body" class="muted">Loading…</div>';
     var body = el.querySelector('#vr-body');
 
-    api('/config').then(function (c) { config = c || {}; if (!Array.isArray(config.vehicles)) config.vehicles = []; render(); });
+    var savedSnapshot = '';
+    api('/config').then(function (c) {
+      if (c && c._httpError) { body.textContent = 'Could not load the configuration: ' + c.error + '. Reload the page, and if it persists sign in again.'; return; }
+      config = c || {};
+      if (!Array.isArray(config.vehicles)) config.vehicles = [];
+      savedSnapshot = JSON.stringify(config);
+      render();
+    });
 
     function render() {
       body.className = '';
@@ -103,7 +121,7 @@
         h('div', { class: 'vr-grid' }, [
           h('label', { class: 'vr-f' }, [h('span', {}, 'Rental menu channel'), chanSel]),
           inp('Button label', function () { return config.buttonLabel; }, function (v) { config.buttonLabel = v; }, { ph: '🚗 Rent a vehicle' }),
-          inp('Max active rentals / player', function () { return config.maxPerPlayer; }, function (v) { config.maxPerPlayer = v; }, { type: 'number' }),
+          inp('Max active rentals / player (0 = ∞)', function () { return config.maxPerPlayer; }, function (v) { config.maxPerPlayer = v; }, { type: 'number' }),
           inp('Cooldown between rentals (min)', function () { return config.cooldownMinutes; }, function (v) { config.cooldownMinutes = v; }, { type: 'number' }),
           inp('Daily limit / player (0 = ∞)', function () { return config.dailyLimit; }, function (v) { config.dailyLimit = v; }, { type: 'number' }),
           inp('Max extensions / rental (0 = ∞)', function () { return config.maxExtensions; }, function (v) { config.maxExtensions = v; }, { type: 'number' }),
@@ -147,7 +165,7 @@
           inp('Blocked sectors', function () { return (config.blockedSectors || []).join(', '); },
             function (v) { config.blockedSectors = String(v).split(',').map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean); }, { ph: 'A0, Z4' }),
         ]),
-        h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Sector rules need the live map calibration; while it is unavailable renting is allowed everywhere rather than blocked for a reason players cannot see. Command names are written without the prefix.'),
+        h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Sector rules need the live map calibration; while it is unavailable renting is allowed everywhere rather than blocked for a reason players cannot see. Command names are written without the prefix, and renaming one — or turning the commands off — takes effect the moment you save. Prices are taken from the player’s bank account, not the money they are carrying.'),
       ]));
 
       // ── in-game wording ──
@@ -169,10 +187,34 @@
 
       // ── vehicles ──
       var vehBox = h('div', {});
+      var vehFind = h('input', { class: 'vr-search', type: 'search', placeholder: 'Search vehicles…' });
+      vehFind.addEventListener('input', function () { renderVeh(); });
+      // Discord's own limits, stated where they bite. A 26th vehicle or a 26th plan is simply not
+      // offered in the Discord menu — it stays rentable from chat, which is exactly the kind of
+      // "works for me, not for them" an owner has no way to discover on their own.
+      var vehWarn = h('div', { class: 'vr-warn' });
+      function renderWarn() {
+        var msgs = [];
+        if (config.vehicles.length > 25) msgs.push('Discord shows at most 25 options in a menu — the last ' + (config.vehicles.length - 25) + ' vehicle(s) will not appear in the Discord list. They stay rentable with the in-game command.');
+        var over = config.vehicles.filter(function (v) { return (v.options || []).length > 25; }).map(function (v) { return v.name || 'unnamed'; });
+        if (over.length) msgs.push('More than 25 plans on: ' + over.join(', ') + ' — only the first 25 show in Discord.');
+        var noCode = config.vehicles.filter(function (v) { return !v.code; }).map(function (v) { return v.name || 'unnamed'; });
+        if (noCode.length) msgs.push('No spawn code on: ' + noCode.join(', ') + ' — renting those fails with a message asking the player to tell an admin.');
+        var noPlan = config.vehicles.filter(function (v) { return !(v.options || []).length; }).map(function (v) { return v.name || 'unnamed'; });
+        if (noPlan.length) msgs.push('No rental plans on: ' + noPlan.join(', ') + ' — nothing to pick, so they cannot be rented.');
+        vehWarn.innerHTML = '';
+        vehWarn.style.display = msgs.length ? '' : 'none';
+        msgs.forEach(function (m) { vehWarn.appendChild(h('p', {}, '⚠ ' + m)); });
+      }
       function renderVeh() {
         vehBox.innerHTML = '';
+        renderWarn();
+        var q = (vehFind.value || '').trim().toLowerCase();
+        var shown = 0;
         config.vehicles.forEach(function (v, vi) {
           if (!Array.isArray(v.options)) v.options = [];
+          if (q && ((v.name || '') + ' ' + (v.code || '')).toLowerCase().indexOf(q) < 0) return;
+          shown++;
           var optBox = h('div', { class: 'vr-opts' });
           function renderOpts() {
             optBox.innerHTML = '';
@@ -209,9 +251,17 @@
           ]));
         });
         if (!config.vehicles.length) vehBox.appendChild(h('div', { class: 'muted', style: 'font-size:.85rem;padding:8px' }, 'No vehicles yet — add one.'));
+        else if (!shown) vehBox.appendChild(h('div', { class: 'muted', style: 'font-size:.85rem;padding:8px' }, 'No vehicle matches “' + vehFind.value + '”.'));
       }
       renderVeh();
-      body.appendChild(card('Vehicles', [vehBox, h('button', { class: 'vr-btn add', onclick: function () { config.vehicles.push({ name: '', code: '', image: '', options: [{ minutes: 60, currency: 'money', amount: 5000 }] }); renderVeh(); } }, '+ Add vehicle')]));
+      body.appendChild(card('Vehicles', [
+        h('div', { class: 'vr-vbar' }, [
+          h('button', { class: 'vr-btn add', onclick: function () { config.vehicles.push({ name: '', code: '', image: '', options: [{ minutes: 60, currency: 'money', amount: 5000 }] }); vehFind.value = ''; renderVeh(); } }, '+ Add vehicle'),
+          vehFind,
+        ]),
+        vehWarn,
+        vehBox,
+      ]));
 
       // ── menu embed (via embed-editor) ──
       var embDiv = h('div', {});
@@ -221,23 +271,121 @@
       body.appendChild(card('Rental menu embed', [embDiv]));
 
       // ── save + post + rentals ──
+      // Nothing on this page takes effect until it is saved, and it is a long page — so it says
+      // plainly when there is something unsaved, and warns before the tab is closed on top of it.
       var status = h('span', { class: 'muted', style: 'font-size:.85rem' });
+      // The baseline belongs to the last SAVE (or load), not to the last redraw. render() runs again
+      // whenever "Free rentals" is toggled, and re-taking it there quietly declared an hour of
+      // unsaved edits already saved — the indicator went out and the close warning stopped.
+      function dirty() { return JSON.stringify(config) !== savedSnapshot; }
+      function markSaved() { savedSnapshot = JSON.stringify(config); status.textContent = 'Saved ✓'; }
+      // One timer for the tab, not one per redraw.
+      if (window.vrDirtyTick) clearInterval(window.vrDirtyTick);
+      window.vrDirtyTick = setInterval(function () {
+        if (!body.parentNode) { clearInterval(window.vrDirtyTick); window.vrDirtyTick = null; return; }
+        if (dirty() && !/Saving|Posting/.test(status.textContent)) status.textContent = '● Unsaved changes';
+      }, 1200);
+      if (window.vrBeforeUnload) window.removeEventListener('beforeunload', window.vrBeforeUnload);
+      window.vrBeforeUnload = function (e) { if (dirty()) { e.preventDefault(); e.returnValue = ''; } };
+      window.addEventListener('beforeunload', window.vrBeforeUnload);
+
       body.appendChild(h('div', { class: 'vr-actions' }, [
-        h('button', { class: 'vr-btn primary', onclick: function () { status.textContent = 'Saving…'; api('/config', { method: 'POST', body: config }).then(function () { status.textContent = 'Saved ✓'; }); } }, 'Save configuration'),
-        h('button', { class: 'vr-btn', onclick: function () { status.textContent = 'Posting…'; api('/config', { method: 'POST', body: config }).then(function () { return api('/post-menu', { method: 'POST' }); }).then(function (r) { status.textContent = r && r.ok ? 'Menu posted ✓' : 'Post failed (channel / bot?)'; }); } }, 'Save & post menu'),
+        h('button', { class: 'vr-btn primary', onclick: function () {
+          status.textContent = 'Saving…';
+          api('/config', { method: 'POST', body: config }).then(function (r) {
+            if (r && r._httpError) { status.textContent = '⚠ Not saved — ' + r.error; return; }
+            markSaved();
+          });
+        } }, 'Save configuration'),
+        h('button', { class: 'vr-btn', onclick: function () {
+          status.textContent = 'Posting…';
+          api('/config', { method: 'POST', body: config }).then(function (r) {
+            if (r && r._httpError) { status.textContent = '⚠ Not saved — ' + r.error; return null; }
+            markSaved();
+            return api('/post-menu', { method: 'POST' });
+          }).then(function (r) {
+            if (!r) return;
+            // Say WHICH thing went wrong. One message for three different causes left an owner
+            // guessing between "no channel", "bot offline" and "bot cannot post there".
+            if (r._httpError) { status.textContent = '⚠ ' + r.error; return; }
+            if (r.ok) { status.textContent = 'Menu posted ✓'; return; }
+            status.textContent = !config.channelId ? '⚠ Pick a channel first'
+              : '⚠ Could not post — check the bot is online and can post in that channel';
+          });
+        } }, 'Save & post menu'),
         status,
       ]));
 
-      var rentBox = h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Loading…');
-      api('/rentals').then(function (list) {
-        rentBox.innerHTML = '';
-        if (!list || !list.length) { rentBox.textContent = 'No active rentals.'; return; }
-        var tbl = h('table', { class: 'data-table' }, [h('thead', {}, h('tr', {}, [h('th', {}, 'Player'), h('th', {}, 'Vehicle'), h('th', {}, 'Expires')]))]);
-        var tb = h('tbody', {});
-        list.forEach(function (r) { tb.appendChild(h('tr', {}, [h('td', {}, r.playerName || r.steamId || '—'), h('td', {}, r.vehName || '—'), h('td', {}, new Date(r.expiresAt).toLocaleString())])); });
-        tbl.appendChild(tb); rentBox.appendChild(tbl);
+      // ── active rentals ──
+      // The panel's own table, so it searches, sorts and pages like every other list in the manager
+      // — and so an admin can actually DO something. A rental whose vehicle id was never captured,
+      // or one that needs revoking, used to sit here read-only until it expired.
+      var active = [];
+      var activeTbl = SSA.table({
+        columns: [
+          { key: 'player', label: 'Player', sort: true, sortVal: function (r) { return (r.playerName || r.steamId || '').toLowerCase(); }, render: function (r) { return document.createTextNode(r.playerName || r.steamId || '—'); } },
+          { key: 'vehicle', label: 'Vehicle', sort: true, sortVal: function (r) { return (r.vehName || '').toLowerCase(); }, render: function (r) { return document.createTextNode(r.vehName || '—'); } },
+          { key: 'left', label: 'Time left', sort: true, sortVal: function (r) { return r.expiresAt; }, render: function (r) { return h('span', { title: new Date(r.expiresAt).toLocaleString() }, left(r.expiresAt)); } },
+          // Blank means auto-removal will be skipped for this one — worth seeing before it expires.
+          { key: 'veh', label: 'Vehicle id', render: function (r) { return r.vehId ? h('code', {}, r.vehId) : h('span', { class: 'muted', title: 'The spawned vehicle could not be identified, so it will NOT be removed automatically.' }, 'not captured'); } },
+          { key: 'ext', label: 'Extended', render: function (r) { return document.createTextNode(String(r.extensions || 0)); } },
+          { key: 'act', label: '', render: function (r) {
+            return h('button', { class: 'vr-btn danger', title: 'End it now and remove the vehicle', onclick: function () {
+              // SSA.confirm resolves to true/false — it takes options as its second argument, not a
+              // callback, so a callback there would simply never run.
+              SSA.confirm('End the rental of ' + (r.vehName || 'this vehicle') + ' for ' + (r.playerName || r.steamId) + '? The vehicle is removed and the player is told in game.',
+                { title: 'End rental', okLabel: 'End it' }).then(function (yes) {
+                if (!yes) return;
+                api('/rentals/end', { method: 'POST', body: { id: r.id } }).then(function (out) {
+                  if (out && out.ok) SSA.toast(out.removed ? 'Rental ended and the vehicle removed.' : 'Rental ended (the vehicle was already gone).');
+                  else SSA.toast('Could not end it: ' + ((out && out.error) || 'unknown'), 'error');
+                  loadRentals();
+                });
+              });
+            } }, 'End');
+          } },
+        ],
+        rows: function () { return active; },
+        search: function (r) { return (r.playerName || '') + ' ' + (r.steamId || '') + ' ' + (r.vehName || ''); },
+        searchPlaceholder: 'Search rentals…',
+        empty: 'No active rentals.',
+        onRefresh: function () { loadRentals(); },
       });
-      body.appendChild(card('Active rentals', [rentBox]));
+
+      var past = [];
+      var REASONS = { expired: 'expired', returned: 'returned early', admin: 'ended by an admin' };
+      var histTbl = SSA.table({
+        columns: [
+          { key: 'player', label: 'Player', sort: true, sortVal: function (r) { return (r.playerName || r.steamId || '').toLowerCase(); }, render: function (r) { return document.createTextNode(r.playerName || r.steamId || '—'); } },
+          { key: 'vehicle', label: 'Vehicle', sort: true, sortVal: function (r) { return (r.vehName || '').toLowerCase(); }, render: function (r) { return document.createTextNode(r.vehName || '—'); } },
+          { key: 'started', label: 'Started', sort: true, sortVal: function (r) { return r.startedAt; }, render: function (r) { return document.createTextNode(new Date(r.startedAt).toLocaleString()); } },
+          { key: 'ended', label: 'How it ended', render: function (r) { return document.createTextNode(REASONS[r.endedReason] || 'expired'); } },
+          { key: 'ext', label: 'Extended', render: function (r) { return document.createTextNode(String(r.extensions || 0)); } },
+        ],
+        rows: function () { return past; },
+        search: function (r) { return (r.playerName || '') + ' ' + (r.steamId || '') + ' ' + (r.vehName || ''); },
+        searchPlaceholder: 'Search past rentals…',
+        empty: 'Nothing has finished yet.',
+        onRefresh: function () { loadRentals(); },
+      });
+
+      function left(ts) {
+        var ms = ts - Date.now();
+        if (ms <= 0) return 'due now';
+        var m = Math.round(ms / 60000);
+        return m < 60 ? m + ' min' : (Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : ''));
+      }
+      function loadRentals() {
+        api('/rentals').then(function (l) { active = Array.isArray(l) ? l : []; activeTbl.refresh(); });
+        api('/history').then(function (l) { past = Array.isArray(l) ? l : []; histTbl.refresh(); });
+      }
+      loadRentals();
+      // One timer per mount, cleared when the tab is rebuilt, so reopening the tab never stacks them.
+      if (window.vrTick) clearInterval(window.vrTick);
+      window.vrTick = setInterval(function () { activeTbl.refresh(); }, 30000);
+
+      body.appendChild(card('Active rentals', [activeTbl.el]));
+      body.appendChild(card('Finished rentals', [histTbl.el]));
     }
 
     function card(title, kids) { return h('div', { class: 'card vr-card' }, [h('h3', { class: 'vr-card-t' }, title)].concat(kids)); }

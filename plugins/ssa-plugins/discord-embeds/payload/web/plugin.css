@@ -30,9 +30,12 @@
 .ee-embed .ee-title{font-weight:700;color:#00a8fc;margin-bottom:6px}
 .ee-embed .ee-title.plain{color:#f2f3f5}
 .ee-embed .ee-desc{color:#dbdee1;white-space:pre-wrap;margin-bottom:8px;word-break:break-word}
-.ee-embed .ee-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+/* Fields are ROWS, not one grid: Discord shares a row's width between the fields in it, so two
+   inline fields are two halves and three are three thirds. A fixed three-column grid left a hole
+   wherever a run of inline fields was not a multiple of three. */
+.ee-embed .ee-fields{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.ee-embed .ee-frow{display:grid;gap:8px}
 .ee-embed .ee-field{min-width:0}
-.ee-embed .ee-field.wide{grid-column:1/-1}
 .ee-embed .ee-field b{display:block;color:#f2f3f5;font-size:.82rem;margin-bottom:2px}
 .ee-embed .ee-field span{color:#dbdee1;font-size:.82rem;white-space:pre-wrap;word-break:break-word}
 .ee-embed .ee-img{margin-top:4px}
@@ -203,6 +206,8 @@
 .ce-head input, .ce-head select { width: 100%; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .86rem; padding: .45rem .6rem; }
 .ce-acts { margin-top: 14px; border-top: 1px solid var(--line, #24272e); padding-top: 12px; }
 .ce-acts-h { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #8b9099); margin-bottom: 10px; }
+/* One select menu's group of options, so a long action list stays readable as menus and buttons mix. */
+.ce-acts-sub { font-size: .78rem; color: var(--text, #f1f3f5); margin: 14px 0 8px; padding-top: 10px; border-top: 1px solid var(--line-2, #343943); }
 .ce-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ce-act-id { font-size: .82rem; color: var(--text, #f1f3f5); min-width: 150px; font-family: var(--mono, monospace); }
 .ce-act select, .ce-act input { background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .84rem; padding: .4rem .55rem; }
@@ -268,3 +273,28 @@
   border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .88rem; padding: .45rem .6rem;
 }
 .es-search:focus { outline: none; border-color: var(--amber, #f0820c); }
+
+/* An explanation standing in for a control that cannot work — the footer on the manager's own
+   embeds, which is stamped from branding at send time. Reads as prose, not as a disabled input:
+   a greyed-out box invites people to try to enable it. */
+.ee-note{margin:0;padding:10px 14px;color:var(--muted,#9aa1ab);font-size:.82rem;line-height:1.5}
+
+/* A spoiler is revealed by TAPPING it. It used to be revealed by hovering, which a touch screen
+   cannot do at all — the preview claimed to show what Discord shows and then hid the text from
+   every phone permanently. The class is set by the preview's own click handler. */
+.ee-spoiler{cursor:pointer}
+.ee-spoiler.revealed{color:inherit;background:rgba(255,255,255,.08)}
+@media (hover: hover){ .ee-spoiler:hover{color:inherit} }
+
+/* Phones: give every icon-sized control a real hit area, and let the tab strip scroll rather
+   than overflow once a translation makes the three labels longer. */
+@media (max-width: 640px){
+  .ee-tool, .ee-mini, .ee-pop-x, .ee-emo, .ee-mdb{min-width:44px;min-height:44px}
+  .ee-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ee-tab{white-space:nowrap;min-height:44px}
+  .ee-fields, .ee-frow{grid-template-columns:1fr}
+}
+
+/* Without this the select inside cannot shrink below its own 220px minimum. */
+.es-f { min-width: 0; }
+.es-f > select, .es-f > input { min-width: 0; max-width: 100%; }

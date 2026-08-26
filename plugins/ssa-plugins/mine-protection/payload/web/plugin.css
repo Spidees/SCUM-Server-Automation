@@ -69,3 +69,8 @@
 .mp-rec-head{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px}
 .mp-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}
 .mp-savemsg{font-size:.82rem;color:var(--muted,#8b9099)}
+
+/* A 17-digit Steam ID cannot shrink, and neither of these had `min-width:0`, so one long player
+   name pushed the row past the edge of the modal it lives in. */
+.mp-online-row > * { min-width: 0; }
+.mp-online-row code, .mp-chip code { overflow-wrap: anywhere; }

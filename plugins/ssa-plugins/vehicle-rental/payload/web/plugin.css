@@ -5,7 +5,12 @@
 .vr-card-t{margin:0 0 .9rem;font-size:.95rem}
 .vr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .vr-stack{display:flex;flex-direction:column;gap:12px}
-.vr-f{display:flex;flex-direction:column;gap:4px}
+.vr-f{display:flex;flex-direction:column;gap:4px;min-width:0}
+/* Without `min-width:0` a grid or flex child cannot shrink below the intrinsic width of the
+   input inside it — about 173px in Chrome. Four of those in one row demand ~460px inside a
+   ~300px card, nothing above has `overflow-x`, and so the whole DOCUMENT widens: that is the
+   sideways scroll people report on a phone. */
+.vr-f > input, .vr-f > select{min-width:0;max-width:100%}
 .vr-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
 .vr-f input,.vr-f select{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
 .vr-veh{position:relative;border:1px solid var(--line,#24272e);border-radius:8px;background:var(--bg,#0b0c0e);padding:12px;margin-bottom:12px}
@@ -13,7 +18,7 @@
 .vr-x-top{position:absolute;top:8px;right:8px}
 .vr-opt-hd{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);margin:12px 0 6px;font-family:var(--ui,inherit)}
 .vr-opts{display:flex;flex-direction:column;gap:8px}
-.vr-opt{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end}
+.vr-opt{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}
 .vr-opt.vr-opt-free{grid-template-columns:1fr auto}
 .vr-btn{font:inherit;cursor:pointer;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
 .vr-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
@@ -31,3 +36,30 @@
 .vr-ac-row img,.vr-ac-ph{width:34px;height:26px;object-fit:contain;flex:0 0 auto;border-radius:4px;background:rgba(255,255,255,.03)}
 .vr-ac-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem;color:var(--text,#f1f3f5)}
 .vr-ac-c{flex:0 0 auto;font-size:.72rem;color:var(--muted,#8b9099);font-family:var(--mono,monospace)}
+/* vehicles toolbar: add + find, on one line */
+.vr-vbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.vr-vbar .vr-btn.add{width:auto;margin-top:0;flex:0 0 auto}
+.vr-search{flex:1 1 180px;min-width:140px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.vr-search:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+/* what Discord will silently drop, said before it happens */
+.vr-warn{border:1px solid rgba(230,178,58,.4);background:rgba(230,178,58,.08);border-radius:8px;padding:8px 12px;margin-bottom:12px}
+.vr-warn p{margin:.25rem 0;font-size:.82rem;color:var(--text,#f1f3f5)}
+/* Destructive action. The hover PAIR is retuned on the element, never one half of it: the panel's
+   own `button:hover` paints every button amber with dark text, so changing only the colour leaves an
+   amber fill and changing only the fill leaves dark text — both unreadable. */
+.vr-btn.danger{--hov-bg:var(--alarm,#ff5c5c);--hov-fg:#1a0505;--hov-line:var(--alarm,#ff5c5c);color:var(--alarm,#ff5c5c);border-color:rgba(255,92,92,.45);padding:.3rem .7rem;font-size:.78rem}
+
+/* Phones. One plan per line: three number/select boxes side by side are unreadable under 560px,
+   and the delete button needs a real target rather than a bare glyph. */
+@media (max-width: 560px){
+  .vr-opt{grid-template-columns:minmax(0,1fr) auto}
+  .vr-grid{grid-template-columns:1fr}
+  .vr-checks{gap:10px}
+  .vr-vbar{flex-direction:column;align-items:stretch}
+  .vr-vbar .vr-btn.add{width:100%}
+}
+/* A destructive control must be reachable with a thumb. 44px is the accessibility floor; the
+   glyph stays the same size, the hit area does not. */
+.vr-x{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.vr-x-top{top:2px;right:2px}
+@media (max-width: 640px){ .vr-btn.danger{min-height:44px;padding:.3rem .9rem} }

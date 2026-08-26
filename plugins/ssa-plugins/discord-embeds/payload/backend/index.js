@@ -180,7 +180,12 @@ module.exports = {
         .slice(0, EMBED_MAX);
       const payload = { embeds: list.map((e) => host.discord.js.EmbedBuilder.from(toApiEmbed(resolveEmbed(e)))) };
       // Plain text above the embed — Discord allows it and people use it for pings.
-      if (clean(b.content)) payload.content = resolveText(b.content);
+      //
+      // ALWAYS set, empty included, for the same reason the components below are: an edit leaves out
+      // what the payload leaves out, so sending nothing when the box was cleared meant deleting the
+      // text in the editor did nothing to the message. The components already knew this; the text
+      // did not, and the two behaved differently on the same Save.
+      payload.content = clean(b.content) ? resolveText(b.content) : '';
       // Always set, so an edit that REMOVES a button or a select actually removes it.
       payload.components = buildComponents(host, b.buttons, b.selects);
       return payload;

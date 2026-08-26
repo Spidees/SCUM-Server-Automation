@@ -42,9 +42,24 @@ module.exports = {
       } catch { /* optional */ }
     }
     // Every scalar property of the ctx becomes a token, plus a readable location.
+    // Flattened exactly the way the manager's own `tokensFrom()` flattens a context when it OFFERS
+    // the tokens: scalars at the top level, plus one level inside an object as `parent.child`.
+    //
+    // The two have to agree. They did not: the manager offered {location.x}, {location.y} and
+    // {location.z} in the picker, the editor let you insert them, and nothing here ever produced a
+    // value for them — so they were sent to Discord as the literal text "{location.x}".
     function base(ctx) {
       const m = {};
-      for (const k of Object.keys(ctx || {})) { const v = ctx[k]; if (v == null) continue; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') m[k] = String(v); }
+      const scalar = (v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+      for (const k of Object.keys(ctx || {})) {
+        const v = ctx[k];
+        if (v == null) continue;
+        if (scalar(v)) { m[k] = String(v); continue; }
+        if (typeof v === 'object' && !Array.isArray(v)) {
+          for (const k2 of Object.keys(v)) { const v2 = v[k2]; if (v2 != null && scalar(v2)) m[`${k}.${k2}`] = String(v2); }
+        }
+      }
+      // `{location}` stays the readable one-line form; the dotted ones are the raw coordinates.
       const lt = locText(ctx); if (lt) m.location = lt;
       return m;
     }
@@ -216,18 +231,132 @@ module.exports = {
      * name. Only whole-value matches, and only values long enough to be unambiguous — a partial
      * substitution would corrupt text that merely happens to contain "1".
      */
-    function templateFromSample(sample, tokens) {
-      if (!sample || !Array.isArray(sample.fields)) return [];
-      const byValue = new Map();
-      for (const tk of (tokens || [])) {
-        const v = tk && tk.value != null ? String(tk.value) : '';
-        if (v.length >= 3 && !byValue.has(v)) byValue.set(v, tk.t);
-      }
-      return sample.fields.map((f) => {
-        const val = String(f.value == null ? '' : f.value);
-        const tok = byValue.get(val);
-        return { name: f.name, value: tok ? '{' + tok + '}' : val, inline: !!f.inline };
+    // ── turning a captured embed back into an editable template ─────────────────────────────────
+    //
+    // A sample is what the manager SENT: "🛰️ My Server — 43/64 online". What the owner has to edit is
+    // the template behind it: "🛰️ {serverName} — {online}/{max} online". Handing them the sample means
+    // they save 43 as a literal and the embed says 43 forever.
+    //
+    // The old rule got this wrong twice over: it only looked at FIELDS (so the title, description and
+    // author stayed raw no matter what), and it only matched when a token's value was the WHOLE field
+    // value and at least three characters long — which is why a player count of "43" was never a
+    // token, and neither was anything embedded in a sentence.
+    //
+    // The rule now: substitute every token value found anywhere in the text, longest first, and only
+    // on a boundary so "43" cannot be pulled out of "1435". Text already replaced is frozen, so one
+    // token's name can never be eaten by another token's value.
+
+    const RX_ESC = /[.*+?^${}()|[\]\\]/g;
+    /**
+     * Candidates worth reverse-mapping, most specific first.
+     *
+     * A ONE-CHARACTER value is never a candidate, and that is measured rather than assumed. Across
+     * the manager's own embeds the single characters are `playerId` = "1", `tier` = "2" and
+     * `nextRestart` = "-". Substituting those turns a Steam id into
+     * "7656{playerId}{playerId}98000000000", an IP address into "{playerId}92.0.2.{playerId}0", and a
+     * restart clock of `-:7044` into `{nextRestart}:7044`. Two characters and up are safe because of
+     * the boundary check below; one character is inside almost every string there is.
+     */
+    function tokenCandidates(tokens) {
+      const seen = new Set();
+      const out = [];
+      (tokens || []).forEach((tk, i) => {
+        if (!tk || !tk.t) return;
+        const v = tk.value == null ? '' : String(tk.value);
+        // Not even a single digit. The boundary check below only guards against letters and digits
+        // on either side, and real data is full of digits separated by punctuation: "192.0.2.10"
+        // becomes "192.{fps}.{tier}.10", "A: 20.3" becomes "A: 20.{quantity}". A one-character
+        // value is left alone and the owner can write the token in themselves if they want it.
+        if (v.trim().length < 2) return;
+        const key = v + ' ' + tk.t;
+        if (seen.has(key)) return;
+        seen.add(key);
+        // Several tokens routinely carry the SAME value: every feed offers both `location.x` and
+        // `locationX`, a kill offers `killerName` and `playerName`. Whichever is chosen the owner
+        // sees one of them, so it has to be the same one every time, and the readable one.
+        out.push({ t: tk.t, v, order: i, dotted: tk.t.indexOf('.') >= 0 ? 1 : 0 });
       });
+      out.sort((a, b) => (b.v.length - a.v.length)        // longest value wins: "43/64" over "43"
+        || (a.dotted - b.dotted)                          // plain name over the dotted alias
+        || (a.order - b.order));                          // then the manager's own order
+      return out;
+    }
+
+    /**
+     * One string, with every recognised value replaced by its {token}.
+     *
+     * `whole` restricts it to an exact match of the ENTIRE string. That is the rule for titles and
+     * field names, because those are the manager's own labels rather than data — and every false
+     * positive the real embeds produce lives exactly there: "Admin Action" against `adminName` =
+     * "Admin", "Player Kicked" against `action` = "Kicked", "Scheduled Restart" against `reason` =
+     * "Scheduled". Field VALUES and the description are data, so they get the substring rule, and
+     * "134 m", "Bandage x3" and "restart in **15 minutes**" become templates as they should.
+     */
+    function tokenizeText(text, cands, whole) {
+      if (text == null) return text;
+      if (whole) {
+        const exact = String(text);
+        const hit = cands.find((c) => c.v === exact);
+        if (hit) return '{' + hit.t + '}';
+        // A label can still carry a NUMBER — "Server Status 43/64" is a label with data in it. Every
+        // false positive the real embeds produce is a plain alphabetic word coinciding with a label
+        // ("Admin", "Kicked", "Scheduled", "destroyed", "attack"), and none of them contains a digit.
+        // So inside a label, substitute only values that do.
+        const numeric = cands.filter((c) => /[0-9]/.test(c.v));
+        return numeric.length ? tokenizeText(exact, numeric, false) : exact;
+      }
+      let segs = [{ s: String(text), frozen: false }];
+      if (!segs[0].s) return segs[0].s;
+      for (const c of cands) {
+        const rx = new RegExp('(^|[^A-Za-z0-9_])(' + c.v.replace(RX_ESC, '\\$&') + ')(?![A-Za-z0-9_])', 'g');
+        const next = [];
+        for (const seg of segs) {
+          if (seg.frozen || seg.s.indexOf(c.v) < 0) { next.push(seg); continue; }
+          let last = 0; let m; let any = false;
+          rx.lastIndex = 0;
+          while ((m = rx.exec(seg.s))) {
+            any = true;
+            const start = m.index + m[1].length;
+            if (start > last) next.push({ s: seg.s.slice(last, start), frozen: false });
+            next.push({ s: '{' + c.t + '}', frozen: true });   // never matched again
+            last = start + m[2].length;
+            rx.lastIndex = last;
+          }
+          if (!any) { next.push(seg); continue; }
+          if (last < seg.s.length) next.push({ s: seg.s.slice(last), frozen: false });
+        }
+        segs = next;
+      }
+      return segs.map((x) => x.s).join('');
+    }
+
+    /**
+     * The whole editable template for one kind — title, its link, description, author and every
+     * field, all tokenized. The footer is deliberately absent: the manager stamps its branding on
+     * every embed as it sends, so a footer stored here would only be a stale duplicate.
+     */
+    function templateFromSample(sample, tokens) {
+      if (!sample) return null;
+      const cands = tokenCandidates(tokens);
+      const DATA = (x) => tokenizeText(x, cands, false);   // field values, description: real data
+      const LABEL = (x) => tokenizeText(x, cands, true);   // title, field names: the manager's labels
+      const out = {
+        title: LABEL(sample.title || ''),
+        url: sample.url || '',                          // a URL is not prose; leave it alone
+        description: DATA(sample.description || ''),
+        fields: (Array.isArray(sample.fields) ? sample.fields : []).map((f) => ({
+          name: LABEL(String(f.name == null ? '' : f.name)),
+          value: DATA(String(f.value == null ? '' : f.value)),
+          inline: !!f.inline,
+        })),
+      };
+      if (sample.author && sample.author.name) {
+        out.author = { name: LABEL(sample.author.name), url: sample.author.url || '', icon_url: sample.author.icon_url || '' };
+      }
+      if (sample.thumbnail && sample.thumbnail.url) out.thumbnail = { url: sample.thumbnail.url };
+      if (sample.image && sample.image.url) out.image = { url: sample.image.url };
+      if (typeof sample.color === 'number') out.color = '#' + sample.color.toString(16).padStart(6, '0');
+      return out;
     }
 
     /** Kinds as the UI needs them, sourced from the manager. */
@@ -239,6 +368,10 @@ module.exports = {
         // The manager's registry already carries the whole {stat_*} set, so there is nothing to
         // prepend here — a local copy would only shadow it with the same names.
         const extra = globalTokenCatalog().filter((tk) => { if (seen[tk.t]) return false; seen[tk.t] = 1; return true; });
+        // Reverse-mapped from THIS embed's own tokens only. The global catalog is not used here on
+        // purpose: a server-wide value that happens to coincide with a word in the text would turn
+        // that word into a token that means something else entirely.
+        const tpl = templateFromSample(k.sample, k.tokens);
         return {
           key: k.key,
           label: k.label,
@@ -247,10 +380,17 @@ module.exports = {
           live: !!k.live,                       // shape came from an embed the manager really sent
           seenAt: k.at || null,
           tokens: own.concat(extra),
-          defaults: templateFromSample(k.sample, k.tokens),
+          // The WHOLE tokenized layout — title, description, author, fields. The editor seeds from
+          // this. `defaults`, `title` and `description` stay alongside it under their old names, all
+          // taken from the same template so the two can never disagree.
+          template: tpl,
+          defaults: (tpl && tpl.fields) || [],
           sample: k.sample || null,             // the real embed, for the preview
-          description: (k.sample && k.sample.description) || null,
-          title: (k.sample && k.sample.title) || null,
+          // Tokenized too. These used to be handed over raw, so picking a built-in embed loaded the
+          // literal text the manager last sent — "43/64" instead of "{online}/{max}" — and saving it
+          // froze that moment into the embed for good.
+          description: (tpl && tpl.description) || null,
+          title: (tpl && tpl.title) || null,
           styleOnly: false,
         };
       });
@@ -305,26 +445,76 @@ module.exports = {
         .replace(/\{pstat:([^:}]+):([^}]+)\}/g, (_, name, field) => {
           try { const s = host.players.statsByName(name.trim()); if (!s) return ''; const f = field.trim().toLowerCase(); const key = Object.keys(s).find((k) => k.toLowerCase() === f); return (key != null && s[key] != null) ? String(s[key]) : ''; } catch { return ''; }
         })
-        .replace(/\{(\w+)\}/g, (_, k) => (m[k] != null ? m[k] : ''));
+        // `[\w.]` and not `\w`: the manager offers dotted tokens ({location.x}) and the picker
+        // inserts them, so this has to recognise them or they go out as literal text.
+        .replace(/\{([\w.]+)\}/g, (_, k) => (m[k] != null ? m[k] : ''));
     }
+    /**
+     * Resolve {tokens} everywhere the owner can type them — which is everywhere.
+     *
+     * This used to cover the title, description, author name and fields, and nothing else. The
+     * editor offers the same token picker on every text box, so a token written into the message
+     * above the embed, a button's label, a select option or an image URL was sent out verbatim:
+     * players read a literal "{onlineMax}". The list of places was simply shorter than the list of
+     * places you can type.
+     */
     function resolveModel(model, m) {
       const r = JSON.parse(JSON.stringify(model || {}));
-      if (r.title) r.title = resolveTpl(r.title, m);
-      if (r.description) r.description = resolveTpl(r.description, m);
-      if (r.author && r.author.name) r.author.name = resolveTpl(r.author.name, m);
+      const T = (v) => (typeof v === 'string' && v ? resolveTpl(v, m) : v);
+
+      r.title = T(r.title);
+      r.description = T(r.description);
+      r.url = T(r.url);
+      // The text above the embed — where people put pings and the live numbers next to them.
+      r.content = T(r.content);
+      if (r.author) { r.author.name = T(r.author.name); r.author.url = T(r.author.url); r.author.icon_url = T(r.author.icon_url); }
+      // URLs too: {img:<itemId>} resolving to a picture is the whole point of that helper.
+      if (r.thumbnail) r.thumbnail.url = T(r.thumbnail.url);
+      if (r.image) r.image.url = T(r.image.url);
+      if (r.footer) r.footer.text = T(r.footer.text);
       if (Array.isArray(r.fields)) r.fields = r.fields.map((f) => ({ name: resolveTpl(f && f.name, m), value: resolveTpl(f && f.value, m), inline: !!(f && f.inline) }));
+      if (Array.isArray(r.buttons)) r.buttons = r.buttons.map((b) => (b ? Object.assign({}, b, { label: T(b.label), url: T(b.url) }) : b));
+      if (Array.isArray(r.selects)) {
+        r.selects = r.selects.map((sl) => (sl ? Object.assign({}, sl, {
+          placeholder: T(sl.placeholder),
+          options: Array.isArray(sl.options)
+            ? sl.options.map((o) => (o ? Object.assign({}, o, { label: T(o.label), description: T(o.description) }) : o))
+            : sl.options,
+        }) : sl));
+      }
+      // Extra embeds are embeds; they get the same treatment rather than a shallower one.
+      if (Array.isArray(r.extraEmbeds)) r.extraEmbeds = r.extraEmbeds.map((x) => resolveModel(x, m));
       return r;
     }
 
+    /**
+     * Apply a saved style to one of the manager's embeds.
+     *
+     * Returns `{ embed, content }`, not just the embed: a Discord message is the embed AND the line
+     * of text above it, and the editor has always had a field for that text. It went nowhere,
+     * because the manager's hook could only hand an embed back — so an owner typed a message, saw
+     * the embed update, and never saw the message. The manager now carries content through, and a
+     * transform that returns the envelope shape gets it delivered.
+     *
+     * The FOOTER is deliberately not applied here and never was: the manager stamps its branding
+     * footer on every embed as it sends, so anything set here is overwritten a moment later. The
+     * editor says so rather than offering a field that cannot work.
+     */
     function applyStyle(embed, kind, ctx) {
       const entry = loadStyles()[kind];
       if (!entry || !entry.enabled || !entry.model || !editor) return embed;
       const m = tokenMapFor(kind, ctx);
-      const e = editor.apiEmbed(resolveModel(entry.model, m));
+      const model = resolveModel(entry.model, m);
+      const e = editor.apiEmbed(model);
       if (!e) return embed;
+      // '' is a real answer — it clears text a previous refresh put there. Only an absent field
+      // means "leave the message alone".
+      const content = (model && typeof model.content === 'string') ? model.content : undefined;
+      let components; let extraEmbeds;
       try {
         if (typeof e.color === 'number') embed.setColor(e.color);
         if (clean(e.title)) embed.setTitle(e.title);
+        if (clean(e.url)) embed.setURL(e.url);        // the title's link — offered by the editor all along
         if (clean(e.description)) embed.setDescription(e.description);
         if (e.author && clean(e.author.name)) embed.setAuthor({ name: e.author.name, url: clean(e.author.url), iconURL: clean(e.author.icon_url) });
         if (e.thumbnail && clean(e.thumbnail.url)) embed.setThumbnail(e.thumbnail.url);
@@ -332,13 +522,26 @@ module.exports = {
         if (entry.fields) {
           embed.setFields((Array.isArray(e.fields) ? e.fields : []).filter((f) => clean(f.value)).slice(0, 25));
         }
+        // Buttons, select menus and extra embeds. The editor has always offered these on a manager
+        // embed, saved them and drawn them in its preview, and Discord never saw one of them —
+        // there was no way to hand them back. An EMPTY array is deliberate ("remove what is there");
+        // leaving the key out changes nothing, which is why they are only set when the owner has
+        // actually configured some.
+        const btns = Array.isArray(model.buttons) ? model.buttons : [];
+        const sels = Array.isArray(model.selects) ? model.selects : [];
+        if (btns.length || sels.length) components = editor.components(btns, sels);
+        const extras = Array.isArray(model.extraEmbeds) ? model.extraEmbeds : [];
+        if (extras.length) extraEmbeds = extras.map((x) => editor.apiEmbed(x)).filter(Boolean);
       } catch (err) { host.logger.warn(`applyStyle(${kind}) failed: ${err.message}`); }
-      return embed;
+      if (content === undefined && components === undefined && extraEmbeds === undefined) return embed;
+      return { embed, content, components, extraEmbeds };
     }
 
     // Live embeds carry the image you configured in the manager. Remember it (per kind) so the
     // editor preview can show it — the manager sets it on the embed, we just read it back.
-    const LIVE = ['status', 'leaderboard', 'players', 'bunker'];
+    // Every live kind the manager offers. `economy` was missing, so its configured image was
+    // never remembered and its preview showed none.
+    const LIVE = ['status', 'leaderboard', 'players', 'bunker', 'economy'];
     function captureImage(kind, embed) {
       if (LIVE.indexOf(kind) < 0) return;
       try {
@@ -429,11 +632,28 @@ module.exports = {
       if (!force && lastPost[ce.id] && (Date.now() - lastPost[ce.id]) < interval) return;
       lastPost[ce.id] = Date.now();
       try {
-        const e = editor.apiEmbed(resolveModel(ce.model, globalMapCached()));
+        const m = resolveModel(ce.model, globalMapCached());
+        const e = editor.apiEmbed(m);
         if (!e) return;
         const embed = host.discord.js.EmbedBuilder.from(e);
-        const comps = (editor.components && ce.model.buttons && ce.model.buttons.length) ? editor.components(ce.model.buttons) : [];
-        const payload = { embeds: [embed] }; if (comps.length) payload.components = comps;
+        const payload = { embeds: [embed] };
+
+        // Everything the editor let the owner build, not just the first embed and its buttons.
+        // Select menus, the text above the embed and extra embeds were all offered, saved, drawn in
+        // the preview — and never sent, because this refresh only ever looked at `buttons`.
+        //
+        // `content` and `components` are set UNCONDITIONALLY: this edits a message in place, and an
+        // edit leaves out whatever the payload leaves out. Sending them only when non-empty meant
+        // deleting the last button, or clearing the text, changed nothing in Discord.
+        payload.content = (typeof m.content === 'string') ? m.content : '';
+        payload.components = editor.components
+          ? editor.components(m.buttons || [], m.selects || [])
+          : [];
+        // Discord takes ten embeds per message; ours is the first.
+        (Array.isArray(m.extraEmbeds) ? m.extraEmbeds : []).slice(0, 9).forEach((x) => {
+          const ex = editor.apiEmbed(x);
+          if (ex) payload.embeds.push(host.discord.js.EmbedBuilder.from(ex));
+        });
         const ch = await host.discord.channel(ce.channelId);
         if (!ch || !ch.send) return;
         const ids = host.store.get('customMsg', {});
@@ -447,29 +667,61 @@ module.exports = {
     }
     host.schedule.every(15000, () => { for (const ce of loadCustom()) refreshCustom(ce, false); });
 
-    // ── button actions: a custom-embed button can run an in-game command or reply ────────────────
-    // One dispatcher (no double-registration): match the clicked button's custom_id to a configured
-    // action across all custom embeds. In-game commands go through host.server.command (SSA Bridge,
+    // ── component actions: a custom-embed button or menu choice runs a command or replies ────────
+    // One dispatcher (no double-registration): match the clicked component to a configured action
+    // across all custom embeds. In-game commands go through host.server.command (SSA Bridge,
     // Premium + server-authorised) — a button cannot bypass that.
+    //
+    // SELECT MENUS are handled as well as buttons. The editor has always let you put a menu on a
+    // custom live embed, the preview drew it and the send delivered it — and then a player picking
+    // an option reached nothing here, so Discord showed them "This interaction failed" after three
+    // seconds. Offering a control that answers with an error is worse than not offering it.
+    //
+    // A menu's action is keyed by MENU_ID::OPTION_VALUE, so each option can do something different;
+    // a bare MENU_ID entry is the fallback for "any choice", and {picked} carries the option.
+    function findAction(key) {
+      for (const ce of loadCustom()) { if (ce.actions && ce.actions[key] && ce.actions[key].type) return ce.actions[key]; }
+      return null;
+    }
+    async function runAction(i, act, extra) {
+      const m = Object.assign({}, globalMapCached(), extra || {});
+      if (act.type === 'command') {
+        await i.reply({ content: '⏳ Running…', ...EPHEMERAL });
+        let ok = false; try { const r = await host.server.command(resolveTpl(act.value || '', m)); ok = !(r && r.ok === false); } catch { ok = false; }
+        try { await i.editReply({ content: ok ? '✅ Done.' : '❌ Command failed (server / bridge?).' }); } catch {}
+      } else if (act.type === 'message') {
+        await i.reply({ content: resolveTpl(act.value || '…', m) || '…', ephemeral: act.ephemeral !== false });
+      } else if (act.type === 'announce') {
+        const ch = await host.discord.channel(act.channelId || i.channelId);
+        if (ch && ch.send) await ch.send(resolveTpl(act.value || '', m) || '…');
+        await i.reply({ content: '✅ Sent.', ...EPHEMERAL });
+      }
+    }
     host.discord.onInteraction(async (i) => {
       try {
-        if (!i.isButton || !i.isButton()) return;
+        const isBtn = !!(i.isButton && i.isButton());
+        const isSel = !!(i.isStringSelectMenu && i.isStringSelectMenu());
+        if (!isBtn && !isSel) return;
         const cid = i.customId;
-        let act = null;
-        for (const ce of loadCustom()) { if (ce.actions && ce.actions[cid]) { act = ce.actions[cid]; break; } }
-        if (!act || !act.type) return;
-        const m = globalMapCached();
-        if (act.type === 'command') {
-          await i.reply({ content: '⏳ Running…', ...EPHEMERAL });
-          let ok = false; try { const r = await host.server.command(resolveTpl(act.value || '', m)); ok = !(r && r.ok === false); } catch { ok = false; }
-          try { await i.editReply({ content: ok ? '✅ Done.' : '❌ Command failed (server / bridge?).' }); } catch {}
-        } else if (act.type === 'message') {
-          await i.reply({ content: resolveTpl(act.value || '…', m) || '…', ephemeral: act.ephemeral !== false });
-        } else if (act.type === 'announce') {
-          const ch = await host.discord.channel(act.channelId || i.channelId);
-          if (ch && ch.send) await ch.send(resolveTpl(act.value || '', m) || '…');
-          await i.reply({ content: '✅ Sent.', ...EPHEMERAL });
+        if (isBtn) {
+          const act = findAction(cid);
+          if (!act) return;
+          await runAction(i, act);
+          return;
         }
+        const picked = (Array.isArray(i.values) ? i.values : []).filter(Boolean);
+        // One action per chosen option; the fallback covers "any choice from this menu".
+        let ran = false;
+        for (const v of picked) {
+          const act = findAction(cid + '::' + v) || findAction(cid);
+          if (!act) continue;
+          await runAction(i, act, { picked: v, pickedList: picked.join(', ') });
+          ran = true;
+          break;                       // Discord allows exactly one reply per interaction
+        }
+        // A menu whose chosen option has no action still has to be answered, or the player is left
+        // looking at "This interaction failed" for something that simply is not configured yet.
+        if (!ran && !i.replied) await i.reply({ content: 'Nothing is set up for that choice yet.', ...EPHEMERAL });
       } catch (e) { try { if (i && !i.replied && i.reply) await i.reply({ content: 'Action error.', ...EPHEMERAL }); } catch {} }
     });
 
