@@ -6,6 +6,97 @@
 
 function clean(v) { return (typeof v === 'string' && v.trim() !== '') ? v : undefined; }
 
+/**
+ * Discord's limits, applied to the text AFTER the tokens are resolved.
+ *
+ * This is the one thing the editor cannot warn about, and the one that matters most. `{onlineList}`
+ * is thirteen characters while you are writing it and around two thousand on a full server, so an
+ * embed that fits comfortably in the editor is refused the moment it is actually sent. What happened
+ * then depended on which path you were on, and all three were bad:
+ *
+ *   • a custom LIVE embed froze at its old content for ever, retrying and failing every 15s;
+ *   • a SCHEDULED embed threw, was logged as failed and dropped from the queue — the announcement
+ *     simply never happened;
+ *   • a manual send answered with a raw discord.js validation error.
+ *
+ * Trimming is the lesser loss. A list ending in "…" is obviously a list that was cut; a frozen embed
+ * looks like live data.
+ *
+ * The numbers live HERE ONLY. The styler half asks for them through the editor service rather than
+ * keeping its own copy, because two lists of Discord's limits is one list that goes stale.
+ */
+const LIM = {
+  title: 256, description: 4096, fieldName: 256, fieldValue: 1024, footer: 2048,
+  authorName: 256, content: 2000, fields: 25, embeds: 10, total: 6000,
+  btnLabel: 80, customId: 100, selPlaceholder: 150, optLabel: 100, optDesc: 100, options: 25,
+};
+function cut(s, n) {
+  if (typeof s !== 'string' || s.length <= n) return s;
+  const hard = s.slice(0, n - 1);
+  // Prefer to end on a line break when there is one reasonably near the end: a list that stops after
+  // a whole entry reads as truncated on purpose, one that stops mid-word reads as broken.
+  const nl = hard.lastIndexOf('\n');
+  return (nl > n * 0.6 ? hard.slice(0, nl) : hard) + '…';
+}
+// What an embed counts against the 6000-per-message budget. Discord counts the text, not the JSON,
+// and not the URLs.
+function embedCost(r) {
+  if (!r || typeof r !== 'object') return 0;
+  let n = (r.title || '').length + (r.description || '').length
+    + ((r.author && r.author.name) || '').length + ((r.footer && r.footer.text) || '').length;
+  for (const f of (Array.isArray(r.fields) ? r.fields : [])) n += (f.name || '').length + (f.value || '').length;
+  return n;
+}
+function fitEmbed(r) {
+  if (!r || typeof r !== 'object') return r;
+  r.title = cut(r.title, LIM.title);
+  r.description = cut(r.description, LIM.description);
+  if (r.author) r.author.name = cut(r.author.name, LIM.authorName);
+  if (r.footer) r.footer.text = cut(r.footer.text, LIM.footer);
+  if (Array.isArray(r.fields)) {
+    r.fields = r.fields.slice(0, LIM.fields).map((f) => Object.assign({}, f, {
+      name: cut(f && f.name, LIM.fieldName), value: cut(f && f.value, LIM.fieldValue),
+    }));
+  }
+  // Each value can be legal on its own and the message still be refused: a 4096-character
+  // description plus twenty-five 1024-character fields is 29 596 against a 6000 budget. Drop whole
+  // fields from the end first (a field is a unit), and only then cut the description.
+  while (embedCost(r) > LIM.total && Array.isArray(r.fields) && r.fields.length) r.fields.pop();
+  const over = embedCost(r) - LIM.total;
+  if (over > 0 && typeof r.description === 'string') r.description = cut(r.description, Math.max(0, r.description.length - over));
+  return r;
+}
+/** The whole editor model: the embed, the text above it, the controls, and the extra embeds. */
+function fitModel(r) {
+  if (!r || typeof r !== 'object') return r;
+  fitEmbed(r);
+  r.content = cut(r.content, LIM.content);
+  if (Array.isArray(r.buttons)) r.buttons = r.buttons.map((b) => (b ? Object.assign({}, b, { label: cut(b.label, LIM.btnLabel) }) : b));
+  if (Array.isArray(r.selects)) {
+    r.selects = r.selects.map((sl) => (sl ? Object.assign({}, sl, {
+      placeholder: cut(sl.placeholder, LIM.selPlaceholder),
+      options: Array.isArray(sl.options)
+        ? sl.options.slice(0, LIM.options).map((o) => (o ? Object.assign({}, o, { label: cut(o.label, LIM.optLabel), description: cut(o.description, LIM.optDesc) }) : o))
+        : sl.options,
+    }) : sl));
+  }
+  // The 6000 budget is per MESSAGE, across every embed in it — so the extras are spent from whatever
+  // the first embed leaves. An extra that no longer fits is dropped whole rather than cut to a stub:
+  // half a table is worse than no table.
+  if (Array.isArray(r.extraEmbeds) && r.extraEmbeds.length) {
+    let left = LIM.total - embedCost(r);
+    const keep = [];
+    for (const x of r.extraEmbeds.slice(0, LIM.embeds - 1)) {
+      const fx = fitEmbed(x);
+      const cost = embedCost(fx);
+      if (cost > left) break;
+      left -= cost; keep.push(fx);
+    }
+    r.extraEmbeds = keep;
+  }
+  return r;
+}
+
 function toApiEmbed(j) {
   j = j || {};
   const e = {};
@@ -21,7 +112,10 @@ function toApiEmbed(j) {
   if (j.image && clean(j.image.url)) e.image = { url: j.image.url };
   if (Array.isArray(j.fields)) e.fields = j.fields.filter(f => f && (clean(f.name) || clean(f.value)))
     .map(f => ({ name: f.name || '​', value: f.value || '​', inline: !!f.inline })).slice(0, 25);
-  return e;
+  // Every path that builds an embed goes through here — the editor's own send, an edit, the
+  // scheduler, and the styler applying a saved style — so this is the one place that has to hold the
+  // limits. Trimming is idempotent, so a caller that has already trimmed loses nothing by it.
+  return fitEmbed(e);
 }
 
 // Buttons AND select menus, laid out the way Discord requires: a row holds either up to five
@@ -61,9 +155,12 @@ function buildComponents(host, buttons, selects) {
     const slice = btns.slice(i, i + 5).map((b, j) => {
       const bb = new ButtonBuilder();
       const style = b.style || (b.url ? ButtonStyle.Link : ButtonStyle.Primary);
-      bb.setStyle(style).setLabel(clean(b.label) || 'Button');
+      // A button label is capped at 80 and a custom id at 100. The select menu below has always been
+      // truncated; the buttons were not, so a token that grew — `Online: {online}/{max}` on a busy
+      // server, or an item name — threw and took the whole message with it.
+      bb.setStyle(style).setLabel(cut(clean(b.label) || 'Button', LIM.btnLabel));
       if (String(style) === String(ButtonStyle.Link)) bb.setURL(clean(b.url) || 'https://scumsa.com');
-      else bb.setCustomId(clean(b.custom_id) || clean(b.customId) || ('btn_' + (i + j)));
+      else bb.setCustomId(String(clean(b.custom_id) || clean(b.customId) || ('btn_' + (i + j))).slice(0, LIM.customId));
       if (clean(b.emoji)) { try { bb.setEmoji(b.emoji); } catch { /* invalid emoji */ } }
       if (b.disabled) bb.setDisabled(true);
       return bb;
@@ -80,6 +177,11 @@ module.exports = {
       apiEmbed: (json) => toApiEmbed(json),
       embed: (json) => host.discord.js.EmbedBuilder.from(toApiEmbed(json)),
       components: (buttons, selects) => buildComponents(host, buttons, selects),
+      // Trim a whole editor model — embed, the text above it, controls, extra embeds — to Discord's
+      // limits, AFTER its tokens have been resolved. Exposed so the styler half does not keep a
+      // second copy of those numbers: two lists of Discord's limits is one list that goes stale.
+      fit: (model) => fitModel(model),
+      limits: () => Object.assign({}, LIM),
       async send(channelId, json, buttons) {
         const payload = { embeds: [host.discord.js.EmbedBuilder.from(toApiEmbed(json))] };
         const comps = buildComponents(host, buttons, json && json.selects); if (comps.length) payload.components = comps;
@@ -95,6 +197,22 @@ module.exports = {
         const all = await g.channels.fetch();
         const out = [];
         all.forEach(ch => { if (ch && ch.type === 0) out.push({ id: ch.id, name: ch.name }); }); // 0 = GuildText
+        out.sort((a, b) => a.name.localeCompare(b.name));
+        res.json(out);
+      } catch (e) { res.json([]); }
+    });
+
+    // The guild's roles, so "who may press this button" is a dropdown rather than an id an owner has
+    // to go and copy out of Discord's developer mode. `@everyone` is filtered out: it is every member
+    // and therefore the same as no restriction, and offering it would read as a restriction.
+    host.routes.get('/roles', async (req, res) => {
+      const c = host.discord.client();
+      if (!c) return res.json([]);
+      try {
+        const g = c.guilds.cache.first(); if (!g) return res.json([]);
+        const all = await g.roles.fetch();
+        const out = [];
+        all.forEach((r) => { if (r && r.id !== g.id) out.push({ id: r.id, name: r.name }); });
         out.sort((a, b) => a.name.localeCompare(b.name));
         res.json(out);
       } catch (e) { res.json([]); }
@@ -174,20 +292,56 @@ module.exports = {
       };
     }
 
+    /** Every place a {token} can be typed into a button or a select menu. */
+    function resolveComponents(list) {
+      if (!Array.isArray(list)) return list;
+      return list.map((c) => {
+        if (!c || typeof c !== 'object') return c;
+        const out = Object.assign({}, c);
+        ['label', 'placeholder', 'url', 'custom_id', 'customId'].forEach((k) => {
+          if (typeof out[k] === 'string') out[k] = resolveText(out[k]);
+        });
+        if (Array.isArray(out.options)) {
+          out.options = out.options.map((o) => {
+            if (!o || typeof o !== 'object') return o;
+            const oo = Object.assign({}, o);
+            ['label', 'description', 'value'].forEach((k) => { if (typeof oo[k] === 'string') oo[k] = resolveText(oo[k]); });
+            return oo;
+          });
+        }
+        return out;
+      });
+    }
+
     function buildPayload(b) {
       const list = [b.embed].concat(Array.isArray(b.extraEmbeds) ? b.extraEmbeds : [])
         .filter((e) => e && typeof e === 'object')
         .slice(0, EMBED_MAX);
-      const payload = { embeds: list.map((e) => host.discord.js.EmbedBuilder.from(toApiEmbed(resolveEmbed(e)))) };
+      const api = list.map((e) => toApiEmbed(resolveEmbed(e)));
+      // Each embed is within its own limits by now; the 6000 is per MESSAGE, across all of them.
+      // An embed that no longer fits is dropped whole rather than cut to a stub.
+      let left = LIM.total;
+      const fitted = [];
+      for (const e of api) {
+        const cost = embedCost(e);
+        if (cost > left) break;
+        left -= cost; fitted.push(e);
+      }
+      const payload = { embeds: fitted.map((e) => host.discord.js.EmbedBuilder.from(e)) };
       // Plain text above the embed — Discord allows it and people use it for pings.
       //
       // ALWAYS set, empty included, for the same reason the components below are: an edit leaves out
       // what the payload leaves out, so sending nothing when the box was cleared meant deleting the
       // text in the editor did nothing to the message. The components already knew this; the text
       // did not, and the two behaved differently on the same Save.
-      payload.content = clean(b.content) ? resolveText(b.content) : '';
+      payload.content = clean(b.content) ? cut(resolveText(b.content), LIM.content) : '';
       // Always set, so an edit that REMOVES a button or a select actually removes it.
-      payload.components = buildComponents(host, b.buttons, b.selects);
+      //
+      // RESOLVED first. The editor offers the token picker on a button's label, a menu's placeholder
+      // and every option's label and description — and this path handed them to Discord raw, so
+      // players read a literal "{online}" on the button while the embed beside it showed the number.
+      // The styled built-in embeds already resolved these; /send, /edit and the scheduler did not.
+      payload.components = buildComponents(host, resolveComponents(b.buttons), resolveComponents(b.selects));
       return payload;
     }
 
@@ -337,6 +491,15 @@ module.exports = {
       // A past time would fire on the very next tick, which is never what someone meant to book.
       if (at < Date.now() - 60000) return res.status(400).json({ error: 'that time is in the past' });
       const list = scheduled();
+      // A full queue REFUSES, rather than accepting and dropping.
+      //
+      // `saveScheduled` keeps the first SCHED_MAX after sorting by time, so booking something
+      // further ahead than everything already queued put it last, sliced it off, and still answered
+      // `{ok: true}`. The owner scheduled an announcement, was told it was booked, and it never
+      // existed — the one failure mode a scheduler must never have.
+      if (list.length >= SCHED_MAX) {
+        return res.status(400).json({ error: `the schedule is full (${SCHED_MAX} messages). Delete one that has already gone out, or is no longer wanted, and book again.` });
+      }
       list.push({
         id: 'sch_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
         at, channelId: String(b.channelId), channelName: b.channelName || '',
@@ -367,6 +530,13 @@ module.exports = {
       for (const item of due) {
         try {
           const msg = await host.discord.send(item.channelId, buildPayload(item.data));
+          // `host.discord.send` RETURNS false on failure — it does not throw — so the catch below
+          // never ran and a booked announcement that never posted was logged as sent and dropped
+          // from the queue. Nothing anywhere said it had not gone out.
+          if (!msg) {
+            host.logger.warn(`scheduled embed for channel ${item.channelId} was NOT posted (channel gone, or the bot cannot post there). It has been dropped from the queue — re-book it.`);
+            continue;
+          }
           if (msg && msg.id) {
             remember({
               messageId: String(msg.id), channelId: item.channelId, channelName: item.channelName,

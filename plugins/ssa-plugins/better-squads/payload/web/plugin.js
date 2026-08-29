@@ -176,19 +176,44 @@
     function renderStatusBar() {
       statusBar.innerHTML = '';
       var st = statusData.stats || {};
+      // "Reached nobody" is its own number. Suppressed means the plugin CHOSE not to send (quiet
+      // hours, cooldown, rate limit); this one means it tried and the squad got nothing — a
+      // different problem needing a different fix, and it used to be counted as sent.
       [['Online', statusData.online], ['Squads with 2+ online', statusData.activeSquads],
-       ['Messages sent', st.sent || 0], ['Suppressed', st.suppressed || 0], ['Commands run', st.commands || 0],
+       ['Messages sent', st.sent || 0], ['Reached nobody', st.failed || 0, (st.failed || 0) > 0],
+       ['Suppressed', st.suppressed || 0], ['Commands run', st.commands || 0],
       ].forEach(function (b) {
-        statusBar.appendChild(h('div', { class: 'bs-stat' }, [
+        statusBar.appendChild(h('div', { class: 'bs-stat' + (b[2] ? ' bad' : '') }, [
           h('span', { class: 'bs-stat-v' }, String(b[1] == null ? '—' : b[1])),
           h('span', { class: 'bs-stat-l' }, b[0]),
         ]));
       });
+      // Six zeroes and no explanation is how "nothing has happened yet" gets read as "nothing works".
+      // Every message, command name and reply on this page is editable right now; the counters are the
+      // only part that has to wait, and the best time to write the texts is before anyone is on.
+      if (statusData.serverRunning === false) {
+        statusBar.appendChild(h('div', { class: 'bs-note-off' }, [
+          h('b', {}, 'The server is not running.'),
+          ' Every message, command name and reply below can be written now — it all takes effect the moment it starts. Only the counters and the two player lists wait for it.',
+        ]));
+      }
       if (statusData.geography === false) {
         statusBar.appendChild(h('div', { class: 'bs-warn' }, [
           icon('alert'), ' Map calibration unavailable — {sector} and {direction} render empty.',
         ]));
       }
+      // A live read that could not run. The plugin then answers from the last save, which is what it
+      // always did — but an owner who is not told cannot tell that apart from everything working, and
+      // "my squad was told someone is 40 m away and he was two kilometres off" has no other
+      // explanation on this screen. Drawn only when there is something to say.
+      var live = statusData.live || {};
+      [['players', 'Squadmate positions are coming from the last save, not the running game'],
+        ['squads', 'Squad membership is coming from the last save, not the running game'],
+      ].forEach(function (row) {
+        var n = live[row[0]];
+        if (!n || !n.text) return;
+        statusBar.appendChild(h('div', { class: 'bs-warn' }, [icon('alert'), ' ' + row[1] + ': ' + n.text + '.']));
+      });
     }
 
     function build() {
@@ -299,9 +324,22 @@
       // what players silenced themselves ------------------------------------
       prefTable = SSA.table({
         rows: function () { return players.filter(function (p) { return p.off || (p.muted && p.muted.length); }); },
-        empty: 'Nobody online has silenced anything.',
+        // Not "nobody ONLINE" any more: the list now includes players who silenced something and
+        // then logged off. Their setting keeps working while they are away, so leaving them out
+        // meant "reset it if someone asks" was impossible for the very person most likely to ask —
+        // they are asking on Discord, not standing in game.
+        empty: 'Nobody has silenced anything.',
         columns: [
-          { key: 'name', label: 'Player', sort: true, sortVal: function (r) { return String(r.name || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.name, r.steamId); } },
+          { key: 'name', label: 'Player', sort: true, sortVal: function (r) { return String(r.name || '').toLowerCase(); }, render: function (r) {
+            var cell = SSA.cell.player(r.name, r.steamId);
+            // Offline is worth seeing: it explains why they are not in the squad list above, and it
+            // is the difference between "they can undo it themselves" and "only you can".
+            if (r.online === false) {
+              var wrap = h('span', { class: 'bs-pl-off' }, [cell, h('span', { class: 'bs-off-tag' }, 'offline')]);
+              return wrap;
+            }
+            return cell;
+          } },
           { key: 'squad', label: 'Squad', render: function (r) { return document.createTextNode(r.squad || '—'); } },
           { key: 'state', label: 'Silenced', render: function (r) { return r.off ? SSA.cell.tag('all alerts off', 'bad') : document.createTextNode((r.muted || []).join(', ')); } },
           { key: 'act', label: '', render: function (r) {

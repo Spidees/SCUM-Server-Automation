@@ -19,7 +19,14 @@ change takes effect **live**, without a restart.
 
 ## Requirements
 - **UE4SS** (installed automatically as a dependency).
-- No manager version requirement — this is a game-side mod, not a manager plugin.
+- No manager version requirement to *run* — this is a game-side mod, not a manager plugin, and it
+  calls nothing in the manager.
+- **Manager 5.2.0+ to keep your `env.txt` across a plugin update.** Before 5.2.0 the manager copied a
+  plugin's whole payload onto the server on every update, `env.txt` included, so an update put the
+  shipped defaults back over whatever you had tuned — silently, because the copy succeeded. From
+  5.2.0 the file named in the plugin's manifest is *merged* instead: your lines are kept and any new
+  setting an update adds is appended. On an older manager, keep a copy of your numbers before
+  updating.
 
 ## Configuration
 There is no admin tab for this one. Everything lives in a single text file on the server:
@@ -82,17 +89,28 @@ or remove the mod. (`restore = 1` does exactly the same and is kept for older se
 The order matters because disabling a plugin in the panel **deletes its files immediately**, and a
 mod that no longer exists cannot undo anything. That is the whole reason this switch exists.
 
+**If you later switch the plugin back on, set `enabled = 1` again.** From manager 5.2.0 your
+`env.txt` is kept when the plugin is disabled and handed straight back when it is re-enabled —
+which is what you want for your multipliers and is a trap for this one line, because the `enabled =
+0` you typed to hand the game back comes with it. The mod would install, run, change nothing, and
+give no sign why.
+
 ## Good to know
 - Applies to every player. It touches no save files and no database.
 - `Mods/SSAEnv.defaults.txt` holds the game's original values. **Don't delete it while the mod is
   running**: the next start would record the mod's own numbers as if they were the game's. If you do
   need a clean slate, disable the mod, restart the server, then delete the file.
-- The file sits *next to* the mod folder on purpose, so updating the plugin can't wipe it. Your
-  `env.txt` survives updates too.
+- The defaults file sits *next to* the mod folder on purpose, so updating the plugin can't wipe it —
+  that has always been true, because an update only ever touches the mod folder itself. Your
+  `env.txt` lives *inside* it and is a different case: it survives an update from manager **5.2.0**
+  onwards, and was overwritten by every update before that. See Requirements.
 - After a SCUM update changes the game's own balance, delete the defaults file the safe way above so
   the new values get recorded.
 - With `debug = 1` the first pass reports whether the settings actually reached the game — worth
-  checking once after installing.
+  checking once after installing. It covers the drying, wetting and dirt values, each of which is
+  written and then **read back**. It does **not** cover `rain_multiplier`: that one rescales the
+  points of a curve asset, and there is no read-back for it, so a rain write that did not land looks
+  the same as one that did. If rain feels unchanged, that is where to look first.
 
 ---
 

@@ -7,7 +7,8 @@
 .ck-tab{display:inline-flex;align-items:center;gap:8px;font:inherit;cursor:pointer;font-size:.82rem;padding:.5rem 1rem;border-radius:8px;border:1px solid var(--line,#24272e);background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099)}
 .ck-tab .ico{width:15px;height:15px}
 .ck-noimg .ico{width:18px;height:18px;color:var(--muted,#8b9099)}
-.ck-tab:hover{color:var(--text,#f1f3f5);border-color:var(--line-2,#343943)}
+/* The whole sub-nav. Amber text on the amber hover fill was 1.63:1 — unreadable on every tab. */
+.ck-tab{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:var(--amber,#f0820c)}
 .ck-tab.active{color:var(--text,#f1f3f5);background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,var(--panel-2,#1c1f25));border-color:var(--accent,var(--amber,#ff6a1a))}
 .ck-tab.active .ico{color:var(--accent,var(--amber,#ff6a1a))}
 .ck-top-r{margin-left:auto;display:flex;align-items:center;gap:10px}
@@ -19,6 +20,9 @@
 /* status header — same badge styling as the mine-protection plugin + the panel */
 .ck-statbar{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
 .ck-stat{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.4rem .7rem;font-size:.78rem}
+/* A stopped server is INFORMATION, not a warning: setting this up before the first start is exactly
+   right. Its own row across the strip; both halves in one rule so the pair cannot drift apart. */
+.ck-note-off{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
 .ck-stat-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
 .ck-stat-l{color:var(--muted,#8b9099);letter-spacing:.02em}
 .ck-stat-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
@@ -28,7 +32,7 @@
 
 /* activity log: failed-item names next to the result tag */
 .ck-result{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
-.ck-failed{color:#f0a8a8;font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
+.ck-failed{color:#f0a8a8;font-size:.76rem;overflow:hidden;text-overflow:ellipsis;max-width:340px;overflow-wrap:anywhere}
 
 /* buttons use the manager's NATIVE styles (plain <button> = primary, button.secondary, button.danger).
    The unsaved-changes ring is the only custom bit, applied to the native Save button. */
@@ -74,7 +78,7 @@
 .ck-chev{cursor:pointer;background:none;border:0;color:var(--muted,#8b9099);width:22px;height:22px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0}
 .ck-chev .ico{width:14px;height:14px;transition:transform .13s}
 .ck-chev:not(.open) .ico{transform:rotate(-90deg)}
-.ck-chev:hover{color:var(--text,#f1f3f5)}
+.ck-chev{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:transparent}
 .ck-card-title{display:flex;align-items:center;gap:2px;min-width:0}
 .ck-slash{color:var(--muted,#8b9099);font-family:ui-monospace,monospace;font-size:.9rem}
 .ck-name{width:auto;max-width:200px}
@@ -138,7 +142,7 @@
 
 /* messages card */
 .ck-msgcard{display:flex;flex-direction:column;gap:12px}
-.ck-msggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.ck-msggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px}
 
 /* advanced */
 .ck-adv{padding:14px}
@@ -204,3 +208,60 @@
 .ck-pp-dot.on{background:#3ba55d;box-shadow:0 0 7px rgba(59,165,93,.6)}
 
 @media (max-width:640px){ .ck-grid2,.ck-cols{grid-template-columns:1fr} }
+
+/* ── Time windows ───────────────────────────────────────────────────────────────
+   The same control in every plugin that offers "from when to when". Deliberately
+   identical markup and identical CSS in each, so a window looks and reads the same
+   wherever an owner meets one.
+
+   Two house rules are load-bearing here and both are mechanically checked:
+   `minmax()` is never given a bare length (it must collapse to one column on a
+   phone rather than widen the page), and no `:hover` rule ever changes only the
+   background or only the colour — both halves are retuned together on the element,
+   or the amber default hover paints dark text on a dark fill. */
+.tw { margin: 6px 0 2px; }
+.tw-rows { display: flex; flex-direction: column; gap: 6px; }
+.tw-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--border, rgba(255,255,255,.12));
+  border-radius: 8px; background: var(--panel2, rgba(255,255,255,.03));
+}
+.tw-days { display: flex; flex-wrap: wrap; gap: 3px; }
+.tw-day {
+  font-size: .72rem; line-height: 1; padding: 5px 7px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border, rgba(255,255,255,.16));
+  background: transparent; color: var(--muted, #9aa3ad);
+  /* Ghost shape: no fill, the colour change IS the affordance. Both halves declared
+     together so the panel's blanket `button:hover` cannot half-apply. */
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: currentColor;
+}
+.tw-day.on {
+  /* Tinted shape: its own soft fill with normal text, so it stays legible in both themes. */
+  background: color-mix(in srgb, var(--accent, #ff6a1a) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #ff6a1a) 55%, transparent);
+  color: var(--text, #e8edf2);
+  --hov-bg: color-mix(in srgb, var(--accent, #ff6a1a) 26%, transparent);
+  --hov-fg: var(--text, #e8edf2);
+}
+.tw-times { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted, #9aa3ad); }
+.tw-t { width: auto; max-width: 100%; min-width: 0; font-size: .8rem; padding: 4px 6px; }
+.tw-del {
+  margin-left: auto; font-size: .9rem; line-height: 1; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border, rgba(255,255,255,.16)); background: transparent;
+  color: var(--muted, #9aa3ad); cursor: pointer;
+  --hov-bg: transparent; --hov-fg: var(--danger, #ff5c5c); --hov-line: var(--danger, #ff5c5c);
+}
+.tw-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.tw-add {
+  font-size: .76rem; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed var(--border, rgba(255,255,255,.22)); background: transparent;
+  color: var(--muted, #9aa3ad);
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: var(--accent, #ff6a1a);
+}
+.tw-note { margin: 0; font-size: .76rem; color: var(--muted, #9aa3ad); flex: 1 1 12rem; min-width: 0; }
+.tw-note.ok { color: var(--ok, #54c98a); }
+.tw-note.bad { color: var(--danger, #ff5c5c); }
+/* The clock caption is not decoration: "from 20:00" is ambiguous until something on
+   the screen says whose clock, and this is that something. It stays visible even when
+   no window is set, so an owner reads it before they configure rather than after. */
+.tw-clock { margin: 4px 0 0; font-size: .72rem; color: var(--muted, #9aa3ad); opacity: .85; }

@@ -25,7 +25,15 @@
     opts = opts || {};
     var init = Object.assign({ credentials: 'same-origin' }, opts);
     if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(EE_API + path, init).then(function (r) { return r.json().catch(function () { return {}; }); });
+    return fetch(EE_API + path, init).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        // The STATUS matters. Collapsing every response to its body turned a 401 after the session
+        // expired into an empty object, which the styler tab then reported as "the backend isn't
+        // loaded yet — restart the manager". That is advice to take a live server down over a cookie.
+        if (!r.ok) return { _httpError: r.status, error: (body && body.error) || ('HTTP ' + r.status) };
+        return body;
+      });
+    });
   }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
@@ -365,6 +373,22 @@
     // ── live data ───────────────────────────────────────────────────────────────
     // Wide two-column list with its own search and group chips: the catalog runs to dozens of
     // entries, and a small box made finding one of them a scrolling exercise.
+    // Per-player figures that are read out of the game database — i.e. the last SAVE, not the running
+    // game. They are the ones most likely to be wrong at the exact moment an embed is sent, because
+    // an embed about a player is usually sent while that player is online and doing something.
+    //
+    // Marked rather than replaced, and that is not laziness: every one of these is resolved inside a
+    // SYNCHRONOUS embed transform (the manager hands a plugin an embed and takes one straight back),
+    // and every live read is asynchronous. There is no live value to put here without polling the
+    // game on a timer, which costs more than the staleness it fixes for text on a screen. What an
+    // owner needs instead is to know which numbers they are writing into their message.
+    var SAVED_TOKENS = ['money', 'fame', 'gold', 'cash', 'bank', 'accountNumber',
+      'squad', 'squadSize', 'playerKills', 'playerDeaths'];
+    function isSaved(t) {
+      var k = String(t || '');
+      return SAVED_TOKENS.indexOf(k) >= 0 || k.indexOf('stat_') === 0;
+    }
+
     function tokenPop(input) {
       var grid = h('div', { class: 'ee-tokgrid' });
       var tokPager = h('div', { class: 'ee-pagerbox' });
@@ -392,19 +416,23 @@
         });
         tokPager.appendChild(paginate(grid, matches, function (tk) {
           var full = tk.sample != null ? String(tk.sample) : '';
+          var saved = isSaved(tk.t);
+          var note = saved ? ' — the last game save' : '';
           return h('button', { class: 'ee-tok' + (tk.live ? ' live' : ''), type: 'button',
             // The value can be a whole rendered list, so the chip shows a clipped version and the
             // tooltip carries the token plus what it currently resolves to.
-            title: '{' + tk.t + '}' + (full ? '\n' + full : ''),
+            title: '{' + tk.t + '}' + (full ? '\n' + full : '')
+              + (saved ? '\n\nThis figure comes from the game database, which is the state as of the last SAVE. For a player who is online it can be minutes behind what the game itself holds — they can spend money, gain fame or change squad and this will still show the old number until the server saves.' : ''),
             onclick: function () { insertInto(input, '{' + tk.t + '}'); } },
-          [h('b', {}, tk.label || tk.t), full ? h('span', {}, full.length > 40 ? full.slice(0, 40) + '…' : full) : null]);
+          [h('b', {}, tk.label || tk.t),
+            (full || note) ? h('span', {}, (full.length > 40 ? full.slice(0, 40) + '…' : full) + note) : null]);
         }, { perPage: 60, empty: tokensReady ? 'Nothing matches.' : 'Loading live data…' }));
       }
       search.addEventListener('input', draw);
       draw();
       loadTokens().then(draw);   // opening the picker is a good moment to be current
       return h('div', { class: 'ee-tokpanel' }, [
-        h('div', { class: 'ee-tokhint' }, 'Values shown are this server right now. Greyed ones only exist while the event they belong to fires.'),
+        h('div', { class: 'ee-tokhint' }, 'Values shown are this server as the manager reads it now. Greyed ones only exist while the event they belong to fires, and ones marked “the last game save” are a player’s saved figures — they can lag the running game.'),
         search, chips, grid, tokPager]);
     }
 
@@ -621,12 +649,58 @@
       });
       return out;
     }
+    /**
+     * What the limits look like once the TOKENS ARE FILLED IN.
+     *
+     * Everything above measures the template as typed, where `{onlineList}` is thirteen characters.
+     * On a full server it is around two thousand, so an embed that is comfortably legal while you
+     * write it is over the limit the moment it goes out — the one thing about these fields that
+     * cannot be seen by looking at them.
+     *
+     * These are NOTICES, not problems: they never block a save. The backend trims rather than fails,
+     * so the embed still posts; this is what tells you it is going to be cut, while you can still
+     * decide to shorten it yourself. The numbers come from the same live samples the preview draws
+     * with, so they are this server's real values, not invented ones.
+     */
+    function limitNotices() {
+      var out = [];
+      var grew = function (raw) { var a = String(raw || ''); var b = rs(a); return b.length !== a.length ? b.length : 0; };
+      var check = function (raw, cap, what) {
+        var n = grew(raw);
+        if (n > cap) out.push(what + ' fits now, but with live data it is ' + n + '/' + cap + ' — it will be trimmed when sent.');
+      };
+      check(model.title, LIMITS.title, 'Title');
+      check(model.description, LIMITS.description, 'Description');
+      check(model.content, LIMITS.content, 'Message text');
+      (model.fields || []).forEach(function (f, i) {
+        check(f.name, LIMITS.fieldName, 'Field ' + (i + 1) + ' name');
+        check(f.value, LIMITS.fieldValue, 'Field ' + (i + 1) + ' value');
+      });
+      (model.buttons || []).forEach(function (b, i) { check(b.label, LIMITS.buttonLabel, 'Button ' + (i + 1) + ' label'); });
+      // And the 6000 across the whole message, which is the one that bites without any single field
+      // looking wrong.
+      var chars = function (e) {
+        if (!e) return 0;
+        var l = function (x) { return rs(String(x || '')).length; };
+        return l(e.title) + l(e.description) + l((e.footer || {}).text) + l((e.author || {}).name)
+          + (Array.isArray(e.fields) ? e.fields.reduce(function (a, f) { return a + l(f.name) + l(f.value); }, 0) : 0);
+      };
+      var total = chars(model) + (model.extraEmbeds || []).reduce(function (a, e) { return a + chars(e); }, 0);
+      if (total > LIMITS.total) out.push('With live data all embeds total ' + total + '/' + LIMITS.total + ' characters — the message will be trimmed when sent.');
+      return out;
+    }
+
     var limitBox = h('div', { class: 'ee-limits' });
     function renderLimits() {
       var probs = limitProblems();
+      var notes = [];
+      // A notice is worked out from live sample values, so it must never take the editor down with
+      // it if one of them is missing.
+      try { notes = limitNotices(); } catch (e) { notes = []; }
       limitBox.innerHTML = '';
-      limitBox.className = 'ee-limits' + (probs.length ? ' bad' : '');
+      limitBox.className = 'ee-limits' + (probs.length ? ' bad' : (notes.length ? ' warn' : ''));
       probs.forEach(function (p) { limitBox.appendChild(h('div', {}, '⚠ ' + p)); });
+      notes.forEach(function (p) { limitBox.appendChild(h('div', { class: 'ee-lim-note' }, '✂ ' + p)); });
     }
 
     // ── the editor form ─────────────────────────────────────────────────────────
@@ -921,6 +995,10 @@
 
     var editor = {
       getValue: function () { return clone(model); },
+      // What Discord would refuse about this message right now. Send and Schedule already checked
+      // it; SAVING did not, so an over-long title stored cleanly and the damage only surfaced the
+      // next time that embed fired, with nothing connecting it to the edit that caused it.
+      problems: function () { return limitProblems(); },
       setValue: function (v) { model = Object.assign(defaultModel(), clone(v || {})); container.innerHTML = ''; buildEditor(container, Object.assign({}, opts, { value: model })); },
       destroy: function () { container.innerHTML = ''; },
     };
@@ -1230,8 +1308,180 @@
   function api(p, opts) {
     opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
     if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) { return r.json().catch(function () { return {}; }); });
+    return fetch(API + p, init).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        // The STATUS matters. Collapsing every response to its body turned a 401 after the session
+        // expired into an empty object, which the styler tab then reported as "the backend isn't
+        // loaded yet — restart the manager". That is advice to take a live server down over a cookie.
+        if (!r.ok) return { _httpError: r.status, error: (body && body.error) || ('HTTP ' + r.status) };
+        return body;
+      });
+    });
   }
+  // What to put next to the Save button. A refused save must not read like a saved one — and the one
+  // refusal that costs work (another tab saved first) says what to do about it in a toast as well,
+  // because the small grey status line beside the button is easy to miss.
+  function saveResult(r, okText) {
+    if (r && r.ok) return okText;
+    if (r && r.stale) {
+      try { SSA.toast(r.error, 'error'); } catch (e) { /* toast optional */ }
+      return 'NOT saved — another tab saved first. Reload the page.';
+    }
+    var why = (r && r.error) ? String(r.error) : '';
+    return why ? ('Save failed — ' + why) : 'Save failed';
+  }
+
+  // Saving runs the same limit check Send does — and always answers with a promise, so a caller can
+  // chain `.then()` whether or not the save was allowed. Returning `null` on refusal (the first
+  // attempt at this) made the refusal itself throw.
+  //
+  // `mountedEditor` is the editor INSTANCE, not the service: `problems()` lives on what `mount()`
+  // returns, and the service only has `mount` and `defaultModel`.
+  //
+  // THESE THREE LIVE HERE, in the same IIFE as the Save buttons. They were first written in the
+  // editor-component IIFE above, which shares nothing with this one: `saveGuard` was simply not
+  // defined at the call site, so both Save buttons threw and sat on "Saving…" for ever, and
+  // `mountedEditor = …` quietly created a global that the real `mountedEditor` never saw — so the
+  // limit check silently passed everything too. One file, two scopes, no error until it ran.
+  /**
+   * The "what happens when someone clicks this" panel.
+   *
+   * `owner` is whatever holds the buttons: a custom live embed, or one of the manager's own embeds
+   * in the Built-in tab. Both keep their actions in the same shape (`owner.actions[key]`) and the
+   * backend looks them up in both places, so one panel serves both. It used to live inside the
+   * Custom tab, which is why a button on a built-in embed could be drawn, saved and delivered and
+   * never wired to anything: the best it could ever answer was "nothing is set up for that button
+   * yet", with no way anywhere to set anything up.
+   */
+  /**
+   * Custom ids that two embeds share.
+   *
+   * The backend looks an action up by custom id across EVERY embed and takes the first hit, so a
+   * duplicate means one embed's button silently runs another's command. New ids are scoped per
+   * embed now, but an id already in a config cannot be renamed here: it is baked into the messages
+   * already posted in Discord, and changing it would kill every live button on them. So the panel
+   * reports it and the owner decides \u2014 repost the message, or leave it and accept the collision.
+   */
+  function collidingIds(all, me) {
+    const seen = {};
+    const dup = [];
+    (all || []).forEach(function (o) {
+      const label = (o && (o.name || o.id)) || 'an embed';
+      const m = (o && o.model) || {};
+      [].concat(m.buttons || [], m.selects || []).forEach(function (b) {
+        const cid = b && (b.custom_id || b.customId);
+        if (!cid) return;
+        if (seen[cid] && seen[cid] !== label) dup.push({ cid: cid, a: seen[cid], b: label });
+        else seen[cid] = label;
+      });
+    });
+    const mine = (me && (me.name || me.id)) || null;
+    return dup.filter(function (d) { return !mine || d.a === mine || d.b === mine; });
+  }
+
+  function renderActionsInto(actionsBox, owner, roles, redraw, siblings) {
+    actionsBox.innerHTML = '';
+    if (!owner) return;
+    owner.actions = owner.actions || {};
+    actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '\u26a1 Click actions'));
+    collidingIds(siblings, owner).forEach(function (d) {
+      actionsBox.appendChild(h('p', { class: 'ce-act-note' },
+        '\u26a0 Custom ID \u201c' + d.cid + '\u201d is used by both \u201c' + d.a + '\u201d and \u201c' + d.b + '\u201d. '
+        + 'Whichever was saved first wins for BOTH, so one of these buttons runs the other one\u2019s action. '
+        + 'Give one of them a different Custom ID \u2014 note that doing so kills that button on any message already posted, so repost it afterwards.'));
+    });
+    actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 10px' }, 'Step 1: add buttons or a select menu in the editor above. Step 2: each one shows up here \u2014 pick what it does when a player uses it.'));
+
+    // One action row, wherever it came from. `key` is what the backend looks the action up by:
+    // a button's Custom ID, or MENU_ID::OPTION_VALUE for one choice in a menu.
+    function actRow(key, label, hint) {
+      var act = owner.actions[key] = owner.actions[key] || { type: '', value: '' };
+      var typeSel = h('select', {}, [['', '\u2014 no action \u2014'], ['command', 'Run in-game command'], ['message', 'Reply with a message'], ['announce', 'Post message to this channel']].map(function (o) { return h('option', { value: o[0] }, o[1]); }));
+      typeSel.value = act.type || ''; typeSel.addEventListener('change', function () { act.type = typeSel.value; redraw(); });
+      var valInp = h('input', { type: 'text', value: act.value || '', placeholder: act.type === 'command' ? '#SpawnItem BP_... 1  (supports {tokens})' : (hint || 'Text (supports {tokens})') });
+      valInp.addEventListener('input', function () { act.value = valInp.value; });
+      actionsBox.appendChild(h('div', { class: 'ce-act' }, [h('span', { class: 'ce-act-id' }, label), typeSel, act.type ? valInp : null]));
+
+      // Who may press it, and how often. Only for the two actions that DO something outside the
+      // clicker's own screen \u2014 a "reply with a message" is private to whoever clicked and needs
+      // no guard. Both are off by default: owners already run these buttons, and quietly locking
+      // them would break what they built. The line below says what "off" means, because "anyone in
+      // the channel can run this in-game command" is not what an owner pictures when they type a
+      // spawn command into a text box.
+      if (act.type !== 'command' && act.type !== 'announce') return;
+
+      var roleSel = h('select', {}, [h('option', { value: '' }, 'Anyone can use it')]);
+      (roles || []).forEach(function (r) { roleSel.appendChild(h('option', { value: r.id }, '@' + r.name + ' only')); });
+      // A role that no longer exists must still be visible, or saving this row would silently drop
+      // the restriction the owner set.
+      if (act.roleId && !(roles || []).some(function (r) { return r.id === act.roleId; })) {
+        roleSel.appendChild(h('option', { value: act.roleId }, 'role ' + act.roleId + ' (not found)'));
+      }
+      roleSel.value = act.roleId || '';
+      roleSel.addEventListener('change', function () { act.roleId = roleSel.value; redraw(); });
+
+      var cdInp = h('input', { type: 'number', min: '0', step: '1', value: act.cooldownSec || 0, style: 'width:6.5rem' });
+      cdInp.addEventListener('input', function () { act.cooldownSec = Math.max(0, parseInt(cdInp.value, 10) || 0); });
+
+      actionsBox.appendChild(h('div', { class: 'ce-act ce-act-guard' }, [
+        h('span', { class: 'ce-act-id' }, ''),
+        h('label', { class: 'ce-act-g' }, [h('span', {}, 'Who'), roleSel]),
+        h('label', { class: 'ce-act-g' }, [h('span', {}, 'Cooldown (s, 0 = none)'), cdInp]),
+      ]));
+      if (!act.roleId) {
+        actionsBox.appendChild(h('p', { class: 'ce-act-note' },
+          act.type === 'command'
+            ? '\u26a0 Anyone who can see this message can run that in-game command. Pick a role, or set a cooldown, if that is not what you want.'
+            : '\u26a0 Anyone who can see this message can make the bot post that. Pick a role, or set a cooldown, if that is not what you want.'));
+      }
+    }
+
+    // every non-Link button gets an action row; auto-assign a Custom ID if the user left it blank
+    var model = owner.model || {};
+    var allBtns = (model.buttons || []).filter(function (b) { return String(b.style) !== '5'; });
+    // Scoped to the embed. Numbering from 1 inside each embed meant two embeds both minted `btn1`,
+    // and the backend looks an action up across ALL embeds — so the second embed's button ran the
+    // first one's command. Already-assigned ids are never touched: they are baked into messages
+    // already posted in Discord, and renaming one kills that live button.
+    var idScope = String(owner.id || owner.__kind || 'e').replace(/[^\w-]/g, '').slice(0, 24);
+    allBtns.forEach(function (b, i) { if (!(b.custom_id || b.customId)) b.custom_id = idScope + '_btn' + (i + 1); });
+    allBtns.forEach(function (b) {
+      var cid = b.custom_id || b.customId;
+      actRow(cid, (b.label || cid) + ' \u00b7 ' + cid);
+    });
+
+    // Select menus. The editor has always offered them here; until an option could be given an
+    // action, picking one answered a player with Discord's own "This interaction failed".
+    var sels = model.selects || [];
+    sels.forEach(function (sl, si) {
+      if (!(sl.custom_id || sl.customId)) sl.custom_id = idScope + '_menu' + (si + 1);
+      var scid = sl.custom_id || sl.customId;
+      var opts = (sl.options || []).filter(function (o) { return o && o.label; });
+      actionsBox.appendChild(h('div', { class: 'ce-acts-sub' }, '\u25be Menu \u00b7 ' + scid + (sl.placeholder ? ' \u2014 \u201c' + sl.placeholder + '\u201d' : '')));
+      if (!opts.length) { actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 8px' }, 'This menu has no options yet \u2014 add some in the editor\u2019s \u201cSelect menus\u201d section.')); return; }
+      opts.forEach(function (o, oi) {
+        var val = o.value || ('opt_' + oi);
+        actRow(scid + '::' + val, o.label + ' \u00b7 ' + val);
+      });
+      // The catch-all, so a long menu does not need an entry per option.
+      actRow(scid, 'Any other choice \u00b7 ' + scid, 'Text \u2014 {picked} is the chosen option');
+    });
+
+    if (!allBtns.length && !sels.length) {
+      actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.82rem;margin:0' }, 'Nothing clickable yet \u2014 add a button (any style except \u201cLink\u201d) or a select menu in the editor above.'));
+    }
+  }
+  var mountedEditor = null;
+  function saveGuard(doSave) {
+    var bad = [];
+    try { bad = (mountedEditor && mountedEditor.problems) ? mountedEditor.problems() : []; } catch (e) { bad = []; }
+    if (bad.length) {
+      try { SSA.toast('Not saved — ' + bad[0], 'error'); } catch (e) { /* toast optional */ }
+      return Promise.resolve({ ok: false, error: bad[0] });
+    }
+    return Promise.resolve(doSave());
+  }
+
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -1258,9 +1508,21 @@
       var styles = cfg.styles || {};
       var liveImages = cfg.liveImages || {};
       var configuredImages = cfg.configuredImages || {};
+      // The revision this page loaded. Sent back on save so a second tab cannot silently overwrite
+      // what this one is looking at — see `staleSave` in the backend.
+      var rev = (typeof cfg.rev === 'number') ? cfg.rev : null;
       function imgFor(key) { return configuredImages[key] || liveImages[key] || null; }   // manager-set first, else captured
       body.className = ''; body.innerHTML = '';
-      if (!kinds.length) { body.innerHTML = '<div class="es-warn">The styler backend isn’t loaded yet. Restart the manager (or toggle this plugin off and on) to finish enabling it, then reopen this tab.</div>'; return; }
+      if (!kinds.length) { (function () {
+        // An expired session answers 401 with valid JSON, which used to land here and advise
+        // restarting the manager — advice that would take a live server down over a cookie.
+        body.innerHTML = '';
+        var w = h('div', { class: 'es-warn' });
+        w.textContent = (cfg && cfg._httpError)
+          ? 'Could not load: ' + cfg.error + '. Reload the page, and sign in again if it persists.'
+          : 'The styler backend isn’t loaded yet. Restart the manager (or toggle this plugin off and on) to finish enabling it, then reopen this tab.';
+        body.appendChild(w);
+      }()); return; }
       var byKey = {}; kinds.forEach(function (k) { byKey[k.key] = k; });
 
       var sel = h('select', { class: 'es-sel' });
@@ -1320,6 +1582,11 @@
       var edBox = h('div', { class: 'es-editor' });
       var noteEl = h('p', { class: 'es-note' });
       var status = h('span', { class: 'muted', style: 'font-size:.85rem' });
+      // The click-actions panel for buttons added to a MANAGER embed. Same panel, same storage shape
+      // and same backend lookup as the custom embeds' one.
+      var actionsBox = h('div', {});
+      var roles = [];
+      api('/roles').then(function (l) { roles = Array.isArray(l) ? l : []; drawActions(); }).catch(function () { /* no guild → "Anyone" only */ });
       // This text has to match what applyStyle() really does. It used to end “buttons stay manager
       // controlled”, which stopped being true the moment the send started delivering them — and a note
       // that contradicts the behaviour is worse than no note, because it stops people trying.
@@ -1380,7 +1647,19 @@
         if (entry.model && (!entry.model.image || !entry.model.image.url) && kimg) entry.model.image = { url: kimg };
         edBox.innerHTML = '';
         // The token bar + resolved preview live in the embed editor itself (reusable by any plugin).
-        edSvc.mount(edBox, { value: entry.model, tokens: (kd && kd.tokens) || [], onChange: function (m) { entry.model = m; } });
+        // Buttons and menus added here now get the SAME click-actions panel the custom embeds have —
+        // until they did, a button on a manager embed was drawn, saved and delivered, and there was
+        // nowhere in the whole panel to say what it should do.
+        mountedEditor = edSvc.mount(edBox, {
+          value: entry.model, tokens: (kd && kd.tokens) || [],
+          onChange: function (m) { entry.model = m; drawActions(); },
+        });
+        drawActions();
+      }
+      // The styles keyed by embed kind are siblings in the same custom-id space as each other.
+      function drawActions() {
+        var sibs = Object.keys(styles).map(function (k) { return Object.assign({ name: k }, styles[k]); });
+        renderActionsInto(actionsBox, entryFor(sel.value), roles, drawActions, sibs);
       }
 
       sel.addEventListener('change', function () { showKind(sel.value); });
@@ -1400,11 +1679,12 @@
       ]));
       body.appendChild(h('div', { class: 'card es-card' }, [
         edBox,
+        h('div', { class: 'ce-acts' }, [actionsBox]),
         h('div', { class: 'es-actions' }, [
           h('button', { class: 'es-btn primary', onclick: function () {
             status.textContent = 'Saving…';
-            api('/config', { method: 'POST', body: { styles: styles } })
-              .then(function (r) { status.textContent = r && r.ok ? 'Saved ✓ — applies to the next embed' : 'Save failed'; });
+            saveGuard(function () { return api('/config', { method: 'POST', body: { styles: styles, rev: rev } }); })
+              .then(function (r) { status.textContent = saveResult(r, 'Saved ✓ — applies to the next embed'); if (r && typeof r.rev === 'number' && !r.stale) rev = r.rev; });
           } }, 'Save styles'),
           status,
         ]),
@@ -1421,12 +1701,21 @@
     var body = el.querySelector('#ce-body');
     var edSvc = SSA.consume('embed-editor');
     var channels = [];
+    var roles = [];
     Promise.all([
       api('/custom').then(function (c) { return c || {}; }),
-      fetch('/api/plugin-host/embed-editor/channels', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).catch(function () { return []; }),
+      // `api('/channels')`, not a hand-written URL. Routes mount under the MANIFEST id, which is
+      // `discord-embeds`; the old path pointed at `embed-editor`, the plugin this one replaced. It
+      // 404'd, the .catch() swallowed it, and the channel dropdown on this tab was permanently
+      // empty — so no custom live embed could ever be given a channel, and none of them posted.
+      api('/channels').then(function (l) { return Array.isArray(l) ? l : []; }),
+      // Roles for the "who may press this" dropdown. An empty list is fine — the row then offers
+      // only "Anyone can use it", which is what it did before there was a choice at all.
+      api('/roles').then(function (l) { return Array.isArray(l) ? l : []; }),
     ]).then(function (res) {
       if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
       channels = res[1] || [];
+      roles = res[2] || [];
       render(res[0]);
     });
 
@@ -1448,6 +1737,8 @@
     function render(cfg) {
       var items = cfg.items || [];
       var tokens = cfg.tokens || [];
+      // See `staleSave` in the backend — the revision this page loaded, sent back on every save.
+      var rev = (typeof cfg.rev === 'number') ? cfg.rev : null;
       body.className = ''; body.innerHTML = '';
       var cur = 0;
 
@@ -1463,53 +1754,7 @@
       var search = h('input', { class: 'es-search', type: 'search', placeholder: 'Search embeds…' });
 
       // Wire each embed button (Custom ID, not a Link) to an action fired when a player clicks it.
-      function renderActions() {
-        actionsBox.innerHTML = '';
-        var ce = items[cur]; if (!ce) return;
-        ce.actions = ce.actions || {};
-        actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '⚡ Click actions'));
-        actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 10px' }, 'Step 1: add buttons or a select menu in the editor above. Step 2: each one shows up here — pick what it does when a player uses it.'));
-
-        // One action row, wherever it came from. `key` is what the backend looks the action up by:
-        // a button's Custom ID, or MENU_ID::OPTION_VALUE for one choice in a menu.
-        function actRow(key, label, hint) {
-          var act = ce.actions[key] = ce.actions[key] || { type: '', value: '' };
-          var typeSel = h('select', {}, [['', '— no action —'], ['command', 'Run in-game command'], ['message', 'Reply with a message'], ['announce', 'Post message to this channel']].map(function (o) { return h('option', { value: o[0] }, o[1]); }));
-          typeSel.value = act.type || ''; typeSel.addEventListener('change', function () { act.type = typeSel.value; renderActions(); });
-          var valInp = h('input', { type: 'text', value: act.value || '', placeholder: act.type === 'command' ? '#SpawnItem BP_... 1  (supports {tokens})' : (hint || 'Text (supports {tokens})') });
-          valInp.addEventListener('input', function () { act.value = valInp.value; });
-          actionsBox.appendChild(h('div', { class: 'ce-act' }, [h('span', { class: 'ce-act-id' }, label), typeSel, act.type ? valInp : null]));
-        }
-
-        // every non-Link button gets an action row; auto-assign a Custom ID if the user left it blank
-        var allBtns = ((ce.model && ce.model.buttons) || []).filter(function (b) { return String(b.style) !== '5'; });
-        allBtns.forEach(function (b, i) { if (!(b.custom_id || b.customId)) b.custom_id = 'btn' + (i + 1); });
-        allBtns.forEach(function (b) {
-          var cid = b.custom_id || b.customId;
-          actRow(cid, (b.label || cid) + ' · ' + cid);
-        });
-
-        // Select menus. The editor has always offered them here; until an option could be given an
-        // action, picking one answered a player with Discord's own "This interaction failed".
-        var sels = (ce.model && ce.model.selects) || [];
-        sels.forEach(function (sl, si) {
-          if (!(sl.custom_id || sl.customId)) sl.custom_id = 'menu' + (si + 1);
-          var scid = sl.custom_id || sl.customId;
-          var opts = (sl.options || []).filter(function (o) { return o && o.label; });
-          actionsBox.appendChild(h('div', { class: 'ce-acts-sub' }, '▾ Menu · ' + scid + (sl.placeholder ? ' — “' + sl.placeholder + '”' : '')));
-          if (!opts.length) { actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 8px' }, 'This menu has no options yet — add some in the editor’s “Select menus” section.')); return; }
-          opts.forEach(function (o, oi) {
-            var val = o.value || ('opt_' + oi);
-            actRow(scid + '::' + val, o.label + ' · ' + val);
-          });
-          // The catch-all, so a long menu does not need an entry per option.
-          actRow(scid, 'Any other choice · ' + scid, 'Text — {picked} is the chosen option');
-        });
-
-        if (!allBtns.length && !sels.length) {
-          actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.82rem;margin:0' }, 'Nothing clickable yet — add a button (any style except “Link”) or a select menu in the editor above.'));
-        }
-      }
+      function renderActions() { renderActionsInto(actionsBox, items[cur], roles, renderActions, items); }
 
       function optLabel(ce, i) { return (ce.name || ('Embed ' + (i + 1))) + (ce.enabled === false ? ' · off' : ''); }
       // Find the option belonging to an item by its VALUE, never by position: once the list can be
@@ -1539,10 +1784,20 @@
         if (!ce.id) ce.id = 'ce_' + Date.now() + '_' + cur;
         if (!ce.model) ce.model = edSvc.defaultModel();
         nameInp.value = ce.name || ''; chanSel.value = ce.channelId || ''; iv.value = ce.intervalSec || 60; active.checked = ce.enabled !== false;
-        edSvc.mount(edBox, { value: ce.model, tokens: tokens, onChange: function (m) { ce.model = m; renderActions(); } });
+        mountedEditor = edSvc.mount(edBox, { value: ce.model, tokens: tokens, onChange: function (m) { ce.model = m; renderActions(); } });
         renderActions();
       }
-      function saveAll(cb) { api('/custom', { method: 'POST', body: { items: items } }).then(cb || function () {}); }
+      function saveAll(cb) {
+        return saveGuard(function () { return api('/custom', { method: 'POST', body: { items: items, rev: rev } }); })
+          .then(function (r) {
+            if (r && typeof r.rev === 'number' && !r.stale) rev = r.rev;
+            // A refused save must not run the "…and now post it" continuation: posting an embed the
+            // server never accepted would publish a version nobody has.
+            if (r && r.ok === false) { try { SSA.toast(saveResult(r, ''), 'error'); } catch (e) {} return r; }
+            if (cb) cb(r);
+            return r;
+          });
+      }
 
       chanSel.appendChild(h('option', { value: '' }, '— pick a channel —'));
       channels.forEach(function (c) { chanSel.appendChild(h('option', { value: c.id }, '#' + c.name)); });
@@ -1576,7 +1831,11 @@
           h('button', { class: 'es-btn primary', onclick: function () {
             if (!items[cur]) { st.textContent = 'Add an embed first.'; return; }
             st.textContent = 'Posting…';
-            saveAll(function () { api('/custom/post', { method: 'POST', body: { id: items[cur].id } }).then(function (r) { st.textContent = r && r.ok ? 'Posted ✓ — keeps updating' : 'Failed (channel / bot?)'; }); });
+            saveAll(function () { api('/custom/post', { method: 'POST', body: { id: items[cur].id } }).then(function (r) {
+              // Say WHICH thing went wrong — the backend now tells us. "Failed (channel / bot?)"
+              // covered four different causes and pointed at none of them.
+              st.textContent = (r && r.ok) ? 'Posted ✓ — keeps updating' : ('⚠ ' + ((r && r.error) || 'could not post'));
+            }); });
           } }, 'Save & post now'),
           st,
         ]),

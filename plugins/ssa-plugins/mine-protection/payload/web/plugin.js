@@ -69,6 +69,11 @@
     ]));
     var statusBar = h('div', { class: 'mp-status' });
     el.appendChild(statusBar);
+    // Said out loud when a live cross-check could not run: the plugin then judges a mine on the
+    // LAST SAVE, which is what it always did — but an owner who is not told cannot tell the
+    // difference between that and a plugin that is working perfectly.
+    var liveBar = h('div', { class: 'mp-live' });
+    el.appendChild(liveBar);
     var body = h('div', { class: 'mp-body' }, [h('p', { class: 'mp-loading' }, 'Loading…')]);
     el.appendChild(body);
 
@@ -121,6 +126,36 @@
       statusBar.appendChild(badge('', 'Watched', (config.watchedTypes || []).length));
       statusBar.appendChild(badge('', 'Tracked mines', status ? status.knownMines : '–'));
       statusBar.appendChild(badge('', 'Flagged players', status ? status.warnedPlayers : '–'));
+      renderLiveBar();
+    }
+    // One line per cross-check that could not run, with the module's own words where it gave any
+    // and the name of the switch to turn on where it did not. Nothing is drawn while both are
+    // answering — a banner that is always there is a banner nobody reads.
+    var LIVE_WHAT = {
+      traps: 'Whether a mine is really still armed is being read from the last save',
+      squads: 'Who is in a squad is being read from the last save',
+    };
+    function renderLiveBar() {
+      liveBar.innerHTML = '';
+      // The server being off is not a fault and not a reason to stop. Two lists on this page are a
+      // photograph of the running world and cannot exist without one; everything else is a rule the
+      // owner writes, and the best moment to write it is BEFORE the server comes up. Say which is
+      // which, rather than leaving an empty table at the top of the page to be read as "broken".
+      if (status && status.serverRunning === false) {
+        liveBar.appendChild(h('div', { class: 'mp-live-n mp-live-off' }, [
+          h('strong', {}, 'The server is not running. '),
+          document.createTextNode('Everything on this page can be set up now and takes effect the moment it starts. '
+            + 'Only the two live lists — the mines placed in the world, and the counts on each card below — need a running server.'),
+        ]));
+      }
+      var live = (status && status.live) || {};
+      Object.keys(LIVE_WHAT).forEach(function (k) {
+        var n = live[k];
+        if (!n || !n.text) return;
+        liveBar.appendChild(h('div', { class: 'mp-live-n' }, [
+          h('strong', {}, LIVE_WHAT[k] + ': '), document.createTextNode(n.text + '.'),
+        ]));
+      });
     }
 
     // ── the mine/trap picker (icons + live placed/armed counts) ──
@@ -179,21 +214,35 @@
 
     // ── placed-mines overview table (live) ──
     var minesTbl = null;
+    // Both `armed` and `inArea` are THREE-valued: true, false, or null when the game could not be
+    // asked. Null is not false, and showing it as one is how this table came to describe a mine as
+    // an offence that the plugin was deliberately declining to act on. Each unknown gets its own
+    // label and says what the plugin does about it — which is nothing, on purpose.
     function mineStatus(m) {
-      return !m.armed ? SSA.cell.tag('Not armed', 'muted')
-        : m.exempt ? SSA.cell.tag('Exempt', 'muted')
-          : m.inArea ? SSA.cell.tag('Inside flag', 'ok')
-            : !m.handled ? SSA.cell.tag('Pending', 'warn')
-              : SSA.cell.tag('Enforced', 'bad');
+      return m.armed == null ? SSA.cell.tag('Armed state unknown', 'muted')
+        : !m.armed ? SSA.cell.tag('Not armed', 'muted')
+          : m.exempt ? SSA.cell.tag('Exempt', 'muted')
+            : m.inArea === true ? SSA.cell.tag('Inside flag', 'ok')
+              : m.inArea == null ? SSA.cell.tag('Flag unknown', 'muted')
+                : !m.handled ? SSA.cell.tag('Pending', 'warn')
+                  : SSA.cell.tag('Enforced', 'bad');
     }
-    function mineStatusRank(m) { return !m.armed ? 5 : m.exempt ? 4 : m.inArea ? 3 : !m.handled ? 0 : 1; }
+    function mineStatusRank(m) { return m.armed == null ? 6 : !m.armed ? 5 : m.exempt ? 4 : m.inArea === true ? 3 : m.inArea == null ? 2 : !m.handled ? 0 : 1; }
     function mineCode(r) { return r.code || (r.type ? r.type + '_ES' : null); }
     function buildMinesTable() {
       return SSA.table({
         rows: function () { return mines; },
         searchPlaceholder: 'Search mines, players…',
         search: function (r) { return [r.id, r.name, r.type, r.placerName, r.placerSteamId].join(' '); },
-        empty: function () { return (status && status.serverRunning === false) ? 'Game DB not readable (server stopped / restarting).' : 'No watched mines placed on the server right now.'; },
+        // Not "Game DB not readable", which reads as a fault. A stopped server is the ordinary case
+        // for an owner setting this up, and the sentence has to say that the rest of the page is
+        // still theirs to write — otherwise an empty table at the top of the screen is read as
+        // "this plugin does not work yet".
+        empty: function () {
+          return (status && status.serverRunning === false)
+            ? 'This list is a photograph of the running world, so it fills in once the server starts. Everything else on this page can be configured now.'
+            : 'No watched mines placed on the server right now.';
+        },
         sort: { key: 'status', dir: 'asc' }, pageSize: 12, onRefresh: refreshMines,
         columns: [
           { key: 'id', label: '#', sort: true, sortVal: function (r) { return Number(r.id); }, tdClass: 'mono dim', render: function (r) { return document.createTextNode(String(r.id)); } },
@@ -201,7 +250,25 @@
           { key: 'placer', label: 'Placer', sort: true, sortVal: function (r) { return (r.placerName || r.placerSteamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.placerName, r.placerSteamId); } },
           { key: 'loc', label: 'Location', render: function (r) { return SSA.cell.location(r.x, r.y, r.z); } },
           { key: 'status', label: 'Status', sort: true, sortVal: mineStatusRank, render: mineStatus },
-          { key: 'offences', label: 'Offences', sort: true, sortVal: function (r) { return r.offences || 0; }, tdClass: 'mono', render: function (r) { return document.createTextNode(String(r.offences || 0)); } },
+          // The count only ever goes up, and until now the only way to clear it wiped EVERY player's
+          // record. Forgiving one person meant forgiving all of them, so in practice nobody was
+          // forgiven and a player stayed one mine away from the real punishment over something from
+          // months ago.
+          { key: 'offences', label: 'Offences', sort: true, sortVal: function (r) { return r.offences || 0; }, tdClass: 'mono', render: function (r) {
+            var n = r.offences || 0;
+            var txt = document.createTextNode(String(n));
+            if (!n || !r.placerSteamId) return txt;
+            var wrap = h('span', { class: 'mp-off' }, [txt]);
+            wrap.appendChild(h('button', {
+              class: 'secondary mp-off-x',
+              title: 'Forget this player’s offences — they get their warnings back',
+              onclick: function () {
+                api('/reset-offenses', { method: 'POST', body: { steamId: r.placerSteamId } })
+                  .then(function () { toast('Offences cleared for ' + (r.placerName || r.placerSteamId)); refreshStatusLoop(); });
+              },
+            }, 'Forgive'));
+            return wrap;
+          } },
         ],
       });
     }
@@ -245,7 +312,12 @@
         h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = catalog.map(function (t) { return t.type; }); renderPicker(); renderStatusBar(); } }, 'Select all'),
         h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = []; renderPicker(); renderStatusBar(); } }, 'Clear'),
       ]);
-      body.appendChild(card('Watched mines & traps', 'Pick which armed devices are enforced. Counts show what’s placed on the server right now.', [quick, pickerGrid]));
+      // The subtitle used to promise counts unconditionally, and with the server off there are none —
+      // so the card advertised a feature that was missing rather than one that was waiting.
+      var pickSub = (status && status.serverRunning === false)
+        ? 'Pick which armed devices are enforced. This is the whole rule — it needs no server. Each card also shows how many are placed and armed once one is running.'
+        : 'Pick which armed devices are enforced. Counts show what’s placed on the server right now.';
+      body.appendChild(card('Watched mines & traps', pickSub, [quick, pickerGrid]));
       renderPicker();
 
       // 2) action & rules

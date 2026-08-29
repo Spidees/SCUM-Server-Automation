@@ -2,7 +2,7 @@
   "id": "better-squads",
   "name": "Better Squads",
   "type": "manager",
-  "version": "2.0.2",
+  "version": "2.1.1",
   "updated": "2026-08-11",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
@@ -22,5 +22,25 @@
       "id": "ssa-bridge"
     }
   ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "live",
+        "switches": [
+          "enabled",
+          "where"
+        ],
+        "why": "Reads where each squadmate is standing NOW, so {distance} and {direction} tell a player which way to walk rather than where somebody was at the last game save."
+      },
+      {
+        "module": "squads",
+        "switches": [
+          "enabled",
+          "members"
+        ],
+        "why": "Reads the squad roster the game itself holds, so a player who has just joined is told and one who has just left stops hearing the squad's private messages — neither has to wait for a save."
+      }
+    ]
+  },
   "premium": true
 }

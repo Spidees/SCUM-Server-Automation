@@ -24,6 +24,10 @@ like the built-in status board but yours.
   **this server's current values**, refreshed while you work, not invented samples. Tokens that only
   exist while an event fires (a kill's weapon, a trade's item) are shown greyed, as illustrations.
   Other plugins that mount this editor get all of it for free.
+- **A player's own figures say where they come from.** `{money}`, `{fame}`, `{gold}`, `{squad}` and
+  every `{stat_…}` are read from the **game database** — the state as of the last save — so the picker
+  marks them *the last game save* and says so on hover. They are not the running game's numbers, and
+  on an embed about somebody who is online right now that difference is real.
 - **Fields and buttons** can be reordered and duplicated; `Ctrl/Cmd+B`, `I`, `U` and `K` work in every
   text box.
 - **Type instead of scrolling.** Every list has a search box — the manager's ~80 built-in embeds,
@@ -55,7 +59,11 @@ like the built-in status board but yours.
 
 ## Requirements
 - The Discord bot must be configured and running.
-- Manager **4.0.5+** (reads the bot's branding).
+- Manager **4.0.7+**. The manifest enforces this, and the README used to promise 4.0.5 — an owner on
+  4.0.5 read that it was supported and then watched the panel refuse to enable it.
+- The **SSA Bridge**, for click actions that run an in-game command. Without it those buttons answer
+  "command failed" with nothing explaining why, so it is a declared dependency and installs with the
+  plugin. Everything else — posting, editing, live embeds — works without it.
 - Editing or deleting a message only works for messages **this bot posted**.
 
 ## Configuration
@@ -72,6 +80,21 @@ against the old pair keep working.
   *Economy*, so the editor showed one and styled the other. Anything you had saved stays on the trade
   feed, where it was already being applied; the board is *Economy Overview* and honours its styling
   for the first time.
+- **No token here is the running game, and none can be.** The manager hands a plugin an embed and
+  takes one straight back, in the same breath — so every token has to resolve without waiting for
+  anything, while every read from the game itself is a round trip that takes a moment. Server-wide
+  numbers like `{online}` are as current as the manager is. A player's own — money, fame, gold, squad,
+  every `{stat_…}` — are from the last **save**, which on a busy server is a real gap: somebody can
+  spend their money and the embed announcing it will still show the old balance. The picker marks
+  those, so you can decide whether a number belongs in that message at all. Nothing here would be
+  improved by polling the game on a timer to keep a fresher copy — that costs the server continuously
+  to make a line of text a little less wrong.
+- **`{killerName}` and `{victimName}` name the thing, not its class.** A kill event carries either a
+  player's name or a spawn class with its instance number attached — `BP_Guard_Lvl_5_C_2146943462` —
+  and a styled kill feed used to print the second one verbatim, which made it read worse than the
+  manager's own feed. Both are now put through the same name rule the built-in feed uses, so a
+  puppet reads *Guard (Lvl 5)* and a player's name is left exactly as it came. On a manager older
+  than **5.2** there is no such rule and the raw class comes through as it always did.
 - The sent-message history keeps the last **100** messages. Clearing the list never touches Discord.
 - Mentions inside an **embed** never ping; only mentions in the message text above it do. That is
   Discord's own behaviour, and a useful way to write a safe announcement.
@@ -91,6 +114,28 @@ against the old pair keep working.
   token is recognised inside them: `134 m` becomes `{distance} m`.
 - **Clearing something removes it.** Emptying the text above an embed, or deleting the last button,
   takes it off the message on the next save or refresh instead of leaving the old one behind.
+- **A token that grows past Discord's limits is trimmed, not dropped.** `{onlineList}` is thirteen
+  characters while you are writing and around two thousand on a full server, so an embed that fits
+  in the editor can be too long by the time it is sent. Anything over the limit ends in `…` and the
+  message still goes out — on every path: a manual send, an edit, a scheduled announcement and a
+  live embed alike. Before this, each of those failed differently and none of them said so.
+- **The editor warns you first.** It measures your text with the tokens filled in from live server
+  data, so you find out that `{onlineList}` will overflow the description while you are still
+  writing it — not from a message that came out cut. It is a notice, not a block: the embed is still
+  perfectly sendable.
+- **One bad value no longer costs you the rest.** A malformed image URL used to skip the description,
+  the fields and the buttons along with it. Each part is now applied on its own and the manager log
+  names the one that failed.
+- **Two browser tabs cannot overwrite each other.** If someone else saves while you have the page
+  open, your save is refused with a message telling you to reload — rather than silently replacing
+  their work with yours, which left nothing to restore from.
+- **A button that runs an in-game command runs it for whoever clicks it.** That is the point, and it
+  is also the risk: in a public channel it is every member, as often as they like. Each command or
+  announce action now takes an optional **role** and an optional **cooldown**, and says in the editor
+  what "no restriction" means. Double-clicking never counts twice, whatever you set.
+- **Buttons on the manager's own embeds are wired up here too.** The editor always let you add one;
+  until now only your own embeds had anywhere to say what it should do, so a button on a built-in
+  embed could only ever answer "nothing is set up for that button yet".
 
 ---
 

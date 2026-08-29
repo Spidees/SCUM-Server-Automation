@@ -2,11 +2,11 @@
   "id": "vehicle-rental",
   "name": "Vehicle Rental System",
   "type": "manager",
-  "version": "1.4.1",
+  "version": "1.6.0",
   "updated": "2026-08-26",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
-  "description": "Players rent vehicles from Discord OR straight from in-game chat — pick a vehicle, choose a duration, pay in-game money or gold, and the bot spawns it and manages the whole rental lifecycle (in-game and Discord notifications, reminders, extensions, early return, auto-removal). Fully admin-configurable.",
+  "description": "Players rent vehicles straight from in-game chat — /rent, /myrent, /extend, /return — or from a Discord menu if you run a bot. Pick a vehicle, choose a duration, pay in-game money or gold, and the vehicle is spawned next to them and the whole rental lifecycle managed (in-game and Discord notifications, reminders, extensions, early return, auto-removal). Vehicles and plans can be limited to time windows, so a happy hour or a weekend-only price is a setting rather than a job for somebody. Discord is optional; nothing here needs it.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
@@ -18,12 +18,26 @@
   },
   "dependencies": [
     {
-      "id": "discord-embeds",
-      "min": "1.0.0"
-    },
-    {
       "id": "ssa-bridge"
     }
   ],
+  "optionalDependencies": [
+    {
+      "id": "discord-embeds",
+      "min": "1.0.0"
+    }
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "live",
+        "switches": [
+          "enabled",
+          "money"
+        ],
+        "why": "Prices a rental against the balance the running game holds this second. With these off the check reads the last server save, so a player can spend their money elsewhere and still rent a vehicle on credit."
+      }
+    ]
+  },
   "premium": true
 }

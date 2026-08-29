@@ -19,6 +19,14 @@
 .mp-badge.warn{border-color:rgba(250,166,26,.4)} .mp-badge.warn .mp-dot{background:#faa61a}
 .mp-badge.off .mp-dot{background:#8b9099}
 
+/* A live cross-check that could not run. Drawn only when there is one, so it is never wallpaper. */
+.mp-live{display:flex;flex-direction:column;gap:6px;margin:0 0 1rem}
+.mp-live-n{background:var(--panel-2,#1c1f25);border:1px solid rgba(250,166,26,.4);border-left-width:3px;border-radius:8px;padding:.5rem .7rem;font-size:.78rem;line-height:1.45}
+/* "The server is not running" is INFORMATION, not a warning: an owner configuring this before the
+   first start has done nothing wrong, and an amber bar tells them they have. Both halves are set in
+   the one rule so the pair can never drift apart (check-contrast). */
+.mp-live-off{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--line-2,#343943)}
+
 /* ── fields ── */
 .mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
 .mp-stack{display:flex;flex-direction:column;gap:12px}
@@ -74,3 +82,12 @@
    name pushed the row past the edge of the modal it lives in. */
 .mp-online-row > * { min-width: 0; }
 .mp-online-row code, .mp-chip code { overflow-wrap: anywhere; }
+
+/* Offences cell: the number, and a way to forgive that one player. The button stays quiet until the
+   row is hovered so a table of counts does not read as a table of buttons — but it is always in the
+   layout, so nothing shifts when it appears, and it is fully visible on touch where there is no
+   hover to reveal it with. */
+.mp-off { display: inline-flex; align-items: center; gap: 8px; }
+.mp-off-x { font-size: .72rem; padding: .1rem .45rem; opacity: .35; transition: opacity .12s; }
+tr:hover .mp-off-x, .mp-off-x:focus-visible { opacity: 1; }
+@media (hover: none) { .mp-off-x { opacity: 1; } }

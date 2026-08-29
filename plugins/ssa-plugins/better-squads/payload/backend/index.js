@@ -113,7 +113,9 @@ module.exports = {
     const safeChannel = (ch) => (ch && TARGET_OK[ch] ? ch : 'squad');
 
     // ── persisted state ──────────────────────────────────────────────────────
-    let stats = host.store.get('stats') || { sent: 0, suppressed: 0, commands: 0 };
+    // `failed` counts alerts that reached NOBODY. It is listed here rather than only being created
+    // on the first failure, so the panel can show a real 0 instead of a blank.
+    let stats = Object.assign({ sent: 0, suppressed: 0, commands: 0, failed: 0 }, host.store.get('stats') || {});
     let recent = host.store.get('recent') || [];
     // Per-player preferences set BY THE PLAYER in game: { steamId: { off, muted: {event:true} } }.
     // Kept separate from the admin's mute list so neither side silently overwrites the other.
@@ -181,6 +183,34 @@ module.exports = {
       if (on && !looksLikeSteamId(on)) return on;
       return nameFromDb(steamId);
     }
+    /**
+     * The same, for a name that might not belong to a PLAYER at all.
+     *
+     * `displayName` hands back anything that is not a Steam ID untouched, which is right for a join,
+     * a leave or a squad roster — every one of those is a person. A kill event is the exception: its
+     * killer and its victim are a player's name OR a spawn class carrying its runtime instance
+     * number (`BP_Guard_Lvl_5_C_2146943462`, `BP_Bear_C_2147201044`). Those went out to the squad
+     * exactly like that, so being killed by a puppet read as a line of code — while the manager's
+     * own kill feed, reading the same event, said "Guard (Lvl 5)".
+     *
+     * `items.actorName()` is the one rule that tells a player's name from a class; `items.name()`
+     * answers about an ITEM code and is the wrong question for both. Kept separate from
+     * `displayName` on purpose: a squad roster must never be run through a class-name rule, because
+     * a player is free to call themselves something that looks like one.
+     *
+     * Guarded — the manifest's floor is manager 4.0.3 and this arrived in 5.2, so an older host has
+     * no such method and the value stays exactly what it was.
+     */
+    function actorDisplayName(steamId, given) {
+      const g = String(given || '').trim();
+      if (g && !looksLikeSteamId(g)) {
+        try {
+          if (host.items && typeof host.items.actorName === 'function') return host.items.actorName(g) || g;
+        } catch (e) { /* a resolver that threw must not lose the name */ }
+        return g;
+      }
+      return displayName(steamId, given);
+    }
 
     const squadCache = new Map();   // steamId -> { at, squad }
     function squadOf(steamId, fresh) {
@@ -200,6 +230,158 @@ module.exports = {
       const byId = new Map();
       try { (host.players.online() || []).forEach((p) => { const s = sidOf(p); if (s) byId.set(s, nmOf(p)); }); } catch { /* server offline */ }
       return byId;
+    }
+
+    // ── the running game, where the last save is not good enough ─────────────
+    //
+    // Everything above reads SCUM.db, which is the state as of the last SAVE. Two of the things this
+    // plugin puts in front of a player are simply wrong while that lags:
+    //
+    //   WHERE a squadmate is. {distance} and {direction} tell somebody which way to walk, and the
+    //   roster sorts by it — a saved position can predate the fight they are being told about.
+    //
+    //   WHO is in the squad. Membership decides who receives a line nobody outside the squad is meant
+    //   to hear. A player who joined since the save gets nothing; one who left keeps hearing it.
+    //
+    // Both are asked of the running game, per event, and fall back to the database when it cannot
+    // answer — naming the switch an owner has to find. Neither adds a timer: the live read is
+    // memoised for two seconds, the same window the position index already used, so one event costs
+    // one read however many recipients it has.
+    //
+    // Identity stays in the database and has to: no reply from the bridge carries a Steam ID, and the
+    // squads module says none ever will. A profile id never changes hands, so that join is identity
+    // rather than state and the save is the right place for it.
+    const liveNote = { players: null, squads: null };
+    const liveSaid = { players: 0, squads: 0 };
+    const LIVE_SWITCH = {
+      players: "Read live player data, with Position, facing and speed (Settings → Bridge → Live data)",
+      squads: "Report live squads, with Include the member list (Settings → Bridge → Squads)",
+    };
+    function noteLive(key, q) {
+      const code = (q && q.code) || 'bridge_off';
+      let text;
+      if (code === 'refused') text = (q && q.reason) || null;
+      else if (code === 'module_off') text = `the in-game module is switched off — turn on '${LIVE_SWITCH[key]}'`;
+      else if (code === 'no_module') text = 'this server runs an older SSA Bridge that does not have this module';
+      else text = 'the SSA Bridge did not answer';
+      liveNote[key] = { code, text, at: Date.now() };
+      // `bridge_off` is the ordinary state and deserves silence; the rest are one switch or one
+      // update away. Said once an hour, because this sits on the path of every squad message.
+      if (code === 'bridge_off' || !text) return;
+      if (Date.now() - liveSaid[key] < 3600000) return;
+      liveSaid[key] = Date.now();
+      host.logger.warn(`the live ${key === 'players' ? 'position' : 'squad'} read could not run: ${text}. Better Squads carries on with the last save, which is what it did before this existed.`);
+    }
+    const canQuery = () => !!(host.bridge && typeof host.bridge.query === 'function');
+
+    let liveMemo = null, liveMemoAt = 0;
+    /** Every online player as the game has them this instant: `{ pos, names }`, or null. */
+    async function liveSnapshot() {
+      if (liveMemoAt && Date.now() - liveMemoAt < 2000) return liveMemo;
+      liveMemoAt = Date.now();
+      liveMemo = null;
+      if (!canQuery()) return null;
+      const q = await host.bridge.query('live', 'players');
+      if (!q || !q.ok) { noteLive('players', q); return null; }
+      const list = (q.data && Array.isArray(q.data.players)) ? q.data.players : null;
+      if (!list) return null;
+      liveNote.players = null;
+      const pos = new Map(); const names = new Map();
+      for (const p of list) {
+        // The live payload spells it `steamid`, all lower case — that is the game's own wire key, not
+        // the manager's `steamId`. Both are read so this keeps working whichever a bridge sends.
+        const sid = String((p && (p.steamid || p.steamId)) || '');
+        if (!sid) continue;
+        if (p.name) names.set(sid, String(p.name));
+        // Position rides on its own owner switch. ABSENT means the game did not send it — never
+        // 0,0,0, which is a real place on this map, in the sea.
+        if (Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) pos.set(sid, { x: Number(p.x), y: Number(p.y), z: Number(p.z) });
+      }
+      liveMemo = { pos, names };
+      return liveMemo;
+    }
+
+    /**
+     * Positions, live where the game could answer and saved where it could not — merged PER PLAYER,
+     * not all-or-nothing. Somebody the game has no pawn for (a loading screen) keeps their saved
+     * position rather than losing the distance token altogether.
+     */
+    async function positions() {
+      const saved = positionIndex(worldSnapshot());
+      const live = await liveSnapshot();
+      if (!live || !live.pos.size) return saved;
+      const out = new Map(saved);
+      for (const [sid, p] of live.pos) out.set(sid, p);
+      return out;
+    }
+
+    const PROFILE_ID_SQL = host.db.scum.excludeDeleted('SELECT id AS profileId FROM user_profile WHERE user_id = ? LIMIT 1');
+    const PROFILE_ROW_SQL = host.db.scum.excludeDeleted('SELECT user_id AS steamId, name AS name FROM user_profile WHERE id = ? LIMIT 1');
+    const profileIdCache = new Map();   // steamId -> profile id | null
+    const profileRowCache = new Map();  // profile id -> { steamId, name } | null
+    function profileIdOf(steamId) {
+      const key = String(steamId || '');
+      if (!key) return null;
+      if (profileIdCache.has(key)) return profileIdCache.get(key);
+      let id = null;
+      try { const r = host.db.scum.get(PROFILE_ID_SQL, key); id = (r && r.profileId != null) ? Number(r.profileId) : null; }
+      catch { return null; }             // a query that failed is not an answer worth caching
+      profileIdCache.set(key, id);
+      return id;
+    }
+    function profileRow(profileId) {
+      const key = Number(profileId);
+      if (!Number.isFinite(key) || key <= 0) return null;
+      if (profileRowCache.has(key)) return profileRowCache.get(key);
+      let row = null;
+      try { const r = host.db.scum.get(PROFILE_ROW_SQL, key); row = (r && r.steamId) ? { steamId: String(r.steamId), name: r.name || '' } : null; }
+      catch { return null; }
+      profileRowCache.set(key, row);
+      return row;
+    }
+
+    /**
+     * The squad as the GAME holds it, or `undefined` when it could not say.
+     *
+     * `undefined` and not `null`, because "the game has no squad for this profile" is an answer this
+     * deliberately does NOT act on: the module's own wording is "not in any loaded squad", and a
+     * squad can be unloaded. Trusting that would silence a real squad, which is worse than the
+     * staleness it would fix. So this only ever returns a POSITIVE roster — which is enough, because
+     * it is asked about the player the event is about, and their roster is what decides recipients.
+     * A member who has left is not in it; one who has just joined is.
+     *
+     * A roster that could only be half resolved also answers `undefined`. Dropping the members whose
+     * profile ids did not resolve would silently drop recipients, which is the exact failure this
+     * path exists to prevent.
+     */
+    async function squadLive(steamId) {
+      if (!canQuery()) return undefined;
+      const pid = profileIdOf(steamId);
+      if (!pid) return undefined;
+      const q = await host.bridge.query('squads', `member:${pid}`);
+      if (!q || !q.ok) {
+        // A solo player is a real answer and not a fault, so it is not worth a note on the panel.
+        if (!(q && q.code === 'refused' && /not in any/i.test(String(q.reason || '')))) noteLive('squads', q);
+        return undefined;
+      }
+      // The roster rides on the module's own "Include the member list" switch, which is what carries
+      // the profile ids. Counts alone cannot name a recipient.
+      const members = (q.data && Array.isArray(q.data.members)) ? q.data.members : null;
+      if (!members || !members.length) { noteLive('squads', { code: 'module_off' }); return undefined; }
+      liveNote.squads = null;
+      const out = [];
+      for (const m of members) {
+        const row = profileRow(Number(m && m.profileId));
+        if (!row) return undefined;      // incomplete → the database has all of them, use that
+        out.push({ steamId: row.steamId, name: row.name });
+      }
+      return { id: q.data.id != null ? q.data.id : null, name: q.data.name || 'your squad', members: out, source: 'live' };
+    }
+
+    /** Live membership where the game will say, the database where it will not. */
+    async function squadFor(steamId, fresh) {
+      const live = await squadLive(steamId);
+      return live !== undefined ? live : squadOf(steamId, fresh);
     }
 
     function worldSnapshot() {
@@ -304,6 +486,11 @@ module.exports = {
       for (const [k, v] of squadCache) if (now - v.at > 300000) squadCache.delete(k);
       for (const [k, at] of lastSent) if (now - at > 900000) lastSent.delete(k);
       for (const [k, v] of nameCache) if (now - v.at > 900000) nameCache.delete(k);
+      // The two identity maps hold one entry per player ever seen and their answers never change, so
+      // there is nothing to expire — only a ceiling, so a server with years of players cannot grow
+      // them without limit. Dropped whole rather than aged: rebuilding one is a single indexed read.
+      if (profileIdCache.size > 5000) profileIdCache.clear();
+      if (profileRowCache.size > 5000) profileRowCache.clear();
     }
     const maintTimer = setInterval(pruneMaps, 300000);
     if (maintTimer.unref) maintTimer.unref();
@@ -349,7 +536,9 @@ module.exports = {
       if (inQuietHours(c)) { stats.suppressed++; persist(); return; }
       if (onCooldown(`${kind}:${subject}`, c.cooldownSeconds)) { stats.suppressed++; persist(); return; }
 
-      const squad = squadOf(actorSteamId);
+      // Live where the game will say who is in this squad, saved where it will not. This is the
+      // decision the whole plugin turns on: it is who hears a line nobody else is meant to.
+      const squad = await squadFor(actorSteamId);
       if (!squad) return;                                   // solo player — nobody to tell
 
       // If the line names someone and we could not work out who, say nothing. A message reading
@@ -370,8 +559,7 @@ module.exports = {
       ));
       if (!targets.length) return;
 
-      const world = worldSnapshot();
-      const pos = positionIndex(world);
+      const pos = await positions();
       const base = Object.assign({
         squad: squad.name,
         squadsize: squad.members.length,
@@ -396,12 +584,23 @@ module.exports = {
         if (!relative) {
           const text = fill(evc.message, base);
           if (!text) return;
-          await host.chat.send(text, { channel, targets });
+          const res = await host.chat.send(text, { channel, targets });
+          // The bridge reports how many players it actually reached. A call can succeed and deliver
+          // to nobody — everyone logged off in the same instant, or the channel refused them — and
+          // counting that as sent is how the panel ends up disagreeing with what the squad saw.
+          const delivered = (res && Number.isFinite(Number(res.delivered))) ? Number(res.delivered) : targets.length;
+          if (delivered <= 0) {
+            host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s) — the bridge accepted it and delivered it to nobody.`);
+            stats.failed = (stats.failed || 0) + 1; persist();
+            return;
+          }
           stats.sent++;
-          note(kind, vars.player || actorSteamId, text, targets.length);
+          note(kind, vars.player || actorSteamId, text, delivered);
         } else {
           // One send per reader: {distance}/{direction} mean "from where YOU are".
           let first = '';
+          let reached = 0;
+          const failedFor = [];
           for (const sid of targets) {
             const me = pos.get(sid);
             const text = fill(evc.message, Object.assign({}, base, {
@@ -411,11 +610,20 @@ module.exports = {
             if (!text) continue;
             // Per recipient, so a failure to reach ONE player must not abort the loop and silence
             // everyone after them.
-            try { await host.chat.send(text, { channel, targets: [sid] }); if (!first) first = text; }
-            catch (e) { host.logger.debug(`chat send failed (${kind} → ${sid}): ${e && e.message}`); }
+            try { await host.chat.send(text, { channel, targets: [sid] }); reached++; if (!first) first = text; }
+            catch (e) { failedFor.push(sid); host.logger.debug(`chat send failed (${kind} → ${sid}): ${e && e.message}`); }
           }
+          // `stats.sent++` used to run whatever happened, so a message that reached NOBODY was
+          // counted as sent and written into the activity feed with empty text. The squad got
+          // nothing, the panel said otherwise, and the only trace was a debug line nobody reads.
+          if (!reached) {
+            host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s) — every individual send failed.`);
+            stats.failed = (stats.failed || 0) + 1; persist();
+            return;
+          }
+          if (failedFor.length) host.logger.warn(`"${kind}" reached ${reached} of ${targets.length} — ${failedFor.length} player(s) did not get it.`);
           stats.sent++;
-          note(kind, vars.player || actorSteamId, first, targets.length);
+          note(kind, vars.player || actorSteamId, first, reached);
         }
       } catch (e) {
         host.logger.debug(`chat send failed (${kind}): ${e && e.message}`);
@@ -423,18 +631,23 @@ module.exports = {
     }
 
     // ── events ───────────────────────────────────────────────────────────────
-    function posOf(steamId) {
-      const p = positionIndex(worldSnapshot()).get(String(steamId));
-      return p && Number.isFinite(p.x) ? p : null;
+    // WHERE the event happened. Live for anyone the game can answer for — a player is killed where
+    // they were standing, not where they were at the last save — and never allowed to reject: this
+    // sits directly on an event handler.
+    async function posOf(steamId) {
+      try {
+        const p = (await positions()).get(String(steamId));
+        return p && Number.isFinite(p.x) ? p : null;
+      } catch { return null; }
     }
 
     function onJoin(p) {
       const sid = String((p && (p.steamId || p.SteamID)) || '');
-      if (sid) announce('join', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, posOf(sid));
+      if (sid) posOf(sid).then((at) => announce('join', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, at));
     }
     function onLeave(p) {
       const sid = String((p && (p.steamId || p.SteamID)) || '');
-      if (sid) announce('leave', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, posOf(sid));
+      if (sid) posOf(sid).then((at) => announce('leave', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, at));
     }
     // Prefer the bridge's live join/leave: it fires the moment the player is actually in-game,
     // where the log-derived event can be many seconds late (SCUM writes its log in batches).
@@ -445,7 +658,7 @@ module.exports = {
       if (!e) return;
       if (e.type === 'suicide') {
         const sid = String(e.steamId || '');
-        announce('suicide', sid, { player: displayName(sid, e.playerName) }, posOf(sid));
+        posOf(sid).then((at) => announce('suicide', sid, { player: displayName(sid, e.playerName) }, at));
         return;
       }
       const vSquad = squadOf(e.victimSteamId), kSquad = squadOf(e.killerSteamId);
@@ -465,18 +678,18 @@ module.exports = {
         shotdistance: Number.isFinite(dist) && dist > 0 ? dist : '',
       };
 
-      announce('death', String(e.victimSteamId || ''), Object.assign({
-        player: displayName(e.victimSteamId, e.victimName), victim: displayName(e.victimSteamId, e.victimName),
-        killer: displayName(e.killerSteamId, e.killerName),
-      }, shared), posOf(e.victimSteamId));
+      posOf(e.victimSteamId).then((at) => announce('death', String(e.victimSteamId || ''), Object.assign({
+        player: actorDisplayName(e.victimSteamId, e.victimName), victim: actorDisplayName(e.victimSteamId, e.victimName),
+        killer: actorDisplayName(e.killerSteamId, e.killerName),
+      }, shared), at));
 
       // On friendly fire both templates describe the same event to the same people — the death
       // line already names the killer, so the kill line would be it told twice.
       if (!sameSquad) {
-        announce('kill', String(e.killerSteamId || ''), Object.assign({
-          player: displayName(e.killerSteamId, e.killerName), killer: displayName(e.killerSteamId, e.killerName),
-          victim: displayName(e.victimSteamId, e.victimName),
-        }, shared), posOf(e.killerSteamId));
+        posOf(e.killerSteamId).then((at) => announce('kill', String(e.killerSteamId || ''), Object.assign({
+          player: actorDisplayName(e.killerSteamId, e.killerName), killer: actorDisplayName(e.killerSteamId, e.killerName),
+          victim: actorDisplayName(e.victimSteamId, e.victimName),
+        }, shared), at));
       }
     });
 
@@ -606,7 +819,7 @@ module.exports = {
       const sub = String((ctx.args && ctx.args[0]) || '').toLowerCase();
       let rest = (ctx.argString || '').split(/\s+/).slice(1).join(' ').trim();
       const root = c.commands.root;
-      const squad = squadOf(me);
+      const squad = await squadFor(me);
 
       const reply = (s) => (s ? ctx.reply(s, { channel: safeChannel(c.channel) }) : Promise.resolve());
 
@@ -617,17 +830,26 @@ module.exports = {
         const p = prefFor(me);
         const arg = rest.toLowerCase();
         if (!arg) return reply(fill(t.muteUsage, { root, mute: subName(c, 'mute'), events: EVENT_KEYS.join('|'), muted: Object.keys(p.muted).join(', ') || 'none' }));
+        const unknown = [];
         if (arg === 'none') p.muted = {};
         else if (arg === 'all') EVENT_KEYS.forEach((k) => { p.muted[k] = true; });
         else {
           // A list toggles exactly what was named and leaves the rest alone.
           arg.split(/[,\s]+/).filter(Boolean).forEach((k) => {
             const key = EVENT_KEYS.filter((e) => e.toLowerCase() === k)[0];
+            // A name we do not recognise used to be dropped in silence, so a typo — `mute kils` —
+            // did nothing at all and the confirmation below still listed the unchanged state, which
+            // reads exactly like it worked. The player then wonders why they are still being
+            // pinged. Say which words were not understood.
             if (key) { if (p.muted[key]) delete p.muted[key]; else p.muted[key] = true; }
+            else unknown.push(k);
           });
         }
         persist();
-        return reply(fill(t.muteSet, { muted: Object.keys(p.muted).join(', ') || 'none' }));
+        const done = fill(t.muteSet, { muted: Object.keys(p.muted).join(', ') || 'none' });
+        return reply(unknown.length
+          ? `${done} (didn't recognise: ${unknown.join(', ')} — try ${EVENT_KEYS.join('|')}, all or none)`
+          : done);
       }
       if (sub && subOn(c, 'help') && sub === subName(c, 'help')) {
         const list = SUB_KEYS.filter((k) => subOn(c, k)).map((k) => `${root} ${subName(c, k)}`).join(', ');
@@ -638,7 +860,10 @@ module.exports = {
 
       const online = onlineIndex();
       const world = worldSnapshot();
-      const pos = positionIndex(world);
+      // "Where is everyone" is the whole point of the roster and of /squad here — live where the
+      // game can say, saved where it cannot. `world` is still the source for BASES below, which do
+      // not move and have no live equivalent that carries an owner.
+      const pos = await positions();
       const mine = pos.get(me);
       const mates = squad.members.filter((m) => m.steamId !== me && online.has(m.steamId));
       const chan = safeChannel(c.channel);
@@ -648,12 +873,27 @@ module.exports = {
       const adminMuted = new Set((c.mutedSteamIds || []).map(String));
       const reachable = mates.filter((m) => !adminMuted.has(m.steamId));
 
+      // Sending to the squad can fail, and `host.chat.send` throws when it does. Uncaught, the throw
+      // skipped the confirmation below and was swallowed by the caller's debug catch — so the player
+      // saw NOTHING: no "sent", no error, just a command that appeared to be ignored. Both player
+      // commands answer either way now.
+      const sendToSquad = async (line, targets, kind, who) => {
+        try {
+          await host.chat.send(line, { channel: chan, targets });
+          note(kind, who, line, targets.length);
+          return true;
+        } catch (e) {
+          host.logger.warn(`"${root} ${kind}" from ${who} could not be delivered: ${e && e.message}`);
+          return false;
+        }
+      };
+
       if (sub && subOn(c, 'here') && sub === subName(c, 'here')) {
         if (!reachable.length) return reply(fill(t.nobodyOnline, {}));
-        const line = fill(t.here, { player: displayName(me, ctx.name), sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: squad.name });
-        await host.chat.send(line, { channel: chan, targets: reachable.map((m) => m.steamId) });
-        note('here', displayName(me, ctx.name), line, reachable.length);
-        return reply(fill(t.hereOk, {}));
+        const who = displayName(me, ctx.name);
+        const line = fill(t.here, { player: who, sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: squad.name });
+        const sent = await sendToSquad(line, reachable.map((m) => m.steamId), 'here', who);
+        return reply(sent ? fill(t.hereOk, {}) : 'Couldn’t reach your squad just now — try again in a moment.');
       }
 
       if (sub && subOn(c, 'msg') && sub === subName(c, 'msg')) {
@@ -663,10 +903,10 @@ module.exports = {
         rest = rest.replace(/[\u0000-\u001f{}]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
         if (!rest) return reply(fill(t.msgUsage, { root, msg: subName(c, 'msg') }));
         if (!reachable.length) return reply(fill(t.nobodyOnline, {}));
-        const line = fill(t.msgLine, { player: displayName(me, ctx.name), text: rest, squad: squad.name });
-        await host.chat.send(line, { channel: chan, targets: reachable.map((m) => m.steamId) });
-        note('msg', displayName(me, ctx.name), line, reachable.length);
-        return reply(fill(t.msgOk, { count: reachable.length }));
+        const who = displayName(me, ctx.name);
+        const line = fill(t.msgLine, { player: who, text: rest, squad: squad.name });
+        const sent = await sendToSquad(line, reachable.map((m) => m.steamId), 'msg', who);
+        return reply(sent ? fill(t.msgOk, { count: reachable.length }) : 'Couldn’t reach your squad just now — try again in a moment.');
       }
 
       if (sub && subOn(c, 'base') && sub === subName(c, 'base')) {
@@ -782,23 +1022,49 @@ module.exports = {
       res.json({
         stats, recent: recent.slice(0, 40), online: online.size, activeSquads,
         geography: !!(host.map && typeof host.map.sector === 'function'),
+        // Every number above is a photograph of a running world, so with the server stopped they are
+        // all a truthful 0 — and a screenful of zeroes with no caption reads as "this plugin is not
+        // working", which is the one thing it does not mean. The panel says so instead of leaving the
+        // owner to guess. An older manager has no `isRunning`, so this is a feature-detect, not a call.
+        serverRunning: (host.server && typeof host.server.isRunning === 'function') ? !!host.server.isRunning() : null,
+        // Which of the two live reads could not run, and why in the module's own words. `null` for a
+        // read means it answered last time it was asked. An owner has to be able to tell "live" from
+        // "quietly back on the last save"; without this they cannot.
+        live: { players: liveNote.players, squads: liveNote.squads },
       });
     });
 
     host.routes.get('/players', (req, res) => {
       const online = onlineIndex();
       const out = [];
+      const seen = new Set();
       online.forEach((name, steamId) => {
+        seen.add(String(steamId));
         const sq = squadOf(steamId);
         const p = prefs[steamId] || {};
-        out.push({ steamId, name, squad: sq ? sq.name : null, off: !!p.off, muted: Object.keys(p.muted || {}) });
+        out.push({ steamId, name, squad: sq ? sq.name : null, off: !!p.off, muted: Object.keys(p.muted || {}), online: true });
       });
+      // …and anyone OFFLINE who has silenced something.
+      //
+      // A preference is set in game and then persists. Listing only who is online meant a player who
+      // muted their alerts and logged off vanished from the panel while their setting kept working —
+      // so "reset it if someone asks" was impossible for exactly the person most likely to ask,
+      // since they are asking on Discord rather than standing in game. The `/prefs` route was
+      // written for this and the panel never called it; folding it in here means one list instead of
+      // two, and the reset button already works on any steamId.
+      for (const steamId of Object.keys(prefs)) {
+        if (seen.has(String(steamId))) continue;
+        const p = prefs[steamId] || {};
+        const muted = Object.keys(p.muted || {});
+        if (!p.off && !muted.length) continue;              // nothing silenced — nothing to show
+        const sq = squadOf(steamId);
+        // `displayName` already knows the rule for this: whoever is online, else the game database,
+        // never a raw Steam ID. An offline player is exactly the case it was written for.
+        out.push({ steamId, name: displayName(steamId, '') || steamId, squad: sq ? sq.name : null, off: !!p.off, muted, online: false });
+      }
       out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
       res.json(out);
     });
-
-    // Player-set preferences, so an admin can see who silenced what and undo it on request.
-    host.routes.get('/prefs', (req, res) => res.json(prefs));
     host.routes.post('/prefs/reset', (req, res) => {
       const sid = String((req.body || {}).steamId || '');
       if (sid) delete prefs[sid]; else prefs = {};

@@ -98,7 +98,9 @@
   padding: 0; font-size: 1.05rem; cursor: pointer; background: none;
   border: 1px solid transparent; border-radius: 5px; transform: none;
 }
-.ee-emo:hover { background: var(--panel-2, #1c1d14); border-color: var(--amber, #f0820c); }
+/* Tinted: its own soft fill, normal text. Stating only the background left the dark on-amber
+   text from `button:hover` sitting on it at 1.09:1. */
+.ee-emo { --hov-bg: var(--panel-2, #1c1d14); --hov-fg: var(--text, #e4e2d6); --hov-line: var(--amber, #f0820c); }
 .ee-emo img { max-width: 22px; max-height: 22px; }
 
 /* Three columns at this width, so a long catalog is scanned rather than scrolled. */
@@ -118,7 +120,9 @@
   background: var(--inset, #0b0c08); color: var(--muted, #8e8f82);
   border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 999px; transform: none;
 }
-.ee-chip.active, .ee-chip:hover { border-color: var(--amber, #f0820c); color: var(--amber-hi, #ff9a2e); }
+/* Ghost. `.active` keeps its own colouring — it is not a hover state and has no pair problem. */
+.ee-chip { --hov-bg: transparent; --hov-fg: var(--amber-hi, #ff9a2e); --hov-line: var(--amber, #f0820c); }
+.ee-chip.active { border-color: var(--amber, #f0820c); color: var(--amber-hi, #ff9a2e); }
 
 .ee-dbgrid { display: flex; flex-direction: column; gap: 2px; }
 .ee-dbrow { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
@@ -142,8 +146,10 @@
   background: none; color: var(--muted, #8e8f82);
   border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 4px; transform: none;
 }
-.ee-mini:hover { border-color: var(--amber, #f0820c); color: var(--amber-hi, #ff9a2e); }
-.ee-mini.danger:hover { border-color: #e5443f; color: #ff8b80; }
+/* The ✕ on every field, button, extra embed and select option. Amber text on the amber hover
+   fill measured 1.00:1 — the control vanished at the moment you pointed at it. */
+.ee-mini { --hov-bg: transparent; --hov-fg: var(--amber-hi, #ff9a2e); --hov-line: var(--amber, #f0820c); }
+.ee-mini.danger { --hov-bg: transparent; --hov-fg: var(--alarm, #e5443f); --hov-line: var(--alarm, #e5443f); }
 
 /* ── limit warnings ──────────────────────────────────────────────────────────── */
 .ee-limits { display: none; }
@@ -152,6 +158,15 @@
   color: #ffb4a8; background: rgba(229, 68, 63, .12);
   border: 1px solid rgba(229, 68, 63, .4); border-radius: 6px;
 }
+/* "This will be trimmed once the tokens are filled in" is a different thing from "Discord will
+   refuse this": the message still goes out. Amber, not red — and the same box, because the two
+   belong together and an owner should read them in one place. */
+.ee-limits.warn {
+  display: block; margin: 0 0 8px; padding: 6px 9px; font-size: .78rem;
+  color: #f0c98a; background: rgba(230, 178, 58, .1);
+  border: 1px solid rgba(230, 178, 58, .35); border-radius: 6px;
+}
+.ee-limits.bad .ee-lim-note { color: #f0c98a; }
 
 /* ── sent messages / template rows ───────────────────────────────────────────── */
 .ee-hrow { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
@@ -212,6 +227,14 @@
 .ce-act-id { font-size: .82rem; color: var(--text, #f1f3f5); min-width: 150px; font-family: var(--mono, monospace); }
 .ce-act select, .ce-act input { background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .84rem; padding: .4rem .55rem; }
 .ce-act input { flex: 1 1 220px; min-width: 160px; }
+/* The "who may press it / how often" row, tucked under its action and visibly subordinate to it. */
+.ce-act-guard { margin: -2px 0 8px; }
+.ce-act-g { display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--muted, #8b9099); }
+/* Not `flex: 1 1 220px` — these two are short controls beside their labels, and inheriting the
+   value input's growth made a role dropdown span the whole row. */
+.ce-act-guard input, .ce-act-guard select { flex: 0 0 auto; min-width: 0; }
+.ce-act-note { font-size: .78rem; color: var(--warn, #e0a63a); margin: -4px 0 10px; padding-left: 158px; }
+@media (max-width: 640px) { .ce-act-note { padding-left: 0; } .ce-act-id { min-width: 0; } }
 .es-btn { font: inherit; cursor: pointer; padding: .5rem 1rem; border-radius: 6px; border: 1px solid var(--line-2, #343943); background: var(--panel-2, #1c1f25); color: var(--text, #f1f3f5); font-size: .84rem; }
 .es-btn.primary { border: 0; background: var(--accent, var(--amber, #ff6a1a)); color: #1a0d02; font-weight: 600; }
 

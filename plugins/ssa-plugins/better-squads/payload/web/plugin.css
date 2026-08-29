@@ -17,6 +17,10 @@
 .bs-stat{display:flex;flex-direction:column;gap:2px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.5rem .8rem;min-width:104px}
 .bs-stat-v{font-weight:700;font-size:1.05rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums;line-height:1.1}
 .bs-stat-l{font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+/* A non-zero "reached nobody" is worth noticing. Both halves of the pair are stated on the tile, so
+   the number and its border read together on either theme. */
+.bs-stat.bad{border-color:rgba(229,68,63,.45);background:rgba(229,68,63,.08)}
+.bs-stat.bad .bs-stat-v{color:#ffb4a8}
 
 /* ── fields ── */
 .bs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
@@ -40,13 +44,22 @@
 /* ── token palette ── */
 .bs-tokens{display:flex;flex-wrap:wrap;gap:6px}
 .bs-token{background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:.72rem;padding:.2rem .45rem;transition:border-color .12s,color .12s}
-.bs-token:hover{border-color:var(--accent,var(--amber,#ff6a1a));color:var(--text,#f1f3f5)}
+/* Ghost: no fill, the colour change IS the affordance. Both halves of the hover pair are stated on
+   the ELEMENT, so `button:hover` cannot supply the other one — overriding only `color` left the
+   amber fill in place and the text on it was 1.63:1, which is not readable. */
+.bs-token{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:var(--amber,#f0820c)}
 
 /* ── chips (muted players) ── */
 .bs-chips{display:flex;flex-wrap:wrap;gap:8px;min-height:1.6rem}
+/* A player in the silenced list who is not currently in game. Both halves of the pair are stated,
+   so the tag reads on either theme rather than borrowing whatever is behind it. */
+.bs-pl-off{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.bs-off-tag{flex:0 0 auto;font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;
+  padding:.1rem .35rem;border-radius:4px;color:var(--muted,#8b9099);
+  background:rgba(255,255,255,.06);border:1px solid var(--line-2,#343943)}
 .bs-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.22rem .5rem .22rem .7rem;font-size:.8rem}
 .bs-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:1rem;line-height:1;padding:0 .1rem}
-.bs-chip-x:hover{color:var(--danger,#ed4245)}
+.bs-chip-x{--hov-bg:transparent;--hov-fg:var(--alarm,#e5443f);--hov-line:transparent}
 .bs-empty{color:var(--muted,#8b9099);font-size:.8rem}
 
 .bs-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
@@ -75,6 +88,10 @@
 /* ── warning strip in the status header ── */
 .bs-warn{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid rgba(250,166,26,.4);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;color:var(--muted,#8b9099)}
 .bs-warn .ico{width:15px;height:15px;color:#faa61a;flex:none}
+/* A stopped server is INFORMATION, not a warning — configuring before the first start is the right
+   moment, not a mistake. Neutral border, normal text, and both halves in the one rule so the pair
+   travels together (check-contrast). It sits on its own row across the whole status strip. */
+.bs-note-off{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
 
 /* ── explanatory note inside a card ── */
 .bs-note{margin:0 0 12px;padding:.55rem .7rem;background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-left:2px solid var(--accent,var(--amber,#ff6a1a));border-radius:6px;font-size:.78rem;color:var(--muted,#8b9099);line-height:1.5}

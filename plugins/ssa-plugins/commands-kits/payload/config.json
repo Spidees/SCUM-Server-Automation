@@ -4,6 +4,9 @@
   "replyChannel": "local",
   "itemSpawnCmd": "#SpawnItem {item} {count} Location {steamid}",
   "vehicleSpawnCmd": "#SpawnVehicle {code} {count} Location {steamid}",
+  "invSpawnCmd": "#SpawnInventoryFullOf {container} {sets} {fill}",
+  "spawnGapMs": 180,
+  "spawnTries": 3,
   "messages": {},
   "welcome": {
     "enabled": true,
@@ -11,24 +14,100 @@
     "message": "Welcome to {server}, {player}!\nThere are {online}/{maxplayers} players online. Type /info for details."
   },
   "commands": [
-    { "name": "info", "enabled": true, "channel": "local", "broadcast": false, "cooldownHours": 0, "cost": { "currency": "free", "amount": 0 }, "allow": [], "deny": [], "actions": [], "response": "Welcome, {player}!\nPlayers online: {online}/{maxplayers}\nType /discord for our community link." },
-    { "name": "discord", "enabled": true, "channel": "local", "broadcast": false, "cooldownHours": 0, "cost": { "currency": "free", "amount": 0 }, "allow": [], "deny": [], "actions": [], "response": "Join our Discord: discord.gg/yourserver" },
-    { "name": "rules", "enabled": true, "channel": "local", "broadcast": false, "cooldownHours": 0, "cost": { "currency": "free", "amount": 0 }, "allow": [], "deny": [], "actions": [], "response": "Server rules:\n1) No cheating\n2) Be respectful\n3) Have fun!" }
+    {
+      "name": "info",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Welcome, {player}!\nPlayers online: {online}/{maxplayers}\nType /discord for our community link."
+    },
+    {
+      "name": "discord",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Join our Discord: discord.gg/yourserver"
+    },
+    {
+      "name": "rules",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Server rules:\n1) No cheating\n2) Be respectful\n3) Have fun!"
+    }
   ],
   "packs": [
     {
-      "id": "welcome", "name": "Welcome Pack", "enabled": true, "trigger": "welcome", "command": "",
-      "cooldownHours": 0, "maxClaims": 0, "group": "", "cost": { "currency": "free", "amount": 0 },
-      "allow": [], "deny": [], "items": [], "vehicles": [], "actions": [],
+      "id": "welcome",
+      "name": "Welcome Pack",
+      "enabled": true,
+      "trigger": "welcome",
+      "command": "",
+      "cooldownHours": 0,
+      "maxClaims": 0,
+      "group": "",
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "items": [],
+      "vehicles": [],
+      "actions": [],
       "replyChannel": "local",
       "message": "Welcome to {server}, {player}! Enjoy your starter pack."
     },
     {
-      "id": "daily", "name": "Daily Kit", "enabled": true, "trigger": "command", "command": "daily",
-      "cooldownHours": 24, "maxClaims": 0, "group": "", "cost": { "currency": "free", "amount": 0 },
-      "allow": [], "deny": [], "items": [], "vehicles": [], "actions": [],
+      "id": "daily",
+      "name": "Daily Kit",
+      "enabled": true,
+      "trigger": "command",
+      "command": "daily",
+      "cooldownHours": 24,
+      "maxClaims": 0,
+      "group": "",
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "items": [],
+      "vehicles": [],
+      "actions": [],
       "replyChannel": "local",
       "message": "Here's your daily kit, {player}! Come back in 24h."
     }
-  ]
+  ],
+  "discord": {
+    "channelId": "",
+    "buttonLabel": "",
+    "title": "",
+    "description": ""
+  }
 }

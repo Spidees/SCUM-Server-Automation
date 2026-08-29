@@ -40,8 +40,8 @@
       ['{time}', 'Current time'],
     ]],
     ['Money', [
-      ['{money}', 'Bank account balance'],
-      ['{cash}', 'Cash on hand'],
+      ['{money}', 'Bank account balance — the pool a cost is taken from'],
+      ['{cash}', 'Cash on hand — a legacy field the game leaves empty on current builds'],
       ['{gold}', 'Gold balance'],
     ]],
     ['Stats', [
@@ -87,6 +87,9 @@
     ['{h}', 'Hours left on the cooldown'],
     ['{cost}', 'The cost amount'],
     ['{currency}', 'The cost currency (money / gold / fame)'],
+    ['{have}', 'What they actually have — “Can’t afford it” only'],
+    ['{pool}', 'Which balance that is — “Can’t afford it” only'],
+    ['{asof}', 'Says so when only the last save could answer — “Can’t afford it” only'],
   ];
 
   // ── fetch + dom helpers ─────────────────────────────────────────────────────
@@ -130,6 +133,123 @@
     var b = h('input', { type: 'checkbox', onchange: function () { onchange(b.checked); markDirty(); } }); b.checked = checked !== false;
     return h('label', { class: 'ck-switch' }, [b, h('span', { class: 'ck-switch-t' })]);
   }
+  // ── Time windows ────────────────────────────────────────────────────────────────────────────────
+  //
+  // "From when to when is this available." The same control, the same words and the same evaluator
+  // as every other plugin that offers it — the manager owns the rule (`host.time`) and this draws
+  // what it says rather than working it out again. That matters more than it looks: "22:00 to 02:00"
+  // has a wrap rule, "no days chosen" has a meaning, and a second copy of either in a browser is a
+  // copy that will disagree with the one that decides whether somebody is charged.
+  //
+  // The clock is the SERVER'S, and the note under every editor says so. It is not the game's
+  // day/night cycle: SCUM has a time of day but no day of the week, and its day runs at whatever
+  // multiplier the server is set to, so a "20:00–22:00" window in game time would open several times
+  // a night for a few real minutes each. An owner cannot be left to guess which of those we meant.
+  var TW_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var twClock = null;                      // { supported, now, zone } — asked once per tab
+  function twClockLine() {
+    if (!twClock) return '';
+    if (twClock.supported === false) return twClock.why || 'This manager cannot evaluate time windows.';
+    var z = twClock.zone || {}, n = twClock.now || {};
+    return 'Server clock: ' + (n.hhmm || '??:??') + ' ' + (z.label || 'server time') + '. This is real time, not in-game time.';
+  }
+  function twLoadClock(then) {
+    if (twClock) { then(); return; }
+    api('/clock').then(function (c) { twClock = c || { supported: false }; then(); }).catch(function () { twClock = { supported: false }; then(); });
+  }
+
+  /**
+   * The editor for one `windows` list.
+   *
+   * `owner` is whatever carries the list — a command, a pack, a vehicle, a plan, or the config
+   * itself. `onChange` is the host page's dirty-marker. An owner with no windows sees one line
+   * saying it is always available and a button; nothing else appears until they ask for it, because
+   * this is an advanced setting on a screen that already has plenty.
+   */
+  function twEditor(owner, onChange) {
+    var box = h('div', { class: 'tw' });
+    var rows = h('div', { class: 'tw-rows' });
+    var note = h('p', { class: 'tw-note' }, 'Always available — no time window is set.');
+    var clockNote = h('p', { class: 'tw-clock' }, '');
+    var add = h('button', {
+      type: 'button', class: 'tw-add',
+      onclick: function () {
+        owner.windows = (owner.windows || []).concat([{ days: [], from: '20:00', to: '22:00' }]);
+        onChange(); draw();
+      },
+    }, '+ Add a time window');
+
+    var seq = 0;
+    function preview() {
+      var list = owner.windows || [];
+      if (!list.length) { note.className = 'tw-note'; note.textContent = 'Always available — no time window is set.'; return; }
+      // Every keystroke asks, and only the LAST answer is allowed to paint. Without the token an
+      // earlier reply can land after a later one and leave the note describing a window the owner
+      // has already changed — which is worse than a stale number, because it reads as authoritative.
+      var mine = ++seq;
+      api('/clock/preview', { method: 'POST', body: { windows: list } }).then(function (r) {
+        if (mine !== seq) return;
+        if (!r || r.supported === false) {
+          note.className = 'tw-note bad';
+          note.textContent = '⚠ This manager cannot evaluate time windows, so anything set here is treated as CLOSED. Update the manager, or remove the windows.';
+          return;
+        }
+        if (r.errors && r.errors.length) { note.className = 'tw-note bad'; note.textContent = '⚠ ' + r.errors.join(' · '); return; }
+        note.className = 'tw-note' + (r.open ? ' ok' : '');
+        note.textContent = r.text + '  ' + (r.open ? '● Open right now.' : '○ Shut right now.');
+      }).catch(function () { /* the note simply keeps its last good text */ });
+    }
+
+    function dayChips(w) {
+      // An empty list means EVERY DAY, so all seven read as on. Clicking one then has to turn that
+      // day off rather than leave six unexplained — which means materialising the full week first.
+      var chosen = (w.days && w.days.length) ? w.days.slice() : [1, 2, 3, 4, 5, 6, 7];
+      return TW_DAYS.map(function (name, i) {
+        var d = i + 1, on = chosen.indexOf(d) >= 0;
+        return h('button', {
+          type: 'button', class: 'tw-day' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false',
+          onclick: function () {
+            var next = chosen.slice();
+            var at = next.indexOf(d);
+            if (at >= 0) next.splice(at, 1); else next.push(d);
+            next.sort(function (a, b) { return a - b; });
+            // All seven and none at all are the same thing — every day — and an empty list is how
+            // that is stored. Turning the last day off therefore turns them all back on, which is
+            // the honest answer to "a window on no days": there is no such window.
+            w.days = (next.length === 7 || next.length === 0) ? [] : next;
+            onChange(); draw();
+          },
+        }, name);
+      });
+    }
+
+    function draw() {
+      rows.innerHTML = '';
+      (owner.windows || []).forEach(function (w, idx) {
+        var from = h('input', { type: 'time', class: 'tw-t', value: w.from || '' });
+        from.addEventListener('input', function () { w.from = from.value; onChange(); preview(); });
+        var to = h('input', { type: 'time', class: 'tw-t', value: w.to || '' });
+        to.addEventListener('input', function () { w.to = to.value; onChange(); preview(); });
+        rows.appendChild(h('div', { class: 'tw-row' }, [
+          h('div', { class: 'tw-days' }, dayChips(w)),
+          h('div', { class: 'tw-times' }, [h('span', {}, 'from'), from, h('span', {}, 'to'), to]),
+          h('button', {
+            type: 'button', class: 'tw-del', title: 'Remove this window',
+            onclick: function () { owner.windows.splice(idx, 1); if (!owner.windows.length) delete owner.windows; onChange(); draw(); },
+          }, '×'),
+        ]));
+      });
+      preview();
+      clockNote.textContent = twClockLine();
+    }
+
+    box.appendChild(rows);
+    box.appendChild(h('div', { class: 'tw-foot' }, [add, note]));
+    box.appendChild(clockNote);
+    twLoadClock(draw);
+    return box;
+  }
+
   function field(label, ctl, hint) { return h('label', { class: 'ck-f' }, [h('span', {}, label), ctl, hint ? h('small', { class: 'ck-hint' }, hint) : null]); }
   function inlineField(label, ctl, title) { return h('label', { class: 'ck-inl', title: title || undefined }, [h('span', {}, label), ctl]); }
   // A compact quantity control — the “×” is glued to the number (× 3) so it reads as one unit, not a
@@ -303,12 +423,26 @@
       statBar.appendChild(statBadge(st.deliveries || 0, 'Deliveries'));
       statBar.appendChild(statBadge(st.failed || 0, 'Failed', (st.failed || 0) > 0 ? 'warn' : null));
       statBar.appendChild(statBadge(statusData.queue || 0, 'In queue', (statusData.queue || 0) > 0 ? 'ok' : null));
+      // Everything on the five screens below — commands, kits, prices, cooldowns, every player-facing
+      // line — is editable with the server stopped, and that is the better moment to write it. Only
+      // the three counters and the activity log wait for a running game. Said out loud, because three
+      // zeroes and an empty log otherwise read as "it has not started working yet".
+      if (statusData.serverRunning === false) {
+        statBar.appendChild(h('div', { class: 'ck-note-off' }, [
+          h('b', {}, 'The server is not running.'),
+          ' Commands, kits, prices and every message can be set up now and go live the moment it starts. Only the counters above and the activity log wait for it.',
+        ]));
+      }
     }
 
     // Pull live status (queue depth + counters + recent log) and reflect it in the header + activity table.
     function applyStatus(s) {
       if (!s) return;
       if (s.stats) statusData.stats = s.stats;
+      // Copied explicitly, like every other field: `applyStatus` builds its own object rather than
+      // replacing `statusData`, so a key it does not name never reaches the header — which is how a
+      // note that is rendered on this flag would silently never draw.
+      if (s.serverRunning !== undefined) statusData.serverRunning = s.serverRunning;
       if (s.queue != null) statusData.queue = s.queue;
       if (s.current !== undefined) statusData.current = s.current;
       if (Array.isArray(s.queueItems)) statusData.queueItems = s.queueItems;
@@ -402,6 +536,7 @@
         ].concat(costRow(cmd, render).map(function (n) { return n; }))),
         h('div', { class: 'ck-grid2' }, [playerChips('Allow only', cmd, 'allow', render), playerChips('Deny', cmd, 'deny', render)]),
         field('Reply text', area(cmd.response, 'Reply text (optional). One message per line. Leave empty for an action-only command.', function (v) { cmd.response = v; })),
+        field('When this command works', twEditor(cmd, markDirty), 'Leave empty and it always works. Outside its window the command answers with the times instead of running.'),
         actionsBlock(cmd, render),
       ])]);
     }
@@ -492,11 +627,18 @@
           inlineField('Max / player', numf(pack.maxClaims, function (v) { pack.maxClaims = v; }), '0 = unlimited (subject to cooldown).'),
           inlineField('Exclusive group', txt(pack.group, 'e.g. starter', function (v) { pack.group = v.trim(); }), 'Packs in the same group are mutually exclusive.'),
           h('div', { class: 'ck-inl', title: 'On = deliver through the player so the game shows THEM its own “item spawned” messages as the kit lands. Off = deliver silently via the bridge (your own message below still sends).' }, [h('span', {}, 'Notify player'), toggle(!!pack.notify, function (v) { pack.notify = v; })]),
+          // Discord claiming is per-kit and OFF by default: turning it on for everything the moment
+          // an owner updates would put kits in a public channel they never chose to publish there.
+          h('div', { class: 'ck-inl', title: 'On = this kit appears in the Discord claim panel. Everything else still applies — cost, cooldown, claim limit, group and allow/deny lists are the same rules as in game, because it is the same delivery.' }, [h('span', {}, 'Claim from Discord'), toggle(!!pack.discord, function (v) { pack.discord = v; render(); })]),
         ].concat(costRow(pack, render))),
         h('div', { class: 'ck-grid2' }, [playerChips('Allow only', pack, 'allow', render), playerChips('Deny', pack, 'deny', render)]),
         h('div', { class: 'ck-cols' }, [itemsGroup('Items', pack.items, 'items', 'Add item'), itemsGroup('Vehicles', pack.vehicles, 'vehicles', 'Add vehicle')]),
         invGroup(pack),
         actionsBlock(pack, render),
+        // A weekend kit, or one that only exists during an event. It is a window, not a second
+        // cooldown: the cooldown asks "how long since this player last had it", the window asks
+        // "is it on offer at all right now", and a kit needs both to say "once a day, evenings only".
+        field('When this kit can be claimed', twEditor(pack, markDirty), 'Leave empty and it can be claimed whenever the other rules allow. Outside its window a claim is refused with the times.'),
         field('Message to player', area(pack.message, 'Message to the player (optional).', function (v) { pack.message = v; })),
       ])]);
     }
@@ -544,6 +686,23 @@
 
       // 2) Delivery log — every kit/reward handed out, with clickable players + failed items.
       var clearLog = h('button', { class: 'secondary', onclick: function () { SSA.confirm('Clear the delivery log?').then(function (ok) { if (!ok) return; api('/clear-history', { method: 'POST' }).then(function () { statusData.recent = []; if (actTable) actTable.refresh(); }); }); } }, [icon('close'), 'Clear log']);
+      // The Deliveries / Failed counters in the header only ever go up. The backend has always been
+      // able to reset them and there was no way to ask it to, so an owner who fixed a broken kit was
+      // left reading "Failed: 47" for ever — a number that no longer described anything.
+      //
+      // Next to Clear log because the two are the same act: putting the history straight after you
+      // have dealt with what it was telling you.
+      var resetStats = h('button', { class: 'secondary', onclick: function () {
+        SSA.confirm('Reset the delivery counters back to zero?\n\nThe log itself is kept — this only clears the Deliveries and Failed totals in the header.',
+          { title: 'Reset counters', okLabel: 'Reset' }).then(function (ok) {
+          if (!ok) return;
+          api('/reset-stats', { method: 'POST' }).then(function () {
+            statusData.stats = { deliveries: 0, ok: 0, failed: 0 };
+            renderStat();
+            SSA.toast('Counters reset.');
+          });
+        });
+      } }, [icon('refresh'), 'Reset counters']);
       actTable = SSA.table({
         rows: function () { return statusData.recent || []; },
         searchPlaceholder: 'Search players, rewards, items…',
@@ -555,11 +714,31 @@
           { key: 'player', label: 'Player', sort: true, sortVal: function (r) { return String(r.player || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.player, r.steamId); } },
           { key: 'reward', label: 'Reward', sort: true, sortVal: function (r) { return String(r.reward || '').toLowerCase(); }, render: function (r) { return document.createTextNode(r.reward || ''); } },
           // Sortable by failures so you can click the header to surface the problem deliveries first.
-          { key: 'result', label: 'Result', sort: true, sortVal: function (r) { return r.failed || 0; }, render: function (r) {
+          // Sorting puts UNPAID above merely-failed: a kit that partly failed to spawn is a bad
+          // evening, one that was handed over for free is money.
+          { key: 'result', label: 'Result', sort: true, sortVal: function (r) { return (r.unpaid ? 100 : 0) + (r.failed || 0); }, render: function (r) {
             var bad = (r.failed || 0) > 0;
-            var tag = SSA.cell.tag((r.spawned || 0) + '/' + (r.total || 0), bad ? 'bad' : 'ok');
+            var tag = SSA.cell.tag((r.spawned || 0) + '/' + (r.total || 0), bad || r.unpaid ? 'bad' : 'ok');
+            // The charge can fail after the items have already landed — they cannot be taken back,
+            // so the only thing left is to make it visible. Without this an unpaid delivery sat in
+            // this log looking exactly like a paid one.
+            if (r.unpaid) {
+              var ub = h('div', { class: 'ck-result' }, [tag, SSA.cell.tag('NOT PAID' + (r.price ? ' · ' + r.price : ''), 'bad')]);
+              if (bad && (r.failedItems || []).length) {
+                (r.failedItems || []).forEach(function (fi) {
+                  var c = (fi && fi.code) || (typeof fi === 'string' ? fi : '');
+                  ub.appendChild(SSA.cell.item(c, (fi && fi.label) || c));
+                });
+              }
+              return ub;
+            }
             if (!bad) return tag;
             var box = h('div', { class: 'ck-result' }, [tag]);
+            // A kit is priced as a whole, so a partial delivery is charged in full. That is a
+            // decision for the owner to make case by case — which they can only do if they can SEE
+            // it, hence its own tag rather than a number in a column.
+            if (r.partial) box.appendChild(SSA.cell.tag('PAID IN FULL', 'bad'));
+            if (r.actionsRefused) box.appendChild(SSA.cell.tag('actions refused — not charged', 'warn'));
             var items = r.failedItems || [];
             if (items.length) {
               items.forEach(function (fi) {
@@ -575,7 +754,7 @@
           } },
         ],
       });
-      wrap.appendChild(ckSection('Delivery log', 'Every kit and reward handed out — click a player to open them, click the Result header to surface failures first.', [actTable.el], [clearLog]));
+      wrap.appendChild(ckSection('Delivery log', 'Every kit and reward handed out — click a player to open them, click the Result header to surface failures first.', [actTable.el], [resetStats, clearLog]));
 
       // 3) Player claims — who has claimed what; reset a row to let a player use a one-time reward again.
       var clearAll = h('button', { class: 'secondary', onclick: function () { SSA.confirm('Clear ALL claims for everyone? Every player can then use every reward again.', { okLabel: 'Clear all' }).then(function (ok) { if (!ok) return; api('/claims/clear', { method: 'POST', body: {} }).then(function () { toast('All claims cleared'); loadClaims(); }); }); } }, [icon('close'), 'Clear all claims']);
@@ -620,6 +799,47 @@
           inlineField('Spawn attempts', numf(state.spawnTries, function (v) { state.spawnTries = v; }, { min: 1, max: 6 }), 'Tries per item before giving up (1 = no retry). Recovers transient bridge faults.'),
         ]),
       ]));
+      // ── Discord claim panel ───────────────────────────────────────────────────
+      state.discord = state.discord || {};
+      var d = state.discord;
+      var dChan = h('select', { class: 'ck-in' }, [h('option', { value: d.channelId || '' }, d.channelId ? '(current)' : '— pick a channel —')]);
+      api('/discord-channels').then(function (list) {
+        dChan.innerHTML = '';
+        dChan.appendChild(h('option', { value: '' }, (list && list.length) ? '— pick a channel —' : 'No channels (bot offline?)'));
+        (list || []).forEach(function (ch) { dChan.appendChild(h('option', { value: ch.id }, '#' + ch.name)); });
+        dChan.value = d.channelId || '';
+      });
+      dChan.addEventListener('change', function () { d.channelId = dChan.value; markDirty(); });
+      var postStatus = h('span', { class: 'muted', style: 'font-size:.82rem' });
+      var claimable = state.packs.filter(function (p) { return p.discord && p.enabled !== false; });
+      var postBtn = h('button', { class: 'primary', onclick: function () {
+        postStatus.textContent = 'Posting…';
+        api('/post-panel', { method: 'POST', body: { channelId: d.channelId } }).then(function (r) {
+          // Say WHY when nothing was posted. "Posted ✓" for a missing channel or a kit list with
+          // nothing marked claimable is the sort of answer that sends an owner looking in Discord
+          // for a message that was never sent.
+          postStatus.textContent = (r && r.ok) ? 'Posted ✓' : ('Not posted — ' + ((r && r.error) || 'unknown'));
+        });
+      // `i-discord`, not `i-send`: there is no send icon in the panel's sprite, and a missing one
+      // renders NOTHING — no error, no broken-image mark, just a button that looks unfinished.
+      } }, [icon('discord'), 'Post the panel']);
+      wrap.appendChild(h('div', { class: 'card ck-card ck-open-card' }, [
+        h('h3', { class: 'ck-card-t' }, 'Discord claim panel'),
+        h('p', { class: 'ck-card-sub' }, 'Post one message with a button, and players claim a kit straight from Discord — it is delivered in game exactly as if they had typed the command. Every rule is the same one: cost, cooldown, claim limit, exclusive group and the allow/deny lists all apply, because it is the same delivery.'),
+        h('div', { class: 'ck-grid' }, [
+          inlineField('Channel', dChan, 'Where the panel message is posted.'),
+          inlineField('Button label', txt(d.buttonLabel || '', '🎁 Claim a kit', function (v) { d.buttonLabel = v; })),
+          inlineField('Title', txt(d.title || '', '🎁 Claim a kit', function (v) { d.title = v; })),
+        ]),
+        field('Description', area(d.description, 'Text inside the panel embed (optional).', function (v) { d.description = v; })),
+        // Which kits it will actually offer — the setting that decides this lives on each kit, so
+        // saying it here saves an owner opening every card to find out why the menu is empty.
+        h('p', { class: claimable.length ? 'ck-card-sub' : 'ck-warn' }, claimable.length
+          ? ('Offers ' + claimable.length + ' kit(s): ' + claimable.map(function (p) { return p.name || p.command || 'unnamed'; }).join(', ') + '. Turn "Claim from Discord" on a kit to add it.')
+          : '⚠ No kit has "Claim from Discord" turned on yet, so the panel would have nothing to offer. Switch it on for a kit in the Kits & Packs tab first.'),
+        h('div', { class: 'ck-actions' }, [postBtn, postStatus]),
+      ]));
+
       wrap.appendChild(h('div', { class: 'card ck-card ck-open-card' }, [
         h('h3', { class: 'ck-card-t' }, 'Welcome message'),
         h('div', { class: 'ck-grid' }, [
@@ -659,6 +879,10 @@
         replyChannel: state.replyChannel, commandPrefix: state.commandPrefix || '/',
         itemSpawnCmd: state.itemSpawnCmd, vehicleSpawnCmd: state.vehicleSpawnCmd, invSpawnCmd: state.invSpawnCmd, joinDelaySeconds: state.joinDelaySeconds,
         spawnGapMs: state.spawnGapMs, spawnTries: state.spawnTries,
+        // The save builds an EXPLICIT object rather than sending `state`, so anything not listed
+        // here is silently dropped on every save — the Discord panel settings would have looked
+        // like they saved and been gone on the next reload.
+        discord: state.discord || {},
       };
       api('/config', { method: 'POST', body: clean }).then(function (r) {
         saveBtn.disabled = false;

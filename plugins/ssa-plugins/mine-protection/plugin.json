@@ -2,7 +2,7 @@
   "id": "mine-protection",
   "name": "Mine Protection",
   "type": "manager",
-  "version": "1.4.6",
+  "version": "1.5.1",
   "updated": "2026-08-04",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
@@ -10,7 +10,7 @@
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
-  "minManagerVersion": "4.0.0",
+  "minManagerVersion": "5.0.3",
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
@@ -19,5 +19,24 @@
   "dependencies": [
     "ssa-bridge"
   ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "items",
+        "switches": [
+          "enabled"
+        ],
+        "why": "Confirms a mine is STILL armed in the running game in the moment before its placer is teleported onto it. Without this, 'armed' is whatever the last game save recorded, so a mine defused since then still counts as one."
+      },
+      {
+        "module": "squads",
+        "switches": [
+          "enabled",
+          "members"
+        ],
+        "why": "Checks who is in the placer's squad right now. Squad membership also comes from the last save, so a player who joined a squad since then is punished for a mine legally placed inside their new teammate's base."
+      }
+    ]
+  },
   "premium": true
 }

@@ -36,6 +36,10 @@
 .vr-ac-row img,.vr-ac-ph{width:34px;height:26px;object-fit:contain;flex:0 0 auto;border-radius:4px;background:rgba(255,255,255,.03)}
 .vr-ac-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem;color:var(--text,#f1f3f5)}
 .vr-ac-c{flex:0 0 auto;font-size:.72rem;color:var(--muted,#8b9099);font-family:var(--mono,monospace)}
+/* While the spawn-code box holds search text rather than a blueprint id, it says so: that text is
+   NOT what will be saved, and the field looked identical whether it held a code or a half-typed
+   word. Colour and border move together so the state reads on either theme. */
+.vr-ac input.vr-ac-bad{border-color:var(--warn,#e0a63a);color:var(--warn,#e0a63a)}
 /* vehicles toolbar: add + find, on one line */
 .vr-vbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .vr-vbar .vr-btn.add{width:auto;margin-top:0;flex:0 0 auto}
@@ -43,6 +47,11 @@
 .vr-search:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
 /* what Discord will silently drop, said before it happens */
 .vr-warn{border:1px solid rgba(230,178,58,.4);background:rgba(230,178,58,.08);border-radius:8px;padding:8px 12px;margin-bottom:12px}
+/* Live state of sector detection. Three states, and the neutral one must not read as either of the
+   other two — so it keeps the ordinary muted colour rather than a paler warning. */
+.vr-secstat{font-size:.78rem;margin:8px 0 0;color:var(--muted,#8b9099)}
+.vr-secstat.ok{color:var(--ok,#54c98a)}
+.vr-secstat.bad{color:var(--warn,#e0a63a)}
 .vr-warn p{margin:.25rem 0;font-size:.82rem;color:var(--text,#f1f3f5)}
 /* Destructive action. The hover PAIR is retuned on the element, never one half of it: the panel's
    own `button:hover` paints every button amber with dark text, so changing only the colour leaves an
@@ -63,3 +72,60 @@
 .vr-x{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
 .vr-x-top{top:2px;right:2px}
 @media (max-width: 640px){ .vr-btn.danger{min-height:44px;padding:.3rem .9rem} }
+
+/* ── Time windows ───────────────────────────────────────────────────────────────
+   The same control in every plugin that offers "from when to when". Deliberately
+   identical markup and identical CSS in each, so a window looks and reads the same
+   wherever an owner meets one.
+
+   Two house rules are load-bearing here and both are mechanically checked:
+   `minmax()` is never given a bare length (it must collapse to one column on a
+   phone rather than widen the page), and no `:hover` rule ever changes only the
+   background or only the colour — both halves are retuned together on the element,
+   or the amber default hover paints dark text on a dark fill. */
+.tw { margin: 6px 0 2px; }
+.tw-rows { display: flex; flex-direction: column; gap: 6px; }
+.tw-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--border, rgba(255,255,255,.12));
+  border-radius: 8px; background: var(--panel2, rgba(255,255,255,.03));
+}
+.tw-days { display: flex; flex-wrap: wrap; gap: 3px; }
+.tw-day {
+  font-size: .72rem; line-height: 1; padding: 5px 7px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border, rgba(255,255,255,.16));
+  background: transparent; color: var(--muted, #9aa3ad);
+  /* Ghost shape: no fill, the colour change IS the affordance. Both halves declared
+     together so the panel's blanket `button:hover` cannot half-apply. */
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: currentColor;
+}
+.tw-day.on {
+  /* Tinted shape: its own soft fill with normal text, so it stays legible in both themes. */
+  background: color-mix(in srgb, var(--accent, #ff6a1a) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #ff6a1a) 55%, transparent);
+  color: var(--text, #e8edf2);
+  --hov-bg: color-mix(in srgb, var(--accent, #ff6a1a) 26%, transparent);
+  --hov-fg: var(--text, #e8edf2);
+}
+.tw-times { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted, #9aa3ad); }
+.tw-t { width: auto; max-width: 100%; min-width: 0; font-size: .8rem; padding: 4px 6px; }
+.tw-del {
+  margin-left: auto; font-size: .9rem; line-height: 1; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border, rgba(255,255,255,.16)); background: transparent;
+  color: var(--muted, #9aa3ad); cursor: pointer;
+  --hov-bg: transparent; --hov-fg: var(--danger, #ff5c5c); --hov-line: var(--danger, #ff5c5c);
+}
+.tw-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.tw-add {
+  font-size: .76rem; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed var(--border, rgba(255,255,255,.22)); background: transparent;
+  color: var(--muted, #9aa3ad);
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: var(--accent, #ff6a1a);
+}
+.tw-note { margin: 0; font-size: .76rem; color: var(--muted, #9aa3ad); flex: 1 1 12rem; min-width: 0; }
+.tw-note.ok { color: var(--ok, #54c98a); }
+.tw-note.bad { color: var(--danger, #ff5c5c); }
+/* The clock caption is not decoration: "from 20:00" is ambiguous until something on
+   the screen says whose clock, and this is that something. It stays visible even when
+   no window is set, so an owner reads it before they configure rather than after. */
+.tw-clock { margin: 4px 0 0; font-size: .72rem; color: var(--muted, #9aa3ad); opacity: .85; }

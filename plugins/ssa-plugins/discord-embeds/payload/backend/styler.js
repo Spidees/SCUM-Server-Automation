@@ -64,11 +64,43 @@ module.exports = {
       return m;
     }
     const itemName = (code) => (code ? (host.items.name(code) || String(code)) : null);
+    /**
+     * A KILLER or a VICTIM, which is not an item code and must not be resolved as one.
+     *
+     * A kill event carries either a player's name or a spawn class with its runtime instance number
+     * — `BP_Guard_Lvl_5_C_2146943462`, `BP_Bear_C_2147201044` — and `base()` copies whatever it is
+     * straight into `{killerName}` / `{victimName}`. So every kill by or of anything that is not a
+     * player reached Discord as that raw string, and turning this plugin's styling on made the kill
+     * feed WORSE than the manager's built-in one, which has always printed "Guard (Lvl 5)".
+     *
+     * `items.name()` is the wrong resolver here — it answers about an item code, and a player's name
+     * is not one. `items.actorName()` is the rule that tells the two apart, and it is the same rule
+     * the built-in feed uses, so both name the same kill the same way.
+     *
+     * Guarded rather than called outright: the manifest says `minManagerVersion` 4.0.7 and this
+     * arrived in 5.2, so on an older host there is simply no method and the raw value is what it
+     * always was. A player name comes back untouched either way.
+     */
+    const actorName = (n) => {
+      const s = (n == null || n === '') ? '' : String(n);
+      if (!s) return s;
+      try {
+        if (host.items && typeof host.items.actorName === 'function') return host.items.actorName(s) || s;
+      } catch (e) { /* a resolver that threw must not lose the name */ }
+      return s;
+    };
     function topPlayer() {
       try {
+        // `host.leaderboards.all()` answers `{ key: { label, data: [...] } }`, never `{ key: [...] }`.
+        // Reading it as an array meant this always returned nothing — and because event data wins
+        // over the global catalog in `tokenMapFor`, that nothing OVERWROTE the manager's own correct
+        // value. `{topPlayer}` on a styled Server Status read "-" for everyone who turned styling on.
+        // Both shapes are accepted so an older manager keeps working.
         const all = host.leaderboards.all(1) || {};
         const cat = Object.keys(all)[0];
-        const row = cat && Array.isArray(all[cat]) && all[cat][0];
+        const bucket = cat ? all[cat] : null;
+        const rows = Array.isArray(bucket) ? bucket : (bucket && Array.isArray(bucket.data) ? bucket.data : null);
+        const row = rows && rows[0];
         if (row) return { name: row.Name || row.name || row.playerName || null, score: row.FormattedValue != null ? row.FormattedValue : (row.value != null ? row.value : null) };
       } catch { /* optional */ }
       return {};
@@ -83,7 +115,7 @@ module.exports = {
     const T2 = (t, label, sample, group) => ({ t: t, label: label, sample: sample, group: group });
     const F = (name, token, inline) => ({ name: name, value: '{' + token + '}', inline: inline !== false });
     const TOK = {
-      playerName: T('playerName', 'Player name', 'Jaruna'), steamId: T('steamId', 'Steam ID', '76561198000000000'),
+      playerName: T('playerName', 'Player name', 'Survivor'), steamId: T('steamId', 'Steam ID', '76561198000000000'),
       playerId: T('playerId', 'Player ID', '12'), location: T('location', 'Location (X Y Z)', 'X=-177569 Y=-161794 Z=1200'),
       squad: T('squad', 'Squad name', 'Wolves'), squadSize: T('squadSize', 'Squad size', '5'),
       fame: T('fame', 'Fame points', '18420'), money: T('money', 'Bank balance', '9500'),
@@ -99,14 +131,14 @@ module.exports = {
         resolve: (c) => { const m = base(c); enrich(c.steamId, m); return m; },
       },
       kill: {
-        tokens: [T('killerName', 'Killer name', 'Jaruna'), T('victimName', 'Victim name', 'Bandit'), T('weapon', 'Weapon (name)', 'M16A4'), T('weaponImage', 'Weapon image URL', 'https://…/Weapon_M16A4__vicinity.png'), T('weaponType', 'Weapon type', 'ranged'), T('distance', 'Distance', '134 m'), T('killerSteamId', 'Killer Steam ID', '76561198000000000'), T('victimSteamId', 'Victim Steam ID', '76561198999999999'), TOK.location, T('squad', "Killer's squad", 'Wolves'), T('fame', "Killer's fame", '18420'), TOK.playerName, TOK.steamId],
+        tokens: [T('killerName', 'Killer name', 'Survivor'), T('victimName', 'Victim name', 'Bandit'), T('weapon', 'Weapon (name)', 'M16A4'), T('weaponImage', 'Weapon image URL', 'https://…/Weapon_M16A4__vicinity.png'), T('weaponType', 'Weapon type', 'ranged'), T('distance', 'Distance', '134 m'), T('killerSteamId', 'Killer Steam ID', '76561198000000000'), T('victimSteamId', 'Victim Steam ID', '76561198999999999'), TOK.location, T('squad', "Killer's squad", 'Wolves'), T('fame', "Killer's fame", '18420'), TOK.playerName, TOK.steamId],
         defaults: [F('🔪 Killer', 'killerName'), F('💀 Victim', 'victimName'), F('🔫 Weapon', 'weapon'), F('📏 Distance', 'distance'), F('📍 Location', 'location', false)],
-        resolve: (c) => { const m = base(c); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; enrich(c.killerSteamId || c.steamId, m); return m; },
+        resolve: (c) => { const m = base(c); if (c.killerName) m.killerName = actorName(c.killerName); if (c.victimName) m.victimName = actorName(c.victimName); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; enrich(c.killerSteamId || c.steamId, m); return m; },
       },
       eventkill: {
-        tokens: [T('killerName', 'Killer name', 'Jaruna'), T('victimName', 'Victim name', 'Bandit'), T('weapon', 'Weapon (name)', 'M16A4'), T('weaponImage', 'Weapon image URL', 'https://…/Weapon_M16A4__vicinity.png'), T('distance', 'Distance', '134 m'), T('killerSteamId', 'Killer Steam ID', '76561198000000000'), T('victimSteamId', 'Victim Steam ID', '76561198999999999'), TOK.location],
+        tokens: [T('killerName', 'Killer name', 'Survivor'), T('victimName', 'Victim name', 'Bandit'), T('weapon', 'Weapon (name)', 'M16A4'), T('weaponImage', 'Weapon image URL', 'https://…/Weapon_M16A4__vicinity.png'), T('distance', 'Distance', '134 m'), T('killerSteamId', 'Killer Steam ID', '76561198000000000'), T('victimSteamId', 'Victim Steam ID', '76561198999999999'), TOK.location],
         defaults: [F('🔪 Killer', 'killerName'), F('💀 Victim', 'victimName'), F('🔫 Weapon', 'weapon'), F('📏 Distance', 'distance'), F('📍 Location', 'location', false)],
-        resolve: (c) => { const m = base(c); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; enrich(c.killerSteamId, m); return m; },
+        resolve: (c) => { const m = base(c); if (c.killerName) m.killerName = actorName(c.killerName); if (c.victimName) m.victimName = actorName(c.victimName); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; enrich(c.killerSteamId, m); return m; },
       },
       economy: {
         tokens: [TOK.playerName, TOK.steamId, T('type', 'Activity type', 'sell'), T('item', 'Item (name)', 'Bandage'), T('itemImage', 'Item image URL', 'https://…/Bandage.png'), T('itemsList', 'Items (list)', 'Bandage x3 — 500\n7.62mm x60 — 1200'), T('quantity', 'Quantity', '3'), T('amount', 'Amount', '1500'), T('unitPrice', 'Price / item', '500'), T('totalAmount', 'Total credits', '4500'), T('health', 'Item condition', '87'), T('trader', 'Trader', 'Armory (A1)'), T('cardType', 'Card type', 'Gold'), T('beforeCash', 'Cash before', '2000'), T('afterCash', 'Cash after', '500'), T('beforeAccount', 'Account before', '8000'), T('afterAccount', 'Account after', '9500'), T('beforeGold', 'Gold before', '30'), T('afterGold', 'Gold after', '35'), T('beforeTraderFunds', 'Trader funds before', '50000'), T('afterTraderFunds', 'Trader funds after', '48500'), TOK.squad],
@@ -139,7 +171,7 @@ module.exports = {
         resolve: (c) => { const m = base(c); m.questName = c.displayQuestName || c.questName; enrich(c.steamId, m); return m; },
       },
       vehicle: {
-        tokens: [T('vehicleName', 'Vehicle name', 'Laika'), T('vehicleId', 'Vehicle ID', '77213'), T('ownerName', 'Owner name', 'Jaruna'), T('ownerSteamId', 'Owner Steam ID', '76561198000000000'), T('ownerPlayerId', 'Owner Player ID', '12'), T('eventType', 'Event type', 'Destroyed'), TOK.location],
+        tokens: [T('vehicleName', 'Vehicle name', 'Laika'), T('vehicleId', 'Vehicle ID', '77213'), T('ownerName', 'Owner name', 'Survivor'), T('ownerSteamId', 'Owner Steam ID', '76561198000000000'), T('ownerPlayerId', 'Owner Player ID', '12'), T('eventType', 'Event type', 'Destroyed'), TOK.location],
         defaults: [F('🚗 Vehicle', 'vehicleName'), F('🆔 Vehicle ID', 'vehicleId'), F('👑 Owner', 'ownerName'), F('📍 Location', 'location', false)],
         resolve: (c) => base(c),
       },
@@ -160,7 +192,7 @@ module.exports = {
           T('statusText', 'Server state', 'Online'), T('onlinePlayers', 'Online players', '24'), T('maxPlayers', 'Max players', '64'), T('onlineMax', 'Online / max', '24 / 64'),
           T('fps', 'Server FPS', '58'), T('serverAddress', 'Server address', '203.0.113.5:7044'), T('nextRestart', 'Next restart', 'in 3 hours'),
           T('gameTime', 'In-game time', '14:32'), T('temperature', 'Temperature', '18°C'), T('totalPlayers', 'Registered players', '1043'),
-          T('activeSquads', 'Active squads', '37'), T('topPlayer', 'Top player (name)', 'Jaruna'), T('topPlayerScore', 'Top player score', '142 kills'),
+          T('activeSquads', 'Active squads', '37'), T('topPlayer', 'Top player (name)', 'Survivor'), T('topPlayerScore', 'Top player score', '142 kills'),
         ],
         defaults: [F('🌎 Status', 'statusText'), F('👥 Online', 'onlineMax'), F('📡 Address', 'serverAddress'), F('🔄 Next restart', 'nextRestart'), F('🎮 FPS', 'fps'), F('🕗 Game time', 'gameTime'), F('🌡️ Temperature', 'temperature'), F('🚩 Active squads', 'activeSquads'), F('🏆 Top player', 'topPlayer')],
         resolve: (c) => {
@@ -172,7 +204,7 @@ module.exports = {
       },
       players: {
         title: '👥 Online Players',
-        tokens: [T('count', 'Online count', '24'), T('max', 'Max players', '64'), T('onlineMax', 'Online / max', '24 / 64'), T('list', 'Numbered player list', '`01.` Jaruna\n`02.` Bandit\n`03.` Wolf\n`04.` Nomad'), T('namesCsv', 'Names (comma list)', 'Jaruna, Bandit, Wolf')],
+        tokens: [T('count', 'Online count', '24'), T('max', 'Max players', '64'), T('onlineMax', 'Online / max', '24 / 64'), T('list', 'Numbered player list', '`01.` Survivor\n`02.` Bandit\n`03.` Wolf\n`04.` Nomad'), T('namesCsv', 'Names (comma list)', 'Survivor, Bandit, Wolf')],
         description: '{list}',
         defaults: [],
         resolve: (c) => { const m = base(c); m.onlineMax = `${c.count != null ? c.count : '-'} / ${c.max != null ? c.max : '-'}`; return m; },
@@ -257,6 +289,22 @@ module.exports = {
      * restart clock of `-:7044` into `{nextRestart}:7044`. Two characters and up are safe because of
      * the boundary check below; one character is inside almost every string there is.
      */
+    /** Every token with a value, for EXACT matches — no length rule applies to those. */
+    function exactCandidates(tokens) {
+      const seen = new Set();
+      const out = [];
+      (tokens || []).forEach((tk, i) => {
+        if (!tk || !tk.t) return;
+        const v = tk.value == null ? '' : String(tk.value);
+        if (!v.trim()) return;
+        if (seen.has(v)) return;
+        seen.add(v);
+        out.push({ t: tk.t, v, order: i, dotted: tk.t.indexOf('.') >= 0 ? 1 : 0 });
+      });
+      out.sort((a, b) => (a.dotted - b.dotted) || (a.order - b.order));
+      return out;
+    }
+
     function tokenCandidates(tokens) {
       const seen = new Set();
       const out = [];
@@ -292,8 +340,14 @@ module.exports = {
      * "Scheduled". Field VALUES and the description are data, so they get the substring rule, and
      * "134 m", "Bandage x3" and "restart in **15 minutes**" become templates as they should.
      */
-    function tokenizeText(text, cands, whole) {
+    function tokenizeText(text, cands, whole, exacts) {
       if (text == null) return text;
+      // A value that IS the token, character for character, is always safe to replace — the length
+      // rule exists to stop a short value being found INSIDE something else, and there is no inside
+      // here. Without this a field whose whole text is "1" stayed a literal 1 in every login, chest,
+      // raid, admin, quest, vehicle and violation embed.
+      const whole1 = (exacts || []).find((c) => c.v === String(text).trim());
+      if (whole1) return '{' + whole1.t + '}';
       if (whole) {
         const exact = String(text);
         const hit = cands.find((c) => c.v === exact);
@@ -303,7 +357,7 @@ module.exports = {
         // ("Admin", "Kicked", "Scheduled", "destroyed", "attack"), and none of them contains a digit.
         // So inside a label, substitute only values that do.
         const numeric = cands.filter((c) => /[0-9]/.test(c.v));
-        return numeric.length ? tokenizeText(exact, numeric, false) : exact;
+        return numeric.length ? tokenizeText(exact, numeric, false, exacts) : exact;
       }
       let segs = [{ s: String(text), frozen: false }];
       if (!segs[0].s) return segs[0].s;
@@ -338,8 +392,9 @@ module.exports = {
     function templateFromSample(sample, tokens) {
       if (!sample) return null;
       const cands = tokenCandidates(tokens);
-      const DATA = (x) => tokenizeText(x, cands, false);   // field values, description: real data
-      const LABEL = (x) => tokenizeText(x, cands, true);   // title, field names: the manager's labels
+      const exacts = exactCandidates(tokens);
+      const DATA = (x) => tokenizeText(x, cands, false, exacts);   // field values, description: data
+      const LABEL = (x) => tokenizeText(x, cands, true, exacts);   // title, field names: labels
       const out = {
         title: LABEL(sample.title || ''),
         url: sample.url || '',                          // a URL is not prose; leave it alone
@@ -411,8 +466,8 @@ module.exports = {
           tokens = [T('scope', 'Scope (Weekly / All-time)', 'All-time')];
           defaults = [];
           for (const cat of cats) {
-            tokens.push(T('lb_' + cat.key, (cat.label || cat.key) + ' — top 5', '`1.` Jaruna — 142\n`2.` Bandit — 98\n`3.` Wolf — 76\n`4.` Nomad — 51\n`5.` Rex — 33'));
-            tokens.push(T('lb_' + cat.key + '_top', (cat.label || cat.key) + ' — #1', 'Jaruna'));
+            tokens.push(T('lb_' + cat.key, (cat.label || cat.key) + ' — top 5', '`1.` Survivor — 142\n`2.` Bandit — 98\n`3.` Wolf — 76\n`4.` Nomad — 51\n`5.` Rex — 33'));
+            tokens.push(T('lb_' + cat.key + '_top', (cat.label || cat.key) + ' — #1', 'Survivor'));
             defaults.push(F((cat.emoji ? cat.emoji + ' ' : '') + (cat.label || cat.key), 'lb_' + cat.key, false));
           }
         }
@@ -441,13 +496,29 @@ module.exports = {
         // item helpers with a parameter: {img:<itemId>} → image URL, {itemName:<itemId>} → display name
         .replace(/\{img:([^}]+)\}/g, (_, code) => { try { return host.items.image(code.trim()) || ''; } catch { return ''; } })
         .replace(/\{itemName:([^}]+)\}/g, (_, code) => { try { return host.items.name(code.trim()) || code.trim(); } catch { return code.trim(); } })
-        // any player's stat: {pstat:<name>:<field>} e.g. {pstat:Jaruna:Kills}
+        // any player's stat: {pstat:<name>:<field>} e.g. {pstat:Survivor:Kills}
         .replace(/\{pstat:([^:}]+):([^}]+)\}/g, (_, name, field) => {
           try { const s = host.players.statsByName(name.trim()); if (!s) return ''; const f = field.trim().toLowerCase(); const key = Object.keys(s).find((k) => k.toLowerCase() === f); return (key != null && s[key] != null) ? String(s[key]) : ''; } catch { return ''; }
         })
         // `[\w.]` and not `\w`: the manager offers dotted tokens ({location.x}) and the picker
         // inserts them, so this has to recognise them or they go out as literal text.
-        .replace(/\{([\w.]+)\}/g, (_, k) => (m[k] != null ? m[k] : ''));
+        // Event data first — a kill's weapon is only known to the event. Anything left is handed to
+        // the MANAGER'S OWN registry, which knows every token it publishes including the parametric
+        // ones. The picker offers 363 tokens; this used to handle three parametric forms by name and
+        // silently DELETED everything else, so `{contents:844213}` and `{vehicleParts:77213}` — both
+        // offered in the picker — were erased from the message along with any token typed wrong.
+        //
+        // An unknown token is now LEFT AS IT IS. Erasing it hid the mistake: a title that read
+        // "Welcome {playerNam}" arrived as "Welcome " and nobody could tell why.
+        .replace(/\{([\w.:\- ]+)\}/g, (whole, k) => {
+          const key = String(k).trim();
+          if (m[key] != null) return m[key];
+          try {
+            const viaRegistry = host.data && typeof host.data.render === 'function' ? host.data.render(whole, m) : whole;
+            if (viaRegistry !== whole) return viaRegistry;
+          } catch (e) { /* registry optional */ }
+          return whole;
+        });
     }
     /**
      * Resolve {tokens} everywhere the owner can type them — which is everywhere.
@@ -458,6 +529,16 @@ module.exports = {
      * players read a literal "{onlineMax}". The list of places was simply shorter than the list of
      * places you can type.
      */
+    /**
+     * Trim a resolved model to Discord's limits.
+     *
+     * The limits themselves live in the editor half (`index.js`), which is the funnel every embed
+     * goes through anyway, and are reached through the service rather than copied here. `apiEmbed`
+     * already trims the embed's own fields; this covers what it cannot see — the text above the
+     * message, the controls, and the 6000-per-MESSAGE budget shared across extra embeds.
+     */
+    const fitLimits = (r) => ((editor && editor.fit) ? editor.fit(r) : r);
+
     function resolveModel(model, m) {
       const r = JSON.parse(JSON.stringify(model || {}));
       const T = (v) => (typeof v === 'string' && v ? resolveTpl(v, m) : v);
@@ -504,35 +585,56 @@ module.exports = {
       const entry = loadStyles()[kind];
       if (!entry || !entry.enabled || !entry.model || !editor) return embed;
       const m = tokenMapFor(kind, ctx);
-      const model = resolveModel(entry.model, m);
+      const model = fitLimits(resolveModel(entry.model, m));
       const e = editor.apiEmbed(model);
       if (!e) return embed;
       // '' is a real answer — it clears text a previous refresh put there. Only an absent field
       // means "leave the message alone".
       const content = (model && typeof model.content === 'string') ? model.content : undefined;
       let components; let extraEmbeds;
-      try {
-        if (typeof e.color === 'number') embed.setColor(e.color);
-        if (clean(e.title)) embed.setTitle(e.title);
-        if (clean(e.url)) embed.setURL(e.url);        // the title's link — offered by the editor all along
-        if (clean(e.description)) embed.setDescription(e.description);
-        if (e.author && clean(e.author.name)) embed.setAuthor({ name: e.author.name, url: clean(e.author.url), iconURL: clean(e.author.icon_url) });
-        if (e.thumbnail && clean(e.thumbnail.url)) embed.setThumbnail(e.thumbnail.url);
-        if (e.image && clean(e.image.url)) embed.setImage(e.image.url);
-        if (entry.fields) {
-          embed.setFields((Array.isArray(e.fields) ? e.fields : []).filter((f) => clean(f.value)).slice(0, 25));
-        }
-        // Buttons, select menus and extra embeds. The editor has always offered these on a manager
-        // embed, saved them and drawn them in its preview, and Discord never saw one of them —
-        // there was no way to hand them back. An EMPTY array is deliberate ("remove what is there");
-        // leaving the key out changes nothing, which is why they are only set when the owner has
-        // actually configured some.
+
+      // ONE PART AT A TIME.
+      //
+      // discord.js setters validate eagerly and THROW — a 257-character title, a 1025-character
+      // field. With every setter in one `try`, a single over-long value skipped the description, the
+      // author, the image, the fields, the buttons AND the extra embeds, while the message text above
+      // the embed (computed before the try) still went out. The owner saw their text appear and the
+      // embed never change, which reads as the plugin half-working rather than as one field being
+      // too long. Each part now fails on its own and says which one.
+      const failed = [];
+      const part = (what, fn) => {
+        try { fn(); } catch (err) { failed.push(`${what}: ${err.message}`); }
+      };
+
+      part('color', () => { if (typeof e.color === 'number') embed.setColor(e.color); });
+      part('title', () => { if (clean(e.title)) embed.setTitle(e.title); });
+      part('title link', () => { if (clean(e.url)) embed.setURL(e.url); });
+      part('description', () => { if (clean(e.description)) embed.setDescription(e.description); });
+      part('author', () => { if (e.author && clean(e.author.name)) embed.setAuthor({ name: e.author.name, url: clean(e.author.url), iconURL: clean(e.author.icon_url) }); });
+      part('thumbnail', () => { if (e.thumbnail && clean(e.thumbnail.url)) embed.setThumbnail(e.thumbnail.url); });
+      part('image', () => { if (e.image && clean(e.image.url)) embed.setImage(e.image.url); });
+      part('fields', () => {
+        if (!entry.fields) return;
+        embed.setFields((Array.isArray(e.fields) ? e.fields : []).filter((f) => clean(f.value)).slice(0, 25));
+      });
+      // Buttons, select menus and extra embeds. The editor has always offered these on a manager
+      // embed, saved them and drawn them in its preview, and Discord never saw one of them —
+      // there was no way to hand them back. An EMPTY array is deliberate ("remove what is there");
+      // leaving the key out changes nothing, which is why they are only set when the owner has
+      // actually configured some.
+      part('buttons/menus', () => {
         const btns = Array.isArray(model.buttons) ? model.buttons : [];
         const sels = Array.isArray(model.selects) ? model.selects : [];
         if (btns.length || sels.length) components = editor.components(btns, sels);
+      });
+      part('extra embeds', () => {
         const extras = Array.isArray(model.extraEmbeds) ? model.extraEmbeds : [];
         if (extras.length) extraEmbeds = extras.map((x) => editor.apiEmbed(x)).filter(Boolean);
-      } catch (err) { host.logger.warn(`applyStyle(${kind}) failed: ${err.message}`); }
+      });
+
+      if (failed.length) {
+        host.logger.warn(`applyStyle(${kind}): ${failed.length} part(s) of the style could not be applied — ${failed.join('; ')}. Everything else was applied. Check that embed in the Built-in Embeds tab.`);
+      }
       if (content === undefined && components === undefined && extraEmbeds === undefined) return embed;
       return { embed, content, components, extraEmbeds };
     }
@@ -564,14 +666,44 @@ module.exports = {
     styleable.forEach((key) => host.discord.onEmbed(key, (embed, ctx) => { captureImage(key, embed); return applyStyle(embed, key, ctx); }));
     host.logger.info(`embed styling active for ${styleable.length} embed kind(s)`);
 
+    /**
+     * A revision per saved collection, so two panels cannot silently overwrite each other.
+     *
+     * Both save routes take the WHOLE collection and replace it. Two admins with the panel open —
+     * or one admin with two tabs, which is the common case — each loaded the same styles, edited a
+     * different embed, and whoever saved second wiped the other's work with no error, no warning and
+     * nothing to restore from. It is one of the few failures here with no trace at all afterwards.
+     *
+     * The panel sends back the revision it loaded. A mismatch is refused and says so. A request with
+     * no revision is accepted unchanged, so an older panel keeps working exactly as before.
+     */
+    const revOf = (what) => Number(host.store.get('rev_' + what, 0)) || 0;
+    const bumpRev = (what) => { host.store.set('rev_' + what, revOf(what) + 1); };
+    function staleSave(what, body) {
+      const sent = Number(body.rev);
+      if (!Number.isFinite(sent)) return null;           // an older panel — behave as we always did
+      const now = revOf(what);
+      if (sent === now) return null;
+      return {
+        ok: false, stale: true, rev: now,
+        error: 'Someone else saved this while you had it open. Your changes were NOT saved — '
+          + 'reload the page to see theirs, then make your change again.',
+      };
+    }
+
     host.routes.get('/config', (req, res) => {
       let configured = {}; try { configured = host.discord.liveEmbedImages() || {}; } catch { /* optional */ }
-      res.json({ kinds: kindsForConfig(), styles: loadStyles(), liveImages: host.store.get('liveImages', {}), configuredImages: configured });
+      res.json({
+        kinds: kindsForConfig(), styles: loadStyles(), liveImages: host.store.get('liveImages', {}),
+        configuredImages: configured, rev: revOf('styles'),
+      });
     });
     host.routes.post('/config', (req, res) => {
       const body = req.body || {};
-      if (body.styles && typeof body.styles === 'object') host.store.set('styles', body.styles);
-      res.json({ ok: true });
+      const stale = staleSave('styles', body);
+      if (stale) return res.json(stale);
+      if (body.styles && typeof body.styles === 'object') { host.store.set('styles', body.styles); bumpRev('styles'); }
+      res.json({ ok: true, rev: revOf('styles') });
     });
 
     // ── Custom live embeds ──────────────────────────────────────────────────────
@@ -627,12 +759,17 @@ module.exports = {
     const loadCustom = () => host.store.get('custom', []);
     const lastPost = {};
     async function refreshCustom(ce, force) {
-      if (!ce || !ce.channelId || !ce.model || ce.enabled === false || !editor) return;
+      // Each silent exit names itself. "Nothing happened" was the same answer for six different
+      // reasons, and the panel printed the cheerful one for all of them.
+      if (!ce || !ce.model) return { ok: false, why: 'that embed has nothing in it yet' };
+      if (!ce.channelId) return { ok: false, why: 'no channel is set for this embed' };
+      if (ce.enabled === false) return { ok: false, why: 'this embed is switched off' };
+      if (!editor) return { ok: false, why: 'the editor half of the plugin is not loaded' };
       const interval = Math.max(15, ce.intervalSec || 60) * 1000;
-      if (!force && lastPost[ce.id] && (Date.now() - lastPost[ce.id]) < interval) return;
+      if (!force && lastPost[ce.id] && (Date.now() - lastPost[ce.id]) < interval) return { ok: true, skipped: true };
       lastPost[ce.id] = Date.now();
       try {
-        const m = resolveModel(ce.model, globalMapCached());
+        const m = fitLimits(resolveModel(ce.model, globalMapCached()));
         const e = editor.apiEmbed(m);
         if (!e) return;
         const embed = host.discord.js.EmbedBuilder.from(e);
@@ -655,22 +792,37 @@ module.exports = {
           if (ex) payload.embeds.push(host.discord.js.EmbedBuilder.from(ex));
         });
         const ch = await host.discord.channel(ce.channelId);
-        if (!ch || !ch.send) return;
+        // Say which of the several silent exits happened. The panel used to print
+        // "Posted ✓ — keeps updating" for a missing channel, a disabled embed, a bot that cannot see
+        // the channel, and a missing editor service alike.
+        if (!ch || !ch.send) { return { ok: false, why: 'the bot cannot see that channel' }; }
         const ids = host.store.get('customMsg', {});
         if (ids[ce.id]) {
-          try { const msg = await ch.messages.fetch(ids[ce.id]); await msg.edit(payload); return; }
+          // An edit that WORKED has to say so. Returning nothing here made the panel report every
+          // successful refresh of an existing message as a failure — which is every refresh after
+          // the first one.
+          try { const msg = await ch.messages.fetch(ids[ce.id]); await msg.edit(payload); return { ok: true }; }
           catch { /* message deleted → repost below */ }
         }
         const sent = await ch.send(payload);
         if (sent && sent.id) { ids[ce.id] = sent.id; host.store.set('customMsg', ids); }
-      } catch (err) { host.logger.warn(`custom embed "${ce.id}" failed: ${err.message}`); }
+        return { ok: true };
+      } catch (err) {
+        host.logger.warn(`custom embed "${ce.id}" failed: ${err.message}`);
+        return { ok: false, why: err.message };
+      }
     }
     host.schedule.every(15000, () => { for (const ce of loadCustom()) refreshCustom(ce, false); });
 
     // ── component actions: a custom-embed button or menu choice runs a command or replies ────────
     // One dispatcher (no double-registration): match the clicked component to a configured action
-    // across all custom embeds. In-game commands go through host.server.command (SSA Bridge,
-    // Premium + server-authorised) — a button cannot bypass that.
+    // across all custom embeds. In-game commands go through host.server.command — a button cannot
+    // bypass that, and the gate below is what decides who may press it.
+    //
+    // The gate is NOT the bridge's licence, and saying so used to be wrong in a way that mattered:
+    // the bridge is free and runs every command with or without one, so a licence has never been
+    // what stands between a Discord button and the game. What does: this plugin only loads with
+    // manager Premium at all, and the role / cooldown / in-flight checks in `actionGate` below.
     //
     // SELECT MENUS are handled as well as buttons. The editor has always let you put a menu on a
     // custom live embed, the preview drew it and the send delivered it — and then a player picking
@@ -679,21 +831,140 @@ module.exports = {
     //
     // A menu's action is keyed by MENU_ID::OPTION_VALUE, so each option can do something different;
     // a bare MENU_ID entry is the fallback for "any choice", and {picked} carries the option.
+    /**
+     * Did THIS plugin put that button on the message?
+     *
+     * Only then should it answer. Another plugin's buttons travel through the same interaction
+     * handler, and replying to those would steal the interaction from its real owner — which looks
+     * exactly like the bug this is fixing, only for someone else.
+     */
+    function ownsButton(cid) {
+      const id = String(cid || '');
+      if (!id) return false;
+      const has = (list) => (Array.isArray(list) ? list : []).some((b) => String(b && (b.custom_id || b.customId) || '') === id);
+      // custom live embeds
+      for (const ce of loadCustom()) {
+        if (ce.actions && ce.actions[id]) return true;
+        if (ce.model && has(ce.model.buttons)) return true;
+      }
+      // buttons an owner put on one of the manager's own embeds
+      const styles = loadStyles();
+      for (const key of Object.keys(styles)) {
+        const m = styles[key] && styles[key].model;
+        if (m && has(m.buttons)) return true;
+      }
+      return false;
+    }
+
+    /**
+     * The action for a clicked component, wherever its button lives.
+     *
+     * Custom live embeds AND the manager's own styled embeds. The editor has always let an owner put
+     * a button on a built-in embed — it saved it, previewed it and delivered it — and only custom
+     * embeds had anywhere to store what the button DOES. So every button on a built-in embed was
+     * unwireable by construction: the best it could ever answer was "nothing is set up for that
+     * button yet", for ever, with no way to set anything up. A control that cannot be connected
+     * should not be offered; connecting it is the better half of that choice.
+     */
     function findAction(key) {
       for (const ce of loadCustom()) { if (ce.actions && ce.actions[key] && ce.actions[key].type) return ce.actions[key]; }
+      const styles = loadStyles();
+      for (const kind of Object.keys(styles)) {
+        const a = styles[kind] && styles[kind].actions;
+        if (a && a[key] && a[key].type) return a[key];
+      }
       return null;
     }
-    async function runAction(i, act, extra) {
+    /**
+     * Who may use this control, and how often.
+     *
+     * A button whose action is an in-game command runs that command for WHOEVER clicks it — the
+     * editor's own placeholder suggests `#SpawnItem BP_… 1`, so the obvious use is handing something
+     * out. Posted in a public channel that is every member of the server, as many times as they care
+     * to click, and nothing anywhere said so.
+     *
+     * Both limits are OPTIONAL and default to off, because owners already have these buttons
+     * configured and silently locking them would break what they built. What is NOT optional is the
+     * in-flight lock below: pressing a button twice quickly used to run the command twice, which for
+     * a spawn button means two of the item. That one cannot break a legitimate setup — nobody
+     * intends a double-click to count twice.
+     */
+    const actionBusy = new Set();      // "user:key" while one is running
+    const actionLast = new Map();      // "user:key" → when it last ran
+    function actionGate(i, act, key) {
+      const uid = String((i.user && i.user.id) || '');
+      const slot = uid + ':' + key;
+
+      const roleId = String(act.roleId || '').trim();
+      if (roleId) {
+        // `i.member.roles` is a GuildMemberRoleManager in a guild and a plain id array over the
+        // gateway's raw shape; accept both rather than trusting one.
+        const r = i.member && i.member.roles;
+        const has = r && (
+          (r.cache && r.cache.has && r.cache.has(roleId))
+          || (Array.isArray(r) && r.indexOf(roleId) >= 0)
+          || (typeof r.has === 'function' && r.has(roleId))
+        );
+        if (!has) return { ok: false, why: '🚫 You do not have the role needed to use this.' };
+      }
+
+      if (actionBusy.has(slot)) return { ok: false, why: '⏳ That is already running — give it a moment.' };
+
+      const cd = Math.max(0, Number(act.cooldownSec) || 0);
+      if (cd) {
+        const last = actionLast.get(slot) || 0;
+        const left = Math.ceil((last + cd * 1000 - Date.now()) / 1000);
+        if (left > 0) return { ok: false, why: `⏳ You can use this again in ${left}s.` };
+      }
+      return { ok: true, slot };
+    }
+
+    async function runAction(i, act, extra, key) {
       const m = Object.assign({}, globalMapCached(), extra || {});
       if (act.type === 'command') {
+        const gate = actionGate(i, act, key || act.value || 'action');
+        if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
+        actionBusy.add(gate.slot);
         await i.reply({ content: '⏳ Running…', ...EPHEMERAL });
-        let ok = false; try { const r = await host.server.command(resolveTpl(act.value || '', m)); ok = !(r && r.ok === false); } catch { ok = false; }
-        try { await i.editReply({ content: ok ? '✅ Done.' : '❌ Command failed (server / bridge?).' }); } catch {}
+        let ok = false;
+        let confirmed = true;
+        try {
+          const r = await host.server.command(resolveTpl(act.value || '', m));
+          ok = !(r && r.ok === false);
+          // Manager 5.x forwards the bridge's own `confirmed` flag, and it is the difference between
+          // two answers this used to print identically. With NOBODY online and the owner's
+          // `allowNoExecutor` switched on, the bridge hands the command to the game's static entry
+          // point, which returns void — so `ok` means "handed over" and nothing else: not accepted,
+          // not even recognised. Saying "✅ Done." there is the one thing an admin cannot check.
+          // The field is ABSENT on every executor-backed call, and absent is a real confirmation, so
+          // only an explicit `false` changes the wording — this stays right on an older manager.
+          if (r && r.confirmed === false) confirmed = false;
+        } catch { ok = false; }
+        finally { actionBusy.delete(gate.slot); }
+        // The cooldown starts when the command SUCCEEDED. A failed bridge call should not lock
+        // someone out for a minute over something that never happened. An UNCONFIRMED one DOES start
+        // it: it may well have run, and the whole reason the lock exists is that a second click on a
+        // spawn button means a second item.
+        if (ok) actionLast.set(gate.slot, Date.now());
+        const said = !ok
+          ? '❌ Command failed (server / bridge?).'
+          : (confirmed
+            ? '✅ Done.'
+            : '📨 Sent to the server — but nobody is online, so the game could not confirm it ran. Check in game.');
+        try { await i.editReply({ content: said }); } catch {}
       } else if (act.type === 'message') {
-        await i.reply({ content: resolveTpl(act.value || '…', m) || '…', ephemeral: act.ephemeral !== false });
+        // The flag, not the deprecated `ephemeral:` option — every other reply here already uses it,
+        // and discord.js logs a deprecation warning per call for the old one. There is no UI for
+        // `act.ephemeral`, so this reply was always private anyway.
+        await i.reply({ content: resolveTpl(act.value || '…', m) || '…', ...EPHEMERAL });
       } else if (act.type === 'announce') {
+        // This one WRITES TO A CHANNEL everyone can read, so it takes the same gate as a command.
+        // A "message" action only answers the person who clicked and needs no protection.
+        const gate = actionGate(i, act, key || act.value || 'announce');
+        if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
         const ch = await host.discord.channel(act.channelId || i.channelId);
         if (ch && ch.send) await ch.send(resolveTpl(act.value || '', m) || '…');
+        actionLast.set(gate.slot, Date.now());
         await i.reply({ content: '✅ Sent.', ...EPHEMERAL });
       }
     }
@@ -705,17 +976,29 @@ module.exports = {
         const cid = i.customId;
         if (isBtn) {
           const act = findAction(cid);
-          if (!act) return;
-          await runAction(i, act);
+          // The custom id is the key: a cooldown belongs to THAT button, not to every button an
+          // owner has configured.
+          if (act) { await runAction(i, act, null, cid); return; }
+          // No action configured. Returning silently leaves Discord showing the player "This
+          // interaction failed" three seconds later, which reads as the server being broken.
+          //
+          // The select-menu branch below was fixed for this and buttons were not — and buttons have
+          // it WORSE, because `findAction` only searches custom live embeds. A button added to a
+          // styled built-in embed, or to a message sent from the Embeds tab, can never have an
+          // action at all: neither tab offers the "Click actions" panel. Every click on one of those
+          // was a guaranteed failed interaction.
+          if (!ownsButton(cid)) return;          // not ours — leave it for whoever put it there
+          await i.reply({ content: 'Nothing is set up for that button yet.', ...EPHEMERAL });
           return;
         }
         const picked = (Array.isArray(i.values) ? i.values : []).filter(Boolean);
         // One action per chosen option; the fallback covers "any choice from this menu".
         let ran = false;
         for (const v of picked) {
-          const act = findAction(cid + '::' + v) || findAction(cid);
+          const key = findAction(cid + '::' + v) ? (cid + '::' + v) : cid;
+          const act = findAction(key);
           if (!act) continue;
-          await runAction(i, act, { picked: v, pickedList: picked.join(', ') });
+          await runAction(i, act, { picked: v, pickedList: picked.join(', ') }, key);
           ran = true;
           break;                       // Discord allows exactly one reply per interaction
         }
@@ -725,23 +1008,33 @@ module.exports = {
       } catch (e) { try { if (i && !i.replied && i.reply) await i.reply({ content: 'Action error.', ...EPHEMERAL }); } catch {} }
     });
 
-    host.routes.get('/custom', (req, res) => res.json({ items: loadCustom(), tokens: globalTokenCatalog() }));
+    host.routes.get('/custom', (req, res) => res.json({ items: loadCustom(), tokens: globalTokenCatalog(), rev: revOf('custom') }));
     host.routes.post('/custom', (req, res) => {
       const b = req.body || {};
+      const stale = staleSave('custom', b);
+      if (stale) return res.json(stale);
       if (Array.isArray(b.items)) {
         // drop message-ids for removed embeds so they can be re-created cleanly
         const keep = {}; b.items.forEach((x) => { keep[x.id] = 1; });
         const ids = host.store.get('customMsg', {}); for (const k of Object.keys(ids)) if (!keep[k]) delete ids[k];
         host.store.set('customMsg', ids);
         host.store.set('custom', b.items);
+        bumpRev('custom');
       }
-      res.json({ ok: true });
+      res.json({ ok: true, rev: revOf('custom') });
     });
     host.routes.post('/custom/post', async (req, res) => {
       const id = (req.body || {}).id;
       const ce = loadCustom().find((x) => x.id === id);
       if (!ce) return res.status(404).json({ error: 'not_found' });
-      await refreshCustom(ce, true);
+      // Report what actually happened. `{ok:true}` regardless meant the panel said
+      // "Posted ✓ — keeps updating" for an embed with no channel, one that is switched off, or one
+      // the bot cannot post to — and the owner went looking in Discord for a message that was never
+      // sent and never would be.
+      if (!ce.channelId) return res.json({ ok: false, error: 'no channel is set for this embed' });
+      if (ce.enabled === false) return res.json({ ok: false, error: 'this embed is switched off' });
+      const out = await refreshCustom(ce, true);
+      if (out && out.ok === false) return res.json({ ok: false, error: out.why || 'it could not be posted' });
       res.json({ ok: true });
     });
 

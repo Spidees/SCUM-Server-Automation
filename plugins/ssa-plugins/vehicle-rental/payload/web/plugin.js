@@ -29,7 +29,20 @@
   function inp(label, get, set, o) {
     o = o || {}; var ctl;
     if (o.type === 'select') ctl = h('select', { onchange: function () { set(ctl.value); } }, (o.options || []).map(function (op) { return h('option', { value: op[0] }, op[1]); }));
-    else ctl = h('input', { type: o.type || 'text', placeholder: o.ph || '', oninput: function () { set(o.type === 'number' ? Number(ctl.value) : ctl.value); } });
+    else {
+      // `min` is passed through AND enforced on the value. The attribute alone only stops the spinner
+      // arrows; a number typed straight in still reaches the config, and a negative duration means a
+      // rental that is paid for and then expires on the very next sweep.
+      ctl = h('input', {
+        type: o.type || 'text', placeholder: o.ph || '', min: o.min,
+        oninput: function () {
+          if (o.type !== 'number') return set(ctl.value);
+          var n = Number(ctl.value);
+          if (o.min != null && ctl.value !== '' && n < Number(o.min)) { n = Number(o.min); ctl.value = String(n); }
+          set(n);
+        },
+      });
+    }
     ctl.value = get() == null ? '' : get();
     return h('label', { class: 'vr-f' }, [h('span', {}, label), ctl]);
   }
@@ -37,6 +50,123 @@
     var box = h('input', { type: 'checkbox', onchange: function () { set(box.checked); } });
     box.checked = get() !== false;
     return h('label', { class: 'vr-chk' }, [box, label]);
+  }
+
+  // ── Time windows ────────────────────────────────────────────────────────────────────────────────
+  //
+  // "From when to when is this available." The same control, the same words and the same evaluator
+  // as every other plugin that offers it — the manager owns the rule (`host.time`) and this draws
+  // what it says rather than working it out again. That matters more than it looks: "22:00 to 02:00"
+  // has a wrap rule, "no days chosen" has a meaning, and a second copy of either in a browser is a
+  // copy that will disagree with the one that decides whether somebody is charged.
+  //
+  // The clock is the SERVER'S, and the note under every editor says so. It is not the game's
+  // day/night cycle: SCUM has a time of day but no day of the week, and its day runs at whatever
+  // multiplier the server is set to, so a "20:00–22:00" window in game time would open several times
+  // a night for a few real minutes each. An owner cannot be left to guess which of those we meant.
+  var TW_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var twClock = null;                      // { supported, now, zone } — asked once per tab
+  function twClockLine() {
+    if (!twClock) return '';
+    if (twClock.supported === false) return twClock.why || 'This manager cannot evaluate time windows.';
+    var z = twClock.zone || {}, n = twClock.now || {};
+    return 'Server clock: ' + (n.hhmm || '??:??') + ' ' + (z.label || 'server time') + '. This is real time, not in-game time.';
+  }
+  function twLoadClock(then) {
+    if (twClock) { then(); return; }
+    api('/clock').then(function (c) { twClock = c || { supported: false }; then(); }).catch(function () { twClock = { supported: false }; then(); });
+  }
+
+  /**
+   * The editor for one `windows` list.
+   *
+   * `owner` is whatever carries the list — a command, a pack, a vehicle, a plan, or the config
+   * itself. `onChange` is the host page's dirty-marker. An owner with no windows sees one line
+   * saying it is always available and a button; nothing else appears until they ask for it, because
+   * this is an advanced setting on a screen that already has plenty.
+   */
+  function twEditor(owner, onChange) {
+    var box = h('div', { class: 'tw' });
+    var rows = h('div', { class: 'tw-rows' });
+    var note = h('p', { class: 'tw-note' }, 'Always available — no time window is set.');
+    var clockNote = h('p', { class: 'tw-clock' }, '');
+    var add = h('button', {
+      type: 'button', class: 'tw-add',
+      onclick: function () {
+        owner.windows = (owner.windows || []).concat([{ days: [], from: '20:00', to: '22:00' }]);
+        onChange(); draw();
+      },
+    }, '+ Add a time window');
+
+    var seq = 0;
+    function preview() {
+      var list = owner.windows || [];
+      if (!list.length) { note.className = 'tw-note'; note.textContent = 'Always available — no time window is set.'; return; }
+      // Every keystroke asks, and only the LAST answer is allowed to paint. Without the token an
+      // earlier reply can land after a later one and leave the note describing a window the owner
+      // has already changed — which is worse than a stale number, because it reads as authoritative.
+      var mine = ++seq;
+      api('/clock/preview', { method: 'POST', body: { windows: list } }).then(function (r) {
+        if (mine !== seq) return;
+        if (!r || r.supported === false) {
+          note.className = 'tw-note bad';
+          note.textContent = '⚠ This manager cannot evaluate time windows, so anything set here is treated as CLOSED. Update the manager, or remove the windows.';
+          return;
+        }
+        if (r.errors && r.errors.length) { note.className = 'tw-note bad'; note.textContent = '⚠ ' + r.errors.join(' · '); return; }
+        note.className = 'tw-note' + (r.open ? ' ok' : '');
+        note.textContent = r.text + '  ' + (r.open ? '● Open right now.' : '○ Shut right now.');
+      }).catch(function () { /* the note simply keeps its last good text */ });
+    }
+
+    function dayChips(w) {
+      // An empty list means EVERY DAY, so all seven read as on. Clicking one then has to turn that
+      // day off rather than leave six unexplained — which means materialising the full week first.
+      var chosen = (w.days && w.days.length) ? w.days.slice() : [1, 2, 3, 4, 5, 6, 7];
+      return TW_DAYS.map(function (name, i) {
+        var d = i + 1, on = chosen.indexOf(d) >= 0;
+        return h('button', {
+          type: 'button', class: 'tw-day' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false',
+          onclick: function () {
+            var next = chosen.slice();
+            var at = next.indexOf(d);
+            if (at >= 0) next.splice(at, 1); else next.push(d);
+            next.sort(function (a, b) { return a - b; });
+            // All seven and none at all are the same thing — every day — and an empty list is how
+            // that is stored. Turning the last day off therefore turns them all back on, which is
+            // the honest answer to "a window on no days": there is no such window.
+            w.days = (next.length === 7 || next.length === 0) ? [] : next;
+            onChange(); draw();
+          },
+        }, name);
+      });
+    }
+
+    function draw() {
+      rows.innerHTML = '';
+      (owner.windows || []).forEach(function (w, idx) {
+        var from = h('input', { type: 'time', class: 'tw-t', value: w.from || '' });
+        from.addEventListener('input', function () { w.from = from.value; onChange(); preview(); });
+        var to = h('input', { type: 'time', class: 'tw-t', value: w.to || '' });
+        to.addEventListener('input', function () { w.to = to.value; onChange(); preview(); });
+        rows.appendChild(h('div', { class: 'tw-row' }, [
+          h('div', { class: 'tw-days' }, dayChips(w)),
+          h('div', { class: 'tw-times' }, [h('span', {}, 'from'), from, h('span', {}, 'to'), to]),
+          h('button', {
+            type: 'button', class: 'tw-del', title: 'Remove this window',
+            onclick: function () { owner.windows.splice(idx, 1); if (!owner.windows.length) delete owner.windows; onChange(); draw(); },
+          }, '×'),
+        ]));
+      });
+      preview();
+      clockNote.textContent = twClockLine();
+    }
+
+    box.appendChild(rows);
+    box.appendChild(h('div', { class: 'tw-foot' }, [add, note]));
+    box.appendChild(clockNote);
+    twLoadClock(draw);
+    return box;
   }
 
   // Vehicle spawn-code field with a live typeahead sourced from the item database
@@ -78,15 +208,43 @@
           menu.style.display = 'block';
         }).catch(hide);
     }
-    input.addEventListener('input', function () { v.code = input.value; clearTimeout(tmr); tmr = setTimeout(search, 220); });
+    // This field is a SEARCH BOX and a value at the same time, and it used to save whatever was in
+    // it. Typing "quad" and clicking away saved the spawn code "quad": the panel showed a configured
+    // vehicle, the list of vehicles with no code stayed empty, and the failure surfaced later as a
+    // player being told "the vehicle couldn't be spawned" with nothing pointing at the cause.
+    //
+    // So only a real blueprint id is committed. Search text that resolves to nothing reverts to the
+    // last good code on blur — the ordinary behaviour of a combobox, and it never leaves a half-typed
+    // word saved as configuration.
+    var CODE_RX = /^BPC_[A-Za-z0-9_]+$/;
+    input.addEventListener('input', function () {
+      var t = input.value.trim();
+      if (!t || CODE_RX.test(t)) { v.code = t; input.classList.remove('vr-ac-bad'); }
+      else input.classList.add('vr-ac-bad');            // typing — not a code yet
+      clearTimeout(tmr); tmr = setTimeout(search, 220);
+    });
     input.addEventListener('focus', search);
-    input.addEventListener('blur', function () { setTimeout(hide, 160); });
+    input.addEventListener('blur', function () {
+      setTimeout(function () {
+        hide();
+        var t = input.value.trim();
+        if (t && !CODE_RX.test(t)) {
+          input.value = v.code || '';
+          input.classList.remove('vr-ac-bad');
+          try { SSA.toast('“' + t + '” is a search, not a spawn code — pick a vehicle from the list.', 'error'); } catch (e) { /* toast optional */ }
+        }
+      }, 160);
+    });
     return h('label', { class: 'vr-f' }, [h('span', {}, 'Spawn code'), h('div', { class: 'vr-ac' }, [input, menu])]);
   }
 
   function editor(el) {
     var config = null;
-    el.innerHTML = '<div class="vr-head"><p class="muted" style="font-size:.86rem;margin:0">Players rent vehicles through the Discord bot. Configure everything below, design the menu embed, then post it.</p></div><div id="vr-body" class="muted">Loading…</div>';
+    // The heading used to open "Players rent vehicles through the Discord bot", which is not true and
+    // never was: the whole rental engine runs from in-game chat and Discord is one of two front ends.
+    // An owner with no bot read that sentence, then found a channel picker with nothing in it, and
+    // concluded the plugin was broken or not for them.
+    el.innerHTML = '<div class="vr-head"><p class="muted" style="font-size:.86rem;margin:0">Players rent vehicles from in-game chat — <code>/rent</code>, <code>/myrent</code>, <code>/extend</code>, <code>/return</code> — and, if you run a Discord bot, from a menu there as well. Everything below works either way.</p></div><div id="vr-body" class="muted">Loading…</div>';
     var body = el.querySelector('#vr-body');
 
     var savedSnapshot = '';
@@ -104,22 +262,59 @@
 
       // ── general settings ──
       var chanSel = h('select', {}, [h('option', { value: config.channelId || '' }, config.channelId ? '(current)' : '— pick a channel —')]);
-      api('/channels').then(function (list) {
-        chanSel.innerHTML = ''; chanSel.appendChild(h('option', { value: '' }, '— pick a channel —'));
-        (list || []).forEach(function (ch) { chanSel.appendChild(h('option', { value: ch.id, selected: ch.id === config.channelId }, '#' + ch.name)); });
-        chanSel.value = config.channelId || '';
+      // An empty channel list has two causes that look the same and mean opposite things. `/channels`
+      // answers `[]` both when there is no bot and when there is one with nothing to post in, and the
+      // dropdown said nothing at all about either — so this asks which it is first.
+      var chanNote = h('p', { class: 'muted', style: 'font-size:.78rem;margin:4px 0 0' }, '');
+      api('/discord-state').then(function (d) {
+        var hasBot = !!(d && d.enabled);
+        if (!hasBot) {
+          chanSel.innerHTML = '';
+          chanSel.appendChild(h('option', { value: '' }, 'No Discord bot configured'));
+          chanSel.disabled = true;
+          chanNote.textContent = 'No Discord bot is set up, so the menu, the DM reminders and the Extend button are unavailable. Everything else — renting, prices, limits, reminders in game and auto-removal — works from chat and needs nothing here.';
+          return;
+        }
+        api('/channels').then(function (list) {
+          chanSel.innerHTML = ''; chanSel.appendChild(h('option', { value: '' }, '— pick a channel —'));
+          (list || []).forEach(function (ch) { chanSel.appendChild(h('option', { value: ch.id, selected: ch.id === config.channelId }, '#' + ch.name)); });
+          chanSel.value = config.channelId || '';
+          if (!(list || []).length) chanNote.textContent = 'The bot is connected but cannot see any text channels — check its permissions in your server.';
+        });
       });
       chanSel.addEventListener('change', function () { config.channelId = chanSel.value; });
+
+      // Live state of sector detection. Silent when no sector rules are set — there is nothing to
+      // warn about then, and a permanent status line for an unused feature is just noise.
+      var sectorStatus = h('p', { class: 'vr-secstat', style: 'display:none' });
+      function refreshSectorStatus() {
+        api('/sector-status').then(function (s) {
+          if (!s || !s.configured) { sectorStatus.style.display = 'none'; return; }
+          sectorStatus.style.display = '';
+          if (s.works === true) {
+            sectorStatus.className = 'vr-secstat ok';
+            sectorStatus.textContent = '✓ Sector detection is working — the rules above are being applied.';
+          } else if (s.works === false) {
+            sectorStatus.className = 'vr-secstat bad';
+            sectorStatus.textContent = '⚠ Sector detection is NOT working right now, so the rules above are being ignored and renting is allowed everywhere. Map calibration comes from scumsa — check the manager can reach it.';
+          } else {
+            sectorStatus.className = 'vr-secstat';
+            sectorStatus.textContent = 'Sector detection has not been tested yet — it is checked the first time someone rents, or when a player is online.';
+          }
+        }).catch(function () { sectorStatus.style.display = 'none'; });
+      }
 
       body.appendChild(card('Settings', [
         h('div', { class: 'vr-checks' }, [
           chk('Rentals enabled', function () { return config.enabled; }, function (v) { config.enabled = v; }),
           h('label', { class: 'vr-chk' }, [(function () { var b = h('input', { type: 'checkbox', onchange: function () { config.free = b.checked; render(); } }); b.checked = config.free === true; return b; })(), 'Free rentals (no charge)']),
-          chk('Only when player is online', function () { return config.requireOnline; }, function (v) { config.requireOnline = v; }),
+          // Says what it now covers. It applies to renting AND extending; returning is always
+          // allowed, so a player is never stuck paying for a vehicle they are trying to give back.
+          chk('Must be online to rent or extend', function () { return config.requireOnline; }, function (v) { config.requireOnline = v; }),
           chk('Allow extensions', function () { return config.allowExtend; }, function (v) { config.allowExtend = v; }),
         ]),
         h('div', { class: 'vr-grid' }, [
-          h('label', { class: 'vr-f' }, [h('span', {}, 'Rental menu channel'), chanSel]),
+          h('label', { class: 'vr-f' }, [h('span', {}, 'Rental menu channel (Discord — optional)'), chanSel, chanNote]),
           inp('Button label', function () { return config.buttonLabel; }, function (v) { config.buttonLabel = v; }, { ph: '🚗 Rent a vehicle' }),
           inp('Max active rentals / player (0 = ∞)', function () { return config.maxPerPlayer; }, function (v) { config.maxPerPlayer = v; }, { type: 'number' }),
           inp('Cooldown between rentals (min)', function () { return config.cooldownMinutes; }, function (v) { config.cooldownMinutes = v; }, { type: 'number' }),
@@ -132,6 +327,10 @@
           inp('Remove command template', function () { return config.removeCmd; }, function (v) { config.removeCmd = v; }, { ph: '#DestroyVehicle {vehId}' }),
         ]),
         h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Command placeholders: {code} {x} {y} {z} {steamid} {vehId}. Set these to match your server / bridge. Payment is charged automatically with #ChangeCurrencyBalance.'),
+        // Rental hours for the whole system. Vehicles and plans can narrow this further; nothing
+        // widens it, so a player is never offered something the server-wide hours have shut.
+        h('div', { class: 'vr-opt-hd' }, 'Rental hours (leave empty and rentals are always open)'),
+        twEditor(config, function () { }),
       ]));
 
       // ── in-game ──
@@ -166,7 +365,12 @@
             function (v) { config.blockedSectors = String(v).split(',').map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean); }, { ph: 'A0, Z4' }),
         ]),
         h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, 'Sector rules need the live map calibration; while it is unavailable renting is allowed everywhere rather than blocked for a reason players cannot see. Command names are written without the prefix, and renaming one — or turning the commands off — takes effect the moment you save. Prices are taken from the player’s bank account, not the money they are carrying.'),
+        // …and whether it is available RIGHT NOW. The sentence above explains the rule; on its own it
+        // leaves an owner to guess which side of it they are on, and these are the only settings here
+        // that can be filled in correctly and still do nothing.
+        sectorStatus,
       ]));
+      refreshSectorStatus();
 
       // ── in-game wording ──
       body.appendChild(card('In-game messages', [
@@ -200,6 +404,23 @@
         if (over.length) msgs.push('More than 25 plans on: ' + over.join(', ') + ' — only the first 25 show in Discord.');
         var noCode = config.vehicles.filter(function (v) { return !v.code; }).map(function (v) { return v.name || 'unnamed'; });
         if (noCode.length) msgs.push('No spawn code on: ' + noCode.join(', ') + ' — renting those fails with a message asking the player to tell an admin.');
+        // A code that is present but is not a blueprint id fails exactly the same way, and used to
+        // be invisible here because the check only asked whether the field was empty.
+        var badCode = config.vehicles.filter(function (v) { return v.code && !/^BPC_[A-Za-z0-9_]+$/.test(String(v.code).trim()); })
+          .map(function (v) { return (v.name || 'unnamed') + ' (“' + v.code + '”)'; });
+        if (badCode.length) msgs.push('Spawn code doesn’t look like a vehicle blueprint on: ' + badCode.join(', ') + ' — codes start with BPC_. Renting those will fail to spawn.');
+        // Two different problems, said differently, because they need different action.
+        // A NEGATIVE duration is refused outright by the backend — it would expire the instant it
+        // was paid for. A blank or zero one quietly becomes an hour, which is almost certainly not
+        // what the owner meant to sell but has been working that way all along.
+        var negDur = config.vehicles.filter(function (v) {
+          return (v.options || []).some(function (o) { return parseInt(o && o.minutes, 10) < 0; });
+        }).map(function (v) { return v.name || 'unnamed'; });
+        if (negDur.length) msgs.push('A rental plan with a negative duration on: ' + negDur.join(', ') + ' — that plan is refused when someone tries to rent it, because it would expire the moment it was paid for.');
+        var vagueDur = config.vehicles.filter(function (v) {
+          return (v.options || []).some(function (o) { var n = parseInt(o && o.minutes, 10); return !(n > 0) && !(n < 0); });
+        }).map(function (v) { return v.name || 'unnamed'; });
+        if (vagueDur.length) msgs.push('A rental plan with no duration set on: ' + vagueDur.join(', ') + ' — those are sold as 60 minutes. Set the minutes you actually mean.');
         var noPlan = config.vehicles.filter(function (v) { return !(v.options || []).length; }).map(function (v) { return v.name || 'unnamed'; });
         if (noPlan.length) msgs.push('No rental plans on: ' + noPlan.join(', ') + ' — nothing to pick, so they cannot be rented.');
         vehWarn.innerHTML = '';
@@ -219,13 +440,23 @@
           function renderOpts() {
             optBox.innerHTML = '';
             v.options.forEach(function (o, oi) {
-              var row = [inp('Minutes', function () { return o.minutes; }, function (x) { o.minutes = x; }, { type: 'number' })];
+              // `min` on both. A negative price is harmless — the backend clamps it to zero — but a
+              // negative or zero duration is not: the rental is paid for and then expires on the very
+              // next sweep, so the player is charged and the vehicle is taken away a minute later.
+              var row = [inp('Minutes', function () { return o.minutes; }, function (x) { o.minutes = x; }, { type: 'number', min: '1' })];
               if (!config.free) {
                 row.push(inp('Currency', function () { return o.currency || 'money'; }, function (x) { o.currency = x; }, { type: 'select', options: [['money', 'Money'], ['gold', 'Gold']] }));
-                row.push(inp('Amount', function () { return o.amount; }, function (x) { o.amount = x; }, { type: 'number' }));
+                row.push(inp('Amount', function () { return o.amount; }, function (x) { o.amount = x; }, { type: 'number', min: '0' }));
               }
               row.push(h('button', { class: 'vr-x', title: 'Remove plan', onclick: function () { v.options.splice(oi, 1); renderOpts(); } }, '✕'));
-              optBox.appendChild(h('div', { class: config.free ? 'vr-opt vr-opt-free' : 'vr-opt' }, row));
+              // A window on the PLAN is how a price that changes by time of day is expressed: two
+              // plans on the same vehicle, one windowed to the evening and one not. There is
+              // deliberately no separate "discount" field — a second plan already says it, and a
+              // discount that could disagree with the plan it discounts is a price nobody can see.
+              optBox.appendChild(h('div', { class: 'vr-opt-wrap' }, [
+                h('div', { class: config.free ? 'vr-opt vr-opt-free' : 'vr-opt' }, row),
+                twEditor(o, function () { }),
+              ]));
             });
             if (!v.options.length) optBox.appendChild(h('div', { class: 'muted', style: 'font-size:.8rem' }, 'No plans yet.'));
           }
@@ -245,6 +476,8 @@
               inp('Max extensions / rental (0 = ∞)', function () { return v.maxExtensions; }, function (x) { v.maxExtensions = x; }, { ph: 'global' }),
               inp('Remind before expiry (min)', function () { return v.reminderMinutes; }, function (x) { v.reminderMinutes = x; }, { ph: 'global' }),
             ]),
+            h('div', { class: 'vr-opt-hd' }, 'When this vehicle can be rented (empty = whenever rentals are open)'),
+            twEditor(v, function () { }),
             h('div', { class: 'vr-opt-hd' }, 'Rental plans (duration' + (config.free ? '' : ' + price') + ')'),
             optBox,
             h('button', { class: 'vr-btn add', onclick: function () { v.options.push({ minutes: 60, currency: 'money', amount: 5000 }); renderOpts(); } }, '+ Add plan'),
@@ -333,11 +566,22 @@
             return h('button', { class: 'vr-btn danger', title: 'End it now and remove the vehicle', onclick: function () {
               // SSA.confirm resolves to true/false — it takes options as its second argument, not a
               // callback, so a callback there would simply never run.
-              SSA.confirm('End the rental of ' + (r.vehName || 'this vehicle') + ' for ' + (r.playerName || r.steamId) + '? The vehicle is removed and the player is told in game.',
+              // Says NO REFUND, before the click rather than after. A player who returns a rental
+              // early gets the configured refund; ending one from here pays nothing, and an admin
+              // reaching for this button has no reason to assume the two differ.
+              SSA.confirm('End the rental of ' + (r.vehName || 'this vehicle') + ' for ' + (r.playerName || r.steamId) + '?\n\n'
+                + 'The vehicle is removed and the player is told in game that an admin ended it. '
+                + 'No refund is paid — unlike a player returning it themselves.',
                 { title: 'End rental', okLabel: 'End it' }).then(function (yes) {
                 if (!yes) return;
                 api('/rentals/end', { method: 'POST', body: { id: r.id } }).then(function (out) {
-                  if (out && out.ok) SSA.toast(out.removed ? 'Rental ended and the vehicle removed.' : 'Rental ended (the vehicle was already gone).');
+                  // "Ended (the vehicle was already gone)" was the message for BOTH "it really was
+                  // gone" and "we could not identify it", and those need different action from an
+                  // admin: one is fine, the other leaves a vehicle in the world.
+                  if (out && out.ok) SSA.toast(out.removed ? 'Rental ended and the vehicle removed.'
+                    : (out.stillThere ? 'Rental ended, but the vehicle could NOT be removed — it may still be out there.'
+                      : 'Rental ended (the vehicle was already gone).'),
+                  out.removed || !out.stillThere ? undefined : 'error');
                   else SSA.toast('Could not end it: ' + ((out && out.error) || 'unknown'), 'error');
                   loadRentals();
                 });
