@@ -2063,7 +2063,12 @@ export interface Host {
     // This IS the one bridge reader cheap enough to sit on a timer — a couple of hundred objects
     // rather than twenty thousand — though it is still off by default.
 
-    /** Virtualized item records, all of them or one profile's. */
+    /**
+     * Virtualized item records — every one, or a single profile's.
+     *
+     * Pass NO argument for every record. Profile `0` is not "all": it is what the game left
+     * unowned, so an empty or non-numeric id THROWS rather than being read as 0.
+     */
     virtualized(profileId?: number): Promise<Record<string, any> | null>;
     /** World containers with their locks. `locks: []` means "walk in"; the key being ABSENT means the
      *  lock list could not be read at all, and the two must not be confused. */
