@@ -1772,7 +1772,33 @@ export interface Host {
     /** Resize one. */
     resizeZone(name: string, width: number, height: number): Promise<BridgeCommandResult>;
     /** Change a zone between a circle and a rectangle. */
-    reshapeZone(name: string, shape: 'circle' | 'rectangle'): Promise<BridgeCommandResult>;
+    /**
+     * Change a zone's shape. `height` is REQUIRED going circle -> rectangle.
+     *
+     * The save has no shape column: the loader reads the shape off the stored height, where zero
+     * means circle. A rectangle stored without one therefore comes back as a circle after the next
+     * restart, with a different test for what is inside it and nothing logged. A circle carries no
+     * height to inherit, so that direction is refused without one; the other way it is dropped.
+     */
+    reshapeZone(name: string, shape: 'circle' | 'rectangle', height?: number): Promise<BridgeCommandResult>;
+
+    /**
+     * Move a zone within the list: `'up'`, `'down'`, `'top'`, `'bottom'`, or a 0-based position.
+     *
+     * Where two zones overlap, a DAMAGE rule is answered by the EARLIER of them and no later zone
+     * overrides it. Event rules are resolved a different way and reordering does not affect them.
+     * The reply names the full new order.
+     */
+    orderZone(name: string, where: 'up' | 'down' | 'top' | 'bottom' | number): Promise<BridgeCommandResult>;
+
+    /** Put a zone the GAME ships back the way it shipped it. A zone the owner made is refused. */
+    restoreZone(name: string): Promise<BridgeCommandResult>;
+
+    /** Restore every shipped zone at once. */
+    restoreAllZones(): Promise<BridgeCommandResult>;
+
+    /** The zones the game ships, each saying whether it is still on the server and under what name. */
+    zoneDefaults(): Promise<unknown>;
     /** Point a zone at a different configuration index. */
     assignZoneConfig(name: string, index: number): Promise<BridgeCommandResult>;
     /** Rename a zone. */
