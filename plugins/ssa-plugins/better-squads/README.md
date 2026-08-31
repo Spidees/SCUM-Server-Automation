@@ -36,9 +36,7 @@ is online, where they are and how far away. Nobody outside the squad ever sees a
 
 ## Requirements
 - The **SSA Bridge** plugin (for targeted chat and `/command` interception). It's a dependency.
-- Manager **4.0.3+**. That is what the manifest enforces, so it is what the panel will let you enable
-  — this line used to say 4.0.0, which an owner on 4.0.2 could read as supported and then watch the
-  panel refuse.
+- Manager **5.11.0+**. That is what the manifest enforces, so it is what the panel will let you enable.
 - **Two in-game modules are optional but change what the numbers mean.** Both are off until you turn
   them on, in **Settings → Bridge**:
   - **Read live player data** with **Position, facing and speed** (Live data) — makes `{distance}` and
@@ -81,15 +79,14 @@ Everything is configured from the plugin's **admin tab** (👥 Better Squads):
   delivered says so rather than leaving the player looking at a command that appeared to be ignored.
 - **"Reached nobody" is its own number.** *Suppressed* means the plugin chose not to send — quiet
   hours, a cooldown, the rate limit. *Reached nobody* means it tried and the squad got nothing, which
-  is a different problem needing a different fix. Those used to be counted as **sent**, so the panel
-  disagreed with what players saw and the only trace was a debug line.
+  is a different problem needing a different fix. Counting them together would make the panel
+  disagree with what players saw.
 - **The "Silenced by players" list includes people who are offline.** A player silences their alerts
   in game and the setting keeps working while they are away — so listing only who was online meant
   the one person most likely to ask you to undo it, from Discord, was the one you could not see.
 - **`{killer}` names what killed them, not its class.** A kill by anything that is not a player
-  carries a spawn class with its instance number attached — `BP_Guard_Lvl_5_C_2146943462` — and the
-  squad used to read that. It now reads *Guard (Lvl 5)*, through the same name rule the manager's own
-  kill feed uses. A **player** name is deliberately left alone by that rule wherever it appears, so
+  carries a spawn class with its instance number attached — `BP_Guard_Lvl_5_C_2146943462`. The squad
+  reads *Guard (Lvl 5)* instead, through the same name rule the manager's own kill feed uses. A **player** name is deliberately left alone by that rule wherever it appears, so
   somebody who calls themselves `Wolf_C_12` is still called that on every line. Needs manager **5.2**;
   older ones print what they always did.
 - Players not in a squad generate nothing — there is nobody to tell.

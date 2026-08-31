@@ -371,13 +371,21 @@ export interface Host {
      */
     eventWatches(): Promise<Record<string, any> | null>;
 
-    /** Bases, the server-wide flag rules, and which flags are protected. */
+    /** Bases, the server-wide flag rules, and the flags the game holds a raid-protection entry for. */
     bases(): Promise<Record<string, any> | null>;
     /**
-     * The flag ids with raid protection ACTIVE right now — no other source has this.
+     * The flag ids the game is holding a raid-protection entry for. No other source has this.
      *
-     * `[]` genuinely means nothing is protected; `null` means the question could not be answered.
-     * A rule that reads the second as the first will let somebody raid a protected base.
+     * Being on that list is not the same as protection that is running: a flag can sit on it with a
+     * zero window. It answers whether the game holds an entry, never for how long, and the packed
+     * number beside each id has no documented layout, so it is reported raw and is not a duration in
+     * any unit. For "is protection running right now", read `base_raid_protection` in the save.
+     *
+     * These are base ELEMENT ids, a different id space from the `baseId` values `bases()` carries.
+     * Joining the two needs the database.
+     *
+     * `[]` means the game is holding no entries at all; `null` means the question could not be
+     * answered. A rule that reads the second as the first will let somebody raid a protected base.
      */
     protectedFlags(): Promise<number[] | null>;
 
@@ -589,7 +597,8 @@ export interface Host {
      * bridge passes both through unchanged and interprets nothing.
      *
      * The failure mode is not a wrong reading: it is a base losing its protection permanently,
-     * because the value is written into the save. There is no read-back beyond `protectedFlags()`.
+     * because the value is written into the save. There is no read-back beyond `protectedFlags()`,
+     * which answers whether the game holds an entry for the flag and not what that entry says.
      *
      * These are per-player channel calls, so an offline-protection rule firing as the LAST player
      * disconnects will find no channel. That is the game's API shape, not a bridge limitation.
@@ -2364,10 +2373,16 @@ export interface Host {
     // Read-only by design — **to CHANGE a flag's window use `setProtection()` / `resetProtection()`**.
     // This family watches, so a rule can react to a window opening or lapsing rather than polling.
     //
-    // The load-bearing rule of the whole feature: `[]` means nothing is protected, a failure means the
-    // question could not be answered, and code that confuses them lets somebody raid a protected base.
-    // A census that fails produces a recorded GAP and touches nothing — treating an unreadable list as
-    // an empty one would announce that every protected base on the server had just lapsed.
+    // The load-bearing rule of the whole feature: `[]` means the game is holding NO raid-protection
+    // entries at all, a failure means the question could not be answered, and code that confuses them
+    // lets somebody raid a protected base. A census that fails produces a recorded GAP and touches
+    // nothing, because treating an unreadable list as an empty one would announce that every base on
+    // the server had just dropped off the list.
+    //
+    // Being on that list is not the same as protection that is running: a flag can sit on it with a
+    // zero window. So an entry arriving or going away is a change in what the game HOLDS, and whether
+    // the protected window itself started or ended is a separate question the running game does not
+    // answer. Settle that against `base_raid_protection` in the save.
 
     /** Which raid-protection mode the server is in, read TWO independent ways, with `agrees` when both
      *  are known. */
@@ -2375,7 +2390,8 @@ export interface Host {
     /** The server's raid-protection settings, as the game's own text. Ten reflected calls — meant to
      *  be asked rarely. A setting that could not be read is absent, never blank. */
     protectionRules(): Promise<Record<string, any> | null>;
-    /** The protection list as the last census saw it, with each flag's raw packed change stamp. */
+    /** The entry list as the last census saw it, with each flag's raw packed change stamp. The stamp
+     *  is reported and never interpreted: it is not a duration in any unit. */
     protectionState(): Promise<Record<string, any> | null>;
     /** Protection windows that began, lapsed or changed since the module started watching — plus
      *  `gap` entries where a census could not be taken, and a change on the far side of a gap may

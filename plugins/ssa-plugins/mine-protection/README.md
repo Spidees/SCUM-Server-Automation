@@ -39,7 +39,8 @@ mine is armed in the open, the placer is teleported onto their own armed mine �
     inside their new teammate's base.
   With either switched off the plugin behaves exactly as it always has and **says so on its own tab**,
   in the module's own words — it never silently falls back.
-- Manager **5.0.3+**. Not a formality: before 5.0.3 the manager answered "is this mine inside its
+- Manager **5.11.0+**, which is what the manifest enforces. The floor is not a formality: before
+  5.0.3 the manager answered "is this mine inside its
   placer's flag?" with a plain yes/no, and a moment when the game database could not be read came
   back as **no**. This plugin acts on a no by teleporting somebody onto a live mine. From 5.0.3 that
   question has a third answer — *cannot say* — and the plugin waits for the next scan instead.
@@ -62,17 +63,16 @@ Everything is configured from the plugin's **admin tab** (💣 Mine Protection):
 - **Placed mines (live)** — a table of every watched mine on the server right now: who armed it,
   where, whether it’s inside a flag, its enforcement status and that player’s offence count. Two of
   those can be **unknown** rather than yes or no — *Armed state unknown* and *Flag unknown* — and the
-  table now says so instead of showing them as “not armed” and “outside the flag”. Those rows are
-  exactly the ones the plugin is declining to act on, so they used to read as an offence that never
-  got enforced.
+  table says so rather than showing them as “not armed” and “outside the flag”. Those rows are
+  exactly the ones the plugin is declining to act on, so reading them as a plain no would look like
+  an offence that never got enforced.
 - **Recent actions** — a live feed of every warning/teleport, with buttons to reset warnings or clear
   the history.
 
 ## Good to know
 - **Offences can be forgiven one player at a time.** The count only ever goes up, and *Reset
-  warnings* clears everybody — so forgiving one person used to mean forgiving all of them, and in
-  practice nobody was. Each row in the mines table now has its own **Forgive**, which gives that
-  player their warnings back and leaves every other record intact.
+  warnings* clears everybody, which is rarely what you want. Each row in the mines table has its own
+  **Forgive**: it gives that player their warnings back and leaves every other record intact.
 - **A warning only counts once it has arrived.** If the player is not there to read it, the mine is
   left for the next scan instead of being marked dealt with — otherwise their *next* mine would get
   the real punishment for a warning they never saw, which is exactly what warning first exists to

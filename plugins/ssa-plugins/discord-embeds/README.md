@@ -59,8 +59,7 @@ like the built-in status board but yours.
 
 ## Requirements
 - The Discord bot must be configured and running.
-- Manager **4.0.7+**. The manifest enforces this, and the README used to promise 4.0.5 — an owner on
-  4.0.5 read that it was supported and then watched the panel refuse to enable it.
+- Manager **5.11.0+**. That is what the manifest enforces, so it is what the panel will let you enable.
 - The **SSA Bridge**, for click actions that run an in-game command. Without it those buttons answer
   "command failed" with nothing explaining why, so it is a declared dependency and installs with the
   plugin. Everything else — posting, editing, live embeds — works without it.

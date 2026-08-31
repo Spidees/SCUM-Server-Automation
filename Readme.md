@@ -52,9 +52,22 @@ More screenshots and a live demo on [**scumsa.com**](https://scumsa.com).
 
 ## ⬇ Download
 
-The latest manager build lives in [**`manager/`**](manager) — grab the `.zip`, unpack it, and follow the [Getting started guide](https://scumsa.com/docs). The always-current release and full changelog are on [scumsa.com](https://scumsa.com).
+The manager lives in [**`manager/`**](manager) — grab the `.zip`, unpack it, and follow the [Getting started guide](https://scumsa.com/docs). The always-current release and full changelog are on [scumsa.com](https://scumsa.com).
 
-> **What's in this repository.** This is the public home for the SSA **plugins**, developer **examples**, and the latest manager **release**. The manager's own source is closed — everything you need to *run* a server is the release here plus [scumsa.com](https://scumsa.com).
+Two kinds of build sit there, and the filename tells you which:
+
+| | |
+|---|---|
+| `SCUM-Server-Automation-v<x>.zip` | the **stable** release. This is the one to run a real server on. |
+| `unstable_SCUM-Server-Automation-v<x>.zip` | a **test build**, newer and less proven. Take it if you want to try something early or help find problems — not for a server you care about. The manager only ever updates itself to a test build if you opt in, and it never downgrades you back. |
+
+### 🔌 The SSA Bridge, on its own
+
+[**`ssa_bridge/`**](ssa_bridge) holds the **SSA Bridge** as a standalone download: the in-game mod that lets anything talk to a running SCUM server — spawns, teleports, admin commands, and reads of the live world that no log file and no save can give you.
+
+**It is free, and it does not need the manager.** Every module, every command and every read works on its own; unpack it into your server's `SCUM/Binaries/Win64/` and it runs. UE4SS is in the archive, so there is nothing else to fetch. A licence changes exactly one thing: whether joining players see a single chat line naming the bridge.
+
+> **What's in this repository.** The public home for the SSA **plugins**, developer **examples**, the manager **release** and the **bridge**. The manager's own source is closed — everything you need to *run* a server is here plus [scumsa.com](https://scumsa.com).
 
 ---
 
@@ -64,12 +77,12 @@ Plugins extend the manager — new admin screens, Discord tools, in-game rewards
 
 | | Plugin | What it does |
 |---|---|---|
-| <img src="plugins/ssa-plugins/ck-plugin/icon.png" width="34"> | [**Chat Commands & Kits**](plugins/ssa-plugins/ck-plugin) | Custom in-game `/commands` and reward kits & packs — teleports, currency, spawns and full containers, with tokens, costs, cooldowns and per-player limits. |
-| <img src="plugins/ssa-plugins/vehicle-rental/icon.png" width="34"> | [**Vehicle Rental System**](plugins/ssa-plugins/vehicle-rental) | Players rent vehicles straight from your Discord bot — pick one, pay in money or gold, and the bot spawns it and runs the whole lifecycle (reminders, extensions, auto-removal). |
-| <img src="plugins/ssa-plugins/mine-protection/icon.png" width="34"> | [**Mine Protection**](plugins/ssa-plugins/mine-protection) | Punishes players who arm mines or traps outside their own (or their squad's) flag area — squad-aware, and it teleports the offender onto their own mine. |
-| <img src="plugins/ssa-plugins/env-plugin/icon.png" width="34"> | [**Environment Control**](plugins/ssa-plugins/env-plugin) | Tune how fast players get wet, dry off and get dirty with simple multipliers — make survival harsher or more forgiving. *(in-game UE4SS mod)* |
-| <img src="plugins/ssa-plugins/embed-editor/icon.png" width="34"> | [**Discord Embed Editor**](plugins/ssa-plugins/embed-editor) | A visual Discord embed & button builder with a live preview — use it standalone, or let other plugins drop it into their own settings. |
-| <img src="plugins/ssa-plugins/embed-styler/icon.png" width="34"> | [**Embed Styler**](plugins/ssa-plugins/embed-styler) | Restyle the manager's *own* Discord embeds (kill feed, economy, status, leaderboard…) and build your own auto-updating live embeds. |
+| <img src="plugins/ssa-plugins/commands-kits/icon.png" width="34"> | [**Chat Commands & Kits**](plugins/ssa-plugins/commands-kits) | Custom in-game `/commands` that reply and run admin actions — teleports, currency, spawns, weather — plus reward kits and packs, with live tokens, costs, cooldowns and per-player limits. |
+| <img src="plugins/ssa-plugins/better-squads/icon.png" width="34"> | [**Better Squads**](plugins/ssa-plugins/better-squads) | Squad-only chat in game, and alerts when a squadmate connects, dies, gets a kill, has their base raided or the roster changes. Every line is a template with live tokens, including the sector and the reader's own distance and direction. |
+| <img src="plugins/ssa-plugins/discord-embeds/icon.png" width="34"> | [**Discord Embeds**](plugins/ssa-plugins/discord-embeds) | Everything Discord-embed in one place: write a message with a live preview that renders real markdown, your own emoji and live server data, send it and edit it in place afterwards — and restyle the manager's own embeds while you are there. |
+| <img src="plugins/ssa-plugins/vehicle-rental/icon.png" width="34"> | [**Vehicle Rental System**](plugins/ssa-plugins/vehicle-rental) | Players rent vehicles from in-game chat or a Discord menu — pick one, choose a duration, pay in money or gold, and it is spawned beside them with the whole lifecycle run for you: reminders, extensions, auto-removal. |
+| <img src="plugins/ssa-plugins/mine-protection/icon.png" width="34"> | [**Mine Protection**](plugins/ssa-plugins/mine-protection) | Punishes players who arm a mine or trap outside their own (or their squad's) flag area — squad-aware, escalating, and it teleports the offender onto their own armed mine. |
+| <img src="plugins/ssa-plugins/env-plugin/icon.png" width="34"> | [**Environment Control**](plugins/ssa-plugins/env-plugin) | Tune how fast players and their clothes get wet, dry off and get dirty with simple multipliers — make survival harsher or more forgiving. *(in-game UE4SS mod)* |
 
 Browse and get them in-app, or on the [Plugins page at scumsa.com](https://scumsa.com/plugins.php).
 
