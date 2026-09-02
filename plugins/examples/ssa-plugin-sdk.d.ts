@@ -2026,8 +2026,8 @@ export interface Host {
      *  `active: false` — "this base had an ambush and it is over" is not "this base never had one". */
     encounterBases(): Promise<Record<string, any> | null>;
     /**
-     * The last encounter capture an admin's own in-game command produced. **Passive and possibly
-     * stale** — the bridge cannot trigger it.
+     * The last encounter capture an in-game command produced. **Possibly stale** — call
+     * `drawNearbyEncounters()` to ask the game to refresh it, then read this.
      *
      * `seen: false` (nobody has ever run it) and `seen: true` with an empty list (an admin asked and
      * there was nothing) are DIFFERENT answers: collapsing them turns "we have not looked" into "we
