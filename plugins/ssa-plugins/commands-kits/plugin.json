@@ -2,7 +2,7 @@
   "id": "commands-kits",
   "name": "Chat Commands & Kits",
   "type": "manager",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "updated": "2026-08-07",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
@@ -10,7 +10,7 @@
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
-  "minManagerVersion": "5.11.0",
+  "minManagerVersion": "5.13.0",
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",

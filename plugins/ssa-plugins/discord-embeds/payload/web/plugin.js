@@ -12,7 +12,21 @@
    • Embedded in another plugin (no `standalone`), it stays a compact editor: no tabs, no send, no
      history — that host has its own save button and its own page. */
 (function () {
-  var EE_API = '/api/plugin-host/discord-embeds';
+  // The manager's own client, not a hand-rolled fetch wrapper. The wrapper this replaced swallowed a
+  // failure TWICE — `r.json().catch(() => ({}))` ate a body that was not JSON, and there was no
+  // `.catch` on the fetch at all, so a dropped connection REJECTED with nothing to handle it — and
+  // it only read `r.ok` for the STYLER half below; this half handed back the parsed body regardless
+  // of status. A 401, a 500 and a genuinely empty list all arrived here as ordinary data, which is
+  // how a session expiring came out the same as "there are no channels yet".
+  //
+  // `SSA.apiClient()` is captured HERE, at the top of the script, because `SSA.api` resolves the
+  // calling plugin at CALL TIME and the SDK only knows who is asking inside a synchronous stretch it
+  // started itself — a render, not a poll tick, a click or a `.then`, which is every real call in
+  // this file. Both IIFEs in this file capture their own copy; they still resolve to the same
+  // plugin id, since both live in the same script.
+  var api = SSA.apiClient();
+  // One sentence for a failure, the route's own words first. Used by every catch in this file.
+  function why(err) { return SSA.apiError(err); }
   // Shared by all three tabs (they live in two separate IIFEs), so the module identifies itself the
   // same way wherever you land. Before, one tab had an <h2> and the other two had a bare paragraph,
   // which made the module look like it started and stopped depending on where you clicked.
@@ -21,20 +35,6 @@
       + '<span class="ee-head-sep">/</span><span class="ee-head-s">' + tab + '</span></div>'
       + (sub ? '<p class="ee-head-p">' + sub + '</p>' : '') + '</div>';
   };
-  function api(path, opts) {
-    opts = opts || {};
-    var init = Object.assign({ credentials: 'same-origin' }, opts);
-    if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(EE_API + path, init).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (body) {
-        // The STATUS matters. Collapsing every response to its body turned a 401 after the session
-        // expired into an empty object, which the styler tab then reported as "the backend isn't
-        // loaded yet — restart the manager". That is advice to take a live server down over a cookie.
-        if (!r.ok) return { _httpError: r.status, error: (body && body.error) || ('HTTP ' + r.status) };
-        return body;
-      });
-    });
-  }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -129,6 +129,12 @@
     brandingReq.then(function (b) {
       if (b && b.text) brandFooter = { text: b.text, icon_url: b.icon_url || '' };
       then();
+    }).catch(function () {
+      // Decorative only — the preview simply shows no footer until this succeeds. Forget the
+      // request rather than cache the rejection, so the NEXT editor mount tries again instead of
+      // failing silently for the rest of the session over one dropped request.
+      brandingReq = null;
+      then();
     });
   }
 
@@ -155,12 +161,18 @@
       tokens.forEach(function (tk) { if (tk && tk.t) sampleMap[tk.t] = tk.sample != null ? String(tk.sample) : ''; });
     }
     indexTokens();
-    var tokensReady = false;
+    var tokensReady = false, tokensLoadErr = null;
     // Re-fetched, not fetched once: the samples carry the server's CURRENT numbers, so a preview
     // left open would otherwise keep showing the online count from when the tab was opened.
+    //
+    // A failure here is deliberately NOT surfaced as a blocking error: `tokens` keeps whatever it
+    // already had (a host's own tokens, or an earlier successful fetch), so the editor stays fully
+    // usable — this only means the {token} picker's live samples stop refreshing. `tokensLoadErr`
+    // is what lets the picker itself say so, rather than reading a stale or empty list as "that's
+    // everything there is".
     function loadTokens() {
       return api('/tokens').then(function (list) {
-        tokensReady = true;
+        tokensReady = true; tokensLoadErr = null;
         if (!Array.isArray(list) || !list.length) return;
         var byName = {};
         tokens.forEach(function (t) { if (t && t.t) byName[t.t] = t; });
@@ -173,7 +185,7 @@
         });
         indexTokens();
         renderPreview();
-      }).catch(function () { tokensReady = true; });
+      }).catch(function (err) { tokensReady = true; tokensLoadErr = why(err); });
     }
     loadTokens();
     var tokTimer = setInterval(loadTokens, 20000);
@@ -313,7 +325,7 @@
       return _std;
     }
 
-    var _custom = null;
+    var _custom = null, _customErr = null;
     function emojiPop(input) {
       var wrap = h('div', {});
       var tabs = h('div', { class: 'ee-chips' });
@@ -351,7 +363,13 @@
           grid.appendChild(b);
         });
         body.appendChild(grid);
-        if (!list.length) body.appendChild(h('div', { class: 'ee-empty' }, _custom === null ? 'Loading…' : (q ? 'Nothing matches.' : 'This Discord server has no custom emoji.')));
+        // A load that failed must not read as "this Discord server simply has none" — that is a
+        // fact about the SERVER, and the truth here is about the REQUEST.
+        if (!list.length) {
+          body.appendChild(h('div', { class: 'ee-empty' }, _custom === null ? 'Loading…'
+            : _customErr ? ('Could not load custom emoji — ' + _customErr)
+              : (q ? 'Nothing matches.' : 'This Discord server has no custom emoji.')));
+        }
       }
 
       function draw() {
@@ -363,7 +381,17 @@
         if (mode === 'std') drawStd(); else drawCustom();
       }
       search.addEventListener('input', function () { if (mode === 'srv') drawCustom(); });
-      if (_custom === null) api('/emojis').then(function (l) { _custom = Array.isArray(l) ? l : []; if (mode === 'srv') drawCustom(); });
+      if (_custom === null) {
+        api('/emojis').then(function (l) {
+          _custom = Array.isArray(l) ? l : []; _customErr = null;
+          if (mode === 'srv') drawCustom();
+        }).catch(function (err) {
+          // Land on an empty (rather than still-null) list so the grid stops saying "Loading…"
+          // forever, and keep the reason so drawCustom() can say what actually happened.
+          _custom = []; _customErr = why(err);
+          if (mode === 'srv') drawCustom();
+        });
+      }
       draw();
       wrap.appendChild(tabs);
       wrap.appendChild(body);
@@ -426,7 +454,9 @@
             onclick: function () { insertInto(input, '{' + tk.t + '}'); } },
           [h('b', {}, tk.label || tk.t),
             (full || note) ? h('span', {}, (full.length > 40 ? full.slice(0, 40) + '…' : full) + note) : null]);
-        }, { perPage: 60, empty: tokensReady ? 'Nothing matches.' : 'Loading live data…' }));
+        }, { perPage: 60, empty: !tokensReady ? 'Loading live data…'
+          : tokensLoadErr && !matches.length ? ('Could not load live data — ' + tokensLoadErr)
+            : 'Nothing matches.' }));
       }
       search.addEventListener('input', draw);
       draw();
@@ -488,8 +518,13 @@
       var tmr = null;
       function run() {
         grid.innerHTML = '<span class="ee-empty">Searching…</span>';
+        // This is a PANEL route, not a plugin one, so it goes through a plain fetch rather than
+        // apiClient — but it is a real picker, and `r.json()` resolves for a 4xx/5xx just as happily
+        // as for a 200. Without the status check a refused search reads as "nothing found" instead
+        // of "this could not be asked", exactly the confusion the rest of this file is being fixed
+        // to avoid.
         fetch('/api/public/items?domain=' + encodeURIComponent(domain) + '&q=' + encodeURIComponent(search.value.trim()), { credentials: 'same-origin' })
-          .then(function (r) { return r.json(); })
+          .then(function (r) { if (!r.ok) throw new Error('http_' + r.status); return r.json(); })
           .then(function (d) {
             var list = (d && d.items) || [];
             grid.innerHTML = '';
@@ -505,7 +540,7 @@
               ]);
             }, { empty: 'Nothing found.' });
             if (pagerBox) pagerBox.appendChild(pager);
-          }).catch(function () { grid.innerHTML = '<span class="ee-empty">Search failed.</span>'; });
+          }).catch(function () { grid.innerHTML = '<span class="ee-empty">Search failed — try again.</span>'; });
       }
       DOMAINS.forEach(function (d) {
         chips.appendChild(h('button', { class: 'ee-chip' + (d[0] === domain ? ' active' : ''), type: 'button',
@@ -1023,6 +1058,13 @@
       chanSel.innerHTML = '';
       chanSel.appendChild(h('option', { value: '' }, list && list.length ? '— pick a channel —' : 'No channels (bot offline?)'));
       (list || []).forEach(function (c) { chanSel.appendChild(h('option', { value: c.id }, '#' + c.name)); });
+    }).catch(function (err) {
+      // An empty dropdown that failed to load must not read as "there are no channels" — that is a
+      // sentence about the DISCORD SERVER, and the truth here is that this could not be asked at
+      // all. Without this the box was left on "Loading channels…" forever, on a rejected promise
+      // nothing here ever caught.
+      chanSel.innerHTML = '';
+      chanSel.appendChild(h('option', { value: '' }, 'Could not load channels — ' + why(err)));
     });
 
     var sendStatus = h('span', { class: 'ee-empty' });
@@ -1059,6 +1101,11 @@
       sendStatus.textContent = editing ? 'Updating…' : 'Sending…';
       api(editing ? '/edit' : '/send', { method: 'POST', body: body }).then(function (r) {
         sendStatus.textContent = (r && r.ok) ? (editing ? 'Updated ✓' : 'Sent ✓') : ('Failed' + (r && r.error ? ': ' + r.error : ''));
+      }).catch(function (err) {
+        // A rejected request is not the 200-with-refusal `Failed:` above — it never reached Discord
+        // at all, and the sentence has to lead with what did NOT happen: nothing was sent or
+        // updated, whatever this screen showed a moment ago is still what Discord has.
+        sendStatus.textContent = (editing ? 'NOT updated' : 'NOT sent') + ' — ' + why(err);
       });
     });
     // Adopt a message this editor never sent — paste its link (or its id). Right-click a message
@@ -1082,7 +1129,7 @@
         setEditing({ messageId: r.messageId, channelId: r.channelId, channelName: '', sentAt: r.sentAt, title: r.embed.title || '' });
         var v2 = r.embed; v2.content = r.content || '';
         editor.setValue(v2);
-      });
+      }).catch(function (err) { loadStatus.textContent = 'Could not load it — ' + why(err); });
     });
 
     undoBtn = h('button', { class: 'ee-btn', type: 'button', title: 'Undo (Ctrl+Z)', onclick: doUndo }, '↶ Undo');
@@ -1116,7 +1163,7 @@
       } }).then(function (r) {
         schedStatus.textContent = (r && r.ok) ? 'Scheduled ✓' : ('Failed' + (r && r.error ? ': ' + r.error : ''));
         if (r && r.ok) loadScheduled();
-      });
+      }).catch(function (err) { schedStatus.textContent = 'NOT scheduled — ' + why(err); });
     });
 
     form.appendChild(sec('Send', [
@@ -1130,7 +1177,20 @@
 
     // Templates — its own page.
     var tplPane = h('div', { class: 'ee-page' });
+    // Where a failed load of this page's own list goes. Without this the pane sat on whatever it
+    // last showed — nothing, on the first visit — with no way back short of reloading the whole
+    // panel, because a rejected `api('/templates')` had nothing downstream of it to catch it.
+    function tplLoadFailed(err) {
+      tplPane.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'ee-btn', onclick: loadTpls }, 'Try again');
+      tplPane.appendChild(h('div', { class: 'ee-empty' }, [
+        document.createTextNode('This list could not load — ' + why(err) + ' '),
+        retry,
+      ]));
+    }
     function loadTpls() {
+      tplPane.innerHTML = '';
+      tplPane.appendChild(h('div', { class: 'ee-empty' }, 'Loading…'));
       api('/templates').then(function (t) {
         t = t || {};
         tplPane.innerHTML = '';
@@ -1140,7 +1200,12 @@
         var tq = h('input', { class: 'es-search', type: 'search', placeholder: 'Search templates…' });
         var tCount = h('span', { class: 'ee-empty' }, names.length + ' saved');
         tplPane.appendChild(h('div', { class: 'ee-actions' }, [
-          h('button', { class: 'ee-btn primary', type: 'button', onclick: function () { var n = prompt('Save the current embed as:'); if (n) api('/templates', { method: 'POST', body: { name: n, data: clone(model) } }).then(loadTpls); } }, 'Save current embed'),
+          h('button', { class: 'ee-btn primary', type: 'button', onclick: function () {
+            var n = prompt('Save the current embed as:');
+            if (!n) return;
+            api('/templates', { method: 'POST', body: { name: n, data: clone(model) } }).then(loadTpls)
+              .catch(function (err) { try { SSA.toast('NOT saved — ' + why(err), 'error'); } catch (e) {} });
+          } }, 'Save current embed'),
           tq,
           tCount,
         ]));
@@ -1150,7 +1215,11 @@
           var row = h('div', { class: 'ee-hrow' }, [
             h('div', { class: 'ee-hmain' }, [h('b', {}, n), h('span', { class: 'ee-hmeta' }, (t[n] && t[n].title) || '(no title)')]),
             h('button', { class: 'ee-btn', type: 'button', onclick: function () { editor.setValue(t[n]); } }, 'Load'),
-            h('button', { class: 'ee-btn danger', type: 'button', onclick: function () { if (confirm('Delete "' + n + '"?')) api('/templates/delete', { method: 'POST', body: { name: n } }).then(loadTpls); } }, '✕'),
+            h('button', { class: 'ee-btn danger', type: 'button', onclick: function () {
+              if (!confirm('Delete "' + n + '"?')) return;
+              api('/templates/delete', { method: 'POST', body: { name: n } }).then(loadTpls)
+                .catch(function (err) { try { SSA.toast('NOT deleted — ' + why(err), 'error'); } catch (e) {} });
+            } }, '✕'),
           ]);
           // The name AND the embed's own title: people look for either.
           row.dataset.find = (n + ' ' + ((t[n] && t[n].title) || '')).toLowerCase();
@@ -1174,7 +1243,7 @@
             h('button', { class: 'ee-btn', type: 'button', onclick: function () { try { editor.setValue(JSON.parse(ta.value)); } catch (e) { alert('Invalid JSON'); } } }, 'Import'),
           ])];
         })())]));
-      });
+      }).catch(tplLoadFailed);
     }
 
     // Sent messages — its own page.
@@ -1194,16 +1263,27 @@
             h('button', { class: 'ee-btn', type: 'button', title: 'Load a copy into the editor',
               onclick: function () { setEditing(null); editor.setValue(it.data.embed || {}); } }, 'Copy'),
             h('button', { class: 'ee-btn danger', type: 'button', title: 'Cancel it',
-              onclick: function () { api('/scheduled/delete', { method: 'POST', body: { id: it.id } }).then(loadScheduled); } }, '✕'),
+              onclick: function () {
+                api('/scheduled/delete', { method: 'POST', body: { id: it.id } }).then(loadScheduled)
+                  .catch(function (err) { try { SSA.toast('NOT cancelled — ' + why(err), 'error'); } catch (e) {} });
+              } }, '✕'),
           ]));
         });
+      }).catch(function (err) {
+        // This box sits above the "Nothing sent yet." panel loadHistory draws — a failure here must
+        // say so on its own rather than leaving whatever it last showed (nothing, on the first
+        // visit) looking like "there is nothing scheduled".
+        schedBox.innerHTML = '';
+        schedBox.appendChild(h('div', { class: 'ee-empty' }, 'Could not load scheduled messages — ' + why(err) + '.'));
       });
     }
     var histBox = h('div', {});
     function loadHistory() {
+      histBox.innerHTML = '';
+      histBox.appendChild(h('div', { class: 'ee-empty' }, 'Loading…'));
       api('/history').then(function (list) {
         histBox.innerHTML = '';
-        if (!list || !list.length) { histPane.appendChild(h('div', { class: 'ee-empty' }, 'Nothing sent yet.')); return; }
+        if (!list || !list.length) { histBox.appendChild(h('div', { class: 'ee-empty' }, 'Nothing sent yet.')); return; }
         // This list only grows, and it is the one place an owner comes to find a message they sent
         // last week. Scrolling for it is not a way to find anything. Matches the title and the
         // channel, which is how somebody actually remembers a message.
@@ -1212,7 +1292,11 @@
         histBox.appendChild(h('div', { class: 'ee-actions' }, [
           hCount,
           hq,
-          h('button', { class: 'ee-btn', type: 'button', onclick: function () { if (confirm('Clear the list? Messages in Discord are not touched.')) api('/history/clear', { method: 'POST', body: {} }).then(loadHistory); } }, 'Clear list'),
+          h('button', { class: 'ee-btn', type: 'button', onclick: function () {
+            if (!confirm('Clear the list? Messages in Discord are not touched.')) return;
+            api('/history/clear', { method: 'POST', body: {} }).then(loadHistory)
+              .catch(function (err) { try { SSA.toast('NOT cleared — ' + why(err), 'error'); } catch (e) {} });
+          } }, 'Clear list'),
         ]));
         hq.addEventListener('input', function () {
           var n = hq.value.trim().toLowerCase();
@@ -1240,7 +1324,16 @@
               onclick: function () {
                 if (!confirm('Delete that message in Discord?')) return;
                 api('/delete', { method: 'POST', body: { channelId: entry.channelId, messageId: entry.messageId } })
-                  .then(function () { if (editing && editing.messageId === entry.messageId) setEditing(null); loadHistory(); });
+                  .then(function (r) {
+                    // A 200 that itself refuses (the route answers `{ok:false}`) must not be treated
+                    // as a deletion any more than a rejected request is — Discord still has the
+                    // message, so `editing` must not be cleared and the list must not be reloaded as
+                    // if it were gone.
+                    if (r && r.ok === false) { try { SSA.toast('NOT deleted — ' + (r.error || 'the manager did not say why'), 'error'); } catch (e) {} return; }
+                    if (editing && editing.messageId === entry.messageId) setEditing(null);
+                    loadHistory();
+                  })
+                  .catch(function (err) { try { SSA.toast('NOT deleted — ' + why(err), 'error'); } catch (e) {} });
               } }, '✕'),
           ]);
           // What the row can be found by — title and channel, lower-cased once here rather than on
@@ -1249,6 +1342,13 @@
           box.appendChild(row);
         });
         histBox.appendChild(box);
+      }).catch(function (err) {
+        histBox.innerHTML = '';
+        var retry = h('button', { type: 'button', class: 'ee-btn', onclick: loadHistory }, 'Try again');
+        histBox.appendChild(h('div', { class: 'ee-empty' }, [
+          document.createTextNode('This list could not load — ' + why(err) + ' '),
+          retry,
+        ]));
       });
     }
 
@@ -1304,20 +1404,17 @@
    and design the style overrides with the editor above (same plugin). Saves all
    kinds at once; changes apply to the next embed the manager sends. */
 (function () {
-  var API = '/api/plugin-host/discord-embeds';
-  function api(p, opts) {
-    opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
-    if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (body) {
-        // The STATUS matters. Collapsing every response to its body turned a 401 after the session
-        // expired into an empty object, which the styler tab then reported as "the backend isn't
-        // loaded yet — restart the manager". That is advice to take a live server down over a cookie.
-        if (!r.ok) return { _httpError: r.status, error: (body && body.error) || ('HTTP ' + r.status) };
-        return body;
-      });
-    });
-  }
+  // Same client, same reasoning as the editor half's own copy above: `SSA.apiClient()` captured
+  // here at the top of this IIFE, because this half resolves to the same plugin id but is a
+  // separate scope with its own set of call sites. The fetch wrapper this replaced had the
+  // identical pair of holes — a body that was not JSON swallowed by `r.json().catch(() => ({}))`,
+  // and no `.catch` on the fetch itself, so a dropped connection rejected with nothing downstream
+  // to catch it. It DID read `r.ok`, which is why the old comment below could tell the 401 story —
+  // but a network failure still went unhandled, and the `_httpError` sentinel it used is gone now
+  // that a failure REJECTS instead of resolving to a tagged object.
+  var api = SSA.apiClient();
+  // One sentence for a failure, the route's own words first. Used by every catch in this IIFE.
+  function why(err) { return SSA.apiError(err); }
   // What to put next to the Save button. A refused save must not read like a saved one — and the one
   // refusal that costs work (another tab saved first) says what to do about it in a toast as well,
   // because the small grey status line beside the button is easy to miss.
@@ -1327,8 +1424,8 @@
       try { SSA.toast(r.error, 'error'); } catch (e) { /* toast optional */ }
       return 'NOT saved — another tab saved first. Reload the page.';
     }
-    var why = (r && r.error) ? String(r.error) : '';
-    return why ? ('Save failed — ' + why) : 'Save failed';
+    var reason = (r && r.error) ? String(r.error) : '';
+    return reason ? ('Save failed — ' + reason) : 'Save failed';
   }
 
   // Saving runs the same limit check Send does — and always answers with a promise, so a caller can
@@ -1384,6 +1481,14 @@
     if (!owner) return;
     owner.actions = owner.actions || {};
     actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '\u26a1 Click actions'));
+    // `roles.loadError` is set by the /roles catch below when the dropdown could not be read at
+    // all \u2014 an empty "Who" list that just falls back to "Anyone can use it" must say so, or a
+    // failed request reads identically to a Discord server that genuinely has no roles.
+    if (roles && roles.loadError) {
+      actionsBox.appendChild(h('p', { class: 'ce-act-note' },
+        '\u26a0 Could not load this Discord server\u2019s roles \u2014 ' + roles.loadError
+        + ' Only \u201cAnyone can use it\u201d is offered until this succeeds; reopen this tab to try again.'));
+    }
     collidingIds(siblings, owner).forEach(function (d) {
       actionsBox.appendChild(h('p', { class: 'ce-act-note' },
         '\u26a0 Custom ID \u201c' + d.cid + '\u201d is used by both \u201c' + d.a + '\u201d and \u201c' + d.b + '\u201d. '
@@ -1498,10 +1603,25 @@
     var body = el.querySelector('#es-body');
     var edSvc = SSA.consume('embed-editor');
 
-    api('/config').then(function (cfg) {
-      if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
-      render(cfg || {});
-    });
+    // Where a failed load of this tab's OWN config goes. Without this a thrown request left the
+    // tab reading "Loading…" for ever — a rejection with nothing downstream to catch it — which
+    // reads as slow rather than as broken.
+    function loadFailed(err) {
+      body.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'es-btn', onclick: load }, 'Try again');
+      var w = h('div', { class: 'es-warn' });
+      w.appendChild(document.createTextNode('This tab could not load — ' + why(err) + ' '));
+      w.appendChild(retry);
+      body.appendChild(w);
+    }
+    function load() {
+      body.innerHTML = '<div class="muted">Loading…</div>';
+      api('/config').then(function (cfg) {
+        if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
+        render(cfg || {});
+      }).catch(loadFailed);
+    }
+    load();
 
     function render(cfg) {
       var kinds = cfg.kinds || [];
@@ -1513,14 +1633,13 @@
       var rev = (typeof cfg.rev === 'number') ? cfg.rev : null;
       function imgFor(key) { return configuredImages[key] || liveImages[key] || null; }   // manager-set first, else captured
       body.className = ''; body.innerHTML = '';
+      // A real HTTP failure is caught above now and never reaches here — `cfg` is a genuine 200.
+      // An empty `kinds` on a real response means the styler backend itself has not finished
+      // enabling, which is the one case this message is actually about.
       if (!kinds.length) { (function () {
-        // An expired session answers 401 with valid JSON, which used to land here and advise
-        // restarting the manager — advice that would take a live server down over a cookie.
         body.innerHTML = '';
         var w = h('div', { class: 'es-warn' });
-        w.textContent = (cfg && cfg._httpError)
-          ? 'Could not load: ' + cfg.error + '. Reload the page, and sign in again if it persists.'
-          : 'The styler backend isn’t loaded yet. Restart the manager (or toggle this plugin off and on) to finish enabling it, then reopen this tab.';
+        w.textContent = 'The styler backend isn’t loaded yet. Restart the manager (or toggle this plugin off and on) to finish enabling it, then reopen this tab.';
         body.appendChild(w);
       }()); return; }
       var byKey = {}; kinds.forEach(function (k) { byKey[k.key] = k; });
@@ -1586,7 +1705,12 @@
       // and same backend lookup as the custom embeds' one.
       var actionsBox = h('div', {});
       var roles = [];
-      api('/roles').then(function (l) { roles = Array.isArray(l) ? l : []; drawActions(); }).catch(function () { /* no guild → "Anyone" only */ });
+      api('/roles').then(function (l) { roles = Array.isArray(l) ? l : []; drawActions(); }).catch(function (err) {
+        // A genuinely guild-less bot resolves this route to an empty array on a 200 — it never
+        // reaches this catch. Landing here means the request itself failed, so `roles` staying []
+        // must say why, not just fall back to "Anyone" as if nothing had gone wrong.
+        roles = []; roles.loadError = why(err); drawActions();
+      });
       // This text has to match what applyStyle() really does. It used to end “buttons stay manager
       // controlled”, which stopped being true the moment the send started delivering them — and a note
       // that contradicts the behaviour is worse than no note, because it stops people trying.
@@ -1684,7 +1808,14 @@
           h('button', { class: 'es-btn primary', onclick: function () {
             status.textContent = 'Saving…';
             saveGuard(function () { return api('/config', { method: 'POST', body: { styles: styles, rev: rev } }); })
-              .then(function (r) { status.textContent = saveResult(r, 'Saved ✓ — applies to the next embed'); if (r && typeof r.rev === 'number' && !r.stale) rev = r.rev; });
+              .then(function (r) { status.textContent = saveResult(r, 'Saved ✓ — applies to the next embed'); if (r && typeof r.rev === 'number' && !r.stale) rev = r.rev; })
+              .catch(function (err) {
+                // The sentence STAYS beside the button until the next attempt — a save that never
+                // reached the manager is not a transient notice, and a toast is gone in four
+                // seconds while the owner's unsaved styling is still sitting right here.
+                status.textContent = 'NOT saved — ' + why(err);
+                try { SSA.toast('NOT saved — ' + why(err), 'error'); } catch (e) {}
+              });
           } }, 'Save styles'),
           status,
         ]),
@@ -1702,22 +1833,43 @@
     var edSvc = SSA.consume('embed-editor');
     var channels = [];
     var roles = [];
-    Promise.all([
-      api('/custom').then(function (c) { return c || {}; }),
-      // `api('/channels')`, not a hand-written URL. Routes mount under the MANIFEST id, which is
-      // `discord-embeds`; the old path pointed at `embed-editor`, the plugin this one replaced. It
-      // 404'd, the .catch() swallowed it, and the channel dropdown on this tab was permanently
-      // empty — so no custom live embed could ever be given a channel, and none of them posted.
-      api('/channels').then(function (l) { return Array.isArray(l) ? l : []; }),
-      // Roles for the "who may press this" dropdown. An empty list is fine — the row then offers
-      // only "Anyone can use it", which is what it did before there was a choice at all.
-      api('/roles').then(function (l) { return Array.isArray(l) ? l : []; }),
-    ]).then(function (res) {
-      if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
-      channels = res[1] || [];
-      roles = res[2] || [];
-      render(res[0]);
-    });
+    // Where a failed load of this tab's own data goes — see `loadFailed` below. `/custom` and
+    // `/channels` are load-bearing (there is nothing to show, and nowhere to send it, without
+    // them), so either one rejecting takes the whole tab to its error state, same as any other
+    // "first load" here.
+    function loadFailed(err) {
+      body.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'es-btn', onclick: load }, 'Try again');
+      var w = h('div', { class: 'es-warn' });
+      w.appendChild(document.createTextNode('This tab could not load — ' + why(err) + ' '));
+      w.appendChild(retry);
+      body.appendChild(w);
+    }
+    function load() {
+      body.innerHTML = '<div class="muted">Loading…</div>';
+      Promise.all([
+        api('/custom').then(function (c) { return c || {}; }),
+        // `api('/channels')`, not a hand-written URL. Routes mount under the MANIFEST id, which is
+        // `discord-embeds`; the old path pointed at `embed-editor`, the plugin this one replaced. It
+        // 404'd, the .catch() swallowed it, and the channel dropdown on this tab was permanently
+        // empty — so no custom live embed could ever be given a channel, and none of them posted.
+        api('/channels').then(function (l) { return Array.isArray(l) ? l : []; }),
+        // Roles are a LESSER feature of this tab — only the "who may press this" guard uses them —
+        // so a roles failure degrades to "Anyone can use it" rather than taking the whole tab down
+        // with it, the same reasoning as the built-in tab's own /roles catch above. `.catch` here
+        // (rather than letting it reject into the `Promise.all`) is what keeps `/custom` and
+        // `/channels` from being thrown away over a request that is not actually essential.
+        api('/roles').then(function (l) { return Array.isArray(l) ? l : []; }).catch(function (err) {
+          var arr = []; arr.loadError = why(err); return arr;
+        }),
+      ]).then(function (res) {
+        if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
+        channels = res[1] || [];
+        roles = res[2] || [];
+        render(res[0]);
+      }).catch(loadFailed);
+    }
+    load();
 
     function starterModel() {
       var m = edSvc.defaultModel();
@@ -1796,6 +1948,16 @@
             if (r && r.ok === false) { try { SSA.toast(saveResult(r, ''), 'error'); } catch (e) {} return r; }
             if (cb) cb(r);
             return r;
+          })
+          .catch(function (err) {
+            // A thrown save is not the 200-with-refusal handled above — it never reached the
+            // manager at all — but it must be reported the same way, and `cb` must NOT run: the
+            // caller's continuation (posting, or trusting a local list edit as persisted) must
+            // never fire as if a save the manager never saw had gone through. `saveAll` always
+            // resolves, never rejects, so every caller's own `.then` still runs normally.
+            var msg = 'NOT saved — ' + why(err);
+            try { SSA.toast(msg, 'error'); } catch (e) {}
+            return { ok: false, error: msg };
           });
       }
 
@@ -1814,7 +1976,21 @@
           h('label', { class: 'es-f', style: 'flex:1 1 180px' }, [h('span', {}, 'Embed'), sel]),
           h('label', { class: 'es-f', style: 'flex:1 1 150px' }, [h('span', {}, 'Find'), search]),
           h('button', { class: 'es-btn', onclick: function () { items.push({ id: 'ce_' + Date.now(), name: 'Live status', channelId: '', intervalSec: 60, enabled: true, model: starterModel() }); cur = items.length - 1; search.value = ''; refreshSel(); showOne(); } }, '+ Add'),
-          h('button', { class: 'es-btn', onclick: function () { if (items[cur]) { items.splice(cur, 1); cur = Math.max(0, cur - 1); refreshSel(); showOne(); saveAll(); } } }, 'Remove'),
+          h('button', { class: 'es-btn', onclick: function () {
+            if (!items[cur]) return;
+            // Removed locally right away so the UI feels immediate, but if the save that is
+            // supposed to make it stick never reaches the manager, putting it back is the only way
+            // this list does not quietly diverge from what is actually configured on the server.
+            var removed = items[cur], removedAt = cur;
+            items.splice(cur, 1); cur = Math.max(0, cur - 1);
+            refreshSel(); showOne();
+            saveAll().then(function (r) {
+              if (r && r.ok === false) {
+                items.splice(removedAt, 0, removed); cur = removedAt;
+                refreshSel(); showOne();
+              }
+            });
+          } }, 'Remove'),
           h('button', { class: 'es-btn primary', onclick: function () { saveAll(function () { SSA.toast('Saved'); }); } }, 'Save all'),
         ]),
         h('div', { class: 'ce-head' }, [
@@ -1830,12 +2006,26 @@
         h('div', { class: 'es-actions' }, [
           h('button', { class: 'es-btn primary', onclick: function () {
             if (!items[cur]) { st.textContent = 'Add an embed first.'; return; }
-            st.textContent = 'Posting…';
-            saveAll(function () { api('/custom/post', { method: 'POST', body: { id: items[cur].id } }).then(function (r) {
-              // Say WHICH thing went wrong — the backend now tells us. "Failed (channel / bot?)"
-              // covered four different causes and pointed at none of them.
-              st.textContent = (r && r.ok) ? 'Posted ✓ — keeps updating' : ('⚠ ' + ((r && r.error) || 'could not post'));
-            }); });
+            st.textContent = 'Saving…';
+            saveAll(function () {
+              // Only reached once the save actually landed (see `saveAll`'s own guard above) — the
+              // status line is safe to move on to the next step here.
+              st.textContent = 'Posting…';
+              api('/custom/post', { method: 'POST', body: { id: items[cur].id } }).then(function (r) {
+                // Say WHICH thing went wrong — the backend now tells us. "Failed (channel / bot?)"
+                // covered four different causes and pointed at none of them.
+                st.textContent = (r && r.ok) ? 'Posted ✓ — keeps updating' : ('⚠ ' + ((r && r.error) || 'could not post'));
+              }).catch(function (err) {
+                // The post is a SECOND request, after the save already succeeded — its own failure
+                // must say so on its own, not leave the status line reading "Posting…" forever.
+                st.textContent = '⚠ NOT posted — ' + why(err);
+              });
+            }).then(function (r) {
+              // `cb` above only ran on a real success; if the save itself was refused or thrown,
+              // `saveAll` already toasted it — this is what stops the status LINE (which nothing
+              // else here updates) from being left on "Saving…" in that case.
+              if (r && r.ok === false) st.textContent = 'NOT saved — ' + (r.error || 'the manager did not say why');
+            });
           } }, 'Save & post now'),
           st,
         ]),

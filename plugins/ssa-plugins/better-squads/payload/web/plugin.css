@@ -62,7 +62,11 @@
 .bs-chip-x{--hov-bg:transparent;--hov-fg:var(--alarm,#e5443f);--hov-line:transparent}
 .bs-empty{color:var(--muted,#8b9099);font-size:.8rem}
 
-.bs-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.bs-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+/* Carries a whole sentence when a save is refused, so it needs room to wrap onto its own line rather
+   than pushing the button off a narrow screen. Stays next to its button until the next attempt — a
+   toast is gone in four seconds and the owner's edits are still sitting there unsaved. */
+.bs-savemsg{font-size:.82rem;color:var(--muted,#8b9099);min-width:0;flex:1 1 220px}
 
 /* ── relative tokens stand out: they change how the message is delivered ── */
 .bs-token-rel{border-color:color-mix(in srgb,var(--accent,#ff6a1a) 45%,var(--line-2,#343943));color:var(--accent,var(--amber,#ff6a1a))}
@@ -92,6 +96,15 @@
    moment, not a mistake. Neutral border, normal text, and both halves in the one rule so the pair
    travels together (check-contrast). It sits on its own row across the whole status strip. */
 .bs-note-off{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
+
+/* A REQUEST that failed on a routine poll — a different thing from a world with nothing in it, and
+   the whole reason this plugin no longer swallows a failure. Both halves of the pair are written in
+   the one rule so the cascade cannot leave text nobody can read on a coloured ground (check-contrast). */
+.bs-live-err{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
+
+/* The tab itself could not load — a full-width panel in place of the body, not a strip inside it. */
+.bs-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.bs-err-act{margin-top:.7rem}
 
 /* ── explanatory note inside a card ── */
 .bs-note{margin:0 0 12px;padding:.55rem .7rem;background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-left:2px solid var(--accent,var(--amber,#ff6a1a));border-radius:6px;font-size:.78rem;color:var(--muted,#8b9099);line-height:1.5}

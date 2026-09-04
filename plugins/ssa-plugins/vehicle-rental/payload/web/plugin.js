@@ -2,20 +2,23 @@
    channel and the in-game commands, design the menu embed (via the embed-editor plugin), post it,
    and watch active rentals. */
 (function () {
-  var API = '/api/plugin-host/vehicle-rental';
-  function api(p, opts) {
-    opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
-    if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (body) {
-        // The HTTP status matters. A 401 after the session expired is valid JSON, so collapsing every
-        // response to its body meant a failed save was reported as "Saved ✓" — and the unsaved-changes
-        // guard was cleared at the same time, so closing the tab lost the work silently.
-        if (!r.ok) return { _httpError: r.status, error: (body && body.error) || ('HTTP ' + r.status) };
-        return body;
-      });
-    });
-  }
+  // The manager's own client, not a hand-rolled one. The wrapper this replaced was HALF fixed: it
+  // read the HTTP status and returned a `{ _httpError, error }` sentinel, but `r.json().catch(() =>
+  // ({}))` still ate a body that was not JSON — a proxy's 502, an HTML error page, a truncated
+  // response — into an empty object with no sentinel at all, and there was no `.catch` on the fetch
+  // itself: a network failure (the manager stopped, the connection dropped) REJECTED and nothing
+  // ever handled it — the `.then` never ran, the screen stayed on whatever it was showing, and the
+  // rejection was logged to a console nobody had open. And the sentinel was only read at SOME call
+  // sites; everywhere else a failed request read as empty data, which is a sentence about the DATA
+  // when the truth was about the REQUEST.
+  //
+  // `SSA.apiClient()` is captured here, at the top of the script, because `SSA.api` resolves the
+  // calling plugin at call time and the panel only knows who is asking inside a synchronous stretch
+  // it started itself — a poll tick, a click handler and a `.then` continuation, which is every real
+  // call in this file, all run after that stretch has ended.
+  var api = SSA.apiClient();
+  // One sentence for a failure, the route's own words first. Used by every catch below.
+  function why(err) { return SSA.apiError(err); }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -74,7 +77,11 @@
   }
   function twLoadClock(then) {
     if (twClock) { then(); return; }
-    api('/clock').then(function (c) { twClock = c || { supported: false }; then(); }).catch(function () { twClock = { supported: false }; then(); });
+    // A failed check is not "the manager cannot evaluate time windows" — that is a specific,
+    // rarer claim — so it carries the real reason where `twClockLine()` reads it, and falls back
+    // to that generic sentence only when there is no `why` to show.
+    api('/clock').then(function (c) { twClock = c || { supported: false }; then(); })
+      .catch(function (err) { twClock = { supported: false, why: why(err) }; then(); });
   }
 
   /**
@@ -206,7 +213,14 @@
             menu.appendChild(row);
           });
           menu.style.display = 'block';
-        }).catch(hide);
+        }).catch(function () {
+          // This used to just hide the menu, which reads exactly like "no vehicle matched" — the
+          // honest difference is that the search never ran at all, and that is worth a sentence
+          // rather than a picker that looks like it searched and came up empty.
+          menu.innerHTML = '';
+          menu.appendChild(h('div', { class: 'vr-ac-msg' }, 'Could not search — check the connection and try again.'));
+          menu.style.display = 'block';
+        });
     }
     // This field is a SEARCH BOX and a value at the same time, and it used to save whatever was in
     // it. Typing "quad" and clicking away saved the spawn code "quad": the panel showed a configured
@@ -248,13 +262,30 @@
     var body = el.querySelector('#vr-body');
 
     var savedSnapshot = '';
-    api('/config').then(function (c) {
-      if (c && c._httpError) { body.textContent = 'Could not load the configuration: ' + c.error + '. Reload the page, and if it persists sign in again.'; return; }
-      config = c || {};
-      if (!Array.isArray(config.vehicles)) config.vehicles = [];
-      savedSnapshot = JSON.stringify(config);
-      render();
-    });
+    // Where a failed FIRST load goes. Without a slot, a throwing client only moves the silence: the
+    // promise rejects, nothing renders, and the tab sits on "Loading…" for ever — which reads as
+    // slow rather than as broken.
+    function loadFailed(err) {
+      body.className = '';
+      body.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'vr-btn', onclick: function () {
+        body.className = 'muted'; body.textContent = 'Loading…'; load();
+      } }, 'Try again');
+      body.appendChild(h('div', { class: 'vr-err' }, [
+        h('strong', {}, 'This tab could not load its settings. '),
+        h('span', {}, why(err)),
+        h('div', { class: 'vr-err-act' }, [retry]),
+      ]));
+    }
+    function load() {
+      api('/config').then(function (c) {
+        config = c || {};
+        if (!Array.isArray(config.vehicles)) config.vehicles = [];
+        savedSnapshot = JSON.stringify(config);
+        render();
+      }).catch(loadFailed);
+    }
+    load();
 
     function render() {
       body.className = '';
@@ -280,28 +311,44 @@
           (list || []).forEach(function (ch) { chanSel.appendChild(h('option', { value: ch.id, selected: ch.id === config.channelId }, '#' + ch.name)); });
           chanSel.value = config.channelId || '';
           if (!(list || []).length) chanNote.textContent = 'The bot is connected but cannot see any text channels — check its permissions in your server.';
+        }).catch(function (err) {
+          // The list failed to load — that is not "no channels exist" — so the dropdown keeps
+          // whatever it already had (the saved channel, if any) rather than reading as unconfigured.
+          chanNote.textContent = 'Could not load the channel list — ' + why(err);
         });
+      }).catch(function (err) {
+        chanNote.textContent = 'Could not check whether a Discord bot is set up — ' + why(err);
       });
       chanSel.addEventListener('change', function () { config.channelId = chanSel.value; });
 
       // Live state of sector detection. Silent when no sector rules are set — there is nothing to
-      // warn about then, and a permanent status line for an unused feature is just noise.
+      // warn about then, and a permanent status line for an unused feature is just noise. Whether
+      // rules are SET is read off the config already on this page, never off this call, so a failed
+      // check can never be mistaken for "no rules configured" and hide a real problem behind it.
       var sectorStatus = h('p', { class: 'vr-secstat', style: 'display:none' });
+      function sectorsConfigured() { return !!((config.allowedSectors || []).length || (config.blockedSectors || []).length); }
       function refreshSectorStatus() {
+        if (!sectorsConfigured()) { sectorStatus.style.display = 'none'; return; }
         api('/sector-status').then(function (s) {
-          if (!s || !s.configured) { sectorStatus.style.display = 'none'; return; }
           sectorStatus.style.display = '';
-          if (s.works === true) {
+          if (s && s.works === true) {
             sectorStatus.className = 'vr-secstat ok';
             sectorStatus.textContent = '✓ Sector detection is working — the rules above are being applied.';
-          } else if (s.works === false) {
+          } else if (s && s.works === false) {
             sectorStatus.className = 'vr-secstat bad';
             sectorStatus.textContent = '⚠ Sector detection is NOT working right now, so the rules above are being ignored and renting is allowed everywhere. Map calibration comes from scumsa — check the manager can reach it.';
           } else {
             sectorStatus.className = 'vr-secstat';
             sectorStatus.textContent = 'Sector detection has not been tested yet — it is checked the first time someone rents, or when a player is online.';
           }
-        }).catch(function () { sectorStatus.style.display = 'none'; });
+        }).catch(function (err) {
+          // A failed CHECK is not "no rules are set" — the old catch hid this the same way an
+          // unused feature is hidden, which is exactly the silent failure this whole pass exists
+          // to remove.
+          sectorStatus.style.display = '';
+          sectorStatus.className = 'vr-secstat bad';
+          sectorStatus.textContent = '⚠ Could not check sector detection — ' + why(err) + '. Assume renting is allowed everywhere until this is confirmed.';
+        });
       }
 
       body.appendChild(card('Settings', [
@@ -511,12 +558,17 @@
       // whenever "Free rentals" is toggled, and re-taking it there quietly declared an hour of
       // unsaved edits already saved — the indicator went out and the close warning stopped.
       function dirty() { return JSON.stringify(config) !== savedSnapshot; }
-      function markSaved() { savedSnapshot = JSON.stringify(config); status.textContent = 'Saved ✓'; }
+      function markSaved() { savedSnapshot = JSON.stringify(config); status.textContent = 'Saved ✓'; statusHold = false; }
+      // A failed save's sentence has to STAY beside the button until the next attempt — a toast is
+      // gone in four seconds and the owner's edits are still sitting unsaved in front of them. The
+      // 1.2s tick below would otherwise paint over it with the milder "unsaved changes" note a
+      // moment later, so it is told to leave `status` alone while this is true.
+      var statusHold = false;
       // One timer for the tab, not one per redraw.
       if (window.vrDirtyTick) clearInterval(window.vrDirtyTick);
       window.vrDirtyTick = setInterval(function () {
         if (!body.parentNode) { clearInterval(window.vrDirtyTick); window.vrDirtyTick = null; return; }
-        if (dirty() && !/Saving|Posting/.test(status.textContent)) status.textContent = '● Unsaved changes';
+        if (dirty() && !statusHold && !/Saving|Posting/.test(status.textContent)) status.textContent = '● Unsaved changes';
       }, 1200);
       if (window.vrBeforeUnload) window.removeEventListener('beforeunload', window.vrBeforeUnload);
       window.vrBeforeUnload = function (e) { if (dirty()) { e.preventDefault(); e.returnValue = ''; } };
@@ -524,26 +576,39 @@
 
       body.appendChild(h('div', { class: 'vr-actions' }, [
         h('button', { class: 'vr-btn primary', onclick: function () {
+          statusHold = false;
           status.textContent = 'Saving…';
-          api('/config', { method: 'POST', body: config }).then(function (r) {
-            if (r && r._httpError) { status.textContent = '⚠ Not saved — ' + r.error; return; }
+          api('/config', { method: 'POST', body: config }).then(function () {
             markSaved();
+          }).catch(function (err) {
+            statusHold = true;
+            status.textContent = '⚠ Not saved — ' + why(err);
+            try { SSA.toast('Not saved — ' + why(err), 'error'); } catch (e) { /* toast optional */ }
           });
         } }, 'Save configuration'),
         h('button', { class: 'vr-btn', onclick: function () {
+          statusHold = false;
           status.textContent = 'Posting…';
-          api('/config', { method: 'POST', body: config }).then(function (r) {
-            if (r && r._httpError) { status.textContent = '⚠ Not saved — ' + r.error; return null; }
+          api('/config', { method: 'POST', body: config }).then(function () {
             markSaved();
-            return api('/post-menu', { method: 'POST' });
-          }).then(function (r) {
-            if (!r) return;
-            // Say WHICH thing went wrong. One message for three different causes left an owner
-            // guessing between "no channel", "bot offline" and "bot cannot post there".
-            if (r._httpError) { status.textContent = '⚠ ' + r.error; return; }
-            if (r.ok) { status.textContent = 'Menu posted ✓'; return; }
-            status.textContent = !config.channelId ? '⚠ Pick a channel first'
-              : '⚠ Could not post — check the bot is online and can post in that channel';
+            return api('/post-menu', { method: 'POST' }).then(function (r) {
+              // Say WHICH thing went wrong. One message for three different causes left an owner
+              // guessing between "no channel", "bot offline" and "bot cannot post there".
+              if (r && r.ok) { status.textContent = 'Menu posted ✓'; return; }
+              statusHold = true;
+              status.textContent = !config.channelId ? '⚠ Pick a channel first'
+                : '⚠ Could not post — check the bot is online and can post in that channel';
+            }).catch(function (err) {
+              // The config DID save — say so, so the owner does not re-save believing their edits
+              // were lost, and does not re-click "Save & post" expecting the first half to run again.
+              statusHold = true;
+              status.textContent = '⚠ Saved, but the menu could not be posted — ' + why(err);
+              try { SSA.toast('Saved, but the menu could not be posted — ' + why(err), 'error'); } catch (e) { /* toast optional */ }
+            });
+          }).catch(function (err) {
+            statusHold = true;
+            status.textContent = '⚠ Not saved — ' + why(err);
+            try { SSA.toast('Not saved — ' + why(err), 'error'); } catch (e) { /* toast optional */ }
           });
         } }, 'Save & post menu'),
         status,
@@ -584,6 +649,11 @@
                   out.removed || !out.stillThere ? undefined : 'error');
                   else SSA.toast('Could not end it: ' + ((out && out.error) || 'unknown'), 'error');
                   loadRentals();
+                }).catch(function (err) {
+                  // A destructive action: the toast begins with what did NOT happen. The rental is
+                  // NOT reloaded here — the list on screen is still accurate, and refreshing it after
+                  // a request that never landed would only invite a "did it work?" re-click.
+                  SSA.toast('The rental was NOT ended — ' + why(err), 'error');
                 });
               });
             } }, 'End');
@@ -619,15 +689,34 @@
         var m = Math.round(ms / 60000);
         return m < 60 ? m + ' min' : (Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : ''));
       }
+      // A failed fetch here used to reject silently — nothing rendered, nothing said so, and the
+      // tables simply kept whatever they last had with no sign that the live half had stopped. This
+      // is the poll-tick case: keep the last figures on screen, say plainly that they have stopped
+      // updating and why, and keep retrying — the 30s tick and every manual refresh already do that,
+      // this only has to stop hiding it.
+      var rentalsErr = null;
+      var rentalsErrBar = h('p', { class: 'vr-live-err', style: 'display:none' });
+      function renderRentalsErr() {
+        if (!rentalsErr) { rentalsErrBar.style.display = 'none'; return; }
+        rentalsErrBar.style.display = '';
+        rentalsErrBar.textContent = '⚠ The rental lists below have stopped updating — ' + rentalsErr + ' The settings on this page are unaffected, and it keeps retrying.';
+      }
       function loadRentals() {
-        api('/rentals').then(function (l) { active = Array.isArray(l) ? l : []; activeTbl.refresh(); });
-        api('/history').then(function (l) { past = Array.isArray(l) ? l : []; histTbl.refresh(); });
+        api('/rentals').then(function (l) { active = Array.isArray(l) ? l : []; rentalsErr = null; activeTbl.refresh(); renderRentalsErr(); })
+          .catch(function (err) { rentalsErr = why(err); renderRentalsErr(); });
+        api('/history').then(function (l) { past = Array.isArray(l) ? l : []; histTbl.refresh(); })
+          .catch(function (err) { rentalsErr = why(err); renderRentalsErr(); });
       }
       loadRentals();
       // One timer per mount, cleared when the tab is rebuilt, so reopening the tab never stacks them.
+      // Ordinarily this only re-renders the "time left" countdown from data already in hand — the
+      // list itself is refreshed on demand (the table's own refresh icon, or after ending a rental).
+      // While a fetch is failing it re-fetches instead, which is what makes "it keeps retrying" in
+      // the message above true rather than a promise nothing here was keeping.
       if (window.vrTick) clearInterval(window.vrTick);
-      window.vrTick = setInterval(function () { activeTbl.refresh(); }, 30000);
+      window.vrTick = setInterval(function () { if (rentalsErr) loadRentals(); else activeTbl.refresh(); }, 30000);
 
+      body.appendChild(rentalsErrBar);
       body.appendChild(card('Active rentals', [activeTbl.el]));
       body.appendChild(card('Finished rentals', [histTbl.el]));
     }

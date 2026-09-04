@@ -7,7 +7,6 @@
  * /api/plugin-host/commands-kits. */
 (function () {
   'use strict';
-  var API = '/api/plugin-host/commands-kits';
 
   // Filled from /meta (with sane fallbacks so the UI works even if the call fails).
   var META = {
@@ -93,11 +92,20 @@
   ];
 
   // ── fetch + dom helpers ─────────────────────────────────────────────────────
-  function api(p, opts) {
-    opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
-    if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) { return r.json().catch(function () { return {}; }); }).catch(function () { return {}; });
-  }
+  // The manager's own client, not a hand-rolled one. The wrapper this replaces swallowed a failure
+  // TWICE — the inner catch ate a body that was not JSON, the outer ate the network failure and
+  // every non-2xx — so a backend that was down, a route that 404'd and a session that had expired
+  // all arrived as `{}`. Every `(r && r.x) || []` after it then drew an empty screen, which is a
+  // sentence about the DATA ("nothing is configured") when the truth was about the REQUEST.
+  //
+  // `SSA.apiClient()` is captured here, at the top of the script, because `SSA.api` resolves the
+  // calling plugin at call time and the SDK only knows who is asking inside a synchronous stretch
+  // it started (script load, a `ready()` callback, a tab render). Every real call in this file is a
+  // poll tick, a click handler or a `.then` continuation, which is exactly where that binding is
+  // already gone — so `SSA.api` would have gone to /api/plugin-host/_/… on every one of them.
+  var api = SSA.apiClient();
+  // One sentence for a failure, the route's own words first. Used by every catch below.
+  function why(err) { return SSA.apiError(err); }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -155,7 +163,10 @@
   }
   function twLoadClock(then) {
     if (twClock) { then(); return; }
-    api('/clock').then(function (c) { twClock = c || { supported: false }; then(); }).catch(function () { twClock = { supported: false }; then(); });
+    api('/clock').then(function (c) { twClock = c || { supported: false }; then(); })
+      // A failed check is not "this manager cannot evaluate time windows" — it may well be able to,
+      // and the request just did not land. Carry the real reason rather than the generic sentence.
+      .catch(function (err) { twClock = { supported: false, why: why(err) }; then(); });
   }
 
   /**
@@ -180,6 +191,10 @@
     }, '+ Add a time window');
 
     var seq = 0;
+    // Whether a preview has ever come back for THIS window list. Without it a failed first check
+    // leaves the note on its initial "Always available" text even though the owner has windows
+    // set — a request failure silently reading as the one answer it can never actually be.
+    var everGood = false;
     function preview() {
       var list = owner.windows || [];
       if (!list.length) { note.className = 'tw-note'; note.textContent = 'Always available — no time window is set.'; return; }
@@ -189,6 +204,7 @@
       var mine = ++seq;
       api('/clock/preview', { method: 'POST', body: { windows: list } }).then(function (r) {
         if (mine !== seq) return;
+        everGood = true;
         if (!r || r.supported === false) {
           note.className = 'tw-note bad';
           note.textContent = '⚠ This manager cannot evaluate time windows, so anything set here is treated as CLOSED. Update the manager, or remove the windows.';
@@ -197,7 +213,15 @@
         if (r.errors && r.errors.length) { note.className = 'tw-note bad'; note.textContent = '⚠ ' + r.errors.join(' · '); return; }
         note.className = 'tw-note' + (r.open ? ' ok' : '');
         note.textContent = r.text + '  ' + (r.open ? '● Open right now.' : '○ Shut right now.');
-      }).catch(function () { /* the note simply keeps its last good text */ });
+      }).catch(function (err) {
+        if (mine !== seq) return;
+        // A request that failed after a good answer already painted keeps that answer — it is
+        // stale, not wrong, and clearing it would say "always available" about a window that is not.
+        // Before any good answer has ever arrived there is nothing honest to keep, so say so instead.
+        if (everGood) return;
+        note.className = 'tw-note bad';
+        note.textContent = '⚠ Could not check whether this window is open right now — ' + why(err) + ' The window itself is still saved.';
+      });
     }
 
     function dayChips(w) {
@@ -271,18 +295,22 @@
   // The native SSA.pickPlayer only lists players who are ONLINE. Admins need to allow/deny anyone —
   // including offline players — so this is our own picker over /players/all (the full game-DB roster),
   // with search, an online marker, and a SteamID paste box for someone not in the DB yet.
-  function ckApi(p, opts) { return fetch('/api/plugin-host/commands-kits' + p, Object.assign({ credentials: 'same-origin' }, opts || {})).then(function (r) { return r.json().catch(function () { return {}; }); }).catch(function () { return {}; }); }
   function openPlayerPicker(onPick) {
     var picked = false;
     var search = h('input', { class: 'ck-in', type: 'text', placeholder: 'Search all players…' });
     var manual = h('input', { class: 'ck-in', type: 'text', placeholder: 'or paste a SteamID (17 digits)…' });
     var list = h('div', { class: 'ssa-pp-list' }, [h('p', { class: 'ck-empty' }, 'Loading players…')]);
     var all = [];
+    var loadErr = null;    // set when the roster itself could not be read — never "no players found"
     function pick(p) { if (picked) return; picked = true; m.close(); onPick(p); }
     function paint() {
+      list.innerHTML = '';
+      // An admin looking for a player they KNOW exists must never be told the roster is empty when
+      // the truth is that this request failed. The SteamID box above stays usable either way, so
+      // say that too — it is the one thing that still works when the roster cannot be read.
+      if (loadErr && !all.length) { list.appendChild(h('p', { class: 'ck-empty ck-pp-err' }, 'The player list could not be read — ' + loadErr + ' Paste a SteamID above to add them anyway.')); return; }
       var q = (search.value || '').trim().toLowerCase();
       var rows = all.filter(function (p) { return !q || (String(p.name || '') + ' ' + p.steamId).toLowerCase().indexOf(q) >= 0; });
-      list.innerHTML = '';
       if (!rows.length) { list.appendChild(h('p', { class: 'ck-empty' }, all.length ? 'No matches.' : 'No players found yet — paste a SteamID above.')); return; }
       rows.slice(0, 300).forEach(function (p) {
         list.appendChild(h('button', { class: 'secondary ssa-pp-row', onclick: function () { pick({ steamId: p.steamId, name: p.name || '' }); } }, [
@@ -301,11 +329,11 @@
     ]);
     var m = SSA.modal({ title: 'Choose a player', body: body });
     var ov = m.el.parentNode; if (ov) ov.addEventListener('click', function (e) { if (e.target === ov) picked = true; });
-    ckApi('/players/all').then(function (d) {
-      all = (d && d.players) || [];
+    api('/players/all').then(function (d) {
+      loadErr = null; all = (d && d.players) || [];
       all.sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0); });
       paint();
-    });
+    }).catch(function (err) { loadErr = why(err); all = []; paint(); });
   }
 
   // allow/deny chip editor
@@ -349,9 +377,14 @@
     var state = { commands: [], welcome: {}, packs: [], messages: {}, replyChannel: 'local', commandPrefix: '/', itemSpawnCmd: '', vehicleSpawnCmd: '', invSpawnCmd: '', joinDelaySeconds: 0, spawnGapMs: 180, spawnTries: 3, view: 'commands' };
     // Live delivery status (queue depth + counters + activity log), refreshed from /status + realtime.
     var statusData = { queue: 0, current: null, queueItems: [], stats: { deliveries: 0, ok: 0, failed: 0 }, recent: [] };
+    // A poll that failed. The counters and queue above keep the last figures that DID arrive — a
+    // stale number is not the same claim as an empty one — and this says the live half has stopped
+    // updating rather than letting three zeroes read as "it has not started working yet".
+    var statusErr = null;
     var actTable = null;       // delivery-log table (Activity view)
     var claimsTable = null;    // player-claims table (Activity view)
     var claimsData = [];       // rows for the claims table
+    var claimsErr = null;      // set when the claims list itself could not be read
     var queueBox = null;       // live-queue container (Activity view)
     var expanded = new WeakSet();     // which command/pack cards are open (UI-only, never saved)
     var cmdFilter = '', packFilter = '';   // live search filters for long command/pack lists
@@ -396,7 +429,7 @@
     var saveBtn = h('button', { class: '', onclick: save }, 'Save');
     markDirty = function () { dirty = true; saveBtn.classList.add('ck-unsaved'); status.textContent = 'Unsaved changes'; };
 
-    var body = h('div', { class: 'ck-view' });
+    var body = h('div', { class: 'ck-view' }, [h('p', { class: 'ck-loading' }, 'Loading…')]);
 
     // top bar: sub-nav + save
     var nav = h('div', { class: 'ck-nav' });
@@ -433,6 +466,15 @@
           ' Commands, kits, prices and every message can be set up now and go live the moment it starts. Only the counters above and the activity log wait for it.',
         ]));
       }
+      // A REQUEST that failed, not a world with nothing in it — the whole reason this plugin no
+      // longer swallows a failure into `{}`. The counters above are whatever they last were; this
+      // says they have stopped moving, and that everything else on the page is unaffected.
+      if (statusErr) {
+        statBar.appendChild(h('div', { class: 'ck-note-err' }, [
+          h('b', {}, 'The counters and queue above have stopped updating.'),
+          ' ' + statusErr + ' Commands, kits and every message are unaffected.',
+        ]));
+      }
     }
 
     // Pull live status (queue depth + counters + recent log) and reflect it in the header + activity table.
@@ -450,7 +492,13 @@
       renderStat(); renderQueue();
       if (state.view === 'activity' && actTable) actTable.refresh();
     }
-    function refreshStatus() { api('/status').then(applyStatus); }
+    // A poll tick, not the first load — the screen is already drawn and the settings on it are still
+    // the owner's. A failure here keeps whatever `statusData` last held and says so beside it, and
+    // the interval below keeps calling this every 4s regardless, so it recovers on its own.
+    function refreshStatus() {
+      api('/status').then(function (s) { statusErr = null; applyStatus(s); })
+        .catch(function (err) { statusErr = why(err); renderStat(); });
+    }
     // Live queue panel — what's being delivered right now + what's waiting. Written into the Activity view.
     function renderQueue() {
       if (!queueBox) return;
@@ -672,7 +720,12 @@
       return wrap;
     }
 
-    function loadClaims() { api('/claims').then(function (d) { claimsData = (d && d.claims) || []; if (claimsTable) claimsTable.refresh(); }); }
+    function loadClaims() {
+      api('/claims').then(function (d) { claimsErr = null; claimsData = (d && d.claims) || []; if (claimsTable) claimsTable.refresh(); })
+        // Keep whatever rows are already on screen — a request failure is not "nobody has claimed
+        // anything", and the table's own `empty` text below says which of the two this is.
+        .catch(function (err) { claimsErr = why(err); if (claimsTable) claimsTable.refresh(); });
+    }
 
     // ── Activity view — one complete operational dashboard: live queue + delivery log + player claims ──
     function activityView() {
@@ -685,7 +738,11 @@
       renderQueue();
 
       // 2) Delivery log — every kit/reward handed out, with clickable players + failed items.
-      var clearLog = h('button', { class: 'secondary', onclick: function () { SSA.confirm('Clear the delivery log?').then(function (ok) { if (!ok) return; api('/clear-history', { method: 'POST' }).then(function () { statusData.recent = []; if (actTable) actTable.refresh(); }); }); } }, [icon('close'), 'Clear log']);
+      var clearLog = h('button', { class: 'secondary', onclick: function () { SSA.confirm('Clear the delivery log?').then(function (ok) { if (!ok) return; api('/clear-history', { method: 'POST' }).then(function () { statusData.recent = []; if (actTable) actTable.refresh(); })
+        // A refusal must never read like a success, and the log must not be cleared locally on a
+        // failed request — it would come back on the next refresh with the admin already believing
+        // it was gone.
+        .catch(function (err) { toast('The delivery log was NOT cleared — ' + why(err), 'error'); }); }); } }, [icon('close'), 'Clear log']);
       // The Deliveries / Failed counters in the header only ever go up. The backend has always been
       // able to reset them and there was no way to ask it to, so an owner who fixed a broken kit was
       // left reading "Failed: 47" for ever — a number that no longer described anything.
@@ -700,7 +757,7 @@
             statusData.stats = { deliveries: 0, ok: 0, failed: 0 };
             renderStat();
             SSA.toast('Counters reset.');
-          });
+          }).catch(function (err) { toast('The counters were NOT reset — ' + why(err), 'error'); });
         });
       } }, [icon('refresh'), 'Reset counters']);
       actTable = SSA.table({
@@ -757,19 +814,21 @@
       wrap.appendChild(ckSection('Delivery log', 'Every kit and reward handed out — click a player to open them, click the Result header to surface failures first.', [actTable.el], [resetStats, clearLog]));
 
       // 3) Player claims — who has claimed what; reset a row to let a player use a one-time reward again.
-      var clearAll = h('button', { class: 'secondary', onclick: function () { SSA.confirm('Clear ALL claims for everyone? Every player can then use every reward again.', { okLabel: 'Clear all' }).then(function (ok) { if (!ok) return; api('/claims/clear', { method: 'POST', body: {} }).then(function () { toast('All claims cleared'); loadClaims(); }); }); } }, [icon('close'), 'Clear all claims']);
+      var clearAll = h('button', { class: 'secondary', onclick: function () { SSA.confirm('Clear ALL claims for everyone? Every player can then use every reward again.', { okLabel: 'Clear all' }).then(function (ok) { if (!ok) return; api('/claims/clear', { method: 'POST', body: {} }).then(function () { toast('All claims cleared'); loadClaims(); }).catch(function (err) { toast('Claims were NOT cleared — ' + why(err), 'error'); }); }); } }, [icon('close'), 'Clear all claims']);
       claimsTable = SSA.table({
         rows: function () { return claimsData; },
         searchPlaceholder: 'Search players, rewards…',
         search: function (r) { return [r.name, r.steamId, r.packId].join(' '); },
-        empty: 'Nobody has claimed anything yet.',
+        // A function, not a string, so "this could not be read" and "nobody has claimed anything"
+        // stay two different sentences — the first is about the request, the second about the world.
+        empty: function () { return claimsErr ? ('This list could not be read — ' + claimsErr) : 'Nobody has claimed anything yet.'; },
         sort: { key: 'at', dir: 'desc' }, pageSize: 10, onRefresh: loadClaims,
         columns: [
           { key: 'player', label: 'Player', sort: true, sortVal: function (r) { return (r.name || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.name, r.steamId); } },
           { key: 'packId', label: 'Reward', sort: true, sortVal: function (r) { return r.packId; }, render: function (r) { return document.createTextNode(r.packId); } },
           { key: 'count', label: 'Uses', sort: true, sortVal: function (r) { return r.count || 1; }, tdClass: 'mono', render: function (r) { return document.createTextNode(String(r.count || 1)); } },
           { key: 'at', label: 'Last used', sort: true, sortVal: function (r) { return r.at || 0; }, tdClass: 'dim', render: function (r) { return document.createTextNode(r.at ? new Date(r.at).toLocaleString() : '—'); } },
-          { key: 'reset', label: '', render: function (r) { return h('button', { class: 'secondary', title: 'Let this player use it again', onclick: function () { api('/claims/reset', { method: 'POST', body: { packId: r.packId, steamId: r.steamId } }).then(function () { toast('Reset'); loadClaims(); }); } }, 'Reset'); } },
+          { key: 'reset', label: '', render: function (r) { return h('button', { class: 'secondary', title: 'Let this player use it again', onclick: function () { api('/claims/reset', { method: 'POST', body: { packId: r.packId, steamId: r.steamId } }).then(function () { toast('Reset'); loadClaims(); }).catch(function (err) { toast('NOT reset — ' + why(err), 'error'); }); } }, 'Reset'); } },
         ],
       });
       wrap.appendChild(ckSection('Player claims', 'Who has claimed which reward. Reset a row to let that player use a one-time reward again.', [claimsTable.el], [clearAll]));
@@ -808,6 +867,12 @@
         dChan.appendChild(h('option', { value: '' }, (list && list.length) ? '— pick a channel —' : 'No channels (bot offline?)'));
         (list || []).forEach(function (ch) { dChan.appendChild(h('option', { value: ch.id }, '#' + ch.name)); });
         dChan.value = d.channelId || '';
+      }).catch(function (err) {
+        // "No channels (bot offline?)" is a guess about the WORLD and is wrong here — the request
+        // itself failed, so say that instead of leaving an owner to read a guess as the answer.
+        dChan.innerHTML = '';
+        dChan.appendChild(h('option', { value: '' }, 'Could not load channels — ' + why(err)));
+        dChan.value = '';
       });
       dChan.addEventListener('change', function () { d.channelId = dChan.value; markDirty(); });
       var postStatus = h('span', { class: 'muted', style: 'font-size:.82rem' });
@@ -817,9 +882,10 @@
         api('/post-panel', { method: 'POST', body: { channelId: d.channelId } }).then(function (r) {
           // Say WHY when nothing was posted. "Posted ✓" for a missing channel or a kit list with
           // nothing marked claimable is the sort of answer that sends an owner looking in Discord
-          // for a message that was never sent.
-          postStatus.textContent = (r && r.ok) ? 'Posted ✓' : ('Not posted — ' + ((r && r.error) || 'unknown'));
-        });
+          // for a message that was never sent. A 200 without `ok` is a refusal too, and the route's
+          // own `reason` is worth more than its bare `error` code when it sent one.
+          postStatus.textContent = (r && r.ok) ? 'Posted ✓' : ('Not posted — ' + ((r && r.reason) || (r && r.error) || 'unknown'));
+        }).catch(function (err) { postStatus.textContent = 'Not posted — ' + why(err); });
       // `i-discord`, not `i-send`: there is no send icon in the panel's sprite, and a missing one
       // renders NOTHING — no error, no broken-image mark, just a button that looks unfinished.
       } }, [icon('discord'), 'Post the panel']);
@@ -887,34 +953,59 @@
       api('/config', { method: 'POST', body: clean }).then(function (r) {
         saveBtn.disabled = false;
         if (r && r.ok) { dirty = false; saveBtn.classList.remove('ck-unsaved'); status.textContent = 'Saved ✓'; toast('Saved'); setTimeout(function () { if (!dirty) status.textContent = ''; }, 2500); }
-        else { status.textContent = 'Save failed'; toast('Save failed', 'error'); }
+        else {
+          // A 200 without `ok` is a refusal too, and it may have said why.
+          var w = (r && r.reason) || (r && r.error) || 'the manager did not say why';
+          status.textContent = 'NOT saved — ' + w; toast('NOT saved — ' + w, 'error');
+        }
+      }).catch(function (err) {
+        // The sentence STAYS beside the Save button until the next attempt — a toast is gone in
+        // four seconds and the owner's unsaved edits are still sitting right there in front of them.
+        saveBtn.disabled = false;
+        status.textContent = 'NOT saved — ' + why(err);
+        toast('NOT saved — ' + why(err), 'error');
       });
     }
     function toast(m, k) { if (window.SSA && SSA.toast) SSA.toast(m, k); }
     function normCh(v) { return META.channels.indexOf(v) >= 0 ? v : 'local'; }
 
+    // Where the first load's failure goes. Without a slot, a throwing client only moves the
+    // silence: the promise rejects, `render()` never runs, and the tab sits on "Loading…" for
+    // ever — which reads as slow rather than as broken.
+    function loadFailed(err) {
+      body.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'secondary', onclick: function () { body.innerHTML = ''; body.appendChild(h('p', { class: 'ck-loading' }, 'Loading…')); load(); } }, 'Try again');
+      body.appendChild(h('div', { class: 'ck-err' }, [
+        h('strong', {}, 'This tab could not load its settings. '),
+        h('span', {}, why(err)),
+        h('div', { class: 'ck-err-act' }, [retry]),
+      ]));
+    }
+    function load() {
+      Promise.all([api('/meta'), api('/config')]).then(function (r) {
+        var m = r[0] || {};
+        if (m.channels) META.channels = m.channels;
+        if (m.currencies) META.currencies = m.currencies;
+        if (m.defaultMessages) META.defaultMessages = m.defaultMessages;
+        var cfg = r[1] || {};
+        state.commands = (Array.isArray(cfg.commands) ? cfg.commands : []).map(function (c) { c.channel = normCh(c.channel); return c; });
+        state.welcome = (cfg.welcome && typeof cfg.welcome === 'object') ? cfg.welcome : {}; state.welcome.channel = normCh(state.welcome.channel);
+        state.packs = (Array.isArray(cfg.packs) ? cfg.packs : []).map(function (p) { p.replyChannel = normCh(p.replyChannel); return p; });
+        state.messages = (cfg.messages && typeof cfg.messages === 'object') ? cfg.messages : {};
+        state.replyChannel = normCh(cfg.replyChannel || 'local');
+        state.commandPrefix = cfg.commandPrefix || '/';
+        state.itemSpawnCmd = cfg.itemSpawnCmd || '#SpawnItem {item} {count} Location {steamid}';
+        state.vehicleSpawnCmd = cfg.vehicleSpawnCmd || '#SpawnVehicle {code} {count} Location {steamid}';
+        state.invSpawnCmd = cfg.invSpawnCmd || '#SpawnInventoryFullOf {container} {sets} {fill}';
+        state.joinDelaySeconds = cfg.joinDelaySeconds != null ? cfg.joinDelaySeconds : 0;
+        state.spawnGapMs = cfg.spawnGapMs != null ? cfg.spawnGapMs : 180;
+        state.spawnTries = cfg.spawnTries != null ? cfg.spawnTries : 3;
+        render();
+        refreshStatus();   // pull live queue/counters for the header + activity log
+      }).catch(loadFailed);
+    }
     paintNav();
-    Promise.all([api('/meta'), api('/config')]).then(function (r) {
-      var m = r[0] || {};
-      if (m.channels) META.channels = m.channels;
-      if (m.currencies) META.currencies = m.currencies;
-      if (m.defaultMessages) META.defaultMessages = m.defaultMessages;
-      var cfg = r[1] || {};
-      state.commands = (Array.isArray(cfg.commands) ? cfg.commands : []).map(function (c) { c.channel = normCh(c.channel); return c; });
-      state.welcome = (cfg.welcome && typeof cfg.welcome === 'object') ? cfg.welcome : {}; state.welcome.channel = normCh(state.welcome.channel);
-      state.packs = (Array.isArray(cfg.packs) ? cfg.packs : []).map(function (p) { p.replyChannel = normCh(p.replyChannel); return p; });
-      state.messages = (cfg.messages && typeof cfg.messages === 'object') ? cfg.messages : {};
-      state.replyChannel = normCh(cfg.replyChannel || 'local');
-      state.commandPrefix = cfg.commandPrefix || '/';
-      state.itemSpawnCmd = cfg.itemSpawnCmd || '#SpawnItem {item} {count} Location {steamid}';
-      state.vehicleSpawnCmd = cfg.vehicleSpawnCmd || '#SpawnVehicle {code} {count} Location {steamid}';
-      state.invSpawnCmd = cfg.invSpawnCmd || '#SpawnInventoryFullOf {container} {sets} {fill}';
-      state.joinDelaySeconds = cfg.joinDelaySeconds != null ? cfg.joinDelaySeconds : 0;
-      state.spawnGapMs = cfg.spawnGapMs != null ? cfg.spawnGapMs : 180;
-      state.spawnTries = cfg.spawnTries != null ? cfg.spawnTries : 3;
-      render();
-      refreshStatus();   // pull live queue/counters for the header + activity log
-    });
+    load();
   }
 
   SSA.ready(function () { SSA.registerTab({ id: 'commands-kits', label: 'Commands & Kits', icon: '#i-chat', premium: true, render: editor }); });

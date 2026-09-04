@@ -26,6 +26,12 @@
    first start has done nothing wrong, and an amber bar tells them they have. Both halves are set in
    the one rule so the pair can never drift apart (check-contrast). */
 .mp-live-off{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--line-2,#343943)}
+/* A REQUEST that failed — a different thing from a world with nothing in it, and the whole reason
+   this plugin no longer swallows a failure. Both halves of the pair are written in the one rule so
+   the cascade cannot leave text nobody can read on a coloured ground (check-contrast). */
+.mp-live-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--alarm,#e5443f)}
+.mp-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.mp-err-act{margin-top:.7rem}
 
 /* ── fields ── */
 .mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
@@ -76,7 +82,9 @@
    (.data-table, .th-sort, .player-search, .roster-pager, .gl-player, .gl-loc, .gl-tag-*, button.secondary). */
 .mp-rec-head{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px}
 .mp-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}
-.mp-savemsg{font-size:.82rem;color:var(--muted,#8b9099)}
+/* It carries a whole sentence when a save is refused, so it needs room to wrap onto its own line
+   rather than pushing the buttons off a narrow screen. */
+.mp-savemsg{font-size:.82rem;color:var(--muted,#8b9099);min-width:0;flex:1 1 220px}
 
 /* A 17-digit Steam ID cannot shrink, and neither of these had `min-width:0`, so one long player
    name pushed the row past the edge of the modal it lives in. */

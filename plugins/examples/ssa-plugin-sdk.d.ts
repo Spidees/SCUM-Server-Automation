@@ -708,11 +708,11 @@ export interface Host {
         Promise<{ name: string; type?: string; value?: any; exists?: false } | null>;
 
     /**
-     * Change a server setting at runtime, with no restart.
+     * RETIRED, and the bridge refuses it.
      *
-     * Behind its own switch and off by default. A name that cannot be read back first is refused, so
-     * a typo cannot create a phantom setting — but nothing can check a RANGE, and whether a change
-     * survives a restart is the game's own per-setting business.
+     * The game accepts the call and keeps the old value: 214 attempts across three builds, all four
+     * types and all six sections moved not one setting. Change it in `ServerSettings.ini` and
+     * restart the server. Reading is unaffected — `setting()` still answers.
      */
     setSetting(name: string, type: 'int' | 'bool' | 'float' | 'string',
                value: string | number | boolean): Promise<BridgeCommandResult>;
@@ -947,7 +947,8 @@ export interface Host {
      *
      * **A `resimulated` knob is undone within a second.** Measured, not feared: fog set to 0.95
      * landed (read back at 204 ms) and the game's own controller had put it back to 0.38 inside one
-     * second. Use `pinClimate()` for those, or set the matching interpolation speed to 0.
+     * second. For those, narrow that channel's roll range or set its interpolation speed small
+     * and non-zero.
      * `timeSpeed` HOLDS — also measured. `climate()` says which is which.
      *
      * A value outside the knob's range is REFUSED, never clamped. Clock values are given as hours
@@ -955,13 +956,15 @@ export interface Host {
      * timer — so turn persistence off before experimenting.
      */
     setClimate(key: string, value: number): Promise<BridgeCommandResult>;
-    /** The same write with the simulation held first, so a `resimulated` knob stays where it was put. */
+    /** RETIRED, and the bridge refuses it: the freeze it performed wrote a byte a dedicated server
+     *  never reads. Use `setClimate()` with the channel's own interp speed or roll range. */
     pinClimate(key: string, value: number): Promise<BridgeCommandResult>;
     /** One of the twelve boolean switches. */
     setClimateSwitch(key: string, on: boolean): Promise<BridgeCommandResult>;
     /**
-     * Hold the weather simulation (`true`) or release it (`false`). Holding leaves the clock
-     * advancing and remembers the prior values, so releasing restores them.
+     * RETIRED, and the bridge refuses it. Both switches were written, both read back, and the world
+     * carried on — the clock included, with the clock switch off. To stop the clock write `timeSpeed`
+     * 0; to hold one channel use its interp speed or narrow its roll range.
      */
     holdClimate(on: boolean): Promise<BridgeCommandResult>;
 
@@ -1089,27 +1092,26 @@ export interface Host {
      *  `gardens()` — only narrower. */
     garden(gardenId: number): Promise<Record<string, any> | null>;
     /**
-     * Change one slot of one garden, or the whole bed with `slot: '*'`.
+     * RETIRED. **Every verb this reaches refuses**, and the method is kept so that a caller is told
+     * why rather than getting a `TypeError`.
      *
-     * **There is no server-side HARVEST**, and asking for one is refused by name rather than quietly
-     * mapped onto `clear`: taking the crop is something a player does at the bed, and `clear`
-     * destroys the plant and yields nothing.
+     * The game's garden writes are all functions on `UDebugRpcChannel`, and nothing in the shipping
+     * build ever constructs one. With no instance the calls land on the class default object, are
+     * ACCEPTED, and change nothing — no fault, no log line, nothing anywhere saying it did not
+     * happen. The bridge refuses them instead, and the refusal names the game's own garden admin
+     * commands, which are AIMED: an admin has to be looking at the bed, and being near it is not
+     * enough.
      *
-     * **These writes have never run on a live server.** The only garden write path in the build is a
-     * debug channel of which no live instance exists, so the call target is a class default object.
-     * Treat the first use as a test, on a server you can restart. A partial `*` is reported as a
-     * REFUSAL even though the world changed, naming how many slots took it.
+     * There is no server-side HARVEST either, and that is a separate fact: taking the crop is
+     * something a player does at the bed, so it is refused by name rather than mapped onto `clear`,
+     * which destroys the plant and yields nothing.
      *
-     * `value` is what the verb takes: litres for `water` (0 < v ≤ 1000), a stage for `grow`
-     * (`none|seeding|vegetating|flowering|ripening`, or 0–4, matched against the running build's own
-     * enum), `organic|industrial` for `fertilize`, an intensity for `weeds`, a crop for `plant` —
-     * which alone also takes `steamId`, because planting is attributed to a player and therefore
-     * needs one spawned in. `clear`, `kill`, `pesticide` and `fungicide` take none.
+     * The arguments are documented so an existing caller can recognise its own call in the refusal.
+     * `value` was litres for `water`, a stage for `grow`, `organic|industrial` for `fertilize`, an
+     * intensity for `weeds` and a crop for `plant` — which alone also took `steamId`. `clear` and
+     * `kill` over the whole bed took the literal `'CONFIRM'`.
      *
-     * **`clear` and `kill` over the WHOLE bed need the literal `'CONFIRM'` as `value`**:
-     * `gardenAction('clear', 7, '*', 'CONFIRM')`. That is the one shape here with no way back. A
-     * single slot does not — a ceremony demanded for every ordinary call is how a ceremony stops
-     * being read.
+     * Reading a garden is untouched: `.gardens()` and the per-bed read work exactly as before.
      */
     gardenAction(verb: 'water' | 'grow' | 'clear' | 'kill' | 'fertilize' | 'pesticide' | 'fungicide'
                      | 'weeds' | 'plant',
@@ -1171,9 +1173,6 @@ export interface Host {
     // Every verb names a LEVEL explicitly: no "all", no default, no nearest match. **Nothing tuned
     // here is saved** — a restart puts every one of them back.
 
-    /** End a run through the game's own failure path. **Success is unknowable** — the game does not
-     *  report what it did with it. */
-    stopKillbox(level: string): Promise<BridgeCommandResult>;
     /** Trigger panic mode. Also unknowable, and there is no panic READING at all. */
     panicKillbox(level: string): Promise<BridgeCommandResult>;
     /** Write the countdown, 0..7200 seconds. `remainingSeconds` holds a leftover while a killbox is
@@ -1495,9 +1494,10 @@ export interface Host {
     settingCategories(): Promise<Record<string, any> | null>;
     /** Every write this module has made, and what the value was before it. */
     settingChanges(): Promise<Record<string, any> | null>;
-    /** Put back what the last write to one setting changed. */
+    /** RETIRED, and the bridge refuses it: nothing changes a setting any more, so there is nothing
+     *  to put back. */
     revertSetting(name: string): Promise<BridgeCommandResult>;
-    /** The same for every setting this module has changed since the server started. */
+    /** RETIRED with `revertSetting()`, and refuses for the same reason. */
     revertAllSettings(): Promise<BridgeCommandResult>;
 
     // ── creating things in the world ─────────────────────────────────────────────────────────────
@@ -2226,7 +2226,7 @@ export interface Host {
     climateCurves(): Promise<any>;
     /** Set a multi-part value (a colour, a direction) in one call. */
     setClimateVector(key: string, ...values: number[]): Promise<BridgeCommandResult>;
-    /** The same, and hold it there against the system's own next roll. */
+    /** RETIRED, and the bridge refuses it, exactly as `pinClimate()` is. */
     pinClimateVector(key: string, ...values: number[]): Promise<BridgeCommandResult>;
     /** One part of a multi-part value, leaving the rest alone. */
     setClimateComponent(key: string, component: string | number, value: number): Promise<BridgeCommandResult>;
@@ -2234,9 +2234,11 @@ export interface Host {
     setClimateCurveKey(curve: string, index: number, value: number): Promise<BridgeCommandResult>;
     /** Narrow (or widen) one stage of one channel's roll range. */
     setClimateRollStage(channel: string, index: number, value: number): Promise<BridgeCommandResult>;
-    /** Stop or restart the weather simulation itself. Stopped, nothing rolls and nothing drifts. */
+    /** RETIRED, and the bridge refuses it. The server writes this byte at startup and never reads
+     *  it again, so nothing stopped. Still readable through `climateSwitches()`. */
     setClimateSimulation(on: boolean): Promise<BridgeCommandResult>;
-    /** Stop or restart the passage of in-game time. */
+    /** RETIRED, and the bridge refuses it. The clock ran on at the speed `timeSpeed` sets with this
+     *  switched off. Write `timeSpeed` 0 to stop it — that one holds, and clients are told. */
     setClimateClock(on: boolean): Promise<BridgeCommandResult>;
 
     // -- more to read -----------------------------------------------------------------------------
@@ -3228,6 +3230,20 @@ export interface TabDef {
   permission?: string; premium?: boolean; when?: () => boolean;
   render: (el: HTMLElement) => void;
 }
+/** What `apiClient()` / `api()` reject with. Everything you need to say what happened. */
+export interface SSAApiError extends Error {
+  /** HTTP status, or 0 when the request never reached the manager. */
+  status: number;
+  /** The route's `error` code, `session_expired` for a 401, or `http_<n>`. */
+  code: string;
+  /** The route's OWN sentence, when it sent one. Print this in preference to your own wording. */
+  reason?: string;
+  /** True for a 401 — the session cookie outlives the panel's one check at boot. */
+  expired: boolean;
+  /** The parsed body, if the response had one. */
+  body?: any;
+}
+
 export interface SSA {
   ready(fn: (ssa: SSA) => void): void;
   registerTab(opts: TabDef): void;
@@ -3249,7 +3265,33 @@ export interface SSA {
   i18n: { add(lang: string, dict: Record<string, string>): void; override(lang: string, dict: Record<string, string>): void };
   t(key: string, fallback?: string, vars?: Record<string, any>): string;
   lang(): string;
+  /**
+   * A fetch bound to your backend routes (`/api/plugin-host/<id>/…`), resolving WHICH plugin is
+   * asking at the moment you call it. The panel only knows that inside a synchronous stretch it
+   * started itself — loading your script, a `ready()` callback, a `render()` — so a call from a
+   * timer, a click handler or a `.then` has no plugin attached and is refused with
+   * `plugin_unresolved`. Prefer `apiClient()`.
+   *
+   * REJECTS on a non-2xx and on a network failure; see `apiClient` for the error shape.
+   */
   api<T = any>(path: string, opts?: RequestInit): Promise<T>;
+  /**
+   * The client to hold. Captures the binding to your plugin while it is still known — call it once,
+   * at the top of your script — and stays correct for the life of the tab.
+   *
+   * Sets `credentials`, JSON-encodes an object `body` with its `Content-Type`, and REJECTS rather
+   * than hiding a failure: a 403, a 404, a 500 and a dropped connection are not an empty list, and
+   * `(r.items || [])` over a swallowed failure draws a screen that says nothing is configured when
+   * the truth was about the request. Feed the rejection to `apiError()` and put the sentence on the
+   * screen — a throwing client with nowhere to print only moves the silence.
+   */
+  apiClient(): <T = any>(path: string, opts?: RequestInit) => Promise<T>;
+  /**
+   * One sentence for a rejection, in the order that matters: the route's own `reason` (it is the
+   * only layer that knows which value was over which limit), then the expired-session case, then
+   * the code.
+   */
+  apiError(err: SSAApiError | Error | null, fallback?: string): string;
   on(evt: string, fn: (payload: any) => void): () => void;
   emit(evt: string, payload?: any): void;
   socket: { on(evt: string, fn: (payload: any) => void): void };

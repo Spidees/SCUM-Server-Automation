@@ -1,5 +1,10 @@
 /* Chat Commands & Kits — admin UI (matches the manager's card + token styling). */
 .ck-wrap{display:flex;flex-direction:column;gap:14px}
+.ck-loading{color:var(--muted,#8b9099);font-size:.86rem}
+/* The whole tab could not load — a different thing from a tab with nothing configured, and the
+   whole reason the backend calls in this file no longer swallow a failure into `{}`. */
+.ck-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.ck-err-act{margin-top:.7rem}
 
 /* top bar: sub-nav + save */
 .ck-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 2px}
@@ -23,6 +28,10 @@
 /* A stopped server is INFORMATION, not a warning: setting this up before the first start is exactly
    right. Its own row across the strip; both halves in one rule so the pair cannot drift apart. */
 .ck-note-off{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
+/* A REQUEST that failed — a different thing from a world with nothing in it. Both halves of the
+   pair are written in the one rule so the cascade cannot leave text nobody can read on a coloured
+   ground (check-contrast). */
+.ck-note-err{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
 .ck-stat-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
 .ck-stat-l{color:var(--muted,#8b9099);letter-spacing:.02em}
 .ck-stat-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
@@ -206,6 +215,9 @@
 .ck-pp-name{display:flex;align-items:center;gap:8px;min-width:0}
 .ck-pp-dot{width:7px;height:7px;border-radius:50%;background:var(--line-2,#343943);flex:none}
 .ck-pp-dot.on{background:#3ba55d;box-shadow:0 0 7px rgba(59,165,93,.6)}
+/* The roster itself could not be read — never "no players found", which an admin looking for
+   someone they know exists would read as the roster genuinely being empty. */
+.ck-pp-err{color:#f0a8a8}
 
 @media (max-width:640px){ .ck-grid2,.ck-cols{grid-template-columns:1fr} }
 

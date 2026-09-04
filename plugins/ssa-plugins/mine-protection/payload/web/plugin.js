@@ -4,8 +4,6 @@
  * placed/armed right now), escalation rules, per-message text, an exemption player-picker, and a live
  * feed of recent actions. Talks only to its own backend under /api/plugin-host/mine-protection. */
 (function () {
-  var API = '/api/plugin-host/mine-protection';
-
   var DEF = {
     enabled: true, pollSeconds: 6, marginMeters: 0,
     watchedTypes: ['ImprovisedMine', 'Mine_01', 'Mine_02', 'ImprovisedClaymore', 'Claymore', 'PressureCookerBomb', 'PipeBomb', 'PromTrap'],
@@ -15,12 +13,19 @@
     warnMessage: 'Warning: arming a mine outside your flag is not allowed. Next one takes you with it.',
   };
 
-  // ── tiny fetch + dom helpers ────────────────────────────────────────────────
-  function api(p, opts) {
-    opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
-    if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) { return r.json().catch(function () { return {}; }); }).catch(function () { return {}; });
-  }
+  // ── backend calls ───────────────────────────────────────────────────────────
+  // The manager's own client, not a hand-rolled one. The wrapper this replaces swallowed a failure
+  // TWICE — the inner catch ate a body that was not JSON, the outer ate the network failure and
+  // every non-2xx — so a backend that was down, a route that 404'd and a session that had expired
+  // all arrived as `{}`. Every `(r && r.mines) || []` below then drew an empty table, which is a
+  // sentence about the WORLD ("no mines are placed") when the truth was about the REQUEST.
+  //
+  // `SSA.apiClient()` is captured here, at the top of the script, because `SSA.api` resolves the
+  // calling plugin at call time and the panel only knows who is asking inside a render — every call
+  // in this file is a poll tick, a click or a `.then`, and would have gone to /api/plugin-host/_/.
+  var api = SSA.apiClient();
+  // One sentence for a failure, the route's own words first. Used by every catch in this file.
+  function why(err) { return SSA.apiError(err); }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -77,13 +82,28 @@
     var body = h('div', { class: 'mp-body' }, [h('p', { class: 'mp-loading' }, 'Loading…')]);
     el.appendChild(body);
 
-    Promise.all([api('/config'), api('/catalog'), api('/status')]).then(function (r) {
-      config = Object.assign({}, DEF, r[0] || {});
-      catalog = (r[1] && r[1].items) || [];
-      status = r[2] || null;
-      render();
-      bindLive();
-    });
+    // Where a failure goes. Without a slot, a throwing client only moves the silence: the promise
+    // rejects, nothing renders, and the tab sits on "Loading…" for ever — which reads as slow rather
+    // than as broken.
+    function loadFailed(err) {
+      body.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'secondary', onclick: function () { body.innerHTML = ''; body.appendChild(h('p', { class: 'mp-loading' }, 'Loading…')); load(); } }, 'Try again');
+      body.appendChild(h('div', { class: 'mp-err' }, [
+        h('strong', {}, 'This tab could not load its settings. '),
+        h('span', {}, why(err)),
+        h('div', { class: 'mp-err-act' }, [retry]),
+      ]));
+    }
+    function load() {
+      Promise.all([api('/config'), api('/catalog'), api('/status')]).then(function (r) {
+        config = Object.assign({}, DEF, r[0] || {});
+        catalog = (r[1] && r[1].items) || [];
+        status = r[2] || null;
+        render();
+        bindLive();
+      }).catch(loadFailed);
+    }
+    load();
 
     // This editor's event handler; installing it as the shared `mpOnEvent` makes this the active mount,
     // which also stops any previous mount's poll loop (it checks it's still the active handler).
@@ -101,18 +121,34 @@
       }
       refreshStatusLoop();
     }
+    // A poll that fails is its own case and must not be treated like the first load. The screen is
+    // already drawn and the settings on it are still the owner's; what has stopped is the live half.
+    // So the tables keep the last figures they had, and the live bar says the figures are stale —
+    // clearing them would turn "I could not ask" into "there is nothing there", which is the exact
+    // lie this whole change is about.
+    var pollErr = null;
+    function pollFailed(err) {
+      if (mpOnEvent !== onEvent) return;
+      pollErr = why(err);
+      renderLiveBar();
+      mpLiveTimer = setTimeout(refreshStatusLoop, 8000);   // keep trying; it may be a restart
+    }
     function refreshMines() {
-      api('/mines').then(function (r) { if (mpOnEvent !== onEvent) return; mines = (r && r.mines) || []; renderMines(); });
+      api('/mines').then(function (r) {
+        if (mpOnEvent !== onEvent) return;
+        pollErr = null; mines = (r && r.mines) || []; renderMines(); renderLiveBar();
+      }).catch(function (err) { if (mpOnEvent === onEvent) { pollErr = why(err); renderLiveBar(); } });
     }
     function refreshStatusLoop() {
       if (mpOnEvent !== onEvent) return;                 // a newer mount took over → stop this loop
       if (mpLiveTimer) { clearTimeout(mpLiveTimer); mpLiveTimer = null; }
       Promise.all([api('/status'), api('/mines')]).then(function (rr) {
         if (mpOnEvent !== onEvent) return;               // superseded while the request was in flight
+        pollErr = null;
         var s = rr[0]; if (s && s.enabled != null) { status = s; renderStatusBar(); renderRecent(); }
         mines = (rr[1] && rr[1].mines) || []; renderMines();
         mpLiveTimer = setTimeout(refreshStatusLoop, 8000);
-      });
+      }).catch(pollFailed);
     }
 
     // ── status header ──
@@ -137,6 +173,12 @@
     };
     function renderLiveBar() {
       liveBar.innerHTML = '';
+      if (pollErr) {
+        liveBar.appendChild(h('div', { class: 'mp-live-n mp-live-err' }, [
+          h('strong', {}, 'The live figures below have stopped updating. '),
+          document.createTextNode(pollErr + ' What you can see is the last answer that arrived; the settings on this page are unaffected.'),
+        ]));
+      }
       // The server being off is not a fault and not a reason to stop. Two lists on this page are a
       // photograph of the running world and cannot exist without one; everything else is a rule the
       // owner writes, and the best moment to write it is BEFORE the server comes up. Say which is
@@ -264,7 +306,8 @@
               title: 'Forget this player’s offences — they get their warnings back',
               onclick: function () {
                 api('/reset-offenses', { method: 'POST', body: { steamId: r.placerSteamId } })
-                  .then(function () { toast('Offences cleared for ' + (r.placerName || r.placerSteamId)); refreshStatusLoop(); });
+                  .then(function () { toast('Offences cleared for ' + (r.placerName || r.placerSteamId)); refreshStatusLoop(); })
+                  .catch(function (err) { toast('Nothing was cleared — ' + why(err), 'error'); });
               },
             }, 'Forgive'));
             return wrap;
@@ -277,8 +320,11 @@
     // ── recent actions table (live) ──
     var recentTbl = null;
     function buildRecentTable() {
-      var reset = h('button', { class: 'secondary', onclick: function () { api('/reset-offenses', { method: 'POST' }).then(function () { toast('Warnings reset'); refreshStatusLoop(); }); } }, 'Reset warnings');
-      var clear = h('button', { class: 'secondary', onclick: function () { api('/clear-history', { method: 'POST' }).then(function () { status = status || {}; status.recent = []; renderRecent(); }); } }, 'Clear history');
+      // Both of these are destructive, so a refusal must never look like a success. Clearing the
+      // local list on a failed POST is the worse half: the history would come back on the next
+      // refresh, and the admin would already have moved on believing it was gone.
+      var reset = h('button', { class: 'secondary', onclick: function () { api('/reset-offenses', { method: 'POST' }).then(function () { toast('Warnings reset'); refreshStatusLoop(); }).catch(function (err) { toast('Warnings were NOT reset — ' + why(err), 'error'); }); } }, 'Reset warnings');
+      var clear = h('button', { class: 'secondary', onclick: function () { api('/clear-history', { method: 'POST' }).then(function () { status = status || {}; status.recent = []; renderRecent(); }).catch(function (err) { toast('The history was NOT cleared — ' + why(err), 'error'); }); } }, 'Clear history');
       return SSA.table({
         rows: function () { return (status && status.recent) || []; },
         searchPlaceholder: 'Search recent actions…',
@@ -373,9 +419,16 @@
         msg.textContent = 'Saving…'; saveBtn.disabled = true;
         api('/config', { method: 'POST', body: config }).then(function (r) {
           saveBtn.disabled = false;
-          if (r && r.ok) { config = Object.assign({}, DEF, r.config || config); msg.textContent = 'Saved ✓'; toast('Configuration saved'); renderStatusBar(); }
-          else { msg.textContent = 'Save failed'; toast('Save failed', 'error'); }
-          setTimeout(function () { msg.textContent = ''; }, 2500);
+          if (r && r.ok) { config = Object.assign({}, DEF, r.config || config); msg.textContent = 'Saved ✓'; toast('Configuration saved'); renderStatusBar(); setTimeout(function () { msg.textContent = ''; }, 2500); }
+          // A route that answered 200 without `ok` is a refusal too, and it may have said why.
+          else { var w = (r && r.reason) || (r && r.error) || 'the manager did not say why'; msg.textContent = 'NOT saved — ' + w; toast('NOT saved — ' + w, 'error'); }
+        }).catch(function (err) {
+          // The sentence STAYS beside the button until the next attempt. A save that did not happen
+          // is not a transient notice — the owner's edits are still sitting unsaved in front of
+          // them, and a toast is gone in four seconds.
+          saveBtn.disabled = false;
+          msg.textContent = 'NOT saved — ' + why(err);
+          toast('NOT saved — ' + why(err), 'error');
         });
       } }, 'Save configuration');
       body.appendChild(h('div', { class: 'mp-actions' }, [saveBtn, msg]));

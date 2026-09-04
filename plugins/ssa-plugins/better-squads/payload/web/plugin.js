@@ -7,8 +7,6 @@
  * of the panel, not a bolt-on. Talks only to its own backend under /api/plugin-host/better-squads. */
 (function () {
   'use strict';
-  var API = '/api/plugin-host/better-squads';
-
   var CH_LABEL = { squad: 'Squad', local: 'Local', global: 'Global', admin: 'Admin' };
 
   // Tokens every message can use.
@@ -73,11 +71,18 @@
   };
 
   // ── helpers ─────────────────────────────────────────────────────────────────
-  function api(p, opts) {
-    opts = opts || {}; var init = Object.assign({ credentials: 'same-origin' }, opts);
-    if (init.body && typeof init.body === 'object') { init.headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers || {}); init.body = JSON.stringify(init.body); }
-    return fetch(API + p, init).then(function (r) { return r.json().catch(function () { return {}; }); }).catch(function () { return {}; });
-  }
+  // The manager's own client, not a hand-rolled one. The wrapper this replaces swallowed a failure
+  // TWICE — the inner catch ate a body that was not JSON, the outer ate the network failure and every
+  // non-2xx — so a backend that was down, a route that 404'd and a session that had expired all
+  // arrived as `{}`. Every `(r && r.x) || []` after it then drew an empty screen that says "there is
+  // nothing configured", which is a sentence about the DATA when the truth was about the REQUEST.
+  //
+  // `SSA.apiClient()` is captured here, at the top of the script, because `SSA.api` resolves the
+  // calling plugin at call time and the panel only knows who is asking inside a render — every real
+  // call in this file is a poll tick, a click or a `.then`, and would have gone to /api/plugin-host/_/.
+  var api = SSA.apiClient();
+  // One sentence for a failure, the route's own words first. Used by every catch in this file.
+  function why(err) { return SSA.apiError(err); }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -153,23 +158,43 @@
     root.innerHTML = '';
     var cfg = null, statusData = { stats: {}, recent: [] }, players = [];
     var logTable = null, prefTable = null, statusBar = null;
+    // A poll that fails is its own case, not a load failure: the screen is already drawn and the
+    // settings on it are still the owner's. So it is a NOTE inside the status strip, not a page
+    // replacement, and it never clears statusData/players — the tables keep showing the last answer
+    // that arrived while this says the live half has stopped.
+    var pollErr = null;
 
     var wrap = h('div', { class: 'bs-body' });
     root.appendChild(wrap);
     wrap.appendChild(h('div', { class: 'bs-loading' }, 'Loading…'));
 
-    function save() {
-      return api('/config', { method: 'POST', body: cfg }).then(function (r) {
-        if (r && r.ok) toast('Saved', 'ok'); else toast('Could not save', 'err');
-      });
+    // Where a failure goes when the tab itself could not load. Without a slot, a throwing client only
+    // moves the silence: the promise rejects, nothing renders, and the tab sits on "Loading…" for
+    // ever — which reads as slow rather than as broken.
+    function loadFailed(err) {
+      wrap.innerHTML = '';
+      var retry = h('button', { type: 'button', class: 'secondary', onclick: function () { wrap.innerHTML = ''; wrap.appendChild(h('div', { class: 'bs-loading' }, 'Loading…')); load(); } }, 'Try again');
+      wrap.appendChild(h('div', { class: 'bs-err' }, [
+        h('strong', {}, 'This tab could not load its settings. '),
+        h('span', {}, why(err)),
+        h('div', { class: 'bs-err-act' }, [retry]),
+      ]));
     }
+
     function refreshStatus() {
       return Promise.all([api('/status'), api('/players')]).then(function (r) {
+        pollErr = null;
         statusData = r[0] || statusData;
         players = r[1] || players;
         if (statusBar) renderStatusBar();
         if (logTable) logTable.refresh();
         if (prefTable) prefTable.refresh();
+      }).catch(function (err) {
+        // Keep the last figures on screen — clearing them would turn "I could not ask" into "there
+        // is nothing there", which is the exact lie this whole change is about. Retrying is
+        // automatic: the interval that calls refreshStatus keeps ticking.
+        pollErr = why(err);
+        if (statusBar) renderStatusBar();
       });
     }
 
@@ -188,6 +213,14 @@
           h('span', { class: 'bs-stat-l' }, b[0]),
         ]));
       });
+      // A REQUEST that failed — a different thing from a world with nothing in it. What is on screen
+      // is the last answer that arrived; the settings below are unaffected and still save normally.
+      if (pollErr) {
+        statusBar.appendChild(h('div', { class: 'bs-live-err' }, [
+          h('b', {}, 'The live figures have stopped updating.'),
+          ' ' + pollErr + ' The settings on this page are unaffected — you can keep editing and saving them.',
+        ]));
+      }
       // Six zeroes and no explanation is how "nothing has happened yet" gets read as "nothing works".
       // Every message, command name and reply on this page is editable right now; the counters are the
       // only part that has to wait, and the best time to write the texts is before anyone is on.
@@ -216,10 +249,59 @@
       });
     }
 
+    // A save bar: a primary button plus a status span that carries the sentence for as long as it is
+    // true. A toast is gone in four seconds and the owner's unedited fields would still be sitting in
+    // front of them — this is what makes a refused save look different from a slow one. There are
+    // four of these (messages / delivery / commands / replies), so it is a function rather than four
+    // copies that would drift.
+    function saveBar(btnLabel) {
+      var msg = h('span', { class: 'bs-savemsg' });
+      var btn = h('button', {
+        class: 'primary',
+        onclick: function () {
+          msg.textContent = 'Saving…'; btn.disabled = true;
+          api('/config', { method: 'POST', body: cfg }).then(function (r) {
+            btn.disabled = false;
+            if (r && r.ok) {
+              msg.textContent = 'Saved ✓'; toast('Saved', 'ok');
+              setTimeout(function () { msg.textContent = ''; }, 2500);
+            } else {
+              // A route that answered 200 without `ok` is a refusal too, and it may have said why.
+              var w = (r && (r.reason || r.error)) || 'the manager did not say why';
+              msg.textContent = 'NOT saved — ' + w; toast('NOT saved — ' + w, 'err');
+            }
+          }).catch(function (err) {
+            btn.disabled = false;
+            msg.textContent = 'NOT saved — ' + why(err);
+            toast('NOT saved — ' + why(err), 'err');
+          });
+        },
+      }, [icon('check'), btnLabel]);
+      return h('div', { class: 'bs-actions' }, [btn, msg]);
+    }
+
     function build() {
       wrap.innerHTML = '';
 
-      var master = toggle(function () { return cfg.enabled; }, function (v) { cfg.enabled = v; save(); }, 'Enabled');
+      // The master switch posts immediately rather than waiting for a Save button, so a refused
+      // write must undo the checkbox too — otherwise the screen reads "on" while the server still has
+      // it off, which is worse than the toast being the only place the failure shows.
+      var masterInput = h('input', { type: 'checkbox', onchange: function () {
+        var v = masterInput.checked, prev = cfg.enabled;
+        cfg.enabled = v;
+        api('/config', { method: 'POST', body: cfg }).then(function (r) {
+          if (!(r && r.ok)) {
+            cfg.enabled = prev; masterInput.checked = prev;
+            var w = (r && (r.reason || r.error)) || 'the manager did not say why';
+            toast('NOT turned ' + (v ? 'on' : 'off') + ' — ' + w, 'err');
+          }
+        }).catch(function (err) {
+          cfg.enabled = prev; masterInput.checked = prev;
+          toast('NOT turned ' + (v ? 'on' : 'off') + ' — ' + why(err), 'err');
+        });
+      } });
+      masterInput.checked = !!cfg.enabled;
+      var master = h('label', { class: 'bs-chk' }, [masterInput, h('span', {}, 'Enabled')]);
       statusBar = h('div', { class: 'bs-stats' });
       wrap.appendChild(h('div', { class: 'bs-head' }, [
         h('div', { class: 'bs-head-l' }, [
@@ -252,7 +334,7 @@
         ' reads “Petr died in B3.” normally and “Petr died.” when the position is unknown.',
       ]);
       wrap.appendChild(card('Events', 'What gets announced and exactly how it reads. Amber tokens are measured from whoever is reading the line, so those messages go out individually.',
-        [evNote].concat(evRows).concat([h('div', { class: 'bs-actions' }, [h('button', { class: 'primary', onclick: save }, [icon('check'), 'Save messages'])])])));
+        [evNote].concat(evRows).concat([saveBar('Save messages')])));
 
       // delivery -------------------------------------------------------------
       var chSel = h('select', { onchange: function () { cfg.channel = chSel.value; } },
@@ -278,7 +360,7 @@
           toggle(function () { return cfg.includeSelf; }, function (v) { cfg.includeSelf = v; }, 'Also send to the player it is about'),
           toggle(function () { return cfg.quietHours.enabled; }, function (v) { cfg.quietHours.enabled = v; }, 'Respect quiet hours'),
         ]),
-        h('div', { class: 'bs-actions' }, [h('button', { class: 'primary', onclick: save }, [icon('check'), 'Save delivery'])]),
+        saveBar('Save delivery'),
       ]));
 
       // commands -------------------------------------------------------------
@@ -312,13 +394,13 @@
         h('div', { class: 'bs-grid' }, [field('Root command', rootIn, 'Typed with the manager’s chat-command prefix.')]),
         h('div', { class: 'bs-prev-wrap' }, [h('span', { class: 'bs-prev-l' }, 'Players type'), preview]),
         subGrid,
-        h('div', { class: 'bs-actions' }, [h('button', { class: 'primary', onclick: save }, [icon('check'), 'Save commands'])]),
+        saveBar('Save commands'),
       ]));
 
       wrap.appendChild(card('Command replies', 'Every line a player can see, in any language. Tokens and [ optional parts ] work exactly as they do in the event messages.',
         textCards.concat([
           tokenBar(['{player}', '{squad}', '{squadonline}', '{squadsize}', '{sector}', '{distance}', '{direction}', '{text}', '{count}', '{score}', '{motd}', '{list}', '{muted}', '{root}']),
-          h('div', { class: 'bs-actions' }, [h('button', { class: 'primary', onclick: save }, [icon('check'), 'Save replies'])]),
+          saveBar('Save replies'),
         ])));
 
       // what players silenced themselves ------------------------------------
@@ -344,7 +426,12 @@
           { key: 'state', label: 'Silenced', render: function (r) { return r.off ? SSA.cell.tag('all alerts off', 'bad') : document.createTextNode((r.muted || []).join(', ')); } },
           { key: 'act', label: '', render: function (r) {
             return h('button', { class: 'secondary', onclick: function () {
-              api('/prefs/reset', { method: 'POST', body: { steamId: r.steamId } }).then(function () { toast('Reset'); refreshStatus(); });
+              api('/prefs/reset', { method: 'POST', body: { steamId: r.steamId } }).then(function (res) {
+                if (res && res.ok) { toast('Reset'); refreshStatus(); }
+                else { var w = (res && (res.reason || res.error)) || 'the manager did not say why'; toast((r.name || r.steamId) + ' was NOT reset — ' + w, 'err'); }
+              }).catch(function (err) {
+                toast((r.name || r.steamId) + ' was NOT reset — ' + why(err), 'err');
+              });
             } }, 'Reset');
           } },
         ],
@@ -358,9 +445,27 @@
         if (!cfg.mutedSteamIds.length) { muteBox.appendChild(h('span', { class: 'bs-empty' }, 'Nobody is muted.')); return; }
         cfg.mutedSteamIds.forEach(function (sid) {
           var p = players.filter(function (x) { return x.steamId === sid; })[0];
+          var label = (p && p.name) || sid;
           muteBox.appendChild(h('span', { class: 'bs-chip' }, [
-            (p && p.name) || sid,
-            h('button', { class: 'bs-chip-x', title: 'Unmute', onclick: function () { cfg.mutedSteamIds = cfg.mutedSteamIds.filter(function (x) { return x !== sid; }); renderMutes(); save(); } }, '×'),
+            label,
+            h('button', { class: 'bs-chip-x', title: 'Unmute', onclick: function () {
+              // Applied to the chip list right away so the click feels instant, but this is exactly
+              // the "never clear a local list on a failed POST" case: if the save is refused, the
+              // chip comes back rather than leaving the admin believing the player is still muted.
+              var before = cfg.mutedSteamIds;
+              cfg.mutedSteamIds = cfg.mutedSteamIds.filter(function (x) { return x !== sid; });
+              renderMutes();
+              api('/config', { method: 'POST', body: cfg }).then(function (r) {
+                if (!(r && r.ok)) {
+                  cfg.mutedSteamIds = before; renderMutes();
+                  var w = (r && (r.reason || r.error)) || 'the manager did not say why';
+                  toast(label + ' was NOT unmuted — ' + w, 'err');
+                }
+              }).catch(function (err) {
+                cfg.mutedSteamIds = before; renderMutes();
+                toast(label + ' was NOT unmuted — ' + why(err), 'err');
+              });
+            } }, '×'),
           ]));
         });
       }
@@ -371,7 +476,18 @@
           if (!p) return;
           var sid = String(p.steamId || p.SteamID || '');
           if (!sid || cfg.mutedSteamIds.indexOf(sid) >= 0) return;
-          cfg.mutedSteamIds.push(sid); renderMutes(); save();
+          var label = p.name || sid;
+          cfg.mutedSteamIds.push(sid); renderMutes();
+          api('/config', { method: 'POST', body: cfg }).then(function (r) {
+            if (!(r && r.ok)) {
+              cfg.mutedSteamIds = cfg.mutedSteamIds.filter(function (x) { return x !== sid; }); renderMutes();
+              var w = (r && (r.reason || r.error)) || 'the manager did not say why';
+              toast(label + ' was NOT muted — ' + w, 'err');
+            }
+          }).catch(function (err) {
+            cfg.mutedSteamIds = cfg.mutedSteamIds.filter(function (x) { return x !== sid; }); renderMutes();
+            toast(label + ' was NOT muted — ' + why(err), 'err');
+          });
         });
       } }, [icon('ban'), 'Mute a player']);
       wrap.appendChild(card('Muted by an admin', 'A muted player receives none of these messages. Their squadmates still do, and they cannot undo this in game.', [muteBox, h('div', { class: 'bs-actions' }, [addMute])]));
@@ -385,14 +501,23 @@
             if (r && r.ok) toast('Sent to ' + r.delivered + ' squad member(s)', 'ok');
             else if (r && r.error === 'not_in_squad') toast('That player is not in a squad', 'err');
             else if (r && r.error === 'nobody_online') toast('Nobody from that squad is online', 'err');
-            else toast('Test failed', 'err');
+            else toast('Test failed' + ((r && r.error) ? ' — ' + r.error : ''), 'err');
+          }).catch(function (err) {
+            toast('Test failed — ' + why(err), 'err');
           });
         });
       } }, [icon('chat'), 'Send a test']);
       var clearBtn = h('button', { class: 'secondary', onclick: function () {
         SSA.confirm('Clear the activity log?').then(function (ok) {
           if (!ok) return;
-          api('/clear-log', { method: 'POST' }).then(function () { statusData.recent = []; if (logTable) logTable.refresh(); });
+          // The local list is cleared only after the backend confirms it — a refusal must never look
+          // like a successful clear, since the log has already gone once the admin sees an empty table.
+          api('/clear-log', { method: 'POST' }).then(function (r) {
+            if (r && r.ok) { statusData.recent = []; if (logTable) logTable.refresh(); }
+            else toast('The log was NOT cleared — ' + ((r && (r.reason || r.error)) || 'the manager did not say why'), 'err');
+          }).catch(function (err) {
+            toast('The log was NOT cleared — ' + why(err), 'err');
+          });
         });
       } }, [icon('close'), 'Clear log']);
 
@@ -414,22 +539,25 @@
       ]));
     }
 
-    Promise.all([api('/config'), api('/status'), api('/players')]).then(function (r) {
-      cfg = r[0] || {};
-      cfg.events = cfg.events || {};
-      cfg.commands = cfg.commands || {};
-      cfg.commands.subs = cfg.commands.subs || {};
-      cfg.commands.texts = cfg.commands.texts || {};
-      cfg.quietHours = cfg.quietHours || { enabled: false, from: 0, to: 0 };
-      cfg.mutedSteamIds = cfg.mutedSteamIds || [];
-      statusData = r[1] || statusData;
-      players = r[2] || [];
-      build();
-      // The tab can be mounted many times; keep exactly ONE poll timer, always driving the most
-      // recent mount, or the timers stack up and the panel polls faster and faster.
-      if (bsPollTimer) clearInterval(bsPollTimer);
-      bsPollTimer = setInterval(refreshStatus, 10000);
-    });
+    function load() {
+      Promise.all([api('/config'), api('/status'), api('/players')]).then(function (r) {
+        cfg = r[0] || {};
+        cfg.events = cfg.events || {};
+        cfg.commands = cfg.commands || {};
+        cfg.commands.subs = cfg.commands.subs || {};
+        cfg.commands.texts = cfg.commands.texts || {};
+        cfg.quietHours = cfg.quietHours || { enabled: false, from: 0, to: 0 };
+        cfg.mutedSteamIds = cfg.mutedSteamIds || [];
+        statusData = r[1] || statusData;
+        players = r[2] || [];
+        build();
+        // The tab can be mounted many times; keep exactly ONE poll timer, always driving the most
+        // recent mount, or the timers stack up and the panel polls faster and faster.
+        if (bsPollTimer) clearInterval(bsPollTimer);
+        bsPollTimer = setInterval(refreshStatus, 10000);
+      }).catch(loadFailed);
+    }
+    load();
   }
 
   SSA.ready(function () {

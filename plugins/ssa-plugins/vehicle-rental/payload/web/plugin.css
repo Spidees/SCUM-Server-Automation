@@ -57,6 +57,19 @@
    own `button:hover` paints every button amber with dark text, so changing only the colour leaves an
    amber fill and changing only the fill leaves dark text — both unreadable. */
 .vr-btn.danger{--hov-bg:var(--alarm,#ff5c5c);--hov-fg:#1a0505;--hov-line:var(--alarm,#ff5c5c);color:var(--alarm,#ff5c5c);border-color:rgba(255,92,92,.45);padding:.3rem .7rem;font-size:.78rem}
+/* Where a FIRST load failure goes. Without a slot, a throwing client only moves the silence: the
+   promise rejects, nothing renders, and the tab sits on "Loading…" forever — which reads as slow
+   rather than as broken. A harder colour than `.vr-warn` on purpose: that one flags something the
+   owner can fix on this page, this one means the tab could not even draw itself. */
+.vr-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#ff5c5c);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.vr-err-act{margin-top:.7rem}
+/* A search that could not run, inside the vehicle typeahead menu — not "no results", which reads
+   as the same thing a real empty search gives. */
+.vr-ac-msg{padding:.5rem .6rem;font-size:.8rem;color:var(--muted,#8b9099)}
+/* The active/finished rental lists have stopped updating. Same severity as `.vr-err` — this is a
+   live view failing, not a configuration note — but a paragraph rather than a boxed panel, since
+   it sits above two tables that are still showing their last good data. */
+.vr-live-err{margin:0 0 10px;font-size:.82rem;color:var(--alarm,#ff5c5c)}
 
 /* Phones. One plan per line: three number/select boxes side by side are unreadable under 560px,
    and the delete button needs a real target rather than a bare glyph. */

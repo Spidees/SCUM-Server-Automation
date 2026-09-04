@@ -2,7 +2,7 @@
   "id": "discord-embeds",
   "name": "Discord Embeds",
   "type": "manager",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "updated": "2026-08-19",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
@@ -17,7 +17,7 @@
   },
   "config": "config.json",
   "premium": true,
-  "minManagerVersion": "5.11.0",
+  "minManagerVersion": "5.13.0",
   "dependencies": [
     {
       "id": "ssa-bridge"
