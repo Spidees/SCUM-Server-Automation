@@ -39,7 +39,7 @@ mine is armed in the open, the placer is teleported onto their own armed mine â€
     inside their new teammate's base.
   With either switched off the plugin behaves exactly as it always has and **says so on its own tab**,
   in the module's own words â€” it never silently falls back.
-- Manager **5.11.0+**, which is what the manifest enforces. The floor is not a formality: before
+- Manager **5.13.0+**, which is what the manifest enforces. The floor is not a formality: before
   5.0.3 the manager answered "is this mine inside its
   placer's flag?" with a plain yes/no, and a moment when the game database could not be read came
   back as **no**. This plugin acts on a no by teleporting somebody onto a live mine. From 5.0.3 that

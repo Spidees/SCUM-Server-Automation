@@ -36,7 +36,7 @@ is online, where they are and how far away. Nobody outside the squad ever sees a
 
 ## Requirements
 - The **SSA Bridge** plugin (for targeted chat and `/command` interception). It's a dependency.
-- Manager **5.11.0+**. That is what the manifest enforces, so it is what the panel will let you enable.
+- Manager **5.13.0+**. That is what the manifest enforces, so it is what the panel will let you enable.
 - **Two in-game modules are optional but change what the numbers mean.** Both are off until you turn
   them on, in **Settings → Bridge**:
   - **Read live player data** with **Position, facing and speed** (Live data) — makes `{distance}` and

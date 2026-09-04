@@ -40,7 +40,7 @@ and mutually exclusive groups, and **nothing is charged for a delivery that did 
 ## Requirements
 - The **SSA Bridge** plugin — in-game chat, spawning, currency and the live join event. It is a
   declared dependency and installs with the plugin.
-- Manager **5.11.0+**, which is what the manifest enforces. Time windows are part of that: they need
+- Manager **5.13.0+**, which is what the manifest enforces. Time windows are part of that: they need
   the manager's own window evaluator, and on a manager without it a command or kit that HAS a window
   is treated as closed rather than as unrestricted, with the reason in the manager log.
 - **At least one player online** for anything that happens in game. With nobody there the bridge has
