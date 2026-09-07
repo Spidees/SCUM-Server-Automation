@@ -4,6 +4,27 @@
  * Full guide: https://scumsa.com/docs. This describes the API only — not the manager's internals.
  */
 
+/**
+ * One linked account — a Discord user and the SCUM character they registered.
+ *
+ * The store's own column names travel alongside these (`steam_id`, `player_name`, …): they are the
+ * same values under the database's spelling, and they are kept so nothing that already reads them
+ * breaks. Write new code against the named fields.
+ */
+export interface LinkedPlayer {
+  steamId: string;
+  /** Their in-game character name, or `null` if the link was made before they were ever seen. */
+  playerName: string | null;
+  /** An alias of `playerName`, for the common case of just wanting somebody to address. */
+  name: string | null;
+  discordId: string;
+  discordUserId: string;
+  discordUsername: string;
+  discordAvatar: string | null;
+  linkedAt: string;
+  [column: string]: unknown;
+}
+
 // ── Backend: the `host` facade passed to register(host) ──────────────────────
 export interface Host {
   info: { id: string; dir: string; libDir: string; dataDir: string; version: string; apiVersion: number };
@@ -45,8 +66,16 @@ export interface Host {
 
   /** Linked players (Discord ↔ SCUM character) + player data. */
   players: {
-    linked(discordUserId: string): any | null;
-    bySteamId(steamId: string): any | null;
+    /**
+     * Who this Discord user is in-game, or `null` if they have not linked an account.
+     *
+     * `steamId` is the field to test and the field to act on. `playerName` is nullable — a link
+     * made before that player was ever seen in-game has no name yet — so fall back to
+     * `discordUsername` when you need something to print, never when you need to know who they are.
+     */
+    linked(discordUserId: string): LinkedPlayer | null;
+    /** The same record from the other end: which Discord account owns this Steam ID. */
+    bySteamId(steamId: string): LinkedPlayer | null;
     stats(steamId: string): any | null;
     statsByName(name: string): any | null;
     /** { cash, bank, gold, accountNumber, cards } — `bank` is the pool the Bridge charges. */
