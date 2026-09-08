@@ -1,0 +1,45 @@
+/* More Chat Messages — the settings screen.
+ *
+ * Every width here goes through `min()` so the page collapses to one column instead of widening.
+ * A bare `minmax(320px, 1fr)` is inside a card that clips its overflow, so the right edge of every
+ * control in it would be cut off rather than scrolled to — the manager's own stylesheet does this
+ * in six places for the same reason.
+ *
+ * Nothing hides itself behind a touch media query either: a rule that hides what JavaScript opens
+ * is how the panel's own nav dropdowns became unreachable on a phone. */
+
+.mcm-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+.mcm-intro { flex: 1 1 min(100%, 24rem); color: var(--muted); font-size: 0.86rem; }
+
+.mcm-status { margin-bottom: 0.9rem; color: var(--muted); font-size: 0.82rem; }
+.mcm-note { margin-top: 0.5rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--inset); }
+/* The pair moves together. Setting only the colour on a tinted surface, or only the surface under
+   inherited text, is the unreadable-hover shape `check-contrast` exists for — so both halves are
+   stated in the one rule. */
+.mcm-err { color: var(--danger, #ff6b6b); border-color: var(--danger, #ff6b6b); background: var(--inset); }
+
+.mcm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 0.9rem; }
+.mcm-card { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.85rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.mcm-head { display: flex; align-items: center; gap: 0.5rem; }
+.mcm-head b { flex: 1; }
+.mcm-switch { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--muted); }
+.mcm-what { color: var(--muted); font-size: 0.8rem; }
+
+.mcm-body { display: flex; flex-direction: column; gap: 0.55rem; }
+/* Dimmed, not hidden: an owner writing the wording before switching the announcement on is the
+   ordinary way round, and a card that empties itself when it is off cannot be prepared. */
+.mcm-body.mcm-off { opacity: 0.55; }
+
+.mcm-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; font-size: 0.82rem; }
+.mcm-toggle { justify-content: flex-start; }
+.mcm-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.mcm-field label { font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.mcm-msg, .mcm-num, .mcm-chan { width: 100%; max-width: 100%; padding: 0.4rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--inset); color: var(--text); font-size: 0.86rem; }
+.mcm-num { max-width: 8rem; }
+.mcm-holders { font-family: var(--mono); font-size: 0.7rem; color: var(--faint); overflow-wrap: anywhere; }
+
+.mcm-recent { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.mcm-line { display: flex; flex-wrap: wrap; gap: 0.5rem; font-size: 0.78rem; }
+.mcm-kind { min-width: 4rem; color: var(--faint); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
+.mcm-text { flex: 1 1 min(100%, 16rem); overflow-wrap: anywhere; }
+.mcm-why { color: var(--faint); }

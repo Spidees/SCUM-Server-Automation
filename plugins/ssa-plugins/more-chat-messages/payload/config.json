@@ -1,0 +1,52 @@
+{
+  "kills": {
+    "enabled": false,
+    "channel": "global",
+    "message": "{killer} killed {victim} ({weapon}) at {distance} m",
+    "messageNoKiller": "{victim} died",
+    "selfMessage": "{victim} killed themselves",
+    "minDistance": 0
+  },
+  "joins": {
+    "enabled": false,
+    "channel": "global",
+    "message": "{name} joined the server ({sector})"
+  },
+  "leaves": {
+    "enabled": false,
+    "channel": "global",
+    "message": "{name} left the server ({sector})"
+  },
+  "cargo": {
+    "enabled": false,
+    "channel": "global",
+    "incomingMessage": "A cargo drop is on its way to {sector}",
+    "landedMessage": "The cargo drop has landed in {sector}",
+    "goneMessage": "The cargo drop in {sector} is gone",
+    "announceIncoming": true,
+    "announceLanded": true,
+    "announceGone": false
+  },
+  "bunkersSecret": {
+    "enabled": false,
+    "channel": "global",
+    "openMessage": "A secret bunker has opened in {sector}",
+    "closeMessage": "The secret bunker in {sector} has closed",
+    "announceClose": false
+  },
+  "bunkersAbandoned": {
+    "enabled": false,
+    "channel": "global",
+    "openMessage": "The abandoned bunker in {sector} is now active",
+    "closeMessage": "The abandoned bunker in {sector} has locked",
+    "announceClose": true
+  },
+  "raids": {
+    "enabled": false,
+    "channel": "global",
+    "message": "A base is under attack in {sector}",
+    "includeOwner": false,
+    "ownerMessage": "{owner}'s base is under attack in {sector}"
+  },
+  "pollSeconds": 30
+}

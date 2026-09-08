@@ -1,0 +1,36 @@
+{
+  "id": "more-chat-messages",
+  "name": "More Chat Messages",
+  "type": "manager",
+  "version": "1.0.0",
+  "updated": "2026-09-08",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Announce what happens on your server in the game's own chat. Kills, players joining and leaving, cargo drops, bunkers opening and closing, and bases being raided - each one switched on separately, sent to the chat channel you choose, and worded however you like. Everything ships off, so nothing is announced until you say so.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "5.13.0",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "config": "config.json",
+  "dependencies": [
+    "ssa-bridge"
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "worldevents",
+        "switches": [
+          "enabled",
+          "cargo"
+        ],
+        "why": "Cargo drops are in no log the manager reads and in no table of SCUM.db - the only place they exist is the running game, and this module is what reports them. Without these two switches the cargo announcement has nothing to watch and stays silent; every other announcement here reads the server's own log and is unaffected."
+      }
+    ]
+  },
+  "premium": false
+}
