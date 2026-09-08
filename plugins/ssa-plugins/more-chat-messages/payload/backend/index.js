@@ -17,10 +17,18 @@
 //
 // Three have to be ASKED FOR rather than waited for, and they do not share a source:
 //
-//   bunkers        `host.map.bunkers()` — the MANAGER's own reading. SCUM writes `[LogBunkerLock]`
-//                  lines and `bunkerState.js` already parses them into
-//                  `{ sector, state: 'active' | 'locked', keycard }`. That is a real state on a real
+//   bunkers        `host.map.bunkers()` AND `host.map.secretBunkers()` — the MANAGER's own reading.
+//                  SCUM writes `[LogBunkerLock]` lines and `bunkerState.js` already parses them
+//                  into `{ sector, state: 'active' | 'locked' }`. That is a real state on a real
 //                  clock, it names the sector itself, and it works with no bridge at all.
+//
+//                  ⚠ **TWO CALLS, BECAUSE THEY ARE TWO DIFFERENT THINGS.** The first version read
+//                  one list and split it on `keycard`, which is wrong on both sides. `keycard` in
+//                  that list means an ABANDONED bunker somebody opened EARLY with a card, so the
+//                  "secret bunkers" switch announced abandoned ones; and a real secret bunker was
+//                  never in the list at all, because the game gives it no scheduled activation and
+//                  it therefore never appears in the periodic state dump that list is built from.
+//                  The secret switch could not fire once, on any server, ever.
 //   cargo          the SSA Bridge's `worldevents` module. Cargo is in no log and in no table of
 //                  `SCUM.db`; the only thing that knows is the running game.
 //
@@ -291,6 +299,7 @@ async function register(host) {
   // a restart would announce every crate and every open bunker as new.
   let lastCargo = null;
   let lastBunkers = null;
+  let lastSecret = null;
   let lastPollError = '';
 
   /**
@@ -307,6 +316,62 @@ async function register(host) {
     y: Math.round(Number(c && c.y) || 0),
   });
 
+  /**
+   * One bunker list, read through whatever host call was handed in.
+   *
+   * `null` for "could not read", NEVER an empty array: the two are opposite facts here and the
+   * caller announces a close on the difference between them. A host that is too old to have the
+   * call at all lands in the same place, which is what keeps this working on an older manager
+   * instead of throwing every poll.
+   */
+  const readList = (fn) => {
+    if (typeof fn !== 'function') return null;
+    let list = null;
+    try { list = fn.call(host.map); } catch { list = null; }
+    return Array.isArray(list) ? list : null;
+  };
+
+  /**
+   * Diff one bunker list against the previous poll and announce what moved.
+   *
+   * ⚠ **THE FIRST GOOD READING IS A BASELINE, NOT A ROUND OF NEWS.** Both lists are built from the
+   * game's own log and both come back populated the moment the manager has read it, so announcing
+   * on the first poll would tell the server every open bunker had just opened -- on every manager
+   * restart. `null` means nothing has been compared yet.
+   *
+   * ⚠ **AND AN EMPTY LIST IS A READING.** For the secret list it is the ordinary state — nobody has
+   * opened one — so it has to be compared rather than skipped, or the close would never be
+   * announced. That is the opposite of the cargo rule above, where an empty answer is
+   * indistinguishable from a refusal; here the refusal is `null` and is already gone.
+   */
+  function bunkerPass(section, list, last) {
+    if (!section.enabled || list === null) return last;
+    const now = new Map(list.map((b) => [String(b.sector), b]));
+    if (!last) return now;                       // baseline
+    const varsOf = (sector, b) => ({
+      sector,
+      x: (b && b.location && b.location.x) || '',
+      y: (b && b.location && b.location.y) || '',
+    });
+    for (const [sector, b] of now) {
+      const was = last.get(sector);
+      const open = b.state === 'active';
+      const wasOpen = !!(was && was.state === 'active');
+      if (open && !wasOpen) say('bunker', section, section.openMessage, varsOf(sector, b));
+      else if (wasOpen && !open && section.announceClose) say('bunker', section, section.closeMessage, varsOf(sector, b));
+    }
+    // Leaving the list IS closing. `getBunkers()` drops a keycard bunker whose window has elapsed
+    // and `getSecretBunkers()` drops every row whose window ran out, and in both cases the bunker
+    // shut -- so a row that vanished is the close, not a gap in the reading.
+    for (const [sector, was] of last) {
+      if (now.has(sector)) continue;
+      if (section.announceClose && was.state === 'active') {
+        say('bunker', section, section.closeMessage, varsOf(sector, was));
+      }
+    }
+    return now;
+  }
+
   /** A stable identity for one crate or bunker across two polls. */
   const idOf = (o) => [o && o.class, Math.round(Number(o && o.x) || 0), Math.round(Number(o && o.y) || 0)].join('|');
 
@@ -317,43 +382,8 @@ async function register(host) {
     // into a real state. An empty array is BOTH "no bunker has been seen in the log yet" and "this
     // island has none", so the same rule as everywhere else applies: nothing is announced until
     // there is something to compare against.
-    if (cfg.bunkersSecret.enabled || cfg.bunkersAbandoned.enabled) {
-      let list = null;
-      try { list = host.map.bunkers(); } catch { list = null; }
-      if (Array.isArray(list) && list.length) {
-        const now = new Map(list.map((b) => [String(b.sector), b]));
-        if (lastBunkers) {
-          for (const [sector, b] of now) {
-            // `keycard` is what the game does for a SECRET bunker: it is opened with a key card and
-            // runs on its own duration, where the abandoned ones are on a scheduled rota. That is
-            // the same split an owner sees in game, so it is the split the two switches make.
-            const s = b.keycard === true ? cfg.bunkersSecret : cfg.bunkersAbandoned;
-            if (!s.enabled) continue;
-            const was = lastBunkers.get(sector);
-            const open = b.state === 'active';
-            const wasOpen = !!(was && was.state === 'active');
-            const vars = {
-              sector,
-              x: (b.location && b.location.x) || '',
-              y: (b.location && b.location.y) || '',
-            };
-            if (open && (!was || !wasOpen)) say('bunker', s, s.openMessage, vars);
-            else if (was && wasOpen && !open && s.announceClose) say('bunker', s, s.closeMessage, vars);
-          }
-          // A bunker that DISAPPEARS from the list is not one that closed -- `getBunkers()` drops a
-          // keycard bunker whose window has elapsed, which is the same event as it closing, so it is
-          // announced; a scheduled one never leaves the list at all.
-          for (const [sector, was] of lastBunkers) {
-            if (now.has(sector)) continue;
-            const s = was.keycard === true ? cfg.bunkersSecret : cfg.bunkersAbandoned;
-            if (s.enabled && s.announceClose && was.state === 'active') {
-              say('bunker', s, s.closeMessage, { sector, x: (was.location && was.location.x) || '', y: (was.location && was.location.y) || '' });
-            }
-          }
-        }
-        lastBunkers = now;
-      }
-    }
+    lastBunkers = bunkerPass(cfg.bunkersAbandoned, readList(host.map.bunkers), lastBunkers);
+    lastSecret = bunkerPass(cfg.bunkersSecret, readList(host.map.secretBunkers), lastSecret);
 
     // ── cargo: only the bridge knows ───────────────────────────────────────────────────────────
     if (!cfg.cargo.enabled) return;
@@ -430,6 +460,11 @@ async function register(host) {
         bunkers: cfg.bunkersSecret.enabled || cfg.bunkersAbandoned.enabled,
         seededCargo: lastCargo !== null,
         seededBunkers: lastBunkers !== null,
+        seededSecretBunkers: lastSecret !== null,
+        // Whether this manager can answer about secret bunkers at all. It is a separate call and
+        // it arrived in 5.14.8; an older one has no route to them, and a switch that is on and
+        // silent with no explanation is the thing this field exists to stop.
+        secretBunkersSupported: typeof host.map.secretBunkers === 'function',
       },
     });
   });

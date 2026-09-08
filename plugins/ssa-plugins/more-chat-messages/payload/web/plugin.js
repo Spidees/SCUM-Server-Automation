@@ -59,10 +59,12 @@
         ['goneMessage', 'Gone', '{sector} {x} {y}'],
       ] },
     { key: 'bunkersSecret', icon: 'lock', title: 'Secret bunkers',
-      what: 'The key card ones. Announced when the game opens it, and again when its window runs '
-        + 'out if you want that. Read from the server\'s own log, so it needs no bridge.',
+      what: 'The key card ones. Announced the moment a player opens one, and again when its window '
+        + 'runs out if you want that. Read from the server\'s own log, so it needs no bridge - but '
+        + 'it does need manager 5.14.8 or newer, because nothing before that recorded the event at '
+        + 'all. The game gives these no position, so only {sector} is filled in here.',
       toggles: [['announceClose', 'Announce it closing as well as opening']],
-      fields: [['openMessage', 'Opened', '{sector} {x} {y}'], ['closeMessage', 'Closed', '{sector} {x} {y}']] },
+      fields: [['openMessage', 'Opened', '{sector}'], ['closeMessage', 'Closed', '{sector}']] },
     { key: 'bunkersAbandoned', icon: 'lock', title: 'Abandoned bunkers',
       what: 'The scheduled ones that open and lock on their own rota. Announced the moment the '
         + 'game writes the change to its log, so it needs no bridge.',
@@ -206,8 +208,18 @@
           'The server is not running, so there is nothing to announce yet. Every message, channel '
           + 'and switch above can be set up now and goes live the moment it starts.'));
       }
-      // A REQUEST that failed is not a world with nothing in it. Cargo and bunkers exist only in
-      // the running game, so an owner seeing nothing announced needs to know which of the two it is.
+      // A switch that is ON and silent with no explanation is the worst of the three states, and
+      // this is the one case where the reason is the manager underneath rather than anything the
+      // owner set. Nothing before 5.14.8 kept the log line a secret bunker writes, so the
+      // announcement could not fire however the card was filled in.
+      if (s.watching && s.watching.secretBunkersSupported === false) {
+        status.appendChild(h('div', { class: 'mcm-note' },
+          'Secret bunkers cannot be announced by this manager: it needs 5.14.8 or newer, which is '
+          + 'the first version that records a key card opening one. The switch and its messages can '
+          + 'be set up now, and every other announcement here is unaffected.'));
+      }
+      // A REQUEST that failed is not a world with nothing in it. Cargo exists only in the running
+      // game, so an owner seeing nothing announced needs to know which of the two it is.
       if (s.pollError && s.watching && (s.watching.cargo || s.watching.bunkers)) {
         status.appendChild(h('div', { class: 'mcm-note mcm-err' },
           `Cargo and bunkers cannot be watched right now: ${s.pollError}. `

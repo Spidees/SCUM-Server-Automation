@@ -142,7 +142,20 @@ export interface Host {
     world(): any | null;
     container(entityId: any): any | null;
     vehicleParts(entityId: any): any[];
+    /** The scheduled abandoned bunkers and their active/locked state. Never the secret ones. */
     bunkers(): any[];
+    /**
+     * The SECRET bunkers a player has opened with a keycard, still inside their keycard window.
+     *
+     * A different list from `bunkers()` on purpose: that one is the scheduled abandoned rota, and
+     * the game gives a secret bunker no schedule at all — the line that opens one names a sector
+     * the rota's own state dump never mentions. Rows carry `secret: true`, the same
+     * `state` / `activationUnix` / `activeUntilUnix` shape, and no `location`.
+     *
+     * An empty list also means "none has been opened since the manager started", so treat the
+     * first reading as a baseline rather than as "nothing is open".
+     */
+    secretBunkers(): any[];
     /**
      * Is this world point inside the flag rectangle of that player's — or their squad's — bases?
      * `margin` widens the rectangle, in centimetres (default 0 = the exact flag).
