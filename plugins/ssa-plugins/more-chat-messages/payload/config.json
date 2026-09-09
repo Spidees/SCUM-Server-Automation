@@ -20,6 +20,7 @@
   "cargo": {
     "enabled": false,
     "channel": "global",
+    "everySeconds": 0,
     "incomingMessage": "A cargo drop is on its way to {sector}",
     "landedMessage": "The cargo drop has landed in {sector}",
     "goneMessage": "The cargo drop in {sector} is gone",
@@ -30,6 +31,7 @@
   "events": {
     "enabled": false,
     "channel": "global",
+    "everySeconds": 0,
     "announceOpen": true,
     "openMessage": "The {event} at {location} is open — {registered} signed up so far. Join in if you want to play.",
     "announceJoin": false,
@@ -44,6 +46,7 @@
   "bunkersSecret": {
     "enabled": false,
     "channel": "global",
+    "everySeconds": 0,
     "openMessage": "A secret bunker has opened in {sector}",
     "closeMessage": "The secret bunker in {sector} has closed",
     "announceClose": false
@@ -51,6 +54,7 @@
   "bunkersAbandoned": {
     "enabled": false,
     "channel": "global",
+    "everySeconds": 0,
     "openMessage": "The abandoned bunker in {sector} is now active",
     "closeMessage": "The abandoned bunker in {sector} has locked",
     "announceClose": true

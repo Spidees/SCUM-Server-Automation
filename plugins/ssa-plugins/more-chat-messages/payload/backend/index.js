@@ -95,6 +95,8 @@ const DEFAULTS = {
   cargo: {
     enabled: false,
     channel: 'global',
+    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
+    everySeconds: 0,
     // Three states, three lines, because they are three different pieces of news to a player: one
     // is a race starting, one is a place to go, and one is the race being over.
     incomingMessage: 'A cargo drop is on its way to {sector}',
@@ -107,6 +109,8 @@ const DEFAULTS = {
   events: {
     enabled: false,
     channel: 'global',
+    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
+    everySeconds: 0,
     // Registration is open and there is somebody in it. This is the "come and play" line.
     announceOpen: true,
     openMessage: 'The {event} at {location} is open — {registered} signed up so far. Join in if you want to play.',
@@ -126,6 +130,8 @@ const DEFAULTS = {
   bunkersSecret: {
     enabled: false,
     channel: 'global',
+    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
+    everySeconds: 0,
     openMessage: 'A secret bunker has opened in {sector}',
     closeMessage: 'The secret bunker in {sector} has closed',
     announceClose: false,
@@ -133,6 +139,8 @@ const DEFAULTS = {
   bunkersAbandoned: {
     enabled: false,
     channel: 'global',
+    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
+    everySeconds: 0,
     openMessage: 'The abandoned bunker in {sector} is now active',
     closeMessage: 'The abandoned bunker in {sector} has locked',
     announceClose: true,
@@ -150,6 +158,9 @@ const DEFAULTS = {
   // How often the three polled announcements ask the game. Seconds. The bridge answers a world walk,
   // so this is not free: 30s is a compromise between a crate being announced late and a question
   // nobody asked being put to the game twice a minute.
+  // The shared interval, used by any section whose own `everySeconds` is 0. Only cargo, game
+  // events and the two bunker sections poll at all; everything else here is announced the
+  // moment the manager reads it out of the log.
   pollSeconds: 30,
 };
 
@@ -515,22 +526,68 @@ async function register(host) {
     return now;
   }
 
-  async function poll() {
+  // ── how often each announcement asks, and what asking costs ───────────────────────────────────
+  //
+  // ⚠ **THE BRIDGE CALL IS NOT CHEAP AND THE PLUGIN CANNOT MAKE IT CHEAPER.** One
+  // `worldEvents()` reaches `find_all_multi`, which visits every UObject in the process and walks
+  // each one's super-struct chain -- 1,794,563 objects on this build's own dump. Unreal has no
+  // by-class index to ask instead, and the four buckets (crates, events, bunkers, world events)
+  // already SHARE that one walk, so asking for fewer of them shortens nothing. On top of it sit
+  // five real ProcessEvent calls per event location, about 125 per reply.
+  //
+  // The only lever on this side is how often, so it is per section rather than one number for all
+  // of them -- bunkers come from the manager's own parsed log and cost the game nothing, cargo and
+  // events cost that walk. And when two sections fall due in the same tick they share ONE reply,
+  // because two intervals must never mean two walks.
+  const BASE_TICK_MS = 5000;
+  const dueAt = new Map();
+  /** A section's own interval, or the plugin-wide one. Bounded here, so a hand-edited 0 cannot spin. */
+  const everyOf = (section) => {
+    const own = Number(section && section.everySeconds);
+    if (own >= 5 && own <= 3600) return own;
+    const all = Number(cfg.pollSeconds);
+    return (all >= 5 && all <= 3600) ? all : DEFAULTS.pollSeconds;
+  };
+  /** Is this section switched on AND due? Records the next time as a side effect, so ask once. */
+  const isDue = (key, section, now) => {
+    if (!section || !section.enabled) return false;
+    const at = dueAt.get(key);
+    if (at !== undefined && now < at) return false;
+    dueAt.set(key, now + everyOf(section) * 1000);
+    return true;                                   // an unseen key is due immediately: the baseline
+  };
+
+  /**
+   * One tick. Takes `now` so a test can drive its own clock -- `host.schedule.every` calls this
+   * with no arguments, which is the production path.
+   */
+  async function poll(nowMs) {
+    // `nowAt`, not `now`: the cargo block below already owns that name for its own map, and two
+    // `const now` in one function is a SyntaxError rather than a subtle bug -- caught by the
+    // syntax check, but worth the word so nobody renames it back.
+    const nowAt = Number(nowMs) || Date.now();
+    const doAbandoned = isDue('bunkersAbandoned', cfg.bunkersAbandoned, nowAt);
+    const doSecret = isDue('bunkersSecret', cfg.bunkersSecret, nowAt);
+    const doCargo = isDue('cargo', cfg.cargo, nowAt);
+    const doEvents = isDue('events', cfg.events, nowAt);
+
     // ── bunkers: the manager's own reading, and it needs no bridge ─────────────────────────────
     //
     // `host.map.bunkers()` is `bunkerState.js`, which parses the game's own `[LogBunkerLock]` lines
     // into a real state. An empty array is BOTH "no bunker has been seen in the log yet" and "this
     // island has none", so the same rule as everywhere else applies: nothing is announced until
     // there is something to compare against.
-    lastBunkers = bunkerPass(cfg.bunkersAbandoned, readList(host.map.bunkers), lastBunkers);
-    lastSecret = bunkerPass(cfg.bunkersSecret, readList(host.map.secretBunkers), lastSecret);
+    if (doAbandoned) lastBunkers = bunkerPass(cfg.bunkersAbandoned, readList(host.map.bunkers), lastBunkers);
+    if (doSecret) lastSecret = bunkerPass(cfg.bunkersSecret, readList(host.map.secretBunkers), lastSecret);
 
     // ── cargo and the competitive events: only the bridge knows ────────────────────────────────
     //
     // One reading feeds both. ⚠ The `return` that used to be here was gated on CARGO alone, so an
     // owner who wanted only the event announcements would have had a section that was switched on,
     // configured, and never once asked the bridge anything.
-    if (!cfg.cargo.enabled && !cfg.events.enabled) return;
+    // Nothing that needs the bridge is due, so it is not asked. This is the whole point of the
+    // per-section intervals: a fast bunker line does not buy a world walk every five seconds.
+    if (!doCargo && !doEvents) return;
     let payload = null;
     try { payload = await host.bridge.worldEvents(); } catch { payload = null; }
     // ⚠ A REFUSAL IS NOT AN EMPTY WORLD. The bridge being off, the module being off and an island
@@ -545,11 +602,11 @@ async function register(host) {
     // event locations are level-placed actors, so a walk during start-up finds none and `events: []`
     // reads exactly like a map that has none. `eventsEmptyReason` is the module's word for it, and
     // an empty list is left uncompared rather than treated as everything having ended.
-    if (cfg.events.enabled && Array.isArray(payload.events) && payload.events.length) {
+    if (doEvents && Array.isArray(payload.events) && payload.events.length) {
       lastEvents = await eventPass(payload.events, lastEvents);
     }
 
-    if (!cfg.cargo.enabled) { lastPollError = ''; return; }
+    if (!doCargo) { lastPollError = ''; return; }
     if (!Array.isArray(payload.cargo)) {
       lastPollError = 'the bridge answered without a cargo list';
       return;
@@ -578,11 +635,13 @@ async function register(host) {
     lastCargo = now;
   }
 
-  const secs = Number(cfg.pollSeconds);
-  // Bounded here rather than trusted: a hand-edited 0 would put a world walk on the game thread as
-  // fast as the loop can go. The positive form, so a NaN lands on the default.
-  const every = (secs >= 5 && secs <= 3600) ? secs : DEFAULTS.pollSeconds;
-  host.schedule.every(every * 1000, () => { poll().catch(() => {}); });
+  // A short base tick that is almost always a no-op -- it compares four numbers and returns. The
+  // work only happens for a section that is due, so the interval an owner sets is what decides how
+  // often the game is touched, not this.
+  // The argument is passed THROUGH rather than swallowed: `host.schedule.every` calls this with
+  // none, so production gets `Date.now()`, and a driver holding this callback can run its own
+  // clock. An arrow that dropped it made every driven tick land in the same millisecond.
+  host.schedule.every(BASE_TICK_MS, (nowMs) => { poll(nowMs).catch(() => {}); });
 
   // ── the screen's own reads ────────────────────────────────────────────────────────────────────
   //
@@ -604,7 +663,14 @@ async function register(host) {
       ok: true,
       stats,
       recent,
-      pollSeconds: every,
+      pollSeconds: everyOf(null),
+      // What each section really asks at, so the screen never has to guess which number won.
+      intervals: {
+        cargo: everyOf(cfg.cargo),
+        events: everyOf(cfg.events),
+        bunkersSecret: everyOf(cfg.bunkersSecret),
+        bunkersAbandoned: everyOf(cfg.bunkersAbandoned),
+      },
       // ⚠ **THREE ZEROES AND AN EMPTY LIST ARE TWO OPPOSITE FACTS.** "Nothing has happened yet" and
       // "the server is not running, so nothing CAN happen" look identical on this screen, and a
       // reader who cannot tell them apart concludes the plugin is broken. The screen can only say

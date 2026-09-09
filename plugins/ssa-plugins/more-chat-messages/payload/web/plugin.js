@@ -47,6 +47,7 @@
       what: 'One line when a player disconnects, with the sector they logged out in.',
       fields: [['message', 'Message', '{name} {steamId} {sector} {squad}']] },
     { key: 'cargo', icon: 'box', title: 'Cargo drops',
+      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. ⚠ This one asks the SSA Bridge, and one ask walks every object in the running game (1.79 million on this build) - so halving it doubles that work on the game thread.']],
       what: 'A drop exists from the moment the game schedules it, so it can be announced while it is '
         + 'still in the air. This is the only announcement here that needs the SSA Bridge: cargo is '
         + 'in no log and in no save table, and exists only in the running game.',
@@ -59,6 +60,7 @@
         ['goneMessage', 'Gone', '{sector} {x} {y}'],
       ] },
     { key: 'events', icon: 'flag2', title: 'Game events',
+      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. ⚠ This one asks the SSA Bridge, and one ask walks every object in the running game (1.79 million on this build) - so halving it doubles that work on the game thread.']],
       what: 'Deathmatch, capture the flag and drop zone. Announced when sign-ups open, when it '
         + 'starts and when it ends. Needs the SSA Bridge - the game writes nothing about events to '
         + 'any of its logs, so there is no other source. Naming the person who signed up needs one '
@@ -79,6 +81,7 @@
         ['endMessage', 'Ended', '{event} {location}'],
       ] },
     { key: 'bunkersSecret', icon: 'lock', title: 'Secret bunkers',
+      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. Bunkers come from the server\'s own log, so this costs the game nothing and can be as fast as you like.']],
       what: 'The key card ones. Announced the moment a player opens one, and again when its window '
         + 'runs out if you want that. Read from the server\'s own log, so it needs no bridge - but '
         + 'it does need manager 5.14.8 or newer, because nothing before that recorded the event at '
@@ -86,6 +89,7 @@
       toggles: [['announceClose', 'Announce it closing as well as opening']],
       fields: [['openMessage', 'Opened', '{sector}'], ['closeMessage', 'Closed', '{sector}']] },
     { key: 'bunkersAbandoned', icon: 'lock', title: 'Abandoned bunkers',
+      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. Bunkers come from the server\'s own log, so this costs the game nothing and can be as fast as you like.']],
       what: 'The scheduled ones that open and lock on their own rota. Announced the moment the '
         + 'game writes the change to its log, so it needs no bridge.',
       toggles: [['announceClose', 'Announce it locking as well as opening']],
@@ -232,11 +236,12 @@
         poll.value = String(state.pollSeconds);
       });
       const pollRow = h('div', { class: 'mcm-note' }, [
-        h('span', {}, 'Ask the game every '), poll, h('span', {}, ' seconds. '),
-        h('span', {}, 'Used only by Cargo drops and Game events; everything else is announced the '
-          + 'moment the manager sees it, whatever this says. One ask is a single walk of the world '
-          + 'plus about five calls per event location, so 5s is roughly six times the work of 30s. '
-          + 'Below 5 is refused.'),
+        h('span', {}, 'Shared interval: ask every '), poll, h('span', {}, ' seconds. '),
+        h('span', {}, 'Used by any card above whose own interval is 0. Only Cargo drops, Game '
+          + 'events and the two bunker cards poll at all — kills, joins, leaves and raids are '
+          + 'announced the moment the manager reads them out of the log, whatever this says. '
+          + 'Two cards falling due at the same moment share one ask rather than two. '
+          + 'Below 5 seconds is refused.'),
       ]);
       status.appendChild(pollRow);
       // Said out loud, because three zeroes and an empty list read as "this is not working" when
