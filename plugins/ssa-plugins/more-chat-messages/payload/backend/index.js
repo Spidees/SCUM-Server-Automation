@@ -601,10 +601,18 @@ async function register(host) {
   //
   // ⚠ **THE BRIDGE CALL IS NOT CHEAP AND THE PLUGIN CANNOT MAKE IT CHEAPER.** One
   // `worldEvents()` reaches `find_all_multi`, which visits every UObject in the process and walks
-  // each one's super-struct chain -- 1,794,563 objects on this build's own dump. Unreal has no
-  // by-class index to ask instead, and the four buckets (crates, events, bunkers, world events)
-  // already SHARE that one walk, so asking for fewer of them shortens nothing. On top of it sit
-  // five real ProcessEvent calls per event location, about 125 per reply.
+  // each one's super-struct chain -- 1,794,563 objects on this build's own dump. The four buckets
+  // (crates, events, bunkers, world events) already SHARE that one walk, so asking for fewer of
+  // them shortens nothing. On top of it sit five real ProcessEvent calls per event location, about
+  // 125 per reply.
+  //
+  // ⚠ **AND THAT IS A LIMIT OF WHAT THE MOD LOADER OFFERS, NOT OF THE ENGINE.** Unreal keeps a
+  // real by-class index -- `GetObjectsOfClass` over `FUObjectHashTables` -- and it is in every
+  // build. It is simply not reachable from here: it is not a reflected function, and a shipping
+  // monolithic build exports nothing, so calling it would mean finding it by pattern in the
+  // binary. What the loader gives is iteration and nothing else. This line said "Unreal has no
+  // by-class index", which is the difference between "the engine cannot" and "we cannot ask", and
+  // those are not the same sentence.
   //
   // The only lever on this side is how often, so it is per section rather than one number for all
   // of them -- bunkers come from the manager's own parsed log and cost the game nothing, cargo and
