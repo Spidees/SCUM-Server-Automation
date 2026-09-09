@@ -191,6 +191,60 @@ function merge(stored) {
   return out;
 }
 
+/**
+ * The keys a caller sent that THIS BUILD does not declare, as `section.key` strings.
+ *
+ * ⚠ **`merge()` DISCARDS THEM SILENTLY, WHICH IS RIGHT, AND SAYING NOTHING ABOUT IT IS NOT.**
+ * It builds from `DEFAULTS`, so a key this version has never heard of cannot survive a save -- and
+ * the screen that sent it gets `ok: true` and shows the owner their own number until they refresh.
+ * That is not hypothetical: the panel serves `web/plugin.js` from the library on every request
+ * while the manager only re-requires `backend/index.js` when the plugin is reloaded, so a card can
+ * be a version ahead of the code answering it. The field is then unsettable for the life of that
+ * manager process and nothing anywhere says why.
+ */
+/**
+ * A caller's body laid over what is already STORED, one section deep.
+ *
+ * ⚠ **A SECTION NOBODY SENT IS NOT A SECTION TO RESET.** `merge()` fills every section it does
+ * not find from DEFAULTS -- which is what makes reading an older version's file safe -- so handing
+ * it a body that names one section and passing the result to `host.config.set`, which spreads at the
+ * TOP level, replaced every other section with the shipped template. Driven: one
+ * `{"kills":{"enabled":true}}` blanked every message, channel and interval an owner had written, and
+ * answered `ok: true`. The panel sends the whole config, so nothing did that yet; a PATCH from
+ * anywhere would have.
+ */
+function overlay(stored, body) {
+  const out = Object.assign({}, stored && typeof stored === 'object' ? stored : {});
+  if (!body || typeof body !== 'object') return out;
+  for (const k of Object.keys(body)) {
+    const b = body[k];
+    const cur = out[k];
+    if (b && typeof b === 'object' && !Array.isArray(b)
+        && cur && typeof cur === 'object' && !Array.isArray(cur)) {
+      out[k] = Object.assign({}, cur, b);          // by key presence, so `false` and `0` survive
+    } else {
+      out[k] = b;
+    }
+  }
+  return out;
+}
+
+function unknownKeys(sent) {
+  const out = [];
+  if (!sent || typeof sent !== 'object') return out;
+  for (const k of Object.keys(sent)) {
+    const d = DEFAULTS[k];
+    if (d === undefined) { out.push(k); continue; }
+    const v = sent[k];
+    if (!d || typeof d !== 'object' || Array.isArray(d)) continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    for (const kk of Object.keys(v)) {
+      if (!Object.prototype.hasOwnProperty.call(d, kk)) out.push(k + '.' + kk);
+    }
+  }
+  return out;
+}
+
 /** A channel the bridge really has. Anything else falls back rather than being sent nowhere. */
 function channelOf(v) { return CHANNELS.includes(String(v)) ? String(v) : 'global'; }
 
@@ -760,9 +814,18 @@ async function register(host) {
 
   host.routes.post('/config', (req, res) => {
     const body = (req.body && typeof req.body === 'object') ? req.body : {};
-    host.config.set(merge(body));
+    // Worked out BEFORE the write, against what the caller actually sent: `merge()` returns a whole
+    // config built from DEFAULTS, so afterwards there is nothing left to compare and the loss is
+    // gone. `dropped` is how a screen can tell "saved" from "saved without that".
+    const dropped = unknownKeys(body);
+    // Over what is STORED first, filled from DEFAULTS second. The other order resets every section
+    // the caller did not name — see `overlay`.
+    host.config.set(merge(overlay(host.config.get(), body)));
     cfg = merge(host.config.get());
-    res.json({ ok: true, config: cfg });
+    // The stored config is echoed so the caller can read its own write back -- the rule the bridge
+    // lives by, on this side of the wire. A save that answers `ok` and stored something else is the
+    // one failure nobody can see.
+    res.json({ ok: true, config: cfg, dropped });
   });
 
   host.routes.get('/status', (req, res) => {

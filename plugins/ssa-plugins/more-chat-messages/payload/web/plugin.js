@@ -118,6 +118,50 @@
     return el;
   }
 
+  /**
+   * Which of the values we sent are not the values that came back, as `section.key`.
+   *
+   * Scalars only, and one level deep, because that is the whole shape of this config -- a section
+   * of flat switches, words and numbers. A field the backend does not know does not appear in the
+   * echo at all, which is `undefined` against something, so it lands here too.
+   */
+  /** Every key the cards draw that the RUNNING backend does not declare in its own defaults. */
+  function missingFromBackend(defaults) {
+    const out = [];
+    if (!defaults || typeof defaults !== 'object') return out;   // an older build sends none
+    CARDS.forEach((def) => {
+      const d = defaults[def.key];
+      if (!d || typeof d !== 'object') { out.push(def.key); return; }
+      const keys = ['enabled', 'channel']
+        .concat((def.toggles || []).map((x) => x[0]))
+        .concat((def.fields || []).map((x) => x[0]))
+        .concat((def.numbers || []).map((x) => x[0]));
+      keys.forEach((k) => {
+        if (!Object.prototype.hasOwnProperty.call(d, k)) out.push(def.key + '.' + k);
+      });
+    });
+    return out;
+  }
+
+  function disagreements(sent, stored) {
+    const out = [];
+    if (!sent || !stored) return out;
+    Object.keys(sent).forEach((k) => {
+      const a = sent[k];
+      const b = stored[k];
+      if (a && typeof a === 'object' && !Array.isArray(a)) {
+        if (!b || typeof b !== 'object') { out.push(k); return; }
+        Object.keys(a).forEach((kk) => {
+          if (a[kk] !== null && typeof a[kk] === 'object') return;   // nothing nested here today
+          if (a[kk] !== b[kk]) out.push(k + '.' + kk);
+        });
+        return;
+      }
+      if (a !== b) out.push(k);
+    });
+    return out;
+  }
+
   function card(def) {
     // ATTACHED, not `|| {}`. A detached section takes every keystroke in the card and is read by
     // nothing, which looks exactly like a card that works right up until Save.
@@ -189,18 +233,39 @@
     if (Array.isArray(loaded.channels) && loaded.channels.length) channels = loaded.channels;
 
     const status = h('div', { class: 'mcm-status' }, 'Loading…');
+    // Where a save says what it really did. Under the button rather than in a toast, because a
+    // toast is gone before an owner has read which setting did not land.
+    const saveNote = h('div', { class: 'mcm-savenote' });
     const save = h('button', { class: 'primary' }, 'Save');
     save.addEventListener('click', async () => {
       save.disabled = true;
       const r = await api('/config', { method: 'POST', body: state });
       save.disabled = false;
+      saveNote.innerHTML = '';
       // ⚠ **NOT `state = r.config`.** Every card captured its section when it was built, so
       // replacing the object leaves the inputs writing into the old one while the next save sends
       // the new one: edit, save, edit, save, and the second edit is silently gone with "Saved" on
-      // screen both times. The server echoes what it stored and it is what we sent, so there is
-      // nothing to take from it — and if there ever is, this has to re-render rather than reassign.
-      if (r && r.ok) { if (SSA.toast) SSA.toast('Saved'); }
-      else if (SSA.toast) SSA.toast((r && r.error) || 'Could not save — nothing was changed', 'error');
+      // screen both times. The echo is READ instead — compared against what was sent, never
+      // assigned over it.
+      if (!r || r.ok === false) {
+        if (SSA.toast) SSA.toast((r && r.error) || 'Could not save — nothing was changed', 'error');
+        saveNote.appendChild(h('span', { class: 'mcm-err' },
+          'Nothing was saved: ' + ((r && r.error) || 'the manager did not answer') + '.'));
+        return;
+      }
+      // ⚠ **A SAVE THAT ANSWERS `ok` AND STORED SOMETHING ELSE IS THE ONE FAILURE NOBODY CAN
+      // SEE.** It was reported from a live server: an interval set to 60, saved, and back to 0 on
+      // the next refresh, with "Saved" on screen in between. So the write is read back and the
+      // difference is named — the same rule this product enforces on every write it sends the game.
+      const lost = disagreements(state, r.config).concat(Array.isArray(r.dropped) ? r.dropped : []);
+      const shown = lost.filter((k, i) => lost.indexOf(k) === i).slice(0, 6);
+      if (!shown.length) { if (SSA.toast) SSA.toast('Saved'); return; }
+      if (SSA.toast) SSA.toast('Saved, but ' + shown.length + ' setting(s) did not land', 'error');
+      saveNote.appendChild(h('span', { class: 'mcm-err' },
+        'These were not stored: ' + shown.join(', ') + '. '
+        + 'The manager is running an older copy of this plugin than the screen you are looking at '
+        + '— the panel serves the new card straight from the library and the backend behind it is '
+        + 'only reloaded when the plugin is. Restart the manager and set them again.'));
     });
 
     container.appendChild(h('div', { class: 'mcm-top' }, [
@@ -209,6 +274,16 @@
         + 'Only the counters below wait for a running game.'),
       save,
     ]));
+    container.appendChild(saveNote);
+    // Before anything is typed: a control this card draws that the code behind it has never heard
+    // of cannot be saved, and finding that out after a refresh is the worst way to learn it.
+    const unsettable = missingFromBackend(loaded.defaults);
+    if (unsettable.length) {
+      container.appendChild(h('div', { class: 'mcm-note mcm-err' },
+        'This screen is newer than the plugin the manager is running, so ' + unsettable.length
+        + ' setting(s) on it cannot be saved yet: ' + unsettable.slice(0, 6).join(', ')
+        + '. Restart the manager to pick up the new version. Everything else here saves normally.'));
+    }
     container.appendChild(status);
     const grid = h('div', { class: 'mcm-grid' });
     CARDS.forEach((d) => grid.appendChild(card(d)));

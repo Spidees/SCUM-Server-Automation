@@ -50,3 +50,10 @@
   width: min(100%, 6rem);
   margin: 0 .25rem;
 }
+
+/* What a save really did. Empty until a save has something to say, so it takes no room on a screen
+   where nothing went wrong; it sits under the button because a toast is gone before an owner has
+   read which setting did not land. */
+.mcm-savenote:empty { display: none; }
+.mcm-savenote { margin: 0 0 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line);
+                border-radius: var(--radius); background: var(--inset); }
