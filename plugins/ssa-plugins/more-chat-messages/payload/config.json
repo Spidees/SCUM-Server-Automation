@@ -27,6 +27,20 @@
     "announceLanded": true,
     "announceGone": false
   },
+  "events": {
+    "enabled": false,
+    "channel": "global",
+    "announceOpen": true,
+    "openMessage": "The {event} at {location} is open — {registered} signed up so far. Join in if you want to play.",
+    "announceJoin": false,
+    "joinMessage": "{player} joined the {event} — {registered} signed up",
+    "announceCount": false,
+    "countMessage": "{registered} players are signed up for the {event} at {location}",
+    "announceStart": true,
+    "startMessage": "The {event} at {location} has started with {participants} players",
+    "announceEnd": false,
+    "endMessage": "The {event} at {location} has finished"
+  },
   "bunkersSecret": {
     "enabled": false,
     "channel": "global",

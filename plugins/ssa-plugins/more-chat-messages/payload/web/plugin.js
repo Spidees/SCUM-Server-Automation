@@ -58,6 +58,26 @@
         ['landedMessage', 'Landed', '{sector} {x} {y}'],
         ['goneMessage', 'Gone', '{sector} {x} {y}'],
       ] },
+    { key: 'events', icon: 'flag2', title: 'Game events',
+      what: 'Deathmatch, capture the flag and drop zone. Announced when sign-ups open, when it '
+        + 'starts and when it ends. Needs the SSA Bridge - the game writes nothing about events to '
+        + 'any of its logs, so there is no other source. Naming the person who signed up needs one '
+        + 'more switch, "Who is in the event", in the bridge\'s World events module; without it the '
+        + 'counts still work.',
+      toggles: [
+        ['announceOpen', 'Sign-ups are open'],
+        ['announceJoin', 'Each person who signs up (needs "Who is in the event" in the bridge)'],
+        ['announceCount', 'Every time the sign-up count changes'],
+        ['announceStart', 'The event starts'],
+        ['announceEnd', 'The event ends'],
+      ],
+      fields: [
+        ['openMessage', 'Sign-ups open', '{event} {location} {registered}'],
+        ['joinMessage', 'Someone signed up', '{player} {event} {registered}'],
+        ['countMessage', 'Sign-up count', '{event} {location} {registered}'],
+        ['startMessage', 'Started', '{event} {location} {participants} {teams}'],
+        ['endMessage', 'Ended', '{event} {location}'],
+      ] },
     { key: 'bunkersSecret', icon: 'lock', title: 'Secret bunkers',
       what: 'The key card ones. Announced the moment a player opens one, and again when its window '
         + 'runs out if you want that. Read from the server\'s own log, so it needs no bridge - but '
@@ -199,7 +219,26 @@
         return;
       }
       status.appendChild(h('span', {}, `${s.stats.sent} sent · ${s.stats.failed} failed · `
-        + `${s.stats.skipped} skipped · asking the game every ${s.pollSeconds}s`));
+        + `${s.stats.skipped} skipped`));
+
+      // How often the bridge is asked. Only cargo and the game events use it — everything else here
+      // is pushed by the manager as it happens — and it is the one number in this plugin that costs
+      // the GAME anything, so it is on the screen with what it costs written next to it.
+      const poll = h('input', { type: 'number', class: 'mcm-poll', min: '5', max: '3600' });
+      poll.value = String(Number(state.pollSeconds) || s.pollSeconds || 30);
+      poll.addEventListener('change', () => {
+        const n = Math.round(Number(poll.value));
+        state.pollSeconds = (n >= 5 && n <= 3600) ? n : 30;
+        poll.value = String(state.pollSeconds);
+      });
+      const pollRow = h('div', { class: 'mcm-note' }, [
+        h('span', {}, 'Ask the game every '), poll, h('span', {}, ' seconds. '),
+        h('span', {}, 'Used only by Cargo drops and Game events; everything else is announced the '
+          + 'moment the manager sees it, whatever this says. One ask is a single walk of the world '
+          + 'plus about five calls per event location, so 5s is roughly six times the work of 30s. '
+          + 'Below 5 is refused.'),
+      ]);
+      status.appendChild(pollRow);
       // Said out loud, because three zeroes and an empty list read as "this is not working" when
       // the real answer is that there is no game to announce anything about yet. Every setting
       // above can still be written; that is the better moment to write it.
@@ -212,6 +251,13 @@
       // this is the one case where the reason is the manager underneath rather than anything the
       // owner set. Nothing before 5.14.8 kept the log line a secret bunker writes, so the
       // announcement could not fire however the card was filled in.
+      if (state.events && state.events.enabled && state.events.announceJoin
+          && s.watching && s.watching.seededEvents && s.watching.eventPlayersAvailable === false) {
+        status.appendChild(h('div', { class: 'mcm-note' },
+          'Naming each person who signs up is switched on, but the bridge is not sending the '
+          + 'participant list. Turn on "Who is in the event" in the bridge\'s World events module. '
+          + 'The counts and the start/end lines are unaffected.'));
+      }
       if (s.watching && s.watching.secretBunkersSupported === false) {
         status.appendChild(h('div', { class: 'mcm-note' },
           'Secret bunkers cannot be announced by this manager: it needs 5.14.8 or newer, which is '

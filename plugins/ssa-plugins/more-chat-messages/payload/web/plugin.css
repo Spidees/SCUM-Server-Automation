@@ -43,3 +43,10 @@
 .mcm-kind { min-width: 4rem; color: var(--faint); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
 .mcm-text { flex: 1 1 min(100%, 16rem); overflow-wrap: anywhere; }
 .mcm-why { color: var(--faint); }
+
+/* The poll interval sits inline in a sentence, so it is sized to its content and never wider than
+   the phone it is on. */
+.mcm-poll {
+  width: min(100%, 6rem);
+  margin: 0 .25rem;
+}

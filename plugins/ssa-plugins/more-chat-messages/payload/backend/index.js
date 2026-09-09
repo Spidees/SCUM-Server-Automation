@@ -31,6 +31,13 @@
 //                  The secret switch could not fire once, on any server, ever.
 //   cargo          the SSA Bridge's `worldevents` module. Cargo is in no log and in no table of
 //                  `SCUM.db`; the only thing that knows is the running game.
+//   events         the same module's `events` list -- the competitive game events (deathmatch, CTF,
+//                  drop zone). ⚠ **THE GAME LOGS NOTHING ABOUT THESE.** Counted across all 19 log
+//                  kinds the server writes: the only lines that mention an event at all are kills
+//                  inside one, plus one line a PLAYER typed into global chat. There is no
+//                  registration line, no participant count and no "started" line anywhere, so
+//                  unlike the bunkers this section cannot fall back to the log and needs the
+//                  bridge switched on.
 //
 // ⚠ **THE BRIDGE'S OWN BUNKER LIST IS THE WRONG SOURCE AND WAS ALMOST USED.** It publishes
 // `activationStart` / `activationEnd` RAW, on a clock whose zero this side has no route to — the
@@ -96,6 +103,25 @@ const DEFAULTS = {
     announceIncoming: true,
     announceLanded: true,
     announceGone: false,
+  },
+  events: {
+    enabled: false,
+    channel: 'global',
+    // Registration is open and there is somebody in it. This is the "come and play" line.
+    announceOpen: true,
+    openMessage: 'The {event} at {location} is open — {registered} signed up so far. Join in if you want to play.',
+    // One line per person who signs up. OFF by default and it needs a second switch in the bridge:
+    // names come from `players`, which is a real ProcessEvent per participant per poll.
+    announceJoin: false,
+    joinMessage: '{player} joined the {event} — {registered} signed up',
+    // The running total, every time it moves. Off by default: on a filling event this is one line
+    // per person anyway, which is what announceJoin is for.
+    announceCount: false,
+    countMessage: '{registered} players are signed up for the {event} at {location}',
+    announceStart: true,
+    startMessage: 'The {event} at {location} has started with {participants} players',
+    announceEnd: false,
+    endMessage: 'The {event} at {location} has finished',
   },
   bunkersSecret: {
     enabled: false,
@@ -300,6 +326,11 @@ async function register(host) {
   let lastCargo = null;
   let lastBunkers = null;
   let lastSecret = null;
+  let lastEvents = null;
+  let eventPlayersSeen = false;
+  // Which events have already had their "sign-ups are open" line this cycle. Cleared for an
+  // event the moment it is seen RUNNING, which is the only unambiguous end of a sign-up phase.
+  const openSaid = new Set();
   let lastPollError = '';
 
   /**
@@ -375,6 +406,115 @@ async function register(host) {
   /** A stable identity for one crate or bunker across two polls. */
   const idOf = (o) => [o && o.class, Math.round(Number(o && o.x) || 0), Math.round(Number(o && o.y) || 0)].join('|');
 
+  /**
+   * One reading of the bridge's competitive-event list, diffed against the previous poll.
+   *
+   * ⚠ **`state` IS NOT A STATE AND MUST NEVER BE THE TRIGGER.** `EGameEventState` is
+   * `{ Announced, RoundStarted, RoundEnded, Ended }` and `Announced` is ZERO, which is what the
+   * class constructor leaves behind — so all twenty-five pre-placed event locations on the map read
+   * `state: "announced"` permanently, on every server, before anything has been announced. An
+   * announcement keyed on that word fires twenty-five times for locations nobody has touched. The
+   * bridge publishes `running` beside it precisely because it is the one decidable fact (it comes
+   * from the event manager's own "current" list, not from a field that has a default), so that is
+   * what this keys on.
+   *
+   * ⚠ **`class` IS THE IDENTITY AND `name` IS THE WORDS.** The bridge's own note says anything
+   * keying off an event must key off `class`; `name` is an FText read through the engine's text
+   * converter and is OMITTED, never blank, while it has not resolved. So an event whose name has
+   * not arrived yet is skipped rather than announced -- printing `class` would put
+   * `BP_GameEvent_...` in front of players, which is the one thing every screen in this product
+   * exists to avoid.
+   */
+  async function eventPass(list, last) {
+    const s = cfg.events;
+    if (!s.enabled || !Array.isArray(list)) return last;
+    const now = new Map();
+    for (const e of list) {
+      if (e && e.class) now.set(String(e.class), e);
+    }
+    if (!last) return now;                        // baseline: never announce the first reading
+
+    const varsOf = async (e, extra) => Object.assign({
+      event: e.name || '',
+      location: e.locationName || '',
+      sector: await sectorAt(e),
+      registered: Number.isFinite(Number(e.registered)) ? Number(e.registered) : '',
+      participants: Number.isFinite(Number(e.participants)) ? Number(e.participants) : '',
+      teams: Number.isFinite(Number(e.teams)) ? Number(e.teams) : '',
+      x: Math.round(Number(e.x) || 0),
+      y: Math.round(Number(e.y) || 0),
+    }, extra || {});
+
+    for (const [id, e] of now) {
+      // No display name yet means the level is still arriving. Say nothing this poll rather than
+      // announce a raw class; the next poll has it.
+      if (!e.name) continue;
+      const reg = Number(e.registered) || 0;
+      const run = e.running === true;
+
+      // Whether the bridge is answering the participant question AT ALL, recorded regardless of the
+      // owner's switch. Inside the `announceJoin` branch it was only ever true for somebody who had
+      // already turned naming on, so the panel told everyone else the bridge was not sending a list
+      // it had never been asked for.
+      if (Array.isArray(e.players)) eventPlayersSeen = true;
+
+      const was = last.get(id);
+      if (!was) {
+        // A location the walk meets for the first time MID-SESSION is not news: it may have been
+        // filling up for ten minutes. Remember where it already is, including that its sign-up
+        // phase is not ours to announce.
+        if (reg > 0 || run) openSaid.add(id);
+        continue;
+      }
+
+      const wasReg = Number(was.registered) || 0;
+      const wasRun = was.running === true;
+
+      // ⚠ **AN INCREASE, ONCE PER CYCLE — NOT THE `registered` EDGE AND NOT A COUNT.**
+      // `registered` is the length of `_participantInfo`, which the bridge documents as "everyone
+      // who ever registered", and whether the game empties it between rounds is NOT measured. Every
+      // rule that reads the VALUE has to answer that question:
+      //
+      //   `wasReg === 0 && reg > 0`  — a list that never clears fires this once for the life of the
+      //                                server and stays silent for every event after it.
+      //   `reg > 0`, armed while running — the end poll then says "has finished" and "sign-ups are
+      //                                open" in the same breath, which is what the first draft did.
+      //   `reg > 0`, armed at the end  — announces sign-ups for the people who played the last round.
+      //
+      // An INCREASE answers none of it and needs to: somebody signing up moves the number whether
+      // the array clears (0 -> 1) or not (3 -> 4), it cannot move on the poll where the event ends,
+      // and "somebody just signed up" is what the sentence claims. `openSaid` then only stops it
+      // repeating within one sign-up phase — that repetition is what `announceCount` is for.
+      const ended = !run && wasRun;
+      if (ended) openSaid.delete(id);
+      if (s.announceOpen && !run && !ended && reg > wasReg && !openSaid.has(id)) {
+        openSaid.add(id);
+        say('event', s, s.openMessage, await varsOf(e));
+      } else if (s.announceCount && reg !== wasReg && reg > 0 && !run) {
+        say('event', s, s.countMessage, await varsOf(e));
+      }
+
+      // One line per person. `players` only exists when the owner switched "Who is in the event" on
+      // in the bridge -- it costs a call per participant per poll, which is why it is not on by
+      // default there or here. Absent means the question was never asked, so nothing is announced
+      // and nothing is inferred from the silence.
+      if (s.announceJoin && Array.isArray(e.players)) {
+        const before = new Set((Array.isArray(was.players) ? was.players : [])
+          .map((p) => String((p && (p.id || p.name)) || '')));
+        for (const p of e.players) {
+          const key = String((p && (p.id || p.name)) || '');
+          if (!key || before.has(key)) continue;
+          if (!p.name) continue;                   // an id with no name is not something to read out
+          say('event', s, s.joinMessage, await varsOf(e, { player: p.name }));
+        }
+      }
+
+      if (s.announceStart && run && !wasRun) say('event', s, s.startMessage, await varsOf(e));
+      else if (s.announceEnd && !run && wasRun) say('event', s, s.endMessage, await varsOf(e));
+    }
+    return now;
+  }
+
   async function poll() {
     // ── bunkers: the manager's own reading, and it needs no bridge ─────────────────────────────
     //
@@ -385,15 +525,33 @@ async function register(host) {
     lastBunkers = bunkerPass(cfg.bunkersAbandoned, readList(host.map.bunkers), lastBunkers);
     lastSecret = bunkerPass(cfg.bunkersSecret, readList(host.map.secretBunkers), lastSecret);
 
-    // ── cargo: only the bridge knows ───────────────────────────────────────────────────────────
-    if (!cfg.cargo.enabled) return;
+    // ── cargo and the competitive events: only the bridge knows ────────────────────────────────
+    //
+    // One reading feeds both. ⚠ The `return` that used to be here was gated on CARGO alone, so an
+    // owner who wanted only the event announcements would have had a section that was switched on,
+    // configured, and never once asked the bridge anything.
+    if (!cfg.cargo.enabled && !cfg.events.enabled) return;
     let payload = null;
     try { payload = await host.bridge.worldEvents(); } catch { payload = null; }
     // ⚠ A REFUSAL IS NOT AN EMPTY WORLD. The bridge being off, the module being off and an island
     // with no crate on it all look like nothing here, and announcing "gone" for all of them would
     // fire every drop as it vanished on a hiccup. The last known state is left exactly as it is.
-    if (!payload || payload.ok === false || !Array.isArray(payload.cargo)) {
+    if (!payload || payload.ok === false) {
       lastPollError = (payload && (payload.reason || payload.error)) || 'the bridge did not answer';
+      return;
+    }
+
+    // ⚠ AND AN EMPTY EVENT LIST IS NOT AN ISLAND WITH NO EVENTS. The bridge says so itself: the 25
+    // event locations are level-placed actors, so a walk during start-up finds none and `events: []`
+    // reads exactly like a map that has none. `eventsEmptyReason` is the module's word for it, and
+    // an empty list is left uncompared rather than treated as everything having ended.
+    if (cfg.events.enabled && Array.isArray(payload.events) && payload.events.length) {
+      lastEvents = await eventPass(payload.events, lastEvents);
+    }
+
+    if (!cfg.cargo.enabled) { lastPollError = ''; return; }
+    if (!Array.isArray(payload.cargo)) {
+      lastPollError = 'the bridge answered without a cargo list';
       return;
     }
     lastPollError = '';
@@ -465,6 +623,11 @@ async function register(host) {
         // it arrived in 5.14.8; an older one has no route to them, and a switch that is on and
         // silent with no explanation is the thing this field exists to stop.
         secretBunkersSupported: typeof host.map.secretBunkers === 'function',
+        events: cfg.events.enabled,
+        seededEvents: lastEvents !== null,
+        // Whether the bridge has ever handed over a participant LIST. `announceJoin` cannot fire
+        // without it, and a switch that is on and silent needs a reason on the screen.
+        eventPlayersAvailable: eventPlayersSeen,
       },
     });
   });
