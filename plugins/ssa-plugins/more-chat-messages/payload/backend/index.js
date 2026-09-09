@@ -343,6 +343,7 @@ async function register(host) {
   // event the moment it is seen RUNNING, which is the only unambiguous end of a sign-up phase.
   const openSaid = new Set();
   let lastPollError = '';
+  let lastCargoUnplaceable = 0;
 
   /**
    * A crate's own sector, through the host's map calibration.
@@ -390,10 +391,17 @@ async function register(host) {
     if (!section.enabled || list === null) return last;
     const now = new Map(list.map((b) => [String(b.sector), b]));
     if (!last) return now;                       // baseline
+    // ⚠ A COORDINATE OF EXACTLY 0 IS A PLACE, NOT A BLANK. `|| ''` is the same falsy-swallow as
+    // the `|| 0` that made one cargo drop announce itself once a minute for ever, pointing the
+    // other way: that one turned an unreadable value into a real one, this one turns a real value
+    // into nothing. The island runs from -904800 to 619200 on both axes, so 0 is inside it on
+    // both. A coordinate that really is missing -- every secret bunker, whose dump line carries no
+    // position at all -- still renders as empty.
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : '');
     const varsOf = (sector, b) => ({
       sector,
-      x: (b && b.location && b.location.x) || '',
-      y: (b && b.location && b.location.y) || '',
+      x: num(b && b.location && b.location.x),
+      y: num(b && b.location && b.location.y),
     });
     for (const [sector, b] of now) {
       const was = last.get(sector);
@@ -414,8 +422,25 @@ async function register(host) {
     return now;
   }
 
-  /** A stable identity for one crate or bunker across two polls. */
-  const idOf = (o) => [o && o.class, Math.round(Number(o && o.x) || 0), Math.round(Number(o && o.y) || 0)].join('|');
+  /**
+   * A stable identity for one crate across two polls, or `null` when this row has none.
+   *
+   * ⚠ **`|| 0` ON A MISSING COORDINATE IS WHAT MADE ONE DROP ANNOUNCE ITSELF FOR EVER.** The bridge
+   * omits `x`/`y` rather than defaulting them, and says `positionKnown:false` when it does — and its
+   * own notes record a crate on a live server whose `_endLocation` read exactly 0,0,0 for eight
+   * minutes during its pre-fall delay. Turning either into `0` gives that crate a SECOND identity,
+   * so the real one disappears (announce "gone") while `class|0|0` arrives (announce "landed"), and
+   * back again on the next poll. The drop happened once; the announcements did not.
+   *
+   * A row with no position is not a crate this pass can follow, so it gets no id and is left alone.
+   */
+  const idOf = (o) => {
+    if (!o || o.positionKnown === false) return null;
+    const x = Number(o.x);
+    const y = Number(o.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return [o.class, Math.round(x), Math.round(y)].join('|');
+  };
 
   /**
    * One reading of the bridge's competitive-event list, diffed against the previous poll.
@@ -457,10 +482,25 @@ async function register(host) {
     }, extra || {});
 
     for (const [id, e] of now) {
+      const was = last.get(id);
       // No display name yet means the level is still arriving. Say nothing this poll rather than
       // announce a raw class; the next poll has it.
-      if (!e.name) continue;
-      const reg = Number(e.registered) || 0;
+      //
+      // ⚠ **AND KEEP THE LAST NAMED READING AS THE STATE.** Storing the nameless row instead
+      // spends the comparison: an event that starts during a poll where its `name` has not
+      // resolved is compared away, and by the time there are words to say it with, `running` has
+      // already matched for a poll. The name is the WORDS -- not having them yet is not news about
+      // the event, and it must not cost the announcement.
+      if (!e.name) { if (was) now.set(id, was); continue; }
+      // Absent is not false, here either. The bridge omits `running` entirely when the event
+      // manager's own lists could not be read — its note says so in as many words — and reading
+      // that as `false` against an event that WAS running announces "has finished" for an event
+      // that is still going. Same for `registered`: an omitted count is not zero people.
+      const runKnown = typeof e.running === 'boolean';
+      // `typeof`, not `Number()`: `Number(null)` is 0, and a null would then read as nobody signed
+      // up rather than as a count that did not arrive.
+      const regKnown = typeof e.registered === 'number' && Number.isFinite(e.registered);
+      const reg = regKnown ? Number(e.registered) : 0;
       const run = e.running === true;
 
       // Whether the bridge is answering the participant question AT ALL, recorded regardless of the
@@ -469,7 +509,6 @@ async function register(host) {
       // it had never been asked for.
       if (Array.isArray(e.players)) eventPlayersSeen = true;
 
-      const was = last.get(id);
       if (!was) {
         // A location the walk meets for the first time MID-SESSION is not news: it may have been
         // filling up for ten minutes. Remember where it already is, including that its sign-up
@@ -478,7 +517,16 @@ async function register(host) {
         continue;
       }
 
-      const wasReg = Number(was.registered) || 0;
+      // ⚠ **THE PREVIOUS READING HAS A KNOWN-NESS TOO, AND ONLY THIS READING'S HAD EVER BEEN
+      // ASKED ABOUT.** A row the walk meets for the first time is stored exactly as it came, gaps
+      // and all -- so a location first seen while the bridge could not read the count is remembered
+      // as `undefined`, and `Number(undefined) || 0` then reads it as nobody. The next complete
+      // reading announces 0 -> 5, "sign-ups are open, join in", for an event that has been open all
+      // along; the same on the other field reads as a start that never happened. Both were driven
+      // before this was written.
+      const wasRegKnown = typeof was.registered === 'number' && Number.isFinite(was.registered);
+      const wasRunKnown = typeof was.running === 'boolean';
+      const wasReg = wasRegKnown ? Number(was.registered) : 0;
       const wasRun = was.running === true;
 
       // ⚠ **AN INCREASE, ONCE PER CYCLE — NOT THE `registered` EDGE AND NOT A COUNT.**
@@ -496,19 +544,12 @@ async function register(host) {
       // the array clears (0 -> 1) or not (3 -> 4), it cannot move on the poll where the event ends,
       // and "somebody just signed up" is what the sentence claims. `openSaid` then only stops it
       // repeating within one sign-up phase — that repetition is what `announceCount` is for.
-      const ended = !run && wasRun;
-      if (ended) openSaid.delete(id);
-      if (s.announceOpen && !run && !ended && reg > wasReg && !openSaid.has(id)) {
-        openSaid.add(id);
-        say('event', s, s.openMessage, await varsOf(e));
-      } else if (s.announceCount && reg !== wasReg && reg > 0 && !run) {
-        say('event', s, s.countMessage, await varsOf(e));
-      }
-
-      // One line per person. `players` only exists when the owner switched "Who is in the event" on
-      // in the bridge -- it costs a call per participant per poll, which is why it is not on by
-      // default there or here. Absent means the question was never asked, so nothing is announced
-      // and nothing is inferred from the silence.
+      // One line per person, and it goes FIRST: a join is read out of `players` and out of nothing
+      // else, so a gap in the count or in the running flag must neither produce one nor suppress
+      // one. `players` only exists when the owner switched "Who is in the event" on in the bridge
+      // -- it costs a call per participant per poll, which is why it is not on by default there or
+      // here. Absent means the question was never asked, so nothing is announced and nothing is
+      // inferred from the silence.
       if (s.announceJoin && Array.isArray(e.players)) {
         const before = new Set((Array.isArray(was.players) ? was.players : [])
           .map((p) => String((p && (p.id || p.name)) || '')));
@@ -518,6 +559,36 @@ async function register(host) {
           if (!p.name) continue;                   // an id with no name is not something to read out
           say('event', s, s.joinMessage, await varsOf(e, { player: p.name }));
         }
+      }
+
+      // ⚠ **EVERY unknown field, not just the one that gated a branch.** Hanging the carry off
+      // `runKnown` alone left a readable `running` beside an omitted `registered` stored as
+      // `undefined`, and the next complete reading announced a count change nobody made. Silence on
+      // an unknown reading is half the rule; not remembering the gap AS a state is the other half,
+      // and it has been got wrong three times now — twice here and once in the cargo pass.
+      if (!runKnown || !regKnown) {
+        now.set(id, Object.assign({}, e, {
+          running: runKnown ? e.running : was.running,
+          registered: regKnown ? e.registered : was.registered,
+        }));
+        continue;
+      }
+
+      // ...and the gap at the other end. A complete reading compared against one that had a hole in
+      // it is not a comparison, so this poll is the BASELINE instead — the same treatment, and for
+      // the same reason, that a row met for the first time gets four lines above.
+      if (!wasRunKnown || !wasRegKnown) {
+        if (reg > 0 || run) openSaid.add(id);
+        continue;
+      }
+
+      const ended = !run && wasRun;
+      if (ended) openSaid.delete(id);
+      if (s.announceOpen && !run && !ended && reg > wasReg && !openSaid.has(id)) {
+        openSaid.add(id);
+        say('event', s, s.openMessage, await varsOf(e));
+      } else if (s.announceCount && reg !== wasReg && reg > 0 && !run) {
+        say('event', s, s.countMessage, await varsOf(e));
       }
 
       if (s.announceStart && run && !wasRun) say('event', s, s.startMessage, await varsOf(e));
@@ -613,12 +684,31 @@ async function register(host) {
     }
     lastPollError = '';
 
-    const now = new Map(payload.cargo.map((c) => [idOf(c), c]));
+    const now = new Map();
+    // A row the pass cannot identify is not a crate that vanished — it is a crate it cannot see
+    // this time round. Counted, because the gone pass below is only safe on a COMPLETE reading.
+    let unplaceable = 0;
+    for (const c of payload.cargo) {
+      const id = idOf(c);
+      if (id === null) { unplaceable += 1; continue; }
+      now.set(id, c);
+    }
     if (lastCargo) {
       const s = cfg.cargo;
       for (const [id, c] of now) {
         const before = lastCargo.get(id);
+        // Absent is not false. `landed` is omitted when the bridge could not read it, and reading
+        // that as "still in the air" announces the landing again every time it flickers.
+        const known = typeof c.landed === 'boolean';
         const landed = c.landed === true;
+        if (!known) {
+          // ⚠ NOT JUST `continue`. Storing the row as it came leaves `landed: undefined` in the
+          // memory, and the next complete reading compares `undefined !== true` against `true` and
+          // announces the landing again. Silence now is worth nothing if the gap is remembered as
+          // a state — carry the last value that WAS known.
+          if (before) now.set(id, Object.assign({}, c, { landed: before.landed }));
+          continue;
+        }
         if (!before) {
           if (landed && s.announceLanded) say('cargo', s, s.landedMessage, await cargoVars(c));
           else if (!landed && s.announceIncoming) say('cargo', s, s.incomingMessage, await cargoVars(c));
@@ -626,13 +716,22 @@ async function register(host) {
           say('cargo', s, s.landedMessage, await cargoVars(c));
         }
       }
-      if (s.announceGone) {
+      // ⚠ ONLY ON A COMPLETE READING. With a row the pass could not place, "not in `now`" and
+      // "somewhere in this reply without a position" are the same thing from here, and announcing
+      // the difference is what made one drop say "gone" once a minute.
+      if (s.announceGone && unplaceable === 0) {
         for (const [id, c] of lastCargo) {
           if (!now.has(id)) say('cargo', s, s.goneMessage, await cargoVars(c));
         }
       }
+      // ...and the crates it could not place keep whatever was last known about them, so the next
+      // complete reading compares against the truth rather than against a gap.
+      if (unplaceable > 0) {
+        for (const [id, c] of lastCargo) if (!now.has(id)) now.set(id, c);
+      }
     }
     lastCargo = now;
+    lastCargoUnplaceable = unplaceable;
   }
 
   // A short base tick that is almost always a no-op -- it compares four numbers and returns. The
