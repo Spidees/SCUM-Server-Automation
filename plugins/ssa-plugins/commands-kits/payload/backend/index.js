@@ -35,6 +35,9 @@ const DEFAULT_MSG = {
   groupLocked:   'You already picked from this set — {pack} is locked.',
   maxClaims:     'You have reached the limit for {pack}.',
   notAllowed:    "You can't use {pack}.",
+  // The one refusal a player can ACT on, so it says what to do rather than that they may not.
+  // Editable like every other message: an owner who links accounts somewhere else rewrites it.
+  notLinked:     '{pack} is for linked players — link your SCUM character to Discord on the Field Console, then try again.',
   insufficient:  "You can't afford {pack} ({cost} {currency}) — your {pool} has {have}{asof}.",
   notInGame:     'Get fully spawned in first, then try again.',
   spawnFailed:   "Couldn't deliver {pack} right now — nothing was taken. Try again.",
@@ -78,18 +81,18 @@ const DEFAULTS = {
     message: 'Welcome to {server}, {player}!\nThere are {online}/{maxplayers} players online. Type /info for details.',
   },
   commands: [
-    { name: 'info', enabled: true, channel: 'local', broadcast: false, cooldownHours: 0, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [],
+    { name: 'info', enabled: true, channel: 'local', broadcast: false, cooldownHours: 0, requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [],
       response: 'Welcome, {player}!\nPlayers online: {online}/{maxplayers}\nType /discord for our community link.' },
-    { name: 'discord', enabled: true, channel: 'local', broadcast: false, cooldownHours: 0, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [],
+    { name: 'discord', enabled: true, channel: 'local', broadcast: false, cooldownHours: 0, requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [],
       response: 'Join our Discord: discord.gg/yourserver' },
-    { name: 'rules', enabled: true, channel: 'local', broadcast: false, cooldownHours: 0, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [],
+    { name: 'rules', enabled: true, channel: 'local', broadcast: false, cooldownHours: 0, requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [],
       response: 'Server rules:\n1) No cheating\n2) Be respectful\n3) Have fun!' },
   ],
   packs: [
-    { id: 'welcome', name: 'Welcome Pack', enabled: true, trigger: 'welcome', command: '', cooldownHours: 0, maxClaims: 0, group: '',
+    { id: 'welcome', name: 'Welcome Pack', enabled: true, trigger: 'welcome', command: '', cooldownHours: 0, requireLinked: false, maxClaims: 0, group: '',
       cost: { currency: 'free', amount: 0 }, allow: [], deny: [], items: [], vehicles: [], actions: [], replyChannel: 'local',
       message: 'Welcome to {server}, {player}! Enjoy your starter pack.' },
-    { id: 'daily', name: 'Daily Kit', enabled: true, trigger: 'command', command: 'daily', cooldownHours: 24, maxClaims: 0, group: '',
+    { id: 'daily', name: 'Daily Kit', enabled: true, trigger: 'command', command: 'daily', cooldownHours: 24, requireLinked: false, maxClaims: 0, group: '',
       cost: { currency: 'free', amount: 0 }, allow: [], deny: [], items: [], vehicles: [], actions: [], replyChannel: 'local',
       message: "Here's your daily kit, {player}! Come back in 24h." },
   ],
@@ -402,6 +405,23 @@ module.exports = {
     const nameOf = (rec) => (rec && typeof rec === 'object') ? (rec.name || '') : '';
     // allow/deny entries come from the UI as {steamId,name} objects (or bare strings) → normalise to IDs.
     const asIds = (arr) => (Array.isArray(arr) ? arr.map((e) => (e && typeof e === 'object') ? String(e.steamId || e.steamid || e.SteamID || '').trim() : String(e).trim()).filter(Boolean) : []);
+    /**
+     * Is this character registered to a Discord account?
+     *
+     * `bySteamId` is SYNCHRONOUS (`safe(() => …)` in host.js) — no promise to forget to await, which
+     * matters because a promise is truthy and would answer "linked" for everybody.
+     *
+     * ⚠ The test is `prof.steamId`, not `prof`, and that is the guard the SDK page spells out: this
+     * call handed back a raw database row for as long as it existed, so the named field was
+     * `undefined` for every linked player there has ever been — and THIS PLUGIN's kit claim was one
+     * of the two that told correctly-linked people to go and link. Fixed in the host; written the
+     * documented way here so it cannot come back.
+     */
+    function isLinked(sid) {
+      if (!sid) return false;
+      const prof = host.players.bySteamId(String(sid));
+      return !!(prof && prof.steamId);
+    }
     function allowed(obj, sid) {
       const deny = asIds(obj && obj.deny); if (deny.includes(String(sid))) return false;
       const allow = asIds(obj && obj.allow); if (allow.length) return allow.includes(String(sid));
@@ -478,6 +498,12 @@ module.exports = {
     // Why a pack/command can't be used right now — or null if it can. `cmd` treats cooldown only.
     function blockReason(entry, id, sid, isCommand) {
       if (!allowed(entry, sid)) return 'notAllowed';
+      // Straight after the deny list and before every other reason, and the ORDER is the point.
+      // After `allowed()`: somebody on the deny list is refused whatever they do, so sending them
+      // off to link an account would be a lie. Before the window and the cooldown, for the reason
+      // the comment below gives about `closed` — a player who can never use this must not be told
+      // to come back at eight.
+      if (entry && entry.requireLinked && !isLinked(sid)) return 'notLinked';
       // After allow/deny and before everything else. A player who is denied outright must not be
       // told to come back at eight; a player who is merely early should hear that before they hear
       // about a cooldown that is not what is stopping them.

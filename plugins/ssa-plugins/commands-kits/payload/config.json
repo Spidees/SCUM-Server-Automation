@@ -20,6 +20,7 @@
       "channel": "local",
       "broadcast": false,
       "cooldownHours": 0,
+      "requireLinked": false,
       "cost": {
         "currency": "free",
         "amount": 0
@@ -35,6 +36,7 @@
       "channel": "local",
       "broadcast": false,
       "cooldownHours": 0,
+      "requireLinked": false,
       "cost": {
         "currency": "free",
         "amount": 0
@@ -50,6 +52,7 @@
       "channel": "local",
       "broadcast": false,
       "cooldownHours": 0,
+      "requireLinked": false,
       "cost": {
         "currency": "free",
         "amount": 0
@@ -68,6 +71,7 @@
       "trigger": "welcome",
       "command": "",
       "cooldownHours": 0,
+      "requireLinked": false,
       "maxClaims": 0,
       "group": "",
       "cost": {
@@ -89,6 +93,7 @@
       "trigger": "command",
       "command": "daily",
       "cooldownHours": 24,
+      "requireLinked": false,
       "maxClaims": 0,
       "group": "",
       "cost": {

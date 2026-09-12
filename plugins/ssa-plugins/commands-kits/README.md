@@ -22,6 +22,10 @@ and mutually exclusive groups, and **nothing is charged for a delivery that did 
   **only after something actually landed**. A pack made only of admin actions is charged only if the
   bridge accepted at least one of them. If nothing can be delivered, the player is told and **nothing
   is taken**.
+- **Anything can be limited to linked players.** Per command and per kit, choose whether it works for
+  everybody on the server or only for players who have linked their SCUM character to Discord. It is
+  off everywhere until you turn it on, and a player who is not linked is told to link rather than
+  simply refused, so they know what to do about it.
 - **Anything can be limited to a time window** — a weekend kit, a command that stops overnight, an
   event pack. It is not a second cooldown: the cooldown asks how long since this player last had it,
   the window asks whether it is on offer at all. Windows run on the **server's real clock, not in-game
@@ -51,12 +55,12 @@ Everything is configured from the plugin's **admin tab** (💬 Commands & Kits),
 
 - **Commands** — the command list, each with reply text and channel, *announce to all*, cooldown and
   shared cooldown group, cost, *notify player*, allow/deny (a picker listing all known players,
-  online and offline, plus a Steam ID paste box) and its admin actions. A search box appears once the
-  list gets long.
+  online and offline, plus a Steam ID paste box), **linked players only**, and its admin actions. A
+  search box appears once the list gets long.
   Each command and each kit also carries a **time window** — the days and the hours it is on offer,
   on the server clock, with the exact sentence players will see shown as you edit it.
 - **Kits & Packs** — *give when* (on join, or on command), cooldown, **max per player**, **exclusive
-  group**, cost, allow/deny, and the contents: **Pick item / Pick vehicle** searches the game
+  group**, cost, allow/deny, **linked players only**, and the contents: **Pick item / Pick vehicle** searches the game
   database, and **full containers** spawn a backpack, vest or crate already filled. Optional admin
   actions, reply channel and message. **Claim from Discord** is off per kit by default, so nothing
   reaches a public channel you did not put there; publish the panel from Settings.

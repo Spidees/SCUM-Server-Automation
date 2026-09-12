@@ -21,6 +21,7 @@
     cooldown: 'Cooldown not elapsed', alreadyClaimed: 'Already claimed (one-time)', groupLocked: 'Locked by an exclusive group',
     maxClaims: 'Claim limit reached', notAllowed: 'Player not allowed', insufficient: "Can't afford it",
     notInGame: 'Not fully spawned in', spawnFailed: 'Delivery / spawn failed',
+    notLinked: 'Account not linked to Discord',
   };
   // Token palette, grouped — [token, what it shows] so the button can explain itself on hover.
   // Click to insert into the last-focused text field.
@@ -566,6 +567,7 @@
         title: h('span', { class: 'ck-card-title' }, [h('span', { class: 'ck-cmdfield' }, [h('span', { class: 'ck-slash' }, state.commandPrefix || '/'), nameIn])]),
         badges: [
           cmd.broadcast ? badge('announce', 'mut') : null,
+          cmd.requireLinked ? badge('linked only', 'mut') : null,
           Number(cmd.cooldownHours) > 0 ? badge(cmd.cooldownHours + 'h CD', 'mut') : null,
           (cmd.cost && cmd.cost.currency && cmd.cost.currency !== 'free' && Number(cmd.cost.amount) > 0) ? badge(cmd.cost.amount + ' ' + cmd.cost.currency, 'cost') : null,
           (cmd.actions && cmd.actions.length) ? badge(cmd.actions.length + ' action' + (cmd.actions.length > 1 ? 's' : ''), 'mut') : null,
@@ -577,6 +579,7 @@
         h('div', { class: 'ck-grid' }, [
           inlineField('Reply in', sel(cmd.channel || 'local', META.channels.map(function (c) { return [c, CH_LABEL[c] || c]; }), function (v) { cmd.channel = v; })),
           h('div', { class: 'ck-inl', title: 'On = everyone sees the reply. Off = only the player who typed it.' }, [h('span', {}, 'Announce to all'), toggle(!!cmd.broadcast, function (v) { cmd.broadcast = v; render(); })]),
+          h('div', { class: 'ck-inl', title: "On = only players who have linked their SCUM character to Discord can use this. Off = anybody on the server. Linking happens on the Field Console." }, [h('span', {}, 'Linked players only'), toggle(!!cmd.requireLinked, function (v) { cmd.requireLinked = v; render(); })]),
           inlineField('Cooldown (h)', numf(cmd.cooldownHours, function (v) { cmd.cooldownHours = v; render(); }), 'Hours before the same player can reuse it. 0 = none.'),
           inlineField('Shared CD group', txt(cmd.group, 'e.g. shops', function (v) { cmd.group = v.trim(); }), 'Commands with the same group share ONE cooldown.'),
           h('div', { class: 'ck-inl', title: 'Remember the player’s position now so another command can teleport them back with {saved_x/y/z}.' }, [h('span', {}, 'Remember position'), toggle(!!cmd.savePosition, function (v) { cmd.savePosition = v; })]),
@@ -598,7 +601,7 @@
       var head = [
         h('button', { class: 'secondary', onclick: function () { state.commands.forEach(function (c) { expanded.add(c); }); render(); } }, 'Expand all'),
         h('button', { class: 'secondary', onclick: function () { state.commands.forEach(function (c) { expanded.delete(c); }); render(); } }, 'Collapse all'),
-        h('button', { class: 'secondary', onclick: function () { var c = { name: '', enabled: true, channel: 'local', broadcast: false, response: '', cooldownHours: 0, group: '', cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [] }; state.commands.push(c); expanded.add(c); markDirty(); render(); } }, [icon('chat'), 'Add command']),
+        h('button', { class: 'secondary', onclick: function () { var c = { name: '', enabled: true, channel: 'local', broadcast: false, response: '', cooldownHours: 0, group: '', requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [] }; state.commands.push(c); expanded.add(c); markDirty(); render(); } }, [icon('chat'), 'Add command']),
       ];
       // Once the list gets long, add a live search so admins can find a command fast.
       if (state.commands.length > 6) head.unshift(listSearch(function () { return cmdFilter; }, function (v) { cmdFilter = v; }, listRef, 'Search commands…')); else cmdFilter = '';
@@ -660,6 +663,7 @@
         badges: [
           badge(pack.trigger === 'welcome' ? 'on join' : ('/' + (pack.command || '?')), 'trig'),
           counts ? badge(counts + ' reward' + (counts > 1 ? 's' : ''), 'mut') : null,
+          pack.requireLinked ? badge('linked only', 'mut') : null,
           (pack.cost && pack.cost.currency !== 'free' && Number(pack.cost.amount) > 0) ? badge(pack.cost.amount + ' ' + pack.cost.currency, 'cost') : null,
           Number(pack.cooldownHours) > 0 ? badge(pack.cooldownHours + 'h CD', 'mut') : null,
         ],
@@ -674,6 +678,7 @@
           inlineField('Cooldown (h)', numf(pack.cooldownHours, function (v) { pack.cooldownHours = v; render(); }), '0 = welcome once ever / command no cooldown.'),
           inlineField('Max / player', numf(pack.maxClaims, function (v) { pack.maxClaims = v; }), '0 = unlimited (subject to cooldown).'),
           inlineField('Exclusive group', txt(pack.group, 'e.g. starter', function (v) { pack.group = v.trim(); }), 'Packs in the same group are mutually exclusive.'),
+          h('div', { class: 'ck-inl', title: "On = only players who have linked their SCUM character to Discord can use this. Off = anybody on the server. Linking happens on the Field Console." }, [h('span', {}, 'Linked players only'), toggle(!!pack.requireLinked, function (v) { pack.requireLinked = v; render(); })]),
           h('div', { class: 'ck-inl', title: 'On = deliver through the player so the game shows THEM its own “item spawned” messages as the kit lands. Off = deliver silently via the bridge (your own message below still sends).' }, [h('span', {}, 'Notify player'), toggle(!!pack.notify, function (v) { pack.notify = v; })]),
           // Discord claiming is per-kit and OFF by default: turning it on for everything the moment
           // an owner updates would put kits in a public channel they never chose to publish there.
@@ -700,7 +705,7 @@
       var head = [
         h('button', { class: 'secondary', onclick: function () { state.packs.forEach(function (p) { expanded.add(p); }); render(); } }, 'Expand all'),
         h('button', { class: 'secondary', onclick: function () { state.packs.forEach(function (p) { expanded.delete(p); }); render(); } }, 'Collapse all'),
-        h('button', { class: 'secondary', onclick: function () { var p = { id: 'pack' + Date.now(), name: 'New Pack', enabled: true, trigger: 'command', command: '', cooldownHours: 0, maxClaims: 0, group: '', cost: { currency: 'free', amount: 0 }, allow: [], deny: [], items: [], vehicles: [], inventories: [], actions: [], message: '', replyChannel: 'local' }; state.packs.push(p); expanded.add(p); markDirty(); render(); } }, [icon('box'), 'Add pack']),
+        h('button', { class: 'secondary', onclick: function () { var p = { id: 'pack' + Date.now(), name: 'New Pack', enabled: true, trigger: 'command', command: '', cooldownHours: 0, maxClaims: 0, group: '', requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], items: [], vehicles: [], inventories: [], actions: [], message: '', replyChannel: 'local' }; state.packs.push(p); expanded.add(p); markDirty(); render(); } }, [icon('box'), 'Add pack']),
       ];
       if (state.packs.length > 6) head.unshift(listSearch(function () { return packFilter; }, function (v) { packFilter = v; }, listRef, 'Search kits…')); else packFilter = '';
       wrap.appendChild(ckSection('Kits & Packs', 'Reward bundles — items, vehicles and full containers — claimable on join or via a command, with cost, cooldown, claim limit and groups.', [list], head));
