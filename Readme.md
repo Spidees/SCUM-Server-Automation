@@ -82,7 +82,6 @@ Plugins extend the manager — new admin screens, Discord tools, in-game rewards
 | <img src="plugins/ssa-plugins/discord-embeds/icon.png" width="34"> | [**Discord Embeds**](plugins/ssa-plugins/discord-embeds) | Everything Discord-embed in one place: write a message with a live preview that renders real markdown, your own emoji and live server data, send it and edit it in place afterwards — and restyle the manager's own embeds while you are there. |
 | <img src="plugins/ssa-plugins/vehicle-rental/icon.png" width="34"> | [**Vehicle Rental System**](plugins/ssa-plugins/vehicle-rental) | Players rent vehicles from in-game chat or a Discord menu — pick one, choose a duration, pay in money or gold, and it is spawned beside them with the whole lifecycle run for you: reminders, extensions, auto-removal. |
 | <img src="plugins/ssa-plugins/mine-protection/icon.png" width="34"> | [**Mine Protection**](plugins/ssa-plugins/mine-protection) | Punishes players who arm a mine or trap outside their own (or their squad's) flag area — squad-aware, escalating, and it teleports the offender onto their own armed mine. |
-| <img src="plugins/ssa-plugins/env-plugin/icon.png" width="34"> | [**Environment Control**](plugins/ssa-plugins/env-plugin) | Tune how fast players and their clothes get wet, dry off and get dirty with simple multipliers — make survival harsher or more forgiving. *(in-game UE4SS mod)* |
 
 Browse and get them in-app, or on the [Plugins page at scumsa.com](https://scumsa.com/plugins.php).
 
