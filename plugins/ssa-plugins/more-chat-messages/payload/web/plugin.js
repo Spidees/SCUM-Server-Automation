@@ -32,11 +32,15 @@
   // reads it in.
   const CARDS = [
     { key: 'kills', icon: 'skull', title: 'Kills',
-      what: 'Every death the manager\'s kill feed sees, in the words the game itself uses for a weapon and an actor.',
+      what: 'Every death the manager\'s kill feed sees, in the words the game itself uses for a weapon and an actor. '
+        + 'The kill log carries no position the plugin can read, so a kill line has no sector.',
       fields: [
-        ['message', 'When one player kills another', '{killer} {victim} {weapon} {distance} {sector}'],
-        ['messageNoKiller', 'When the game names no killer — a fall, a mine, a trap', '{victim} {weapon} {sector}'],
-        ['selfMessage', 'When somebody kills themselves', '{victim} {sector}'],
+        // No `{sector}`: the kill event carries the two positions only inside a sentence the
+        // manager formatted for an embed, so there is nothing here to turn into a sector. It was
+        // offered on all three lines and was blank on every kill on every server.
+        ['message', 'When one player kills another', '{killer} {victim} {weapon} {distance}'],
+        ['messageNoKiller', 'When the game names no killer — a fall, a mine, a trap', '{victim} {weapon}'],
+        ['selfMessage', 'When somebody kills themselves', '{victim}'],
       ],
       numbers: [['minDistance', 'Say nothing under this many metres', '0 announces every kill.']] },
     { key: 'joins', icon: 'user', title: 'Players joining',

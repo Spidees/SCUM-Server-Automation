@@ -256,6 +256,55 @@ function fill(tpl, vars) {
   });
 }
 
+/**
+ * ONE rule for a coordinate that is going into a sentence.
+ *
+ * ⚠ **A COORDINATE OF EXACTLY 0 IS A PLACE, NOT A BLANK, AND A COORDINATE THAT COULD NOT BE READ IS
+ * NOT 0.** Both halves have been got wrong here, in opposite directions and in the same file: the
+ * bunker line used `|| ''`, which turned a real position on the island's centre line into nothing,
+ * while the cargo and event lines used `Math.round(Number(v) || 0)`, which turned a position nobody
+ * could read into the middle of the map. The island runs from -904800 to 619200 on both axes, so 0
+ * is inside it on both.
+ *
+ * Finite means a number to render; anything else means an empty placeholder, which disappears from
+ * the sentence rather than lying in it. Rounded, because a chat line has no use for a millimetre.
+ */
+function coord(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : '';
+}
+
+/**
+ * Every position ONE cargo row publishes, as `[x, y]` pairs in centimetres.
+ *
+ * ⚠ **`x`/`y` IS NOT ONE QUANTITY. IT IS TWO, UNDER ONE NAME, CHOSEN PER POLL BY THE BRIDGE.**
+ * `mod_worldevents`' `add_target` publishes `_endLocation` — where the crate is GOING — when that
+ * field holds something, and the crate's own live position when it does not, and it says which one
+ * answered in `targetSet`. Beside it `add_actor_pos` publishes the live position again, always,
+ * under `actorX`/`actorY`. So a single crate can be described by two different pairs of numbers
+ * during its life, and the switch between them happens when `DropToLocation` runs — mid-flight,
+ * with nothing about the crate having changed.
+ *
+ * That is why this returns a LIST rather than a point. Two readings are the same crate when they
+ * share a position, and a row carries every position the bridge could give it, so the reading before
+ * the switch and the reading after it still overlap.
+ */
+function pointsOf(o) {
+  const out = [];
+  // The bridge's own explicit "I could not place this row". It is kept as the signal rather than
+  // inferred from the absences below, and it is not the only guard: `add_target` falls back to the
+  // actor, so a row carrying this key has no `actorX` either and would produce no points anyway.
+  if (!o || o.positionKnown === false) return out;
+  const add = (px, py) => {
+    const a = Number(px);
+    const b = Number(py);
+    if (Number.isFinite(a) && Number.isFinite(b)) out.push([a, b]);
+  };
+  add(o.x, o.y);
+  add(o.actorX, o.actorY);
+  return out;
+}
+
 async function register(host) {
   const log = host.logger;
   let cfg = merge(host.config.get());
@@ -293,31 +342,90 @@ async function register(host) {
 
   // ── the three that arrive as events ───────────────────────────────────────────────────────────
 
+  /**
+   * A world ACTOR's name, through the manager's ONE resolver.
+   *
+   * ⚠ **`killerName` / `victimName` ARE NOT ALREADY RESOLVED, AND THIS FILE USED TO SAY THEY WERE.**
+   * `killFeed.js` writes `K.ProfileName` straight out of the game's JSON, which is a player's name
+   * for a player and a spawn class with its instance number for anything else — so a puppet kill
+   * announced `BP_Guard_Lvl_5_C_2146943462` in the server's chat where the manager's own feed says
+   * "Guard (Lvl 5)". `host.items.actorName()` is the one rule for exactly this field and the SDK
+   * names it for exactly this field; a player's name passes through it unchanged.
+   */
+  const actorName = (n) => {
+    if (!n) return '';
+    try {
+      const v = (host.items && typeof host.items.actorName === 'function') ? host.items.actorName(n) : n;
+      return v ? String(v) : String(n);
+    } catch { return String(n); }
+  };
+
+  /** An item CODE's display name, in the bot's language. `items.js` is the only resolver. */
+  const itemName = (code) => {
+    if (!code) return '';
+    try {
+      const v = (host.items && typeof host.items.name === 'function') ? host.items.name(code) : code;
+      return v ? String(v) : String(code);
+    } catch { return String(code); }
+  };
+
   host.events.on('kill', (e) => {
     const s = cfg.kills;
     if (!s.enabled || !e) return;
+
+    // ⚠ **A SUICIDE IS ITS OWN EVENT SHAPE AND CARRIES NONE OF A KILL'S FIELDS.** `killFeed.js`
+    // returns `{ type: 'suicide', playerName, steamId, … }` — no `victimName`, no `killerName`, and
+    // no `suicide` flag anywhere in this manager. This handler tested `e.suicide`, which has never
+    // existed on any event it emits, so `selfMessage` could not fire ONCE on any server; a real
+    // suicide fell through to the no-killer line and was announced as " died", with nobody named,
+    // because `victimName` is not a field of that event either. Two placeholder fields read as
+    // states, in one branch.
+    if (e.type === 'suicide') {
+      say('kill', s, s.selfMessage, {
+        killer: '', victim: actorName(e.playerName), weapon: '', distance: '', sector: '',
+      });
+      return;
+    }
+
     const dist = Number(e.distance);
     if (Number.isFinite(dist) && Number(s.minDistance) > 0 && dist < Number(s.minDistance)) {
       stats.skipped += 1;
       return;
     }
     const vars = {
-      killer: e.killerName || '',
-      victim: e.victimName || '',
-      weapon: e.weapon || e.weaponType || '',
-      distance: Number.isFinite(dist) ? Math.round(dist) : '',
-      sector: e.sector || '',
+      killer: actorName(e.killerName),
+      victim: actorName(e.victimName),
+      // ⚠ **`weaponName` IS THE WEAPON AND `weaponType` IS THE DAMAGE CLASS.** There is no `weapon`
+      // field on this event at all, so `e.weapon || e.weaponType` fell through to the second every
+      // time and put the word `Projectile` — or `Melee`, or `Explosion` — where a player expects
+      // the gun. `weaponName` is an item code and `host.items.name()` is what turns it into a name,
+      // which is what the SDK's own example for this event does.
+      weapon: itemName(e.weaponName),
+      distance: coord(dist),
+      // ⚠ THE KILL EVENT CARRIES NO POSITION THIS PLUGIN CAN USE. `killFeed.js` publishes the two
+      // places only inside `locationText`, a sentence it formatted for an embed, and re-parsing
+      // that here would be a second reader of a string the manager owns. So `{sector}` cannot be
+      // filled for a kill and is no longer offered on the kill lines in the panel — it was blank on
+      // every kill on every server, which is a hole in the sentence rather than a missing detail.
+      sector: '',
     };
-    // Three different pieces of news, and the manager's own kill feed already draws the same three
-    // distinctions: SCUM writes its own fallbacks into the killer field for a death it could not
-    // attribute, and `killer === victim` on those would read as a suicide.
-    if (e.suicide || (e.killerSteamId && e.killerSteamId === e.victimSteamId)) {
-      say('kill', s, s.selfMessage, vars);
-    } else if (!vars.killer) {
-      say('kill', s, s.messageNoKiller, vars);
-    } else {
-      say('kill', s, s.message, vars);
-    }
+    // ⚠ **`killer === victim` IS NOT A SUICIDE TEST AND MUST NOT BE ONE HERE.** SCUM writes its own
+    // fallbacks ("Unknown", "NPC", "-1") into the killer field for a death it could not attribute,
+    // and those MATCH EACH OTHER — so a raw comparison reads a fall or a mine as that player
+    // killing themselves. `killFeed.js` already makes that decision with `unnamedId()` and
+    // `unnamedActor()`, which are the one answer to "did the game name this actor at all", and it
+    // emits `type: 'suicide'` when the answer is yes. Making it a second time here, with a weaker
+    // rule, is how the two disagree.
+    //
+    // ⚠ **AND `messageNoKiller` STILL CANNOT SEE THE COMMONEST CASE.** `killFeed.js` writes the
+    // literal `'Unknown'` for a killer the game did not name, so a fall or a trap arrives here with
+    // a truthy killer and is announced as a kill by somebody called Unknown. Telling that apart
+    // from a player who really is called Unknown needs `unnamedActor()`, which lives in the
+    // manager's `parseCommon.js` and is not on the host — and writing a second copy of it here is
+    // the one thing this project forbids outright. Said plainly rather than half-closed: this
+    // branch fires only on a genuinely empty name.
+    if (!vars.killer) say('kill', s, s.messageNoKiller, vars);
+    else say('kill', s, s.message, vars);
   });
 
   /**
@@ -369,19 +477,46 @@ async function register(host) {
   host.events.on('player:join', (e) => { onLoginLine('join', cfg.joins, e).catch(() => {}); });
   host.events.on('player:leave', (e) => { onLoginLine('leave', cfg.leaves, e).catch(() => {}); });
 
-  host.events.on('raid:alert', (e) => {
+  /**
+   * What a raid alert was ABOUT, as a name.
+   *
+   * `raidNotify.js` emits `object: { name, class, kind, customName }`, and the feed that built the
+   * alert has already resolved `name`. `customName` is the owner's own label for that particular
+   * chest or car — the one detail that says WHICH of theirs was hit, which is why that module's own
+   * `namedSuffix()` exists — so it wins. A bare class is a last resort and goes through the one
+   * resolver rather than reaching a chat line as `BP_…_C`.
+   */
+  const raidObject = (o) => {
+    if (!o || typeof o !== 'object') return '';
+    if (o.customName) return String(o.customName);
+    if (o.name) return String(o.name);
+    return o.class ? itemName(o.class) : '';
+  };
+
+  // ⚠ **`{sector}` AND `{element}` WERE BLANK ON EVERY RAID LINE ON EVERY SERVER.** The event
+  // `raidNotify.js` emits is `{ type, ownerSteamId, ownerName, location, timestamp, object,
+  // thumbnail }` — there is no `sector` field and no `elementName` field, and `|| ''` turned both
+  // absences into an empty placeholder rather than into an error. So the shipped default message,
+  // "A base is under attack in {sector}", went out as "A base is under attack in" with the sentence
+  // ending mid-phrase. The position is there under `location`, which is what `host.map.sector()`
+  // takes, and the thing that was hit is there under `object`.
+  //
+  // Async for the sector lookup, and the listener itself stays synchronous: `host.events.on` wraps
+  // a throw and an async listener that rejects is not a throw it can catch.
+  const onRaid = async (e) => {
     const s = cfg.raids;
     if (!s.enabled || !e) return;
     const vars = {
       owner: e.ownerName || e.owner || '',
-      sector: e.sector || '',
-      element: e.elementName || '',
+      sector: await sectorAt(e.location),
+      element: raidObject(e.object),
       // The owner's squad, so "{squad}'s base is under attack" reads the way a server talks about a
       // raid. Empty for a solo owner and empty when the save cannot be read -- see `squadOf`.
       squad: squadOf(e.ownerSteamId || e.steamId || ''),
     };
     say('raid', s, s.includeOwner && vars.owner ? s.ownerMessage : s.message, vars);
-  });
+  };
+  host.events.on('raid:alert', (e) => { onRaid(e).catch(() => {}); });
 
   // ── the three that have to be asked for, and diffed ───────────────────────────────────────────
 
@@ -407,11 +542,20 @@ async function register(host) {
    * after it, on every server, for ever. It is exactly the shape this session has been finding all
    * day: a call that succeeds, answers a plausible type, and is wrong in one direction always.
    */
-  const cargoVars = async (c) => ({
-    sector: await sectorAt(c),
-    x: Math.round(Number(c && c.x) || 0),
-    y: Math.round(Number(c && c.y) || 0),
-  });
+  const cargoVars = async (c) => {
+    // Whichever pair the bridge managed to publish. `x`/`y` is the landing point where that is
+    // decided and the crate's own position where it is not (`targetSet` says which); `actorX`/
+    // `actorY` is the position on its own, and it is what is left on a row whose landing point is
+    // the only thing that read. A sentence wants a place, not a provenance.
+    const p = pointsOf(c)[0] || [];
+    return {
+      sector: await sectorAt({ x: p[0], y: p[1] }),
+      // ⚠ `Math.round(Number(v) || 0)` stood here and it is the shape this whole file is about: a
+      // coordinate nobody could read became the middle of the map. See `coord`.
+      x: coord(p[0]),
+      y: coord(p[1]),
+    };
+  };
 
   /**
    * One bunker list, read through whatever host call was handed in.
@@ -450,12 +594,12 @@ async function register(host) {
     // other way: that one turned an unreadable value into a real one, this one turns a real value
     // into nothing. The island runs from -904800 to 619200 on both axes, so 0 is inside it on
     // both. A coordinate that really is missing -- every secret bunker, whose dump line carries no
-    // position at all -- still renders as empty.
-    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : '');
+    // position at all -- still renders as empty. `coord` is the one rule; there is not a second
+    // one in this file any more.
     const varsOf = (sector, b) => ({
       sector,
-      x: num(b && b.location && b.location.x),
-      y: num(b && b.location && b.location.y),
+      x: coord(b && b.location && b.location.x),
+      y: coord(b && b.location && b.location.y),
     });
     for (const [sector, b] of now) {
       const was = last.get(sector);
@@ -476,24 +620,107 @@ async function register(host) {
     return now;
   }
 
+  // ── ONE CRATE IS ONE CRATE, AND THE PAYLOAD CARRIES NO ID TO SAY SO ──────────────────────────
+  //
+  // ⚠ **THE FIRST FIX HERE CLOSED HALF OF THIS AND THE OTHER HALF WENT ON SHIPPING.** A crate's
+  // identity used to be the string `class|round(x)|round(y)`, built with `Number(o.x) || 0`. That
+  // `|| 0` gave an UNPLACEABLE row the identity `class|0|0`, and `pointsOf` plus the `unplaceable`
+  // rule below ended it. What it did not touch is the case where both readings are perfectly
+  // placeable and DISAGREE — and an owner reported exactly that afterwards, on a drop that was
+  // there once:
+  //
+  //     The cargo drop has landed in Z0.   The cargo drop in Z0 is gone.
+  //     The cargo drop has landed in Z0.   The cargo drop in Z0 is gone.
+  //
+  // A string key is an EXACT match, so any change at all in the number makes a second crate: the
+  // old key leaves the map (announce "gone") and the new one arrives (announce "landed"), and back
+  // again when the reading flips back. Nothing throws, the count of drops is right, and every line
+  // is individually true.
+  //
+  // The bridge publishes `x`/`y` from two different sources — see `pointsOf` — and publishes the
+  // crate's live position beside it under `actorX`/`actorY`. Neither pair is stable across a
+  // crate's whole life on its own; together they overlap, because the source that stops answering
+  // is still published under the other name.
+  //
+  // **So identity is PROXIMITY, not a string.** A row belongs to a crate this pass is already
+  // following when the two share a published position within `MATCH_CM`, and the pairing is
+  // ONE-TO-ONE and nearest-first so two crates cannot collapse into one while both are in the
+  // reply. A crate remembers the positions it has published (capped, distinct) rather than only its
+  // last one, so a reading that flips back and forth between two of them still matches.
+  //
+  // **What it costs when two drops are live at once**, said plainly because this is the trade:
+  // matching is one-to-one, so two crates 25 m apart are still two crates as long as both are in
+  // the reply — the radius only decides whether a row is the SAME crate or a NEW one. It is wrong
+  // only if two drops are within 25 m of each other AND one of them is missing from a reply, in
+  // which case the surviving row is read as the missing crate: one landing goes unannounced and one
+  // "gone" is late. That is the direction to fail in — a missed line, never a line repeated for
+  // ever — and the game makes it vanishingly unlikely: `scum.CargoDropCooldownMinimum` is 45
+  // minutes and the island is about 15 km across.
+  //
+  // 25 m is a DRIFT tolerance, not a guess at where a crate is. It absorbs the two sources of one
+  // crate's own position (which the bridge measured as the same X and Y, a crate descending
+  // vertically — only the height differs) and the one decimal place the payload prints. It does not
+  // absorb an admin re-targeting a falling crate with `cargodrop`, which really does move it: that
+  // costs one spurious "gone" plus one "landed", once, caused by the person who moved it.
+  const MATCH_CM = 2500;
+  const MATCH_CM2 = MATCH_CM * MATCH_CM;
+  /** How many distinct positions one crate is remembered by. Two sources plus room to move. */
+  const MAX_POINTS = 4;
+
+  /** Smallest squared distance between any point of `a` and any of `b`, or `null` if either is empty. */
+  const closeness = (a, b) => {
+    let best = null;
+    for (const p of a) {
+      for (const q of b) {
+        const dx = p[0] - q[0];
+        const dy = p[1] - q[1];
+        const d = dx * dx + dy * dy;
+        if (best === null || d < best) best = d;
+      }
+    }
+    return best;
+  };
+
+  /** The points a crate is remembered by: this reading's, then the older ones it does not repeat. */
+  const rememberPoints = (fresh, old) => {
+    const out = fresh.slice();
+    for (const p of (old || [])) {
+      if (out.length >= MAX_POINTS) break;
+      if (out.some((q) => (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 <= MATCH_CM2)) continue;
+      out.push(p);
+    }
+    return out;
+  };
+
   /**
-   * A stable identity for one crate across two polls, or `null` when this row has none.
+   * Pair this poll's rows against the crates already being followed.
    *
-   * ⚠ **`|| 0` ON A MISSING COORDINATE IS WHAT MADE ONE DROP ANNOUNCE ITSELF FOR EVER.** The bridge
-   * omits `x`/`y` rather than defaulting them, and says `positionKnown:false` when it does — and its
-   * own notes record a crate on a live server whose `_endLocation` read exactly 0,0,0 for eight
-   * minutes during its pre-fall delay. Turning either into `0` gives that crate a SECOND identity,
-   * so the real one disappears (announce "gone") while `class|0|0` arrives (announce "landed"), and
-   * back again on the next poll. The drop happened once; the announcements did not.
-   *
-   * A row with no position is not a crate this pass can follow, so it gets no id and is left alone.
+   * Greedy, smallest distance first, one-to-one: every candidate pair under the radius is scored,
+   * the closest is bound, and both sides leave the pool. `tOf[i]` is the row index bound to tracked
+   * crate `i` (or -1), `rOf[j]` the tracked index bound to row `j` (or -1).
    */
-  const idOf = (o) => {
-    if (!o || o.positionKnown === false) return null;
-    const x = Number(o.x);
-    const y = Number(o.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return [o.class, Math.round(x), Math.round(y)].join('|');
+  const pairUp = (tracked, rows) => {
+    const tOf = new Array(tracked.length).fill(-1);
+    const rOf = new Array(rows.length).fill(-1);
+    const cand = [];
+    for (let i = 0; i < tracked.length; i++) {
+      for (let j = 0; j < rows.length; j++) {
+        // A class is the one thing about a crate that cannot drift, so it is a hard gate rather
+        // than part of the distance: a `BP_Cargo_C` is never the `BP_DropZoneCargo_C` beside it,
+        // however close they land.
+        if (tracked[i].cls !== rows[j].cls) continue;
+        const d = closeness(tracked[i].points, rows[j].points);
+        if (d === null || d > MATCH_CM2) continue;
+        cand.push([d, i, j]);
+      }
+    }
+    cand.sort((a, b) => a[0] - b[0]);
+    for (const [, i, j] of cand) {
+      if (tOf[i] >= 0 || rOf[j] >= 0) continue;
+      tOf[i] = j;
+      rOf[j] = i;
+    }
+    return { tOf, rOf };
   };
 
   /**
@@ -531,8 +758,10 @@ async function register(host) {
       registered: Number.isFinite(Number(e.registered)) ? Number(e.registered) : '',
       participants: Number.isFinite(Number(e.participants)) ? Number(e.participants) : '',
       teams: Number.isFinite(Number(e.teams)) ? Number(e.teams) : '',
-      x: Math.round(Number(e.x) || 0),
-      y: Math.round(Number(e.y) || 0),
+      // ⚠ `Math.round(Number(e.x) || 0)` stood here, which put the middle of the map into a sentence
+      // about an event location whose position the bridge had not sent. See `coord`.
+      x: coord(e.x),
+      y: coord(e.y),
     }, extra || {});
 
     for (const [id, e] of now) {
@@ -604,8 +833,19 @@ async function register(host) {
       // -- it costs a call per participant per poll, which is why it is not on by default there or
       // here. Absent means the question was never asked, so nothing is announced and nothing is
       // inferred from the silence.
-      if (s.announceJoin && Array.isArray(e.players)) {
-        const before = new Set((Array.isArray(was.players) ? was.players : [])
+      //
+      // ⚠ **AND THE PREVIOUS READING'S `players` HAS A KNOWN-NESS TOO — THE SAME GAP AS `running`
+      // AND `registered`, ON THE ONE FIELD THAT HAD NEVER BEEN ASKED ABOUT.** The bridge's own note
+      // is explicit: `add_players` is "absent when the array could not be read at all, `[]` when
+      // nobody has registered". `Array.isArray(was.players) ? was.players : []` read the first of
+      // those as the second, so the poll after a failed read announced EVERY person in the event as
+      // having just signed up — one line each, for people who joined ten minutes ago. The same
+      // sentence fires the first time an owner switches "Who is in the event" on in the bridge.
+      // Compare only against a list that really was one, and carry the last real list forward below
+      // so a single unreadable poll does not spend the comparison either.
+      const wasPlayers = Array.isArray(was.players) ? was.players : null;
+      if (s.announceJoin && Array.isArray(e.players) && wasPlayers) {
+        const before = new Set(wasPlayers
           .map((p) => String((p && (p.id || p.name)) || '')));
         for (const p of e.players) {
           const key = String((p && (p.id || p.name)) || '');
@@ -619,9 +859,16 @@ async function register(host) {
       // `runKnown` alone left a readable `running` beside an omitted `registered` stored as
       // `undefined`, and the next complete reading announced a count change nobody made. Silence on
       // an unknown reading is half the rule; not remembering the gap AS a state is the other half,
-      // and it has been got wrong three times now — twice here and once in the cargo pass.
+      // and it has been got wrong four times now — three times here and once in the cargo pass.
+      //
+      // `players` is on this list for the same reason and was the one missing from it: an absent
+      // list remembered as the state makes the NEXT complete reading a comparison against nobody.
+      // Unconditional, because it has to happen on the path where the other two read perfectly.
+      if (!Array.isArray(e.players) && wasPlayers) {
+        now.set(id, Object.assign({}, e, { players: wasPlayers }));
+      }
       if (!runKnown || !regKnown) {
-        now.set(id, Object.assign({}, e, {
+        now.set(id, Object.assign({}, now.get(id), {
           running: runKnown ? e.running : was.running,
           registered: regKnown ? e.registered : was.registered,
         }));
@@ -746,53 +993,69 @@ async function register(host) {
     }
     lastPollError = '';
 
-    const now = new Map();
-    // A row the pass cannot identify is not a crate that vanished — it is a crate it cannot see
-    // this time round. Counted, because the gone pass below is only safe on a COMPLETE reading.
+    // This poll's rows, reduced to what identity is decided on. A row the pass cannot place is not
+    // a crate that vanished — it is a crate it cannot SEE this time round. Counted, because the
+    // gone pass below is only safe on a COMPLETE reading.
+    const rows = [];
     let unplaceable = 0;
     for (const c of payload.cargo) {
-      const id = idOf(c);
-      if (id === null) { unplaceable += 1; continue; }
-      now.set(id, c);
+      const points = pointsOf(c);
+      if (!points.length) { unplaceable += 1; continue; }
+      rows.push({ cls: String((c && c.class) || ''), points, row: c });
     }
-    if (lastCargo) {
-      const s = cfg.cargo;
-      for (const [id, c] of now) {
-        const before = lastCargo.get(id);
-        // Absent is not false. `landed` is omitted when the bridge could not read it, and reading
-        // that as "still in the air" announces the landing again every time it flickers.
-        const known = typeof c.landed === 'boolean';
-        const landed = c.landed === true;
-        if (!known) {
-          // ⚠ NOT JUST `continue`. Storing the row as it came leaves `landed: undefined` in the
-          // memory, and the next complete reading compares `undefined !== true` against `true` and
-          // announces the landing again. Silence now is worth nothing if the gap is remembered as
-          // a state — carry the last value that WAS known.
-          if (before) now.set(id, Object.assign({}, c, { landed: before.landed }));
-          continue;
-        }
-        if (!before) {
-          if (landed && s.announceLanded) say('cargo', s, s.landedMessage, await cargoVars(c));
-          else if (!landed && s.announceIncoming) say('cargo', s, s.incomingMessage, await cargoVars(c));
-        } else if (before.landed !== true && landed && s.announceLanded) {
-          say('cargo', s, s.landedMessage, await cargoVars(c));
-        }
+
+    // The first good reading is the baseline: nothing is compared and nothing is announced, or a
+    // manager restart would tell the server about every crate already on the island.
+    if (lastCargo === null) {
+      lastCargo = rows.map((r) => ({ cls: r.cls, points: r.points, landed: r.row.landed, row: r.row }));
+      lastCargoUnplaceable = unplaceable;
+      return;
+    }
+
+    const s = cfg.cargo;
+    const { tOf, rOf } = pairUp(lastCargo, rows);
+    const next = [];
+
+    for (let j = 0; j < rows.length; j++) {
+      const c = rows[j].row;
+      const before = rOf[j] >= 0 ? lastCargo[rOf[j]] : null;
+      const points = rememberPoints(rows[j].points, before && before.points);
+      // Absent is not false. `landed` is omitted when the bridge could not read it, and reading
+      // that as "still in the air" announces the landing again every time it flickers.
+      const known = typeof c.landed === 'boolean';
+      const landed = c.landed === true;
+      if (!known) {
+        // ⚠ NOT JUST `continue`. Storing the row as it came leaves `landed: undefined` in the
+        // memory, and the next complete reading compares `undefined !== true` against `true` and
+        // announces the landing again. Silence now is worth nothing if the gap is remembered as
+        // a state — carry the last value that WAS known.
+        next.push({ cls: rows[j].cls, points, landed: before ? before.landed : undefined, row: c });
+        continue;
       }
-      // ⚠ ONLY ON A COMPLETE READING. With a row the pass could not place, "not in `now`" and
-      // "somewhere in this reply without a position" are the same thing from here, and announcing
-      // the difference is what made one drop say "gone" once a minute.
-      if (s.announceGone && unplaceable === 0) {
-        for (const [id, c] of lastCargo) {
-          if (!now.has(id)) say('cargo', s, s.goneMessage, await cargoVars(c));
-        }
+      if (!before) {
+        if (landed && s.announceLanded) say('cargo', s, s.landedMessage, await cargoVars(c));
+        else if (!landed && s.announceIncoming) say('cargo', s, s.incomingMessage, await cargoVars(c));
+      } else if (before.landed !== true && landed && s.announceLanded) {
+        say('cargo', s, s.landedMessage, await cargoVars(c));
       }
-      // ...and the crates it could not place keep whatever was last known about them, so the next
-      // complete reading compares against the truth rather than against a gap.
-      if (unplaceable > 0) {
-        for (const [id, c] of lastCargo) if (!now.has(id)) now.set(id, c);
+      next.push({ cls: rows[j].cls, points, landed, row: c });
+    }
+
+    // ⚠ ONLY ON A COMPLETE READING. With a row the pass could not place, "nothing matched it" and
+    // "somewhere in this reply without a position" are the same thing from here, and announcing the
+    // difference is what made one drop say "gone" once a minute.
+    if (s.announceGone && unplaceable === 0) {
+      for (let i = 0; i < lastCargo.length; i++) {
+        if (tOf[i] < 0) say('cargo', s, s.goneMessage, await cargoVars(lastCargo[i].row));
       }
     }
-    lastCargo = now;
+    // ...and the crates it could not place keep whatever was last known about them, so the next
+    // complete reading compares against the truth rather than against a gap.
+    if (unplaceable > 0) {
+      for (let i = 0; i < lastCargo.length; i++) if (tOf[i] < 0) next.push(lastCargo[i]);
+    }
+
+    lastCargo = next;
     lastCargoUnplaceable = unplaceable;
   }
 
