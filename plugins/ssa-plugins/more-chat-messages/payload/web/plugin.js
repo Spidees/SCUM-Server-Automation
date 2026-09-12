@@ -63,7 +63,11 @@
         ['landedMessage', 'Landed', '{sector} {x} {y}'],
         ['goneMessage', 'Gone', '{sector} {x} {y}'],
       ] },
-    { key: 'events', icon: 'flag2', title: 'Game events',
+    // `trophy`, because that is what the panel's own map layer for these events wears. There is no
+    // `i-flag` and no `i-flag2` in the sprite, and a sprite id that does not exist draws NOTHING --
+    // no error, no broken-image mark, just a card head with a hole where its neighbours have an
+    // icon. One vocabulary for one thing, and it is the panel's.
+    { key: 'events', icon: 'trophy', title: 'Game events',
       numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. ⚠ This one asks the SSA Bridge, and one ask walks every object in the running game (1.79 million on this build) - so halving it doubles that work on the game thread.']],
       what: 'Deathmatch, capture the flag and drop zone. Announced when sign-ups open, when it '
         + 'starts and when it ends. Needs the SSA Bridge - the game writes nothing about events to '

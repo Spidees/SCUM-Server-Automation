@@ -1240,7 +1240,12 @@
           var ta = h('textarea', { rows: 8, style: 'width:100%' });
           return [ta, h('div', { class: 'ee-actions' }, [
             h('button', { class: 'ee-btn', type: 'button', onclick: function () { ta.value = JSON.stringify(clone(model), null, 2); } }, 'Export current'),
-            h('button', { class: 'ee-btn', type: 'button', onclick: function () { try { editor.setValue(JSON.parse(ta.value)); } catch (e) { alert('Invalid JSON'); } } }, 'Import'),
+            // `SSA.toast`, not `alert()`. A native alert is a blocking browser dialog that looks
+            // nothing like the panel it is sitting in, and it is the one thing the SDK exists to
+            // replace — every other failure on this tab already answers through the toast. It also
+            // says WHAT is wrong: "Invalid JSON" sends somebody hunting through eight rows of a
+            // textarea, where the parser's own message names the character it stopped at.
+            h('button', { class: 'ee-btn', type: 'button', onclick: function () { try { editor.setValue(JSON.parse(ta.value)); SSA.toast('Imported'); } catch (e) { try { SSA.toast('That is not valid JSON — ' + (e && e.message ? e.message : 'it could not be read'), 'error'); } catch (x) { /* nothing left to try */ } } } }, 'Import'),
           ])];
         })())]));
       }).catch(tplLoadFailed);

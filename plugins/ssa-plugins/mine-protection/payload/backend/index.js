@@ -109,6 +109,30 @@ function normalizeConfig(raw) {
   return c;
 }
 
+/**
+ * A caller's body laid over what is already STORED, one level deep.
+ *
+ * ⚠ **A SETTING NOBODY SENT IS NOT A SETTING TO RESET.** `normalizeConfig` builds from DEFAULTS,
+ * which is what makes reading an older version's config safe — and it means a body naming ONE key
+ * replaces every other setting with the shipped default. An owner's exemption list, their watched
+ * types, their warning text and their scan interval, gone on a partial save that answers `ok`. The
+ * panel POSTs the whole object so nothing has done it yet; a script or a future screen would.
+ *
+ * By KEY PRESENCE, never truthiness: `"exemptSteamIds": []` is an owner who cleared the list and
+ * must stay cleared; an absent key has never been sent. An ARRAY replaces rather than merging.
+ */
+function overlayConfig(stored, body) {
+  const out = Object.assign({}, (stored && typeof stored === 'object') ? stored : {});
+  if (!body || typeof body !== 'object') return out;
+  for (const k of Object.keys(body)) {
+    const b = body[k]; const cur = out[k];
+    if (b && typeof b === 'object' && !Array.isArray(b)
+        && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, b);
+    else out[k] = b;
+  }
+  return out;
+}
+
 module.exports = {
   async register(host) {
     const cfg = () => normalizeConfig(host.store.get('config', {}));
@@ -479,7 +503,8 @@ module.exports = {
     host.routes.get('/config', (req, res) => res.json(cfg()));
     host.routes.post('/config', (req, res) => {
       try {
-        const next = normalizeConfig(req.body || {});
+        // Over what is STORED first, filled from DEFAULTS second — see `overlayConfig`.
+        const next = normalizeConfig(overlayConfig(host.store.get('config', {}), req.body || {}));
         host.store.set('config', next);
         lastRun = 0;                               // apply immediately (interval/type changes take effect now)
         res.json({ ok: true, config: next });

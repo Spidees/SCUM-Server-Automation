@@ -963,8 +963,33 @@ module.exports = {
 
     // ── admin API ────────────────────────────────────────────────────────────
     host.routes.get('/config', (req, res) => res.json(cfg()));
+    /**
+     * A caller's body laid over what is already STORED, one level deep.
+     *
+     * ⚠ **A SETTING NOBODY SENT IS NOT A SETTING TO RESET.** Every field below is rebuilt from the
+     * body with a DEFAULTS fallback, which is what makes an older config safe to read — and it means
+     * a body naming ONE key resets all the others. The first line is the worst of them:
+     * `enabled: !!b.enabled` on a body with no `enabled` key SWITCHES THE PLUGIN OFF, and the save
+     * answers `ok`. The panel POSTs the whole object so nothing has done it yet; a script, a second
+     * screen or a future partial save would.
+     *
+     * By KEY PRESENCE, never truthiness — `"mutedSteamIds": []` is an owner who cleared the list.
+     * An ARRAY replaces rather than merging; merging two lists by index is never what was meant.
+     */
+    function overlay(stored, body) {
+      const out = Object.assign({}, (stored && typeof stored === 'object') ? stored : {});
+      if (!body || typeof body !== 'object') return out;
+      for (const k of Object.keys(body)) {
+        const v = body[k]; const cur = out[k];
+        if (v && typeof v === 'object' && !Array.isArray(v)
+            && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, v);
+        else out[k] = v;
+      }
+      return out;
+    }
+
     host.routes.post('/config', (req, res) => {
-      const b = req.body || {};
+      const b = overlay(host.config.get() || {}, req.body || {});
       const events = {};
       for (const k of EVENT_KEYS) {
         const src = (b.events || {})[k] || {};

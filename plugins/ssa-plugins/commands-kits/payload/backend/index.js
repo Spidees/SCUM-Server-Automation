@@ -1088,8 +1088,34 @@ module.exports = {
       const state = t.isOpen(w);
       res.json({ supported: true, text: t.describe(w), open: !!state.open, why: state.why, errors: v.errors });
     });
+    /**
+     * A caller's body laid over what is already STORED, one level deep.
+     *
+     * ⚠ **A SECTION NOBODY SENT IS NOT A SECTION TO RESET.** Every key below is rebuilt from the
+     * body — `commands: Array.isArray(b.commands) ? b.commands : []` and its eleven siblings — so a
+     * body naming ONE key replaces all the others. A `{"commandPrefix":"!"}` PATCH deletes every
+     * command, every kit, the welcome message and every translated line, and answers `ok: true`.
+     * The panel POSTs the whole object so nothing has done it yet; a script or a future partial save
+     * would, and the loss has no symptom until somebody reopens the tab.
+     *
+     * By KEY PRESENCE, never truthiness — `"commands": []` is an owner who deleted every command and
+     * must stay empty, which is the same rule `withDefaults` already follows one layer up. An ARRAY
+     * replaces rather than merging: merging two command lists by index is never what was meant.
+     */
+    function overlay(stored, body) {
+      const out = Object.assign({}, (stored && typeof stored === 'object') ? stored : {});
+      if (!body || typeof body !== 'object') return out;
+      for (const k of Object.keys(body)) {
+        const v = body[k]; const cur = out[k];
+        if (v && typeof v === 'object' && !Array.isArray(v)
+            && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, v);
+        else out[k] = v;
+      }
+      return out;
+    }
+
     host.routes.post('/config', (req, res) => {
-      const b = req.body || {};
+      const b = overlay(host.config.get() || {}, req.body || {});
       // Refuse a window nobody can read BEFORE it is saved. `validate()` is the same rule `isOpen()`
       // applies at claim time, so the panel can name the problem instead of the owner discovering it
       // as a kit that silently stopped existing. An entry with no windows is never inspected, which

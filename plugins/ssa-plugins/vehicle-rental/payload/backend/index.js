@@ -16,6 +16,21 @@ const OPEN = 'vr:open', VEH = 'vr:veh', OPT = 'vr:opt', EXT = 'vr:ext';
 
 function fill(tpl, vars) { return String(tpl || '').replace(/\{(\w+)\}/g, function (m, k) { return vars[k] != null ? vars[k] : ''; }); }
 function fmtDur(min) { min = Math.max(1, parseInt(min, 10) || 0); if (min < 60) return min + ' min'; const h = Math.floor(min / 60), m = min % 60; return h + 'h' + (m ? ' ' + m + 'm' : ''); }
+/**
+ * HOW LONG A PLAN RUNS FOR — one rule, because there were two and they disagreed.
+ *
+ * Everything that computes time reads `parseInt(o.minutes, 10) || 60`, so a plan left at 0 has
+ * always meant an hour and has to keep meaning one: an owner who typed 0 has been selling working
+ * hour-long rentals for as long as this plugin has existed. Everything that DISPLAYS a plan called
+ * `fmtDur(planMinutes(o))`, which clamps to `Math.max(1, …)` — so the same plan was advertised in the
+ * menu as "1 min", confirmed as "1 min", charged 500, and then ran for sixty minutes, with
+ * `/myrent` answering "1h left" one command later. Driven: three different durations for one
+ * rental, none of them wrong on its own.
+ *
+ * The rule is the one the CLOCK already used, so nothing about an existing rental changes; what
+ * changes is that the player is told what they were sold.
+ */
+function planMinutes(o) { return parseInt(o && o.minutes, 10) || 60; }
 function money(o) { return (o.amount || 0) + ' ' + (o.currency === 'gold' ? 'gold' : 'money'); }
 // Minutes left, as something a player reads at a glance in chat.
 function fmtLeft(ms) { const m = Math.max(0, Math.round(ms / 60000)); return fmtDur(m || 1); }
@@ -135,6 +150,33 @@ module.exports = {
     }
     const cfg = () => Object.assign(defaultConfig(), host.store.get('config', {}));
     const setCfg = (c) => host.store.set('config', Object.assign(defaultConfig(), c || {}));
+    /**
+     * A caller's body laid over what is already STORED, one level deep.
+     *
+     * ⚠ **A SECTION NOBODY SENT IS NOT A SECTION TO RESET.** `setCfg` spreads the body over
+     * `defaultConfig()`, which is what makes reading an older version's config safe — and it means a
+     * body naming ONE key replaces everything else with the shipped template. Driven: a
+     * `{"free":true}` PATCH deleted the owner's whole vehicle list, with its plans, prices, windows
+     * and images, and answered `ok: true`. The panel POSTs the entire object, so nothing has done
+     * that yet; a script, a second screen or a future partial save would have, and the loss has no
+     * symptom until somebody opens the tab.
+     *
+     * By KEY PRESENCE, never truthiness: `"vehicles": []` is an owner who deleted every vehicle and
+     * must stay empty, while an absent `vehicles` has never been sent. An ARRAY replaces rather than
+     * merging — a list is a whole answer, and merging two of them by index is how a plan ends up
+     * with another plan's price.
+     */
+    function overlay(stored, body) {
+      const out = Object.assign({}, (stored && typeof stored === 'object') ? stored : {});
+      if (!body || typeof body !== 'object') return out;
+      for (const k of Object.keys(body)) {
+        const b = body[k]; const cur = out[k];
+        if (b && typeof b === 'object' && !Array.isArray(b)
+            && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, b);
+        else out[k] = b;
+      }
+      return out;
+    }
     // texts merge one level deeper, so a config saved before a line existed still gets its default
     // instead of an empty message.
     const txt = (c, key) => Object.assign(defaultConfig().texts, c.texts || {})[key] || '';
@@ -444,7 +486,9 @@ module.exports = {
         });
         if (problems.length) return res.json({ ok: false, error: problems.join('\n') });
       }
-      setCfg(req.body || {});
+      // Over what is STORED first, filled from the template second. The other order resets every
+      // setting the caller did not name — see `overlay`.
+      setCfg(overlay(host.store.get('config', {}), req.body || {}));
       // The chat commands are named in this config, so saving it re-registers them. Without this a
       // rename or an on/off toggle needed a manager restart to take effect, and nothing said so.
       try { registerCommands(); } catch (e) { host.logger.warn('re-registering chat commands failed: ' + e.message); }
@@ -880,18 +924,18 @@ module.exports = {
         return { ok: false, error: '⚠️ Payment failed, so the rental was cancelled. You were not charged.' };
       }
 
-      const now = Date.now(), exp = now + (parseInt(o.minutes, 10) || 60) * 60000;
+      const now = Date.now(), exp = now + planMinutes(o) * 60000;
       let rentalId = null;
       if (db) {
         const ins = db.prepare('INSERT INTO rentals (discordId,steamId,playerName,vehIdx,vehName,vehId,optIdx,startedAt,expiresAt,paidAmount,paidCurrency,paidMinutes,vehCode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
           .run(who.discordId || '', who.steamId, who.playerName || '', String(vehIdx), v.name || '', '', Number(optIdx), now, exp,
-            c.free ? 0 : Math.max(0, parseInt(o.amount, 10) || 0), o.currency === 'gold' ? 'gold' : 'money', parseInt(o.minutes, 10) || 60, v.code || '');
+            c.free ? 0 : Math.max(0, parseInt(o.amount, 10) || 0), o.currency === 'gold' ? 'gold' : 'money', planMinutes(o), v.code || '');
         rentalId = ins.lastInsertRowid;
       }
       // Filled in behind the confirmation — see captureLater.
       captureLater(rentalId, { x: loc.x + 300, y: loc.y, z: loc.z }, before);
 
-      await say(who.steamId, fill(txt(c, 'confirmed'), vars(c, { player: who.playerName || '', vehicle: v.name || 'vehicle', duration: fmtDur(o.minutes), price: c.free ? 'Free' : money(o) })));
+      await say(who.steamId, fill(txt(c, 'confirmed'), vars(c, { player: who.playerName || '', vehicle: v.name || 'vehicle', duration: fmtDur(planMinutes(o)), price: c.free ? 'Free' : money(o) })));
       host.notify('admin.alert', { message: 'Vehicle rented: ' + (v.name || '?') + ' by ' + (who.playerName || who.steamId), severity: 'info' });
       return { ok: true, exp: exp, rentalId: rentalId, v: v, o: o };
     }
@@ -990,7 +1034,7 @@ module.exports = {
       return vars(c, Object.assign({
         player: r.playerName || '',
         vehicle: r.vehName || 'vehicle',
-        duration: o ? fmtDur(o.minutes) : '',
+        duration: o ? fmtDur(planMinutes(o)) : '',
         price: (c.free || !o) ? 'Free' : money(o),
         left: r.expiresAt ? fmtLeft(r.expiresAt - Date.now()) : '',
       }, extra || {}));
@@ -1106,7 +1150,7 @@ module.exports = {
         .addOptions(v.options.slice(0, 25).map(function (o, oi) {
           const shut = windowError(c, v, o);
           const opt = {
-            label: (fmtDur(o.minutes) + ' — ' + (c.free ? 'Free' : money(o))).slice(0, 100),
+            label: (fmtDur(planMinutes(o)) + ' — ' + (c.free ? 'Free' : money(o))).slice(0, 100),
             value: (oi + '.' + optSig(o)).slice(0, 100),
           };
           // The key is OMITTED rather than set to `undefined`. discord.js validates option objects at
@@ -1221,7 +1265,7 @@ module.exports = {
       // Same rule as renting: if the charge doesn't land, don't hand out the time.
       const paid = await charge(r.steamId, o, 1);
       if (!paid) return { ok: false, error: '⚠️ Payment failed — the rental was not extended.' };
-      const exp = Math.max(Date.now(), r.expiresAt) + (parseInt(o.minutes, 10) || 60) * 60000;
+      const exp = Math.max(Date.now(), r.expiresAt) + planMinutes(o) * 60000;
       // `AND active=1`, and check it landed. Without it a player could click Extend on the reminder
       // DM at the exact moment the sweep expired the rental: they were charged, the row was already
       // closed, and the vehicle had just been destroyed. The charge has already happened by this
@@ -1231,7 +1275,7 @@ module.exports = {
         try { await charge(r.steamId, o, -1); } catch (e) { host.logger.warn(`rental #${r.id}: extension lost the race AND the refund failed — check ${r.playerName || r.steamId}`); }
         return { ok: false, error: '⌛ That rental ended while you were extending it. You have not been charged.' };
       }
-      await say(r.steamId, fill(txt(c, 'extendOk'), rentalVars(r, c, { duration: fmtDur(o.minutes) })));
+      await say(r.steamId, fill(txt(c, 'extendOk'), rentalVars(r, c, { duration: fmtDur(planMinutes(o)) })));
       return { ok: true, exp: exp, v: v, o: o };
     }
 
@@ -1244,7 +1288,7 @@ module.exports = {
       return e
         .addFields(
           { name: 'Vehicle', value: v.name || '—', inline: true },
-          { name: 'Duration', value: fmtDur(o.minutes), inline: true },
+          { name: 'Duration', value: fmtDur(planMinutes(o)), inline: true },
           { name: 'Price', value: cfg().free ? 'Free' : money(o), inline: true },
           { name: 'Expires', value: '<t:' + Math.floor(exp / 1000) + ':R>' },
         );
@@ -1283,7 +1327,7 @@ module.exports = {
           // yesterday cannot find it or learn when it comes back.
           const lines = list.map(function (v, idx) {
             const plans = (v.options || []).map(function (o, oi) {
-              return (oi + 1) + ') ' + fmtDur(o.minutes) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳');
+              return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳');
             }).join('  ');
             return (idx + 1) + '. ' + (v.name || 'Vehicle') + ' — ' + (plans || 'no plans') + (windowOpen(c, v, null) ? '' : ' ⏳');
           });
@@ -1293,7 +1337,7 @@ module.exports = {
         const v = list[n - 1];
         const opts = v.options || [];
         if (!Number.isFinite(p) || p < 1 || p > opts.length) {
-          const plans = opts.map(function (o, oi) { return (oi + 1) + ') ' + fmtDur(o.minutes) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳'); }).join('  ');
+          const plans = opts.map(function (o, oi) { return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳'); }).join('  ');
           // Asking about one vehicle is specific enough to be told the actual times rather than a
           // symbol — this is the reply that answers "well, when then?".
           const shut = windowError(c, v, null);
@@ -1306,7 +1350,7 @@ module.exports = {
         // that never fires, and this reply used to stay silent too — so the player was charged and
         // told nothing at all, and typed the command again. A command always answers.
         if (c.inGameNotify === false) {
-          return ctx.reply(fill(txt(c, 'confirmed'), vars(c, { player: ctx.name || '', vehicle: (res.v && res.v.name) || 'vehicle', duration: res.o ? fmtDur(res.o.minutes) : '', price: (c.free || !res.o) ? 'Free' : money(res.o) })));
+          return ctx.reply(fill(txt(c, 'confirmed'), vars(c, { player: ctx.name || '', vehicle: (res.v && res.v.name) || 'vehicle', duration: res.o ? fmtDur(planMinutes(res.o)) : '', price: (c.free || !res.o) ? 'Free' : money(res.o) })));
         }
       }));
 
@@ -1329,7 +1373,7 @@ module.exports = {
         // Same as /rent: with in-game messages off, extendRental's say() is silent, so this is the
         // only thing that can tell the player their money bought more time.
         if (c.inGameNotify === false) {
-          return ctx.reply(fill(txt(c, 'extendOk'), rentalVars(rows[0], c, { duration: out.o ? fmtDur(out.o.minutes) : '' })));
+          return ctx.reply(fill(txt(c, 'extendOk'), rentalVars(rows[0], c, { duration: out.o ? fmtDur(planMinutes(out.o)) : '' })));
         }
       }));
 
