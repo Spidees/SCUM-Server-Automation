@@ -2,22 +2,24 @@
   "id": "mine-protection",
   "name": "Mine Protection",
   "type": "manager",
-  "version": "1.5.4",
-  "updated": "2026-08-04",
+  "version": "1.5.5",
+  "updated": "2026-09-12",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
   "description": "Punishes players who arm a mine or trap OUTSIDE their (or their squad's) flag area — teleports them onto their own armed mine so it detonates. Reads the manager's canonical world scan (reliable armed + placer detection), squad-aware, escalates from a warning to the penalty, and punishes an offline placer the moment they reconnect. State survives restarts. Configure it all from its admin tab: an illustrated mine/trap picker with live placed/armed counts, escalation rules, exemptions (with an online-player picker) and a live feed of recent actions.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
-  "minManagerVersion": "5.13.0",
+  "minManagerVersion": "5.15.0",
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
     "style": "web/plugin.css"
   },
   "dependencies": [
-    "ssa-bridge"
+    {
+      "id": "ssa-bridge"
+    }
   ],
   "bridge": {
     "needs": [

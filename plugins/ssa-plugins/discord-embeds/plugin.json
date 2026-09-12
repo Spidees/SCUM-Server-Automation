@@ -2,8 +2,8 @@
   "id": "discord-embeds",
   "name": "Discord Embeds",
   "type": "manager",
-  "version": "1.6.3",
-  "updated": "2026-08-19",
+  "version": "1.6.4",
+  "updated": "2026-09-12",
   "author": "SCUMSA",
   "website": "https://scumsa.com",
   "description": "Everything Discord-embed in one place: write a message with a live preview that renders real markdown, your server’s own emoji and live server data, send it and edit it in place afterwards — plus restyle the manager’s own embeds (kill feed, economy, status, leaderboards) and build custom embeds that keep themselves updated in a channel.",
@@ -17,7 +17,7 @@
   },
   "config": "config.json",
   "premium": true,
-  "minManagerVersion": "5.13.0",
+  "minManagerVersion": "5.15.0",
   "dependencies": [
     {
       "id": "ssa-bridge"

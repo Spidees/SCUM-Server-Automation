@@ -16,7 +16,7 @@ Tell your players what is happening, **in the game's own chat**. Kills, players 
 
 - The **SSA Bridge**, for the cargo and game-event announcements. Kills, joins, leaves, bunkers and raids work without it.
 - In the bridge's **World events** module: `enabled`, `cargo` and `events`. The plugin's card offers to switch them on for you. `players` is optional and is what puts a name on each sign-up.
-- Manager **5.13.0** or newer, and **5.14.8** for the secret-bunker announcement — on an older one that card stays quiet and everything else works.
+- Manager **5.15.0** or newer. That is what the manifest enforces, so it is what the panel will let you enable.
 
 ## Configuration
 

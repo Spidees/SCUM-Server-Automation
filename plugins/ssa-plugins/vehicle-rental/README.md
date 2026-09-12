@@ -38,7 +38,7 @@ up. **No admin has to be online**, and a player never has to leave the game to d
   through it. It's a dependency.
 - The **Discord Embed Editor** plugin *only* if you want to design the Discord menu embed — it is an
   **optional** dependency and nothing else needs it. Time windows need manager **5.3.0+**.
-- Manager **5.13.0+**, which is what the manifest enforces. Sector rules need the live map
+- Manager **5.15.0+**, which is what the manifest enforces. Sector rules need the live map
   calibration on top of that; without it they simply don't restrict anything.
 
 ## Configuration
