@@ -1,0 +1,97 @@
+{
+  "enabled": false,
+  "setsDir": "",
+  "rotation": "manual",
+  "restartPick": "order",
+  "maxActive": 1,
+  "minMinutesBetweenSwitches": 30,
+  "reloadOnSwitch": true,
+  "checkEverySeconds": 60,
+  "zone": {
+    "namePrefix": "Loot ",
+    "configMode": "existing",
+    "configIndex": 0,
+    "ownConfigName": "Loot Zones",
+    "visibleOnMap": true,
+    "notifyOnEntry": true,
+    "colour": {
+      "r": 1,
+      "g": 0.64,
+      "b": 0.1,
+      "a": 1
+    }
+  },
+  "chatChannel": "global",
+  "messages": {
+    "activate": {
+      "enabled": true,
+      "text": "{zone} now has different loot. It stays that way for a while.",
+      "chat": true,
+      "hud": false,
+      "alert": false,
+      "killFeed": false,
+      "history": false
+    },
+    "deactivate": {
+      "enabled": true,
+      "text": "{zone} is back to its normal loot.",
+      "chat": true,
+      "hud": false,
+      "alert": false,
+      "killFeed": false,
+      "history": false
+    },
+    "join": {
+      "enabled": false,
+      "text": "Right now the richer loot is in {zones}.",
+      "delaySeconds": 20,
+      "chat": true,
+      "hud": false,
+      "alert": false,
+      "killFeed": false,
+      "history": false
+    },
+    "reminder": {
+      "enabled": false,
+      "everyMinutes": 60,
+      "text": "{zones} still has the better loot.",
+      "chat": true,
+      "hud": false,
+      "alert": false,
+      "killFeed": false,
+      "history": false
+    }
+  },
+  "sentries": {
+    "mode": "leave",
+    "kinds": [
+      "sentry"
+    ],
+    "wakeDistance": 40000,
+    "nearbyPatrolSeconds": 5,
+    "patrolSeconds": 60,
+    "centreZ": 0,
+    "reachZ": 100000,
+    "globalRespawn": {
+      "enabled": false,
+      "seconds": 3600
+    },
+    "ownPosts": 0,
+    "replace": {
+      "types": [],
+      "route": "spawn",
+      "spawnKind": "armednpc",
+      "spawnName": "",
+      "kind": "npc",
+      "classPath": "",
+      "count": 1,
+      "postRadius": 1500,
+      "afterDeathSeconds": 120,
+      "maxPosts": 12,
+      "cooldownSeconds": 0,
+      "maxGuards": 0,
+      "keepAwayFromPlayers": 5000
+    }
+  },
+  "zones": []
+}

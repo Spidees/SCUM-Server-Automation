@@ -309,24 +309,21 @@ module.exports = {
     async function captureVehicleId(loc, before) {
       if (!before) return '';
       try {
-        // The manager's world snapshot is memoised for EIGHT seconds, so a poll shorter than that can
-        // legitimately observe no change at all and conclude nothing spawned. The deadline outlasts
-        // two full cache cycles.
+        // The manager's world snapshot is memoised for EIGHT seconds, so a look sooner than that can
+        // legitimately observe no change at all and conclude nothing spawned. So it looks exactly
+        // twice, each time just past that window: a snapshot that is still valid 8.2 s after the
+        // previous look was necessarily built after it, so both looks are fresh and both were taken
+        // after the spawn — the same two full cache cycles the old twenty-second deadline allowed.
         //
-        // But it also stops as soon as the answer is knowable: once the world has visibly MOVED ON
-        // twice — a different set of vehicle ids from the one we started with — and still nothing new
-        // has appeared near the spawn point, waiting out the rest of the twenty seconds only delays a
-        // log line nobody is waiting for.
-        const DEADLINE = Date.now() + 20000;
-        let refreshes = 0;
-        let lastSeen = null;
-        while (Date.now() < DEADLINE) {
-          await new Promise(function (r) { setTimeout(r, 1500); });
+        // It used to look every 1.5 s for twenty seconds. Between refreshes those looks saw the same
+        // snapshot again, and every look that landed after one expired paid for a whole world scan,
+        // two or three per rental, for an answer the second fresh snapshot already gives.
+        const POLL_MS = 8200;
+        const LOOKS = 2;
+        for (let look = 0; look < LOOKS; look++) {
+          await new Promise(function (r) { setTimeout(r, POLL_MS); });
           const w = host.map.world() || {};
           if (!Array.isArray(w.vehicles)) continue;
-          const nowIds = w.vehicles.map(function (v) { return v && v.id != null ? String(v.id) : ''; }).sort().join(',');
-          if (lastSeen !== null && nowIds !== lastSeen) refreshes++;
-          lastSeen = nowIds;
           // Ids some OTHER active rental already owns. `before` can be up to eight seconds stale, so
           // a vehicle another player rented in that window looks new to us — and adopting it would
           // destroy their vehicle when our rental expires. Two guards are not one too many here.
@@ -341,7 +338,6 @@ module.exports = {
             if (d < bestD) { bestD = d; best = v; }
           });
           if (best && bestD < 3000) return String(best.id);
-          if (refreshes >= 2) return '';        // the world moved on twice and nothing of ours showed
         }
         return '';
       } catch (e) { return ''; }
@@ -350,7 +346,7 @@ module.exports = {
     /**
      * Wire a rental to its vehicle once the world catches up.
      *
-     * NOT part of the rental itself. Identifying the vehicle can take twenty seconds — the snapshot
+     * NOT part of the rental itself. Identifying the vehicle can take about sixteen seconds — the snapshot
      * it reads is refreshed on its own eight-second clock — and making a player stare at "Processing
      * your rental…" for that long, for something that only matters at expiry, is the wrong trade.
      * The rental is confirmed at once and the id is filled in behind it.
@@ -1192,7 +1188,7 @@ module.exports = {
 
       // ACKNOWLEDGE FIRST. Discord kills an unacknowledged interaction after THREE SECONDS, and
       // extending is slower than that on purpose: it can wait on a vehicle identification (up to
-      // 20s), then charge through the bridge, then send an in-game line — and the bridge's own
+      // about 16s), then charge through the bridge, then send an in-game line — and the bridge's own
       // timeout is 6s, double the window on its own.
       //
       // So the player clicked Extend, was charged, the rental WAS extended — and Discord told them
@@ -1494,7 +1490,7 @@ module.exports = {
         const orphans = db.prepare("SELECT id, playerName, steamId, vehName FROM rentals WHERE active=1 AND (vehId IS NULL OR vehId='')").all();
         if (orphans.length) {
           const who = orphans.map((r) => '#' + r.id + ' ' + (r.vehName || 'vehicle') + ' (' + (r.playerName || r.steamId) + ')').join(', ');
-          host.logger.warn(`${orphans.length} active rental(s) have no identified vehicle, so those vehicles will NOT be removed when they expire: ${who}. This happens when the manager restarts in the ~20s after a spawn. End them from the panel and remove the vehicle by hand if it is still there.`);
+          host.logger.warn(`${orphans.length} active rental(s) have no identified vehicle, so those vehicles will NOT be removed when they expire: ${who}. This happens when the manager restarts in the ~16s after a spawn. End them from the panel and remove the vehicle by hand if it is still there.`);
           try {
             host.notify('admin.alert', {
               message: `Vehicle rental: ${orphans.length} active rental(s) have no identified vehicle and will not be cleaned up automatically. See the manager log for which.`,

@@ -1,0 +1,434 @@
+/* Loot Zones.
+ *
+ * ⚠ **EVERY COLOUR THAT SAID "THIS IS ON" USED TO RESOLVE TO NOTHING, AND THAT IS THE WHOLE OF "IT
+ * HAS NO COLOURS AND EVERYTHING RUNS TOGETHER".**
+ *
+ * This sheet named `--accent`, nine times, with no fallback. **The panel does not define
+ * `--accent`** — it appears exactly once in the whole product, inside somebody else's fallback
+ * chain — so every one of those declarations was invalid at computed-value time and simply did not
+ * apply. What that cost was not decoration: `.lz-tg.on`, `.lz-zone.on`, `.lz-badge.on` and
+ * `.lz-chk.on` are the ONLY four things on this page that say "this is switched on", and all four
+ * painted nothing. A switch that was on looked exactly like a switch that was off. The notes had the
+ * same fault one step quieter: `--ok` and `--danger` do not exist either, and their fallbacks were a
+ * green and a red belonging to no palette in this product.
+ *
+ * Nothing here invents a token and nothing here writes a fallback. The panel's accent is `--amber`
+ * with `--amber-hi` above it and `--on-amber` for text on top of it; its states are `--online`,
+ * `--standby` and `--alarm`. Those are real, they are the panel's own most-used names, and they
+ * cannot silently evaporate.
+ *
+ * ── THE SECOND HALF: THREE SURFACES AND A SCALE ────────────────────────────────────────────────
+ *
+ *     --panel    the card                     the page's boxes
+ *     --panel-2  a block inside a card        a zone, a message, a guard
+ *     --inset    a control inside a block     an input, a chip, a switch
+ *
+ * The old sheet painted a zone and the inputs inside it the same `--inset` behind the same 1px
+ * `--line`, so a block and its contents had one ground and no edge between them. Things ran together
+ * by construction rather than by accident.
+ *
+ * ⚠ **AND IT WAS WRITTEN ENTIRELY IN PIXELS.** The panel's root font is **124%** (106% under 640px),
+ * so `.card`'s `1.1rem 1.2rem` is about 22×24 real pixels — while this sheet's own card said
+ * `14px 16px`. Every box on this tab was a third tighter than every box around it, on the same
+ * screen, and no amount of colour would have fixed that. It is in `rem` now, on the panel's own
+ * spacing and type scale.
+ *
+ * ── THE RULES IT KEEPS ─────────────────────────────────────────────────────────────────────────
+ *
+ * Nothing declares a width over 320px without a `min()` guard and nothing is hidden with
+ * `display: none !important` inside a touch query — `check-mobile`, both of which have made this
+ * panel unusable on a phone before. `min()` is used even below that floor, because the checker's
+ * threshold does not know about the padding of the card a grid sits in.
+ *
+ * Every hover pair is retuned on the ELEMENT through `--hov-bg` / `--hov-fg` / `--hov-line` rather
+ * than by overriding `background` or `color` alone — `check-contrast`'s rule, since the global
+ * button hover paints amber with dark text and changing one half of that pair leaves the other
+ * invisible. ⚠ And a `--hov-*` pointing at a token that does not resolve is the same defect wearing
+ * the fix's clothes: the pair is stated, and one half of it does nothing. That is what
+ * `--hov-line: var(--accent)` was doing here, and no checker can see it.
+ */
+
+.lz { display: flex; flex-direction: column; gap: 1rem; }
+
+/* The panel's own box. The element carries `class="card lz-card"`, which is what five of the other
+   six plugins do — the ground, the border, the radius and the padding are the panel's, so a change
+   there reaches this tab instead of passing it by, and a plugin box is never a different size from
+   the box beside it. */
+.lz-card { display: flex; flex-direction: column; }
+
+/* ── a section heading ─────────────────────────────────────────────────────────────────────────
+   The panel's own `.settings-section-head` shape: an amber-hi title over an amber rule. Enough to
+   find a section while scrolling, and the same weight the settings screens already use. */
+.lz-card > h3 {
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--line-amber);
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 1.15rem; font-weight: 700;
+  color: var(--amber-hi);
+  line-height: 1.25;
+}
+.lz-card > h3 .ico, .lz-card > h3 svg { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+
+/* What the section is FOR, in one sentence. Sits with the heading rather than with the first row,
+   so a section reads as a thing with an introduction rather than as more rows. */
+.lz-lead {
+  margin: 0 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  max-width: 70ch;
+}
+
+/* ── a settings row ────────────────────────────────────────────────────────────────────────────
+   Label and hint on the left, control on the right, exactly as the panel's own settings screens do
+   it. ⚠ `minmax(0, 1fr)` and never a bare `1fr`: a bare one is `minmax(auto, 1fr)`, so the track
+   cannot go below its content's min-content width and a long hint pushes the card sideways instead
+   of wrapping. */
+.lz-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(min(100%, 13rem), 22rem);
+  grid-template-areas: "label control" "desc control";
+  align-items: center;
+  column-gap: 1.5rem;
+  row-gap: 0.25rem;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--line-2);
+}
+.lz-row:first-of-type { border-top: 0; }
+.lz-row > label {
+  grid-area: label;
+  font-size: 0.92rem; font-weight: 600; color: var(--text);
+}
+.lz-ctl { grid-area: control; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+/* A short caption beside a control — inside `.lz-routes`, `.lz-sub` and the schedule block, which
+   are flex rows, so this is about the TEXT and never about placement. (It used to name a grid area
+   as well, which is inert inside the flex parent declared two lines above it.) */
+.lz-ctl small, .lz-sub small, .lz-routes small {
+  color: var(--muted); font-size: 0.8rem; line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* The hint belongs under the LABEL, where the panel puts it — a hint under the control pushes every
+   row's control out of line with the one above it. */
+.lz-hint {
+  grid-area: desc;
+  margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45;
+  overflow-wrap: anywhere; max-width: 72ch;
+}
+
+@media (max-width: 640px) {
+  .lz-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "label" "desc" "control";
+    row-gap: 0.4rem;
+  }
+}
+
+/* ── controls ──────────────────────────────────────────────────────────────────────────────────
+   The deepest surface on the page, so a box is always a step darker than whatever holds it. The
+   panel's zero-specificity `:where()` floor already paints these; stating them here is what makes
+   the border, the radius and the focus behaviour match the panel's own inputs. */
+.lz-in {
+  width: 100%;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit; font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.lz-in:hover { border-color: var(--line-amber); }
+/* No ring. A focused input already turns its border amber, and the panel removed the second
+   concentric line on purpose — `--focus-ring` is `none` and re-adding one gives a double frame. */
+.lz-in:focus { border-color: var(--amber); outline: none; }
+.lz-num { width: min(100%, 9rem); font-variant-numeric: tabular-nums; }
+/* A number and its unit travel together, so "400" is never read without "m". */
+.lz-unitbox { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; max-width: 100%; }
+.lz-unitbox .lz-num { width: min(100%, 7rem); }
+.lz-unit { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.lz-colour { width: 3rem; height: 2rem; padding: 0.1rem; cursor: pointer; }
+.lz-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; min-width: 0; }
+.lz-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%;
+  padding: 0.25rem 0.3rem 0.25rem 0.65rem;
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: 0.85rem; color: var(--text); overflow-wrap: anywhere;
+}
+.lz-chip-x {
+  --hov-bg: transparent; --hov-fg: var(--alarm, #e5443f); --hov-line: transparent;
+  background: transparent; color: var(--muted); border: 0;
+  padding: 0 0.35rem; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.lz-chip-x:hover { background: var(--hov-bg); color: var(--hov-fg); }
+.lz-wide { font-family: var(--mono); font-size: 0.8rem; }
+.lz-name { font-weight: 600; }
+
+.lz-area {
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+/* ── notes ─────────────────────────────────────────────────────────────────────────────────────
+   Four meanings and four colours, carried by the left rule. Neutral is a fact, green is something
+   that worked, red is something that did not, amber is something waiting. */
+.lz-live { display: flex; flex-direction: column; gap: 0.6rem; }
+.lz-live:empty { display: none; }
+.lz-note {
+  background: rgba(255, 106, 26, 0.06);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 0.75rem 0.95rem;
+  line-height: 1.6;
+}
+.lz-note b, .lz-note strong { color: var(--text); font-weight: 600; }
+.lz-note.good { background: rgba(84, 201, 138, 0.06); border-left-color: var(--online); }
+.lz-note.bad  { background: rgba(255, 92, 92, 0.06); border-left-color: var(--alarm); }
+.lz-note.wait { background: rgba(230, 178, 58, 0.06); border-left-color: var(--standby); }
+/* A plain fact with nothing to feel about it — no wash, so the coloured ones keep their meaning. */
+.lz-note.flat { background: var(--panel-2); border-left-color: var(--faint); }
+.lz-tokens { color: var(--muted); margin-top: 0.5rem; font-size: 0.8rem; line-height: 1.45; }
+
+/* ── a block inside a card: a zone, a message ─────────────────────────────────────────────────── */
+.lz-zone {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.95rem;
+  margin-bottom: 0.6rem;
+}
+.lz-zone:last-child { margin-bottom: 0; }
+/* Live. The amber edge and a solid rule down the side together, because a border alone at 1px is
+   one pixel of the only signal this page has. */
+.lz-zone.on {
+  border-color: var(--line-amber);
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+.lz-zhead { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.lz-zhead .lz-in { flex: 1 1 10rem; min-width: 0; width: auto; }
+.lz-zmeta { color: var(--muted); margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.5; }
+.lz-when { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.lz-when > small { color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
+
+/* A block nested one deeper still — one guard type inside the guards block. It cannot go darker
+   than `--inset` without colliding with the controls, so it is separated by an indent and a rule
+   rather than by a fourth surface. */
+.lz-sub {
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--line-amber);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  margin-top: 0.5rem;
+  display: flex; flex-direction: column; gap: 0.45rem;
+}
+.lz-sub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.lz-sub-n {
+  font-family: var(--mono); font-size: 0.7rem; color: var(--faint);
+  letter-spacing: 0.02em; flex: 0 0 auto;
+}
+
+/* ── state, in words ───────────────────────────────────────────────────────────────────────────
+   A pill says what something IS; its own dot is what a reader picks up while scrolling. Shaped like
+   the panel's `.mod-state`, which is the small pill it uses for exactly this. */
+.lz-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--pill);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--muted);
+  font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.lz-badge::before {
+  content: ""; width: 0.4rem; height: 0.4rem; border-radius: 50%;
+  background: currentColor; flex: 0 0 auto;
+}
+.lz-badge.on   { background: var(--amber); border-color: var(--amber); color: var(--on-amber); }
+.lz-badge.good { color: var(--online);  border-color: rgba(84, 201, 138, 0.35); }
+.lz-badge.wait { color: var(--standby); border-color: rgba(230, 178, 58, 0.35); }
+
+/* A figure worth reading at a glance — posts held, guards standing, zones live. The panel's own
+   `.mod-stat` proportions, so a counter here is the same object as a counter anywhere else. */
+.lz-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+.lz-fig { text-align: center; min-width: 0; }
+.lz-fig b {
+  display: block;
+  font-size: 1.35rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.lz-fig span {
+  display: block;
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.lz-fig.good b { color: var(--online); }
+.lz-fig.wait b { color: var(--standby); }
+
+/* ── buttons of this page's own ────────────────────────────────────────────────────────────────
+   Everything that can be a bare `button` (primary), `button.secondary` or `button.danger` is one.
+   These three are the shapes the panel has no class for. */
+
+/* Remove. Ghost: no fill, the colour change alone is the affordance. */
+.lz-del {
+  --hov-bg: transparent;
+  --hov-fg: var(--alarm);
+  --hov-line: currentColor;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  padding: 0.25rem 0.45rem;
+  cursor: pointer; flex: 0 0 auto;
+}
+.lz-del:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.lz-del .ico, .lz-del svg { width: 0.85rem; height: 0.85rem; display: block; }
+
+/* A choice that reads as a word rather than as a bare box. Tinted: its own soft fill with normal
+   text, retuned as a pair so the global amber hover never paints half of it. The 7% amber wash is
+   the panel's own "this one is chosen" — `.mf-opt.on` says it in exactly these values. */
+.lz-chk {
+  --hov-bg: var(--hover-bg);
+  --hov-fg: var(--text);
+  --hov-line: var(--line-amber);
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit; font-size: 0.85rem;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.lz-chk .ico, .lz-chk svg { width: 0.8rem; height: 0.8rem; flex: 0 0 auto; }
+.lz-chk.on {
+  border-color: var(--amber);
+  background: rgba(255, 106, 26, 0.07);
+  color: var(--amber-hi);
+}
+.lz-chk:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+
+/* The heading of a foldable block — a message, a zone.
+ *
+ * ⚠ Restored. The rewrite dropped it while the page went on emitting the class, and with no rule
+ * these fall through to the panel's global `button`: a solid amber fill with near-black text, so
+ * four message titles and every zone's more/less control rendered as primary buttons on a page that
+ * reserves amber for "this is switched on". Ghost shape — no fill, the colour change is the
+ * affordance — with the hover pair retuned on the element so the global one cannot paint half of it.
+ */
+.lz-link {
+  --hov-bg: transparent;
+  --hov-fg: var(--amber-hi);
+  --hov-line: transparent;
+  background: transparent; border: 0;
+  color: var(--text);
+  font: inherit; font-weight: 600; font-size: 0.92rem;
+  padding: 0.25rem 0.15rem; cursor: pointer;
+  flex: 1 1 8rem; min-width: 0; text-align: left;
+}
+.lz-link:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+
+/* ── days of the week ──────────────────────────────────────────────────────────────────────────
+   ⚠ These carry 1 (Monday) to 7 (Sunday) — the numbers `timeWindows.js` reads, which this tab wrote
+   as 0..6 for as long as it existed. A Sunday written as 0 is a window the evaluator REFUSES, and a
+   refused window is treated as CLOSED: the zone never came on and nothing said why. Buttons rather
+   than a typed list exactly so that vocabulary cannot be got wrong again. */
+.lz-days { display: flex; flex-wrap: wrap; gap: 0.25rem; min-width: 0; }
+.lz-day {
+  --hov-bg: var(--hover-bg);
+  --hov-fg: var(--text);
+  --hov-line: var(--line-amber);
+  min-width: 2.6rem;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font: inherit; font-size: 0.76rem; font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.25rem 0.45rem;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.lz-day:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.lz-day.on {
+  --hov-bg: var(--amber-hi);
+  --hov-fg: var(--on-amber);
+  background: var(--amber); border-color: var(--amber); color: var(--on-amber);
+}
+
+/* One time window: its days, then from/to, then remove. Wraps to one per line on a phone. */
+.lz-win {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--line-2);
+  min-width: 0;
+}
+.lz-win:first-of-type { border-top: 0; }
+.lz-win .lz-in { width: min(100%, 6.5rem); font-family: var(--mono); }
+.lz-win-sep { color: var(--faint); font-size: 0.8rem; }
+
+/* ── the rest ──────────────────────────────────────────────────────────────────────────────────── */
+.lz-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
+.lz-actions .ico, .lz-actions svg { width: 1.05em; height: 1.05em; }
+
+/* Wraps to one per line on a phone; never sets a minimum wider than the screen. */
+.lz-routes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.lz-routes .lz-num { width: min(100%, 5.5rem); }
+.lz-routes .lz-in { width: auto; flex: 1 1 10rem; min-width: 0; }
+
+/* The save bar rides at the bottom of the tab and says whether there is anything to save at all. */
+.lz-save {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
+  position: sticky; bottom: 0; z-index: 2;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+}
+.lz-dirty { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--muted); font-size: 0.85rem; }
+.lz-dirty.unsaved { color: var(--standby); }
+
+.lz-lines p { margin: 0 0 0.5rem; font-size: 0.85rem; line-height: 1.55; }
+.lz-lines p:last-child { margin-bottom: 0; }
+
+.lz-chosen {
+  color: var(--data-text);
+  font-family: var(--mono); font-size: 0.78rem;
+  word-break: break-all;
+}
+
+/* A list that is empty is a fact, and it gets said rather than left as a gap. */
+.lz-empty {
+  color: var(--muted); font-size: 0.85rem;
+  padding: 1.4rem; text-align: center;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── explanations on demand, folded options, and the bridge checklist ─────────────────────────────
+   A hint used to sit open under every control, which made the page a wall of prose. The "?" opens
+   it. Hover is retuned on the element as a pair, the way every button on this page is. */
+.lz-q {
+  --hov-bg: var(--inset); --hov-fg: var(--amber-hi); --hov-line: var(--amber);
+  margin-left: .4rem; min-width: 1.4rem; height: 1.4rem; padding: 0 .35rem;
+  border-radius: 999px; font-size: .8rem; line-height: 1; vertical-align: middle;
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+}
+.lz-q.on { color: var(--amber-hi); border-color: var(--amber); }
+.lz-more { margin-top: .6rem; border-top: 1px solid var(--line); padding-top: .5rem; }
+.lz-more > summary { cursor: pointer; color: var(--muted); font-size: .9rem; padding: .3rem 0; }
+.lz-more[open] > summary { color: var(--text); }
+.lz-need { display: flex; gap: .5rem; align-items: flex-start; padding: .25rem 0; }
+.lz-need svg { flex: 0 0 auto; margin-top: .15rem; color: var(--standby); }

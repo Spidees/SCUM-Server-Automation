@@ -1,4 +1,4 @@
-/* Discord Embed Editor — admin UI + a reusable component other plugins mount via
+/* Discord Embeds: admin UI + a reusable component other plugins mount via
    SSA.consume('embed-editor').mount(container, opts). Talks to its own backend at a fixed base so it
    works no matter which plugin embeds it.
 
@@ -138,6 +138,28 @@
     });
   }
 
+  // ── one token refresh for every editor on the page ──────────────────────────
+  // Each editor re-fetches /tokens so its preview carries the server's current numbers. That used to
+  // be a timer per editor, de-duplicated on the container — but opening a tab builds a NEW container
+  // every time, so every visit added a timer that outlived the tab and kept asking the server for
+  // the whole token catalogue for as long as the panel stayed open. Now there is ONE timer: it
+  // refreshes the editors still on the page, forgets the ones that are not, stops when none are
+  // left, and skips a round while the browser tab is hidden. Keyed by container, because setValue
+  // rebuilds an editor into the same one.
+  var eeTokenWatch = [];
+  var eeTokTimer = null;
+  function eeTokenRound() {
+    eeTokenWatch = eeTokenWatch.filter(function (w) { return w.container.isConnected; });
+    if (!eeTokenWatch.length) { clearInterval(eeTokTimer); eeTokTimer = null; return; }
+    if (document.hidden) return;
+    eeTokenWatch.forEach(function (w) { w.load(); });
+  }
+  function eeWatchTokens(container, load) {
+    eeTokenWatch = eeTokenWatch.filter(function (w) { return w.container !== container; });
+    eeTokenWatch.push({ container: container, load: load });
+    if (!eeTokTimer) eeTokTimer = setInterval(eeTokenRound, 20000);
+  }
+
   function buildEditor(container, opts) {
     opts = opts || {};
     var model = opts.value ? Object.assign(defaultModel(), clone(opts.value)) : defaultModel();
@@ -188,10 +210,7 @@
       }).catch(function (err) { tokensReady = true; tokensLoadErr = why(err); });
     }
     loadTokens();
-    var tokTimer = setInterval(loadTokens, 20000);
-    // The editor is rebuilt (not unmounted) on setValue, so clear the old timer or they stack up.
-    if (container._eeTokTimer) clearInterval(container._eeTokTimer);
-    container._eeTokTimer = tokTimer;
+    eeWatchTokens(container, loadTokens);
 
     // ── live-preview resolver ───────────────────────────────────────────────────
     // {token} → sample value, plus the item helpers {img:CODE} / {itemName:CODE}, looked up from the

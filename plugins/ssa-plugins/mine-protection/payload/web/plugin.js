@@ -109,6 +109,7 @@
     // which also stops any previous mount's poll loop (it checks it's still the active handler).
     function onEvent(rec) {
       if (!rec) return;
+      if (!el.isConnected) { mpOnEvent = null; return; }
       status = status || {}; status.recent = ([rec].concat(status.recent || [])).slice(0, 100);
       renderStatusBar(); renderRecent();
       refreshMines();   // an action happened → refresh the placed-mines table right away
@@ -142,6 +143,11 @@
     function refreshStatusLoop() {
       if (mpOnEvent !== onEvent) return;                 // a newer mount took over → stop this loop
       if (mpLiveTimer) { clearTimeout(mpLiveTimer); mpLiveTimer = null; }
+      // The tab was left: stop for good. Both routes walk the whole world, and nothing was drawing
+      // what they answered. Opening the tab again mounts a new editor, which starts its own loop.
+      if (!el.isConnected) { mpOnEvent = null; return; }
+      // Nobody is looking at the page: ask again later, without asking the server now.
+      if (document.hidden) { mpLiveTimer = setTimeout(refreshStatusLoop, 8000); return; }
       Promise.all([api('/status'), api('/mines')]).then(function (rr) {
         if (mpOnEvent !== onEvent) return;               // superseded while the request was in flight
         pollErr = null;

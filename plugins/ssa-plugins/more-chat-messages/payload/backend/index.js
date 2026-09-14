@@ -73,6 +73,7 @@ const DEFAULTS = {
   kills: {
     enabled: false,
     channel: 'global',
+    history: false,
     message: '{killer} killed {victim} ({weapon}) at {distance} m',
     // A death SCUM could not attribute to anybody — a fall, a mine, a trap. The game writes its own
     // fallbacks ("Unknown", "NPC", "-1") into the killer field, and `host.items.actorName()` is what
@@ -85,16 +86,19 @@ const DEFAULTS = {
   joins: {
     enabled: false,
     channel: 'global',
+    history: false,
     message: '{name} joined the server ({sector})',
   },
   leaves: {
     enabled: false,
     channel: 'global',
+    history: false,
     message: '{name} left the server ({sector})',
   },
   cargo: {
     enabled: false,
     channel: 'global',
+    history: false,
     // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
     everySeconds: 0,
     // Three states, three lines, because they are three different pieces of news to a player: one
@@ -109,6 +113,7 @@ const DEFAULTS = {
   events: {
     enabled: false,
     channel: 'global',
+    history: false,
     // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
     everySeconds: 0,
     // Registration is open and there is somebody in it. This is the "come and play" line.
@@ -130,6 +135,7 @@ const DEFAULTS = {
   bunkersSecret: {
     enabled: false,
     channel: 'global',
+    history: false,
     // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
     everySeconds: 0,
     openMessage: 'A secret bunker has opened in {sector}',
@@ -139,6 +145,7 @@ const DEFAULTS = {
   bunkersAbandoned: {
     enabled: false,
     channel: 'global',
+    history: false,
     // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
     everySeconds: 0,
     openMessage: 'The abandoned bunker in {sector} is now active',
@@ -148,6 +155,7 @@ const DEFAULTS = {
   raids: {
     enabled: false,
     channel: 'global',
+    history: false,
     message: 'A base is under attack in {sector}',
     // ⚠ OFF, AND THE HINT SAYS WHY. A raid announcement naming the owner tells the whole server
     // whose base is being hit and where — which on a PVP server is a raid advertisement, not news.
@@ -334,6 +342,25 @@ async function register(host) {
     if (!text) { stats.skipped += 1; return; }
     try {
       const r = await host.chat.send(text, { channel: channelOf(section.channel) });
+      /**
+       * The chat HISTORY — the admin chat view, the Field Console and the Discord chat channel.
+       *
+       * ⚠ SCUM does not log a line the bridge injects, and both of those surfaces read the game's own
+       * chat log — so every line this plugin has ever sent was visible in game and nowhere else. This
+       * is the separate door the manager opens for exactly that; it needs no bridge of its own, so a
+       * line is kept even on the pass where nobody was online to hear it.
+       */
+      if (section.history) {
+        if (typeof host.chat.record === 'function') {
+          const rec = host.chat.record(text, { channel: channelOf(section.channel) });
+          if (rec && rec.ok === false) log.warn(`[more-chat-messages] the chat history was not written: ${rec.reason}`);
+        } else {
+          // Feature-detected: this runs on whatever manager is installed, and an older one has no
+          // such door. Said in words rather than failing quietly.
+          log.warn('[more-chat-messages] this manager is too old to put a line in the chat history — '
+            + 'the announcement still went to the game');
+        }
+      }
       note(kind, text, true, r && r.delivered === 0 ? 'nobody online to hear it' : '');
     } catch (e) {
       note(kind, text, false, e && e.message ? e.message : 'the chat call failed');
@@ -901,11 +928,12 @@ async function register(host) {
   // ── how often each announcement asks, and what asking costs ───────────────────────────────────
   //
   // ⚠ **THE BRIDGE CALL IS NOT CHEAP AND THE PLUGIN CANNOT MAKE IT CHEAPER.** One
-  // `worldEvents()` reaches `find_all_multi`, which visits every UObject in the process and walks
-  // each one's super-struct chain -- 1,794,563 objects on this build's own dump. The four buckets
-  // (crates, events, bunkers, world events) already SHARE that one walk, so asking for fewer of
-  // them shortens nothing. On top of it sit five real ProcessEvent calls per event location, about
-  // 125 per reply.
+  // `worldEvents()` reads the bridge's shared object index, and when no other reader has refreshed
+  // it within the last second that is one walk of every UObject in the process -- 1,794,563 objects
+  // on this build's own dump. The four buckets (crates, events, bunkers, world events) already SHARE
+  // that one walk, and so does every other module reading the world in the same second, so asking
+  // for fewer of them shortens nothing. On top of it sit five real ProcessEvent calls per event
+  // location, about 125 per reply.
   //
   // ⚠ **AND THAT IS A LIMIT OF WHAT THE MOD LOADER OFFERS, NOT OF THE ENGINE.** Unreal keeps a
   // real by-class index -- `GetObjectsOfClass` over `FUObjectHashTables` -- and it is in every
@@ -920,22 +948,50 @@ async function register(host) {
   // events cost that walk. And when two sections fall due in the same tick they share ONE reply,
   // because two intervals must never mean two walks.
   const BASE_TICK_MS = 5000;
+  // The shortest interval a section that costs a world walk may ask at, whatever the owner typed.
+  // Bunkers cost the game nothing and keep the 5 s floor; cargo and events walk every object in the
+  // game, and a crate or a sign-up announced within half a minute is on time.
+  const WALK_FLOOR_SECONDS = 30;
   const dueAt = new Map();
-  /** A section's own interval, or the plugin-wide one. Bounded here, so a hand-edited 0 cannot spin. */
-  const everyOf = (section) => {
+  /**
+   * A section's own interval, or the plugin-wide one, never under `floor`. Bounded here, so a
+   * hand-edited 0 cannot spin.
+   */
+  const everyOf = (section, floor) => {
+    const min = Math.max(5, Number(floor) || 0);
     const own = Number(section && section.everySeconds);
-    if (own >= 5 && own <= 3600) return own;
+    if (own >= 5 && own <= 3600) return Math.max(own, min);
     const all = Number(cfg.pollSeconds);
-    return (all >= 5 && all <= 3600) ? all : DEFAULTS.pollSeconds;
+    return Math.max((all >= 5 && all <= 3600) ? all : DEFAULTS.pollSeconds, min);
   };
   /** Is this section switched on AND due? Records the next time as a side effect, so ask once. */
-  const isDue = (key, section, now) => {
+  const isDue = (key, section, now, floor) => {
     if (!section || !section.enabled) return false;
     const at = dueAt.get(key);
     if (at !== undefined && now < at) return false;
-    dueAt.set(key, now + everyOf(section) * 1000);
+    dueAt.set(key, now + everyOf(section, floor) * 1000);
     return true;                                   // an unseen key is due immediately: the baseline
   };
+
+  /**
+   * Is the server KNOWN to have nobody on it?
+   *
+   * A chat line with nobody online reaches nobody, so a world walk to produce one buys nothing.
+   * ⚠ **"NOBODY IS ONLINE" AND "THE PLAYER COUNT COULD NOT BE READ" ARE OPPOSITE FACTS.**
+   * `host.players.online()` answers `[]` for both, so it cannot decide this; `host.stats.counts()`
+   * answers `null` when the save could not be read and a real `{ online: 0 }` when it was. Only the
+   * second is a reason to stay quiet. Anything else, including a manager with no such reader, asks
+   * the game exactly as before.
+   */
+  const nobodyOnline = () => {
+    try {
+      if (!host.stats || typeof host.stats.counts !== 'function') return false;
+      const c = host.stats.counts();
+      return !!(c && typeof c === 'object' && typeof c.online === 'number' && c.online === 0);
+    } catch { return false; }
+  };
+  // Whether the last bridge poll that fell due was skipped because nobody was online. For the screen.
+  let waitingForPlayers = false;
 
   /**
    * One tick. Takes `now` so a test can drive its own clock -- `host.schedule.every` calls this
@@ -948,8 +1004,8 @@ async function register(host) {
     const nowAt = Number(nowMs) || Date.now();
     const doAbandoned = isDue('bunkersAbandoned', cfg.bunkersAbandoned, nowAt);
     const doSecret = isDue('bunkersSecret', cfg.bunkersSecret, nowAt);
-    const doCargo = isDue('cargo', cfg.cargo, nowAt);
-    const doEvents = isDue('events', cfg.events, nowAt);
+    const doCargo = isDue('cargo', cfg.cargo, nowAt, WALK_FLOOR_SECONDS);
+    const doEvents = isDue('events', cfg.events, nowAt, WALK_FLOOR_SECONDS);
 
     // ── bunkers: the manager's own reading, and it needs no bridge ─────────────────────────────
     //
@@ -968,6 +1024,26 @@ async function register(host) {
     // Nothing that needs the bridge is due, so it is not asked. This is the whole point of the
     // per-section intervals: a fast bunker line does not buy a world walk every five seconds.
     if (!doCargo && !doEvents) return;
+
+    // ── nobody online: the game is not asked ───────────────────────────────────────────────────
+    //
+    // A line sent to an empty server is heard by nobody, so the walk that would produce it is not
+    // made. The ONE reader it still has is the chat history (the admin chat view, the Field Console
+    // and the Discord chat channel), which records a line whether or not anybody was in game -- so a
+    // due section with `history` on is still asked for, and everything else waits for a player.
+    //
+    // ⚠ **A SKIP IS NOT A READING.** Nothing below is touched: the last known crates, events and
+    // sign-up phases stay exactly as they were, the same rule a refusal follows, so the first poll
+    // after somebody logs in compares against the world as it was last SEEN rather than against an
+    // empty one -- a crate that was there before is not announced as new, and one that arrived
+    // while nobody was on is announced once.
+    const keepsHistory = (doCargo && cfg.cargo.history === true) || (doEvents && cfg.events.history === true);
+    if (!keepsHistory && nobodyOnline()) {
+      waitingForPlayers = true;
+      return;
+    }
+    waitingForPlayers = false;
+
     let payload = null;
     try { payload = await host.bridge.worldEvents(); } catch { payload = null; }
     // ⚠ A REFUSAL IS NOT AN EMPTY WORLD. The bridge being off, the module being off and an island
@@ -1083,6 +1159,14 @@ async function register(host) {
     const dropped = unknownKeys(body);
     // Over what is STORED first, filled from DEFAULTS second. The other order resets every section
     // the caller did not name — see `overlay`.
+    // ⚠ SAID IN THE LOG, not only on the screen. A dropped key is the one save failure that answers
+    // `ok`, and the toast that names it is gone in seconds — so when an owner reports "3 settings did
+    // not land" there is otherwise nothing on disk that says WHICH three, or that it happened at all.
+    if (dropped.length) {
+      log.warn(`[more-chat-messages] the save dropped ${dropped.length} setting(s) this build does `
+        + `not declare: ${dropped.join(', ')} — the running backend is older than the screen that `
+        + 'sent them. Restart the manager and set them again.');
+    }
     host.config.set(merge(overlay(host.config.get(), body)));
     cfg = merge(host.config.get());
     // The stored config is echoed so the caller can read its own write back -- the rule the bridge
@@ -1099,8 +1183,8 @@ async function register(host) {
       pollSeconds: everyOf(null),
       // What each section really asks at, so the screen never has to guess which number won.
       intervals: {
-        cargo: everyOf(cfg.cargo),
-        events: everyOf(cfg.events),
+        cargo: everyOf(cfg.cargo, WALK_FLOOR_SECONDS),
+        events: everyOf(cfg.events, WALK_FLOOR_SECONDS),
         bunkersSecret: everyOf(cfg.bunkersSecret),
         bunkersAbandoned: everyOf(cfg.bunkersAbandoned),
       },
@@ -1112,6 +1196,9 @@ async function register(host) {
       // Said out loud rather than left as three zeroes: an owner reading "0 sent" needs to know
       // whether that is a quiet night or a bridge that is not answering.
       pollError: lastPollError,
+      // Cargo and events are not asked for while the server is known to be empty -- see `poll`.
+      waitingForPlayers,
+      walkFloorSeconds: WALK_FLOOR_SECONDS,
       watching: {
         cargo: cfg.cargo.enabled,
         bunkers: cfg.bunkersSecret.enabled || cfg.bunkersAbandoned.enabled,

@@ -181,7 +181,23 @@
       ]));
     }
 
-    function refreshStatus() {
+    // This mount's own poll timer. The page-wide `bsPollTimer` only remembers the newest one.
+    var ownTimer = null;
+    function stopPolling() {
+      if (ownTimer) clearInterval(ownTimer);
+      if (bsPollTimer === ownTimer) bsPollTimer = null;
+      ownTimer = null;
+    }
+
+    // `background` is the interval's own tick. A timer outlives its page: it used to be cleared only
+    // by the next mount, so leaving the tab left it asking the manager for two lists every ten
+    // seconds for as long as the panel stayed open. A page taken out of the document stops its own
+    // timer; one that is merely hidden (another tab, a minimised window) skips the tick.
+    function refreshStatus(background) {
+      if (background === true) {
+        if (!wrap.isConnected) { stopPolling(); return Promise.resolve(); }
+        if (document.hidden || !wrap.getClientRects().length) return Promise.resolve();
+      }
       return Promise.all([api('/status'), api('/players')]).then(function (r) {
         pollErr = null;
         statusData = r[0] || statusData;
@@ -553,8 +569,10 @@
         build();
         // The tab can be mounted many times; keep exactly ONE poll timer, always driving the most
         // recent mount, or the timers stack up and the panel polls faster and faster.
+        if (!wrap.isConnected) return;
         if (bsPollTimer) clearInterval(bsPollTimer);
-        bsPollTimer = setInterval(refreshStatus, 10000);
+        ownTimer = setInterval(function () { refreshStatus(true); }, 10000);
+        bsPollTimer = ownTimer;
       }).catch(loadFailed);
     }
     load();

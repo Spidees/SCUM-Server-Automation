@@ -1,59 +1,349 @@
 /* More Chat Messages — the settings screen.
  *
- * Every width here goes through `min()` so the page collapses to one column instead of widening.
- * A bare `minmax(320px, 1fr)` is inside a card that clips its overflow, so the right edge of every
- * control in it would be cut off rather than scrolled to — the manager's own stylesheet does this
- * in six places for the same reason.
+ * ── WHAT THIS SHEET WAS GETTING WRONG ──────────────────────────────────────────────────────────
  *
- * Nothing hides itself behind a touch media query either: a rule that hides what JavaScript opens
- * is how the panel's own nav dropdowns became unreachable on a phone. */
+ * ⚠ **`--danger` IS NOT A TOKEN IN THIS PRODUCT.** It is defined by no `:root` anywhere, so
+ * `color: var(--danger)` would have been invalid at computed-value time and simply not applied.
+ * Here it always carried the fallback `#ff6b6b`, which is why it painted at all — but that is a red
+ * belonging to no palette in this panel, one shade off the real `--alarm` (#ff5c5c), and it was the
+ * only colour on the page that said "this went wrong". The token is gone: the panel's own state
+ * colours are `--online`, `--standby` and `--alarm`, and those cannot silently evaporate.
+ *
+ * ⚠ **AND THE PAGE HAD ONE SURFACE.** A card, the blocks in it and the inputs in those were all
+ * `--panel` or `--inset` behind the same 1px `--line`, so a container, a block and a control had no
+ * edge between them. Three surfaces now, and a thing is always a step away from whatever holds it:
+ *
+ *     --panel    the card                    the page's boxes (`.card`, the panel's own)
+ *     --panel-2  a block inside a card       where it goes · what it announces · what it says
+ *     --inset    a control inside a block    an input, a select, a placeholder chip
+ *
+ * ── THE RULES IT KEEPS ─────────────────────────────────────────────────────────────────────────
+ *
+ * Everything is in `rem`. The panel's root font is 124% (106% under 640px), so a sheet written in
+ * pixels comes out about a third tighter than every box beside it.
+ *
+ * Nothing declares a width over 320px without a `min()` guard and nothing is hidden with
+ * `display: none !important` inside a touch query — `check-mobile`, both of which have made this
+ * panel unusable on a phone before. `min()` is used even below that floor, because the checker's
+ * threshold does not know about the padding of the card a grid sits in.
+ *
+ * Every hover pair is retuned on the ELEMENT through `--hov-bg` / `--hov-fg` / `--hov-line` rather
+ * than by overriding `background` or `color` alone — `check-contrast`'s rule, since the global
+ * button hover paints amber with near-black text and changing one half of that pair leaves the
+ * other invisible. A `--hov-*` pointing at a token that does not resolve is the same defect wearing
+ * the fix's clothes, so every one of them names a token the panel really defines.
+ */
 
-.mcm-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
-.mcm-intro { flex: 1 1 min(100%, 24rem); color: var(--muted); font-size: 0.86rem; }
+.mcm { display: flex; flex-direction: column; gap: 1rem; }
 
-.mcm-status { margin-bottom: 0.9rem; color: var(--muted); font-size: 0.82rem; }
-.mcm-note { margin-top: 0.5rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--inset); }
-/* The pair moves together. Setting only the colour on a tinted surface, or only the surface under
-   inherited text, is the unreadable-hover shape `check-contrast` exists for — so both halves are
-   stated in the one rule. */
-.mcm-err { color: var(--danger, #ff6b6b); border-color: var(--danger, #ff6b6b); background: var(--inset); }
+/* ── a section ──────────────────────────────────────────────────────────────────────────────────
+   `class="card mcm-card"` — the panel's own box, which is what five of the seven plugins do and
+   what the panel's own comment beside `.card` asks for. Its ground, border, radius and padding are
+   then the ones every other box on the screen has. This sheet used to rebuild `.card` itself, one
+   radius step off the real one (`--radius` where `.card` uses `--radius-md`). */
+.mcm-card { display: flex; flex-direction: column; min-width: 0; }
 
-.mcm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 0.9rem; }
-.mcm-card { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.85rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
-.mcm-head { display: flex; align-items: center; gap: 0.5rem; }
-.mcm-head b { flex: 1; }
-.mcm-switch { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--muted); }
-.mcm-what { color: var(--muted); font-size: 0.8rem; }
+.mcm-card > h3 {
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--line-amber);
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 1.15rem; font-weight: 700;
+  color: var(--amber-hi);
+  line-height: 1.25;
+}
+.mcm-card > h3 .ico, .mcm-card > h3 svg { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
 
-.mcm-body { display: flex; flex-direction: column; gap: 0.55rem; }
-/* Dimmed, not hidden: an owner writing the wording before switching the announcement on is the
-   ordinary way round, and a card that empties itself when it is off cannot be prepared. */
-.mcm-body.mcm-off { opacity: 0.55; }
-
-.mcm-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; font-size: 0.82rem; }
-.mcm-toggle { justify-content: flex-start; }
-.mcm-field { display: flex; flex-direction: column; gap: 0.25rem; }
-.mcm-field label { font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.mcm-msg, .mcm-num, .mcm-chan { width: 100%; max-width: 100%; padding: 0.4rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--inset); color: var(--text); font-size: 0.86rem; }
-.mcm-num { max-width: 8rem; }
-.mcm-holders { font-family: var(--mono); font-size: 0.7rem; color: var(--faint); overflow-wrap: anywhere; }
-
-.mcm-recent { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
-.mcm-line { display: flex; flex-wrap: wrap; gap: 0.5rem; font-size: 0.78rem; }
-.mcm-kind { min-width: 4rem; color: var(--faint); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
-.mcm-text { flex: 1 1 min(100%, 16rem); overflow-wrap: anywhere; }
-.mcm-why { color: var(--faint); }
-
-/* The poll interval sits inline in a sentence, so it is sized to its content and never wider than
-   the phone it is on. */
-.mcm-poll {
-  width: min(100%, 6rem);
-  margin: 0 .25rem;
+/* What the section is FOR, in one sentence. Sits with the heading rather than with the first row,
+   so a section reads as a thing with an introduction rather than as more rows. */
+.mcm-lead {
+  margin: 0 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 72ch;
 }
 
-/* What a save really did. Empty until a save has something to say, so it takes no room on a screen
+/* ── an announcement card ───────────────────────────────────────────────────────────────────────
+   Its own head, because the switch, the state pill and the title belong on one line above the
+   amber rule rather than inside an `<h3>`. The title is still an `<h3>`, nested inside the head, so
+   the rules above (`.mcm-card > h3`) deliberately do not reach it. */
+.mcm-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+  margin: 0 0 0.7rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--line-amber);
+  min-width: 0;
+}
+.mcm-head > .ico, .mcm-head > svg { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; color: var(--amber-hi); }
+.mcm-head h3 {
+  margin: 0; flex: 1 1 8rem; min-width: 0;
+  font-size: 1.15rem; font-weight: 700; line-height: 1.25;
+  color: var(--amber-hi);
+}
+/* The switch sits at the end of the head and carries its own word, so the state is legible whether
+   a reader looks at the toggle, the pill or the card's edge. */
+.mcm-sw { flex: 0 0 auto; font-family: var(--ui); font-size: 0.8rem; color: var(--muted); }
+
+/* Live. The amber edge and a solid rule down the side together, because a 1px border alone is one
+   pixel of the signal a reader scrolling picks up. */
+.mcm-ann.on { border-color: var(--line-amber); box-shadow: inset 3px 0 0 var(--amber); }
+
+/* ── state, in words ────────────────────────────────────────────────────────────────────────────
+   Shaped like the panel's `.mod-state`, which is the small pill it uses for exactly this. */
+.mcm-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--pill);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--muted);
+  font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.mcm-badge::before {
+  content: ""; width: 0.4rem; height: 0.4rem; border-radius: 50%;
+  background: currentColor; flex: 0 0 auto;
+}
+.mcm-badge.on { background: var(--amber); border-color: var(--amber); color: var(--on-amber); }
+
+/* A standing fact about the card rather than a state — "needs the bridge". No dot, so it is never
+   mistaken for the pill beside it. */
+.mcm-tag {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--pill);
+  border: 1px solid var(--line);
+  background: var(--inset);
+  color: var(--faint);
+  font-size: 0.68rem; letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* What this announcement is really doing, from the running backend. */
+.mcm-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.75rem; }
+.mcm-chips:empty { display: none; }
+.mcm-chip {
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--pill);
+  background: var(--inset); border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.mcm-chip b { color: var(--text); font-weight: 600; }
+.mcm-chip.wait { color: var(--standby); border-color: rgba(230, 178, 58, 0.35); }
+
+/* ── a block inside a card ──────────────────────────────────────────────────────────────────────
+   One surface step up from the card, with a name on it, so "where it goes", "what it announces"
+   and "what it says" are three things rather than one column of controls. */
+.mcm-body { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
+/* Dimmed, never inert: writing the wording before switching the announcement on is the ordinary
+   way round, and a card that empties itself when it is off cannot be prepared. */
+.mcm-body.mcm-dim { opacity: 0.6; }
+
+.mcm-block {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.9rem 0.85rem;
+  min-width: 0;
+}
+.mcm-block-t {
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted);
+}
+/* A hint standing on its own under a block title, rather than in a row's `desc` cell. `.mcm-hint`
+   names a grid area, which is simply ignored outside a grid — stated back to `auto` so the rule
+   reads as deliberate rather than as a leftover. */
+.mcm-block > .mcm-hint { grid-area: auto; margin: 0 0 0.5rem; }
+
+/* ── a settings row ─────────────────────────────────────────────────────────────────────────────
+   Label and hint on the left, control on the right, exactly as the panel's own settings screens do
+   it. ⚠ `minmax(0, 1fr)` and never a bare `1fr`: a bare one is `minmax(auto, 1fr)`, so the track
+   cannot go below its content's min-content width and a long hint pushes the card sideways instead
+   of wrapping. */
+.mcm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(min(100%, 12rem), 20rem);
+  grid-template-areas: "label control" "desc control";
+  align-items: center;
+  column-gap: 1.5rem;
+  row-gap: 0.25rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line-2);
+}
+/* ⚠ `:first-of-type` counts ELEMENTS OF THE SAME TAG, not of the same class, and `.mcm-block-t` is
+   a `div` like these are — so inside a named block it is the block TITLE that is the first `div`
+   and `.mcm-row:first-of-type` matches nothing at all. The adjacent-sibling rule beside it is what
+   actually reaches the first row of a titled block; `:first-of-type` still earns its place in the
+   sections, where the `h3` and the lead paragraph are not `div`s. */
+.mcm-row:first-of-type, .mcm-block-t + .mcm-row { border-top: 0; padding-top: 0.2rem; }
+.mcm-row > label {
+  grid-area: label;
+  font-size: 0.92rem; font-weight: 600; color: var(--text);
+}
+.mcm-hint {
+  grid-area: desc;
+  margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45;
+  overflow-wrap: anywhere; max-width: 72ch;
+}
+.mcm-ctl { grid-area: control; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+
+@media (max-width: 640px) {
+  .mcm-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "label" "desc" "control";
+    row-gap: 0.4rem;
+  }
+}
+
+/* ── controls ───────────────────────────────────────────────────────────────────────────────────
+   The deepest surface on the page, so a box is always a step darker than the block holding it. */
+.mcm-in {
+  width: 100%; max-width: 100%; min-width: 0;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit; font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+}
+.mcm-in:hover { border-color: var(--line-amber); }
+/* No ring. A focused input already turns its border amber, and the panel removed the second
+   concentric line on purpose — `--focus-ring` is `none` and re-adding one gives a double frame. */
+.mcm-in:focus { border-color: var(--amber); outline: none; }
+.mcm-num { width: min(100%, 8rem); font-variant-numeric: tabular-nums; }
+.mcm-text { font-size: 0.88rem; }
+
+/* ── a message and the placeholders it can carry ────────────────────────────────────────────────
+   The placeholders are the whole of the documentation an owner needs at the moment they are
+   typing, so they are buttons that drop the token in at the cursor rather than a run of grey text
+   somebody has to retype by eye. */
+.mcm-msg { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.55rem 0; border-top: 1px solid var(--line-2); min-width: 0; }
+/* Same `:first-of-type` trap as the rows above — the block title is a `div` too. */
+.mcm-msg:first-of-type, .mcm-block-t + .mcm-msg { border-top: 0; padding-top: 0.15rem; }
+/* The box sits inside its own label, which is what associates the two without an id. */
+.mcm-msg > label { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.mcm-msg > label > span {
+  font-size: 0.8rem; font-weight: 600; color: var(--text);
+  line-height: 1.4;
+}
+.mcm-toks { display: flex; flex-wrap: wrap; gap: 0.25rem; min-width: 0; }
+/* Ghost: no fill, the colour change alone is the affordance. The pair is stated on the element so
+   the global amber button hover cannot paint half of it. */
+.mcm-tok {
+  --hov-bg: transparent;
+  --hov-fg: var(--amber-hi);
+  --hov-line: var(--line-amber);
+  background: var(--inset);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  color: var(--faint);
+  font-family: var(--mono); font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease;
+}
+.mcm-tok:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+
+/* ── a choice that reads as a word rather than as a bare tick box ───────────────────────────────
+   Tinted: its own soft fill with normal text. The 7% amber wash on `.on` is the panel's own "this
+   one is chosen" — `.mf-opt.on` says it in exactly these values. */
+.mcm-chks { display: flex; flex-wrap: wrap; gap: 0.35rem; min-width: 0; }
+.mcm-chk {
+  --hov-bg: var(--hover-bg);
+  --hov-fg: var(--text);
+  --hov-line: var(--line-amber);
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit; font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.mcm-chk .ico, .mcm-chk svg { width: 0.8rem; height: 0.8rem; flex: 0 0 auto; }
+.mcm-chk.on {
+  --hov-bg: rgba(255, 106, 26, 0.14);
+  --hov-fg: var(--amber-hi);
+  border-color: var(--amber);
+  background: rgba(255, 106, 26, 0.07);
+  color: var(--amber-hi);
+}
+.mcm-chk:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+
+/* ── notes ──────────────────────────────────────────────────────────────────────────────────────
+   Four meanings and four colours, carried by the left rule. Neutral is a fact, green is something
+   that worked, red is something that did not, amber is something waiting. Shaped like the panel's
+   own `.pl-note`. */
+.mcm-live { display: flex; flex-direction: column; gap: 0.6rem; }
+.mcm-live:empty { display: none; }
+.mcm-note {
+  background: rgba(255, 106, 26, 0.06);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  padding: 0.75rem 0.95rem;
+}
+.mcm-note b, .mcm-note strong { color: var(--text); font-weight: 600; }
+.mcm-note.good { background: rgba(84, 201, 138, 0.06); border-left-color: var(--online); }
+.mcm-note.bad  { background: rgba(255, 92, 92, 0.06); border-left-color: var(--alarm); }
+.mcm-note.wait { background: rgba(230, 178, 58, 0.06); border-left-color: var(--standby); }
+/* A plain fact with nothing to feel about it — no wash, so the coloured ones keep their meaning. */
+.mcm-note.flat { background: var(--panel-2); border-left-color: var(--faint); }
+
+/* ── the figures at the top ─────────────────────────────────────────────────────────────────────
+   The panel's own `.mod-stat` proportions, so a counter here is the same object as a counter
+   anywhere else in the product. */
+.mcm-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+.mcm-figs:empty { display: none; }
+.mcm-fig { text-align: center; min-width: 0; }
+.mcm-fig b {
+  display: block;
+  font-size: 1.35rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.mcm-fig span {
+  display: block;
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.mcm-fig.good b { color: var(--online); }
+.mcm-fig.bad  b { color: var(--alarm); }
+.mcm-fig.wait b { color: var(--standby); }
+
+/* ── the save bar ───────────────────────────────────────────────────────────────────────────────
+   Rides at the bottom of a long page and says whether there is anything to save at all. */
+.mcm-save {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
+  position: sticky; bottom: 0; z-index: 2;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+}
+.mcm-save .ico, .mcm-save svg { width: 1.05em; height: 1.05em; }
+.mcm-dirty { color: var(--muted); font-size: 0.85rem; }
+.mcm-dirty.unsaved { color: var(--standby); }
+
+/* What a save really did. Empty until it has something to say, so it takes no room on a screen
    where nothing went wrong; it sits under the button because a toast is gone before an owner has
    read which setting did not land. */
+.mcm-savenote { display: flex; flex-direction: column; gap: 0.6rem; }
 .mcm-savenote:empty { display: none; }
-.mcm-savenote { margin: 0 0 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line);
-                border-radius: var(--radius); background: var(--inset); }

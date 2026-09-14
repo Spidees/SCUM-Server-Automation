@@ -204,7 +204,7 @@ module.exports = {
       if (/\{(squad|squadsize)\}/i.test(tpl)) { const q = host.players.squad(steamId) || {}; map.squad = q.name || ''; map.squadsize = q.memberCount || ''; }
       if (/\{(strength|constitution|dexterity|intelligence)\}/i.test(tpl)) { const at = (host.players.skills(steamId) || {}).attributes || {}; map.strength = at.strength != null ? at.strength : ''; map.constitution = at.constitution != null ? at.constitution : ''; map.dexterity = at.dexterity != null ? at.dexterity : ''; map.intelligence = at.intelligence != null ? at.intelligence : ''; }
       if (/\{(x|y|z|location)\}/i.test(tpl)) { const l = (extra && extra.loc) || playerLoc(steamId) || {}; map.x = Math.round(l.x || 0); map.y = Math.round(l.y || 0); map.z = Math.round(l.z || 0); map.location = l.x != null ? `${map.x}, ${map.y}` : ''; }
-      if (/\{saved_[xyz]\}/i.test(tpl)) { const sp = host.store.get('pos:' + steamId, null) || {}; map.saved_x = Math.round(sp.x || 0); map.saved_y = Math.round(sp.y || 0); map.saved_z = Math.round(sp.z || 0); }
+      if (/\{saved_[xyz]\}/i.test(tpl)) { const sp = ledger.get('pos:' + steamId, null) || {}; map.saved_x = Math.round(sp.x || 0); map.saved_y = Math.round(sp.y || 0); map.saved_z = Math.round(sp.z || 0); }
       if (extra) for (const k of Object.keys(extra)) if (k !== 'loc' && extra[k] != null) map[k.toLowerCase()] = extra[k];
       let out = tpl.replace(/\{arg(\d+)\}/gi, (_, n) => safeArg((ctx && ctx.args && ctx.args[Number(n) - 1]) || ''));
       out = out.replace(/\{(\w+)\}/g, (m, k) => { const key = k.toLowerCase(); return (key in map) ? String(map[key]) : m; });
@@ -403,6 +403,91 @@ module.exports = {
     };
     const atOf = (rec) => (rec && typeof rec === 'object') ? Number(rec.at || 0) : Number(rec || 0);
     const nameOf = (rec) => (rec && typeof rec === 'object') ? (rec.name || '') : '';
+
+    // ── the per-player ledger: claims, claim counts, group picks, saved positions, welcome times ──
+    //
+    // These used to be one store key EACH (`claim:<id>:<sid>`, `count:…`, `group:…`, `pos:…`,
+    // `wmsg:…`), and the store rewrites its whole file on every `set`. So one paid kit read that file
+    // three to six times and rewrote it up to five, and clearing the claims list rewrote it once per
+    // key. They now live together under ONE key, held in memory and written back once per operation
+    // — synchronously, before the operation reports anything, so a claim that was recorded is on disk
+    // exactly as before. The key names inside are unchanged.
+    //
+    // Upgrading: the old per-player keys are read once and carried into the ledger, which is written
+    // straight away. They are left where they are rather than deleted one rewrite at a time; nothing
+    // reads them once the ledger exists.
+    //
+    // ⚠ "The store could not be read" and "the store is empty" look the same from here — both come
+    // back `{}`, and the store then refuses to write, so nothing on disk is lost. Until the ledger has
+    // been confirmed ON DISK every read asks the store again and merges what it finds, so a store
+    // that was locked at boot and readable a minute later still has its old claims honoured. A
+    // count keeps the higher of the two figures and a claim the later time: the merge errs towards
+    // "already claimed", never towards a second one.
+    const LEDGER_KEY = 'ledger';
+    const LEDGER_ENTRY = /^(claim|count|group|pos|wmsg):/;
+    const WELCOME_MIN_GAP_MS = 5 * 60 * 1000;
+    const ledger = (() => {
+      const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+      const isObj = (v) => !!(v && typeof v === 'object' && !Array.isArray(v));
+      const data = {};
+      let onDisk = false;
+      const dropped = new Set();     // deleted this session: a late merge must not bring them back
+      let lazyPending = false;
+      function mergeFrom(all) {
+        const src = isObj(all[LEDGER_KEY]) ? all[LEDGER_KEY] : all;
+        const now = Date.now();
+        for (const k of Object.keys(src)) {
+          if (!LEDGER_ENTRY.test(k) || dropped.has(k)) continue;
+          const v = src[k];
+          // A welcome time only matters for five minutes; an old one is not worth carrying.
+          if (k.startsWith('wmsg:') && !(now - (Number(v) || 0) < WELCOME_MIN_GAP_MS)) continue;
+          if (!own(data, k)) { data[k] = v; continue; }
+          if (k.startsWith('count:')) data[k] = Math.max(Number(data[k]) || 0, Number(v) || 0);
+          else if (k.startsWith('claim:') && atOf(v) > atOf(data[k])) data[k] = v;
+        }
+      }
+      function catchUp() {
+        if (onDisk) return;
+        let all = null;
+        try { all = host.store.all(); } catch (e) { all = null; }
+        if (!isObj(all)) return;
+        mergeFrom(all);
+        if (isObj(all[LEDGER_KEY])) onDisk = true;
+      }
+      function save() {
+        lazyPending = false;
+        catchUp();
+        const now = Date.now();
+        for (const k of Object.keys(data)) if (k.startsWith('wmsg:') && !(now - (Number(data[k]) || 0) < WELCOME_MIN_GAP_MS)) delete data[k];
+        try { host.store.set(LEDGER_KEY, data); } catch (e) { host.logger.error(`could not save the claim ledger: ${e.message}`); }
+        if (!onDisk) { try { onDisk = isObj(host.store.get(LEDGER_KEY, null)); } catch (e) { onDisk = false; } }
+      }
+      catchUp();
+      save();                          // the one-time carry-over, and the read-back that confirms it
+      return {
+        get(k, dflt) { catchUp(); return own(data, k) ? data[k] : dflt; },
+        /** Write several entries in one save. `lazy` batches a welcome time into a later save. */
+        set(entries, opts) {
+          for (const k of Object.keys(entries)) { data[k] = entries[k]; dropped.delete(k); }
+          if (opts && opts.lazy) {
+            if (!lazyPending) { lazyPending = true; host.schedule.after(10000, () => { if (lazyPending) save(); }); }
+            return;
+          }
+          save();
+        },
+        /** Delete every entry `pred(key, value)` picks, in one save. */
+        drop(pred) {
+          catchUp();
+          let n = 0;
+          for (const k of Object.keys(data)) if (pred(k, data[k])) { delete data[k]; dropped.add(k); n++; }
+          save();
+          return n;
+        },
+        entries() { catchUp(); return Object.assign({}, data); },
+        flush() { if (lazyPending) save(); },
+      };
+    })();
+    if (typeof host.onUnload === 'function') host.onUnload(() => { try { ledger.flush(); } catch (e) { /* unloading */ } });
     // allow/deny entries come from the UI as {steamId,name} objects (or bare strings) → normalise to IDs.
     const asIds = (arr) => (Array.isArray(arr) ? arr.map((e) => (e && typeof e === 'object') ? String(e.steamId || e.steamid || e.SteamID || '').trim() : String(e).trim()).filter(Boolean) : []);
     /**
@@ -429,7 +514,7 @@ module.exports = {
     }
     function cooldownLeftH(id, cdHours, sid) {
       const cd = Math.max(0, Number(cdHours) || 0); if (cd <= 0) return 0;
-      const last = atOf(host.store.get(K.claim(id, sid), 0));
+      const last = atOf(ledger.get(K.claim(id, sid), 0));
       return Math.ceil(Math.max(0, cd * 3600e3 - (Date.now() - last)) / 3600e3);
     }
     // ── time windows ─────────────────────────────────────────────────────────────
@@ -508,18 +593,21 @@ module.exports = {
       // told to come back at eight; a player who is merely early should hear that before they hear
       // about a cooldown that is not what is stopping them.
       if (windowWhy(entry)) return 'closed';
-      if (!isCommand && entry.group) { const chosen = host.store.get(K.group(entry.group, sid), ''); if (chosen && chosen !== id) return 'groupLocked'; }
-      if (!isCommand) { const max = Math.max(0, Number(entry.maxClaims) || 0); if (max > 0 && (Number(host.store.get(K.count(id, sid), 0)) || 0) >= max) return 'maxClaims'; }
+      if (!isCommand && entry.group) { const chosen = ledger.get(K.group(entry.group, sid), ''); if (chosen && chosen !== id) return 'groupLocked'; }
+      if (!isCommand) { const max = Math.max(0, Number(entry.maxClaims) || 0); if (max > 0 && (Number(ledger.get(K.count(id, sid), 0)) || 0) >= max) return 'maxClaims'; }
       const cd = Math.max(0, Number(entry.cooldownHours) || 0);
-      const last = atOf(host.store.get(K.claim(id, sid), 0));
+      const last = atOf(ledger.get(K.claim(id, sid), 0));
       if (cd > 0) { if ((Date.now() - last) < cd * 3600e3) return 'cooldown'; }
       else if (!isCommand && entry.trigger === 'welcome') { if (last !== 0) return 'alreadyClaimed'; }
       return null;
     }
     function recordUse(id, sid, name, group) {
-      host.store.set(K.claim(id, sid), { at: Date.now(), name: name || '' });
-      host.store.set(K.count(id, sid), (Number(host.store.get(K.count(id, sid), 0)) || 0) + 1);
-      if (group) host.store.set(K.group(group, sid), id);
+      // One save for all of it, and before the caller reports anything — see the ledger above.
+      const entries = {};
+      entries[K.claim(id, sid)] = { at: Date.now(), name: name || '' };
+      entries[K.count(id, sid)] = (Number(ledger.get(K.count(id, sid), 0)) || 0) + 1;
+      if (group) entries[K.group(group, sid)] = id;
+      ledger.set(entries);
     }
 
     // ── serialized spawn queue ───────────────────────────────────────────────────
@@ -540,7 +628,20 @@ module.exports = {
     // ── activity log + counters (shown live in the panel, styled like the mine-protection log) ──
     let stats = Object.assign({ deliveries: 0, ok: 0, failed: 0 }, host.store.get('ckstats', {}) || {});
     let recent = (host.store.get('recent', []) || []).slice(0, 150);
-    function persistStats() { try { host.store.set('ckstats', stats); } catch { /* ignore */ } }
+    // The delivery counters are a tally for the panel, not a record of anything a player paid for
+    // (that is the activity log and the ledger, both saved at once). So they are written at most every
+    // 30 s and on unload instead of costing a store rewrite per delivery; a crash can lose the last
+    // few seconds of the tally and nothing else. `persistStats(true)` writes at once (the reset button).
+    let statsDirty = false;
+    function persistStats(now) {
+      if (!now) {
+        if (!statsDirty) { statsDirty = true; host.schedule.after(30000, () => { if (statsDirty) persistStats(true); }); }
+        return;
+      }
+      statsDirty = false;
+      try { host.store.set('ckstats', stats); } catch { /* ignore */ }
+    }
+    if (typeof host.onUnload === 'function') host.onUnload(() => { if (statsDirty) persistStats(true); });
     function pushRecent(rec) {
       recent.unshift(rec);
       if (recent.length > 150) recent = recent.slice(0, 150);
@@ -835,7 +936,7 @@ module.exports = {
           const frozen = playerLoc(ctx.steamId) || { x: 0, y: 0, z: 0 };
           // Optionally REMEMBER this spot for later — a separate /back command can teleport here on demand
           // via {saved_x} {saved_y} {saved_z} (so the player isn't stuck waiting for the timed return).
-          if (cmd.savePosition) host.store.set('pos:' + ctx.steamId, frozen);
+          if (cmd.savePosition) ledger.set({ ['pos:' + ctx.steamId]: frozen });
           const ran = await runActions(cmd.actions, ctx.name, ctx.steamId, ctx, frozen, cmd.notify);
           const hadActions = (Array.isArray(cmd.actions) ? cmd.actions : []).some((a) => String((a && (a.cmd || a.command)) || (typeof a === 'string' ? a : '')).trim());
           if (cmd.response) sendReply(ctx, subst(cmd.response, ctx.name, ctx.steamId, ctx, { loc: frozen }), cmd.broadcast ? (cmd.channel || 'global') : ch, cmd.broadcast);
@@ -886,10 +987,9 @@ module.exports = {
       const w = c.welcome || {};
       // Guard against a repeated greeting: the live join can re-fire on a respawn or a quick reconnect,
       // and we don't want to spam the same player. Once per WELCOME_MIN_GAP per SteamID.
-      const WELCOME_MIN_GAP_MS = 5 * 60 * 1000;
-      const lastW = Number(host.store.get('wmsg:' + steamId, 0)) || 0;
+      const lastW = Number(ledger.get('wmsg:' + steamId, 0)) || 0;
       if (w.enabled && w.message && (Date.now() - lastW) >= WELCOME_MIN_GAP_MS) {
-        host.store.set('wmsg:' + steamId, Date.now());
+        ledger.set({ ['wmsg:' + steamId]: Date.now() }, { lazy: true });
         host.schedule.after(delayMs, () => {
           const ch = safeChannel(w.channel || c.replyChannel || DEFAULT_CHANNEL);
           for (const line of subst(w.message, name, steamId, { channel: w.channel }).split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean)) host.chat.dm(steamId, line, { channel: ch }).catch(() => {});
@@ -1189,7 +1289,7 @@ module.exports = {
     // Clear the activity log (keeps the running counters).
     host.routes.post('/clear-history', (req, res) => { recent = []; try { host.store.set('recent', []); } catch { /* ignore */ } res.json({ ok: true }); });
     // Reset the running counters too.
-    host.routes.post('/reset-stats', (req, res) => { stats = { deliveries: 0, ok: 0, failed: 0 }; persistStats(); res.json({ ok: true }); });
+    host.routes.post('/reset-stats', (req, res) => { stats = { deliveries: 0, ok: 0, failed: 0 }; persistStats(true); res.json({ ok: true }); });
     host.routes.get('/meta', (req, res) => res.json({
       channels: ['local', 'global', 'squad', 'admin', 'server'],
       currencies: ['free', 'money', 'gold', 'fame'],
@@ -1226,7 +1326,7 @@ module.exports = {
 
     // who has claimed what — one row per (pack, player). Reset lets a player use a one-time reward again.
     host.routes.get('/claims', (req, res) => {
-      const all = host.store.all() || {};
+      const all = ledger.entries();
       const rows = [];
       for (const [k, v] of Object.entries(all)) {
         if (!k.startsWith('claim:')) continue;
@@ -1238,10 +1338,8 @@ module.exports = {
       res.json({ claims: rows });
     });
     function resetOne(pid, sid) {
-      host.store.delete(K.claim(pid, sid));
-      host.store.delete(K.count(pid, sid));
-      const all = host.store.all() || {};
-      for (const gk of Object.keys(all)) if (gk.startsWith('group:') && gk.endsWith(':' + sid) && all[gk] === pid) host.store.delete(gk);
+      const ck = K.claim(pid, sid), nk = K.count(pid, sid);
+      ledger.drop((k, v) => k === ck || k === nk || (k.startsWith('group:') && k.endsWith(':' + sid) && v === pid));
     }
     host.routes.post('/claims/reset', (req, res) => {
       const b = req.body || {};
@@ -1251,11 +1349,11 @@ module.exports = {
       resetOne(pid, sid); res.json({ ok: true });
     });
     host.routes.post('/claims/clear', (req, res) => {
-      const b = req.body || {}; const all = host.store.all() || {};
-      for (const k of Object.keys(all)) {
-        if (b.packId) { if (k.startsWith(`claim:${b.packId}:`) || k.startsWith(`count:${b.packId}:`) || (k.startsWith('group:') && all[k] === b.packId)) host.store.delete(k); }
-        else if (k.startsWith('claim:') || k.startsWith('count:') || k.startsWith('group:')) host.store.delete(k);
-      }
+      const b = req.body || {};
+      // One save for the whole list; this used to rewrite the store once per key it removed.
+      ledger.drop((k, v) => (b.packId
+        ? (k.startsWith(`claim:${b.packId}:`) || k.startsWith(`count:${b.packId}:`) || (k.startsWith('group:') && v === b.packId))
+        : (k.startsWith('claim:') || k.startsWith('count:') || k.startsWith('group:'))));
       res.json({ ok: true });
     });
   },

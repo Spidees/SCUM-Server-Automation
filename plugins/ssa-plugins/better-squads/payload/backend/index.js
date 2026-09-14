@@ -255,7 +255,7 @@ module.exports = {
     const liveSaid = { players: 0, squads: 0 };
     const LIVE_SWITCH = {
       players: "Read live player data, with Position, facing and speed (Settings → Bridge → Live data)",
-      squads: "Report live squads, with Include the member list (Settings → Bridge → Squads)",
+      squads: "Read live squads, and allow the changes below, with Include the member list (Settings → Bridge → Squads)",
     };
     function noteLive(key, q) {
       const code = (q && q.code) || 'bridge_off';
@@ -274,16 +274,27 @@ module.exports = {
     }
     const canQuery = () => !!(host.bridge && typeof host.bridge.query === 'function');
 
-    let liveMemo = null, liveMemoAt = 0;
+    // The PROMISE is what is shared, not the answer. One kill asks for two positions at once, and
+    // with the answer shared the second caller arrived while the first read was still out, found
+    // the memo already stamped and empty, and fell back to the save for no reason.
+    let liveMemoP = null, liveMemoAt = 0;
     /** Every online player as the game has them this instant: `{ pos, names }`, or null. */
-    async function liveSnapshot() {
-      if (liveMemoAt && Date.now() - liveMemoAt < 2000) return liveMemo;
+    function liveSnapshot() {
+      if (liveMemoP && Date.now() - liveMemoAt < 2000) return liveMemoP;
       liveMemoAt = Date.now();
-      liveMemo = null;
+      liveMemoP = readLive().catch(() => null);
+      return liveMemoP;
+    }
+    async function readLive() {
       if (!canQuery()) return null;
       const q = await host.bridge.query('live', 'players');
       if (!q || !q.ok) { noteLive('players', q); return null; }
-      const list = (q.data && Array.isArray(q.data.players)) ? q.data.players : null;
+      // ⚠ BOTH SHAPES. `mod_live` answers with a BARE ARRAY, and this read only `data.players` — so
+      // the list was never found, every position and name fell back to the save, and each event
+      // still paid for a walk of the game's player controllers to fetch the answer it threw away.
+      // `host.bridge.livePlayers()` in the manager accepts both for the same reason.
+      const list = Array.isArray(q.data) ? q.data
+        : ((q.data && Array.isArray(q.data.players)) ? q.data.players : null);
       if (!list) return null;
       liveNote.players = null;
       const pos = new Map(); const names = new Map();
@@ -297,21 +308,29 @@ module.exports = {
         // 0,0,0, which is a real place on this map, in the sea.
         if (Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) pos.set(sid, { x: Number(p.x), y: Number(p.y), z: Number(p.z) });
       }
-      liveMemo = { pos, names };
-      return liveMemo;
+      return { pos, names };
     }
 
     /**
      * Positions, live where the game could answer and saved where it could not — merged PER PLAYER,
      * not all-or-nothing. Somebody the game has no pawn for (a loading screen) keeps their saved
      * position rather than losing the distance token altogether.
+     *
+     * `wanted` is the Steam IDs the caller is actually going to look up. When the live read covers
+     * every one of them the saved world is not read at all: `host.map.world()` is a scan of the whole
+     * save (players, bases, vehicles, chests), and it used to be paid on every join, leave, death and
+     * raid only to be overwritten by the live positions a line later. Without `wanted` — or with
+     * anybody in it the game did not place — it merges exactly as before. `world` is a snapshot the
+     * caller already holds, so the roster command does not scan twice.
      */
-    async function positions() {
-      const saved = positionIndex(worldSnapshot());
+    async function positions(wanted, world) {
       const live = await liveSnapshot();
-      if (!live || !live.pos.size) return saved;
+      const livePos = live && live.pos.size ? live.pos : null;
+      if (livePos && Array.isArray(wanted) && wanted.every((sid) => livePos.has(String(sid)))) return livePos;
+      const saved = positionIndex(world);
+      if (!livePos) return saved;
       const out = new Map(saved);
-      for (const [sid, p] of live.pos) out.set(sid, p);
+      for (const [sid, p] of livePos) out.set(sid, p);
       return out;
     }
 
@@ -392,8 +411,11 @@ module.exports = {
     let posCache = null, posCacheAt = 0;
     function positionIndex(world) {
       if (posCache && Date.now() - posCacheAt < 2000) return posCache;
+      // Read HERE, after the cache has had its say — reading it first scanned the save on every call
+      // and then threw the scan away whenever the index was still fresh.
+      const w = world || worldSnapshot();
       const byId = new Map();
-      ((world || {}).players || []).forEach((p) => {
+      ((w || {}).players || []).forEach((p) => {
         const s = String(p.steamId || '');
         if (s) byId.set(s, { x: Number(p.x), y: Number(p.y), z: Number(p.z) });
       });
@@ -536,30 +558,45 @@ module.exports = {
       if (inQuietHours(c)) { stats.suppressed++; persist(); return; }
       if (onCooldown(`${kind}:${subject}`, c.cooldownSeconds)) { stats.suppressed++; persist(); return; }
 
-      // Live where the game will say who is in this squad, saved where it will not. This is the
-      // decision the whole plugin turns on: it is who hears a line nobody else is meant to.
-      const squad = await squadFor(actorSteamId);
-      if (!squad) return;                                   // solo player — nobody to tell
-
       // If the line names someone and we could not work out who, say nothing. A message reading
-      // "76561198... was killed" is worse to a squad than no message at all.
+      // "76561198... was killed" is worse to a squad than no message at all. Asked before the squad
+      // read below, because it depends on nothing that read returns.
       if (/\{player\}/i.test(evc.message) && !vars.player) {
         host.logger.debug('no name for ' + actorSteamId + ' - "' + kind + '" not sent');
         return;
       }
 
+      // Who COULD hear this, before asking the game who is in the squad. A recipient has to be online,
+      // not admin-muted and not self-muted, whichever roster answers — so when nobody online passes
+      // those tests the roster cannot produce a single target, and the per-event `squads` read the
+      // bridge answers would be paid for a line that goes nowhere. An online list that could not be
+      // read is empty here and empties `targets` below just the same, so this skips nothing that
+      // would have been sent.
       const online = onlineIndex();
       const adminMuted = new Set((c.mutedSteamIds || []).map(String));
-      const targets = squad.members.map((m) => m.steamId).filter((sid) => (
+      const canHear = (sid) => (
         online.has(sid)
         && !adminMuted.has(sid)
         && !prefOf(sid).off
         && !prefOf(sid).muted[kind]
         && (c.includeSelf || sid !== subject)
-      ));
+      );
+      if (![...online.keys()].some(canHear)) return;
+
+      // Live where the game will say who is in this squad, saved where it will not. This is the
+      // decision the whole plugin turns on: it is who hears a line nobody else is meant to.
+      const squad = await squadFor(actorSteamId);
+      if (!squad) return;                                   // solo player — nobody to tell
+
+      const targets = squad.members.map((m) => m.steamId).filter(canHear);
       if (!targets.length) return;
 
-      const pos = await positions();
+      // Where it happened is read only NOW, once a line is really going to somebody. The handlers
+      // used to fetch it first, and asking the running game where everybody is walks its player
+      // controllers — paid on every join, leave and death on the server, while most of them were
+      // solo players, switched-off events or squads with nobody else online, and went no further.
+      if (typeof at === 'function') at = await at();
+
       const base = Object.assign({
         squad: squad.name,
         squadsize: squad.members.length,
@@ -574,6 +611,9 @@ module.exports = {
       // — the relative tokens then resolve empty and their optional segments drop out cleanly.
       const maxIndiv = Number(c.maxIndividualSends) || 0;
       const relative = RELATIVE_TOKENS.test(evc.message) && (!maxIndiv || targets.length <= maxIndiv);
+      // Where each READER is, and only when a line is going to be measured from them. A shared copy
+      // carries no reader-relative token, so it needs nobody's position.
+      const pos = relative ? await positions(targets) : new Map();
       const cost = relative ? targets.length : 1;
       if (!rateOk(cost, Number(c.maxPerMinute) || 0)) {
         stats.suppressed++; persist();
@@ -636,18 +676,18 @@ module.exports = {
     // sits directly on an event handler.
     async function posOf(steamId) {
       try {
-        const p = (await positions()).get(String(steamId));
+        const p = (await positions([String(steamId)])).get(String(steamId));
         return p && Number.isFinite(p.x) ? p : null;
       } catch { return null; }
     }
 
     function onJoin(p) {
       const sid = String((p && (p.steamId || p.SteamID)) || '');
-      if (sid) posOf(sid).then((at) => announce('join', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, at));
+      if (sid) announce('join', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, () => posOf(sid));
     }
     function onLeave(p) {
       const sid = String((p && (p.steamId || p.SteamID)) || '');
-      if (sid) posOf(sid).then((at) => announce('leave', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, at));
+      if (sid) announce('leave', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, () => posOf(sid));
     }
     // Prefer the bridge's live join/leave: it fires the moment the player is actually in-game,
     // where the log-derived event can be many seconds late (SCUM writes its log in batches).
@@ -658,7 +698,7 @@ module.exports = {
       if (!e) return;
       if (e.type === 'suicide') {
         const sid = String(e.steamId || '');
-        posOf(sid).then((at) => announce('suicide', sid, { player: displayName(sid, e.playerName) }, at));
+        announce('suicide', sid, { player: displayName(sid, e.playerName) }, () => posOf(sid));
         return;
       }
       const vSquad = squadOf(e.victimSteamId), kSquad = squadOf(e.killerSteamId);
@@ -678,18 +718,18 @@ module.exports = {
         shotdistance: Number.isFinite(dist) && dist > 0 ? dist : '',
       };
 
-      posOf(e.victimSteamId).then((at) => announce('death', String(e.victimSteamId || ''), Object.assign({
+      announce('death', String(e.victimSteamId || ''), Object.assign({
         player: actorDisplayName(e.victimSteamId, e.victimName), victim: actorDisplayName(e.victimSteamId, e.victimName),
         killer: actorDisplayName(e.killerSteamId, e.killerName),
-      }, shared), at));
+      }, shared), () => posOf(e.victimSteamId));
 
       // On friendly fire both templates describe the same event to the same people — the death
       // line already names the killer, so the kill line would be it told twice.
       if (!sameSquad) {
-        posOf(e.killerSteamId).then((at) => announce('kill', String(e.killerSteamId || ''), Object.assign({
+        announce('kill', String(e.killerSteamId || ''), Object.assign({
           player: actorDisplayName(e.killerSteamId, e.killerName), killer: actorDisplayName(e.killerSteamId, e.killerName),
           victim: actorDisplayName(e.victimSteamId, e.victimName),
-        }, shared), at));
+        }, shared), () => posOf(e.killerSteamId));
       }
     });
 
@@ -863,7 +903,7 @@ module.exports = {
       // "Where is everyone" is the whole point of the roster and of /squad here — live where the
       // game can say, saved where it cannot. `world` is still the source for BASES below, which do
       // not move and have no live equivalent that carries an owner.
-      const pos = await positions();
+      const pos = await positions([me].concat(squad.members.map((m) => m.steamId).filter((sid) => sid !== me && online.has(sid))), world);
       const mine = pos.get(me);
       const mates = squad.members.filter((m) => m.steamId !== me && online.has(m.steamId));
       const chan = safeChannel(c.channel);

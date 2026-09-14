@@ -522,7 +522,17 @@
     };
     if (!ckSocketBound && window.SSA && SSA.socket) { ckSocketBound = true; SSA.socket.on('commands-kits:event', function (ev) { if (ckOnEvent) ckOnEvent(ev); }); }
     if (ckPollTimer) clearInterval(ckPollTimer);
-    ckPollTimer = setInterval(refreshStatus, 4000);
+    // One timer for the whole page. It stops for good once this tab has been left (opening it again
+    // mounts a new editor with its own timer) and skips a round while the browser tab is hidden.
+    var myPoll = ckPollTimer = setInterval(function () {
+      if (!root.isConnected) {
+        clearInterval(myPoll);
+        if (ckPollTimer === myPoll) { ckPollTimer = null; ckOnEvent = null; }
+        return;
+      }
+      if (document.hidden) return;
+      refreshStatus();
+    }, 4000);
 
     // "3h ago" style from a Unix-epoch (ms) timestamp.
     function fmtAgo(ms) {

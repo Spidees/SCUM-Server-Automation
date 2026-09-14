@@ -1,93 +1,60 @@
 # Mine Protection
 
-Punishes players who **arm a mine or trap outside their (or their squad's) flag area**. The moment a
-mine is armed in the open, the placer is teleported onto their own armed mine — it detonates.
+Punishes players who **arm a mine or trap outside their own or their squad's flag area**. The first
+offences earn a chat **warning**; after that the placer is **teleported onto their own armed mine**.
 
 ## How it works
-- Every few seconds the plugin reads the manager's own **world scan** for placed **armed** mines/traps
-  of the watched types and **who armed each one** (the arming player, including a buried mine's placer).
-  This is the same canonical parsing the live map uses, so the armed state and placer are detected
-  reliably — no missed offences.
-- **"Inside the flag"** uses the **real flag rectangle**. A mine is legal if it falls inside any base
-  owned by the placer **or any squadmate**, so a squad member arming inside a teammate's base is
-  **never** punished.
-- Anything armed outside that rectangle is enforced via the **SSA Bridge**.
-- **The last save is not good enough to detonate somebody on.** Both facts above come out of the game
-  database, which is the state as of the last save — so a mine defused since then still reads *armed*,
-  and a player who joined a squad since then is not in it yet. Immediately before a teleport, and only
-  then, the plugin asks the **running game**: is this trap still armed, and who is in this player's
-  squad now? A live *"no longer armed"* cancels the teleport; a live squadmate whose flag covers the
-  mine makes it legal. Neither check can ever create an offence — they can only call one off.
-- **Escalation:** the first *N* offences per player are a chat **warning**; after that the placer is
-  **teleported onto their armed mine**. The teleport runs *through* the placer, so it never depends on
-  fragile name/steamid targeting.
-- **Offline placers** are retried every scan **and the instant they reconnect**, so an offence is never
-  silently dropped while someone is offline.
-- **State survives restarts:** handled mines, per-player offence counts and the recent-actions history
-  are saved in the plugin store — a restart never re-punishes a mine it already handled. (Only the very
-  first scan seeds — pre-existing mines are never punished.)
+- Every few seconds the plugin reads the manager's **world scan** for placed, **armed** mines and traps
+  of the watched types, and **who armed each one**.
+- A mine is legal when it sits inside the **flag area of any base owned by the placer or a squadmate**.
+  A squad member arming inside a teammate's base is never punished.
+- **Before a teleport, the running game is asked** whether the mine is still armed and who is in the
+  placer's squad right now. A mine defused since the last save, or a squadmate who joined since then,
+  calls the punishment off. These checks can only cancel an offence, never create one.
+- **Escalation:** the first offences per player are a warning, then the teleport. The teleport runs
+  through the placer, so it does not depend on name or Steam ID targeting.
+- **It never punishes on a guess.** When the game database cannot say whether a mine is inside a flag,
+  the mine is left alone and checked again on the next scan.
+- **Offline placers** are dealt with the moment they reconnect.
+- **State survives restarts:** handled mines, offence counts and the action history are saved, so a
+  restart never punishes the same mine twice. Mines that were already placed when the plugin first
+  ran are never punished.
 
 ## Requirements
-- The **SSA Bridge** plugin (for the teleport + chat message). It's a dependency.
-- **Two in-game modules are optional but strongly recommended**, because they are what let the plugin
-  check the *running game* rather than the last save before it detonates anything. Both are off until
-  you turn them on, in **Settings → Bridge**:
-  - **Read live inventories** (Inventories) — confirms a mine is **still armed** at the moment of the
-    teleport. Without it, `armed` is whatever it was at the last save.
-  - **Report live squads** + **Include the member list** (Squads) — confirms who is in the placer's
-    squad **right now**, so a player who joined a squad since the last save is not punished for a mine
-    inside their new teammate's base.
-  With either switched off the plugin behaves exactly as it always has and **says so on its own tab**,
-  in the module's own words — it never silently falls back.
-- Manager **5.15.0+**, which is what the manifest enforces. The floor is not a formality: before
-  5.0.3 the manager answered "is this mine inside its
-  placer's flag?" with a plain yes/no, and a moment when the game database could not be read came
-  back as **no**. This plugin acts on a no by teleporting somebody onto a live mine. From 5.0.3 that
-  question has a third answer — *cannot say* — and the plugin waits for the next scan instead.
+- The **SSA Bridge** plugin, for the teleport and the chat message.
+- Two bridge modules are optional and recommended, because they let the plugin check the running game
+  instead of the last save. The plugin's card on the **Plugins** page lists them and offers to switch
+  them on:
+  - **Live inventories**: *Read live inventories*, which confirms a mine is still armed.
+  - **Live squads**: *Read live squads, and allow the changes below* and *Include the member list*,
+    which confirm the placer's current squad.
+- Manager **5.16.2+**.
 
 ## Configuration
-Everything is configured from the plugin's **admin tab** (💣 Mine Protection):
+Everything is configured from the plugin's **admin tab** (🛡️ Mine Protection):
 
-- **Watched mines & traps** — an illustrated picker with an icon per type and how many are **placed /
-  armed on your server right now**. Toggle exactly what to enforce (quick buttons for *Explosives only*,
-  *Select all*, *Clear*). Explosive traps are watched by default; C4 (a raiding tool) is not.
-- **Action** — teleport the placer onto their mine, or warn only.
-- **Warnings before action** — how many chat warnings a player gets before the penalty kicks in
-  (0 = act on the first offence).
-- **Only act while online** — only enforce while the placer is online (needed to teleport them);
-  otherwise the mine is enforced the moment they return.
-- **Extra margin** — tolerance beyond the exact flag rectangle (default 0).
-- **Scan interval** — how often to scan (applies immediately on save, no restart).
-- **Messages** — the warning and penalty chat lines sent to the offender, in any language.
-- **Exemptions** — players who are never punished; add a Steam ID or pick from the online players.
-- **Placed mines (live)** — a table of every watched mine on the server right now: who armed it,
-  where, whether it’s inside a flag, its enforcement status and that player’s offence count. Two of
-  those can be **unknown** rather than yes or no — *Armed state unknown* and *Flag unknown* — and the
-  table says so rather than showing them as “not armed” and “outside the flag”. Those rows are
-  exactly the ones the plugin is declining to act on, so reading them as a plain no would look like
-  an offence that never got enforced.
-- **Recent actions** — a live feed of every warning/teleport, with buttons to reset warnings or clear
-  the history.
+- **Watched mines & traps**: a picker with an icon per type and how many are placed and armed right
+  now. Quick buttons: *Explosives only*, *Select all*, *Clear*. Explosives are watched by default;
+  C4 is not, because it is a raiding tool.
+- **When a violation is found**: teleport onto their mine, or warn only.
+- **Warnings before action**: how many warnings a player gets first (default 1, 0 acts at once).
+- **Extra margin around flag (m)**: tolerance beyond the flag area (default 0).
+- **Scan interval (s)**: how often to scan (default 6). Applies as soon as you save.
+- **Only act while the placer is online** (on by default).
+- **In-game messages**: the chat channel, the warning message and the penalty message.
+- **Exemptions**: players who are never punished. Type a Steam ID or pick an online player.
+- **Placed mines (live)**: every watched mine on the server, who armed it, where, and its status.
+- **Recent actions**: every warning and teleport, with *Reset warnings* and *Clear history*.
 
 ## Good to know
-- **Offences can be forgiven one player at a time.** The count only ever goes up, and *Reset
-  warnings* clears everybody, which is rarely what you want. Each row in the mines table has its own
-  **Forgive**: it gives that player their warnings back and leaves every other record intact.
-- **A warning only counts once it has arrived.** If the player is not there to read it, the mine is
-  left for the next scan instead of being marked dealt with — otherwise their *next* mine would get
-  the real punishment for a warning they never saw, which is exactly what warning first exists to
-  prevent. (Only reachable with **Only act while the placer is online** switched off.)
-- **It never punishes on a guess.** Whether a mine sits inside its placer's own flag is answered from
-  the game database, while the mine itself comes from the live world scan — so one can be readable
-  while the other is not. "Cannot say" is now its own answer and it means *do nothing*: the mine is
-  simply re-checked on the next scan. Read as "outside their flag", a database hiccup used to
-  teleport a player onto a mine they had legally placed inside their own base. If that state lasts,
-  the manager log says so once an hour, because a protection plugin quietly protecting nothing is
-  its own kind of failure.
-- Pre-existing mines are never punished — only ones armed after the plugin is watching.
-- The placer is whoever **armed** the mine, not whoever crafted or placed it unarmed.
-- The status header shows, live: whether it's active, the server state, how many mines are tracked and
-  how many players have been flagged.
+- **Forgive one player** with the *Forgive* button on their row in the mines table. *Reset warnings*
+  clears everybody.
+- **A warning counts only once it arrives.** If the player is not online to receive it, the mine is
+  checked again later instead of counting as their warning.
+- *Armed state unknown* and *Flag unknown* in the mines table mean the plugin could not tell, and it
+  does nothing about those mines until it can.
+- The placer is whoever **armed** the mine, not whoever crafted or placed it.
+- Everything can be configured with the server stopped; only the live lists need it running.
 
 ---
 
