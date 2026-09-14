@@ -1,0 +1,102 @@
+{
+  "id": "loot-zones",
+  "name": "Loot Zones",
+  "type": "manager",
+  "version": "1.3.12",
+  "updated": "2026-09-13",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Rotate loot around the island. Each zone is a rectangle with its own loot: the plugin draws it on the players' map, drops your loot files into the server's own Loot folder, and reloads the loot on a running server so it goes live straight away (SSA Bridge 2.22.2 or newer). Rotate on a clock, on every server restart, or switch by hand from the admin tab. Tell players in your own words when a zone opens, when it closes, while it runs and as they log in, in chat or on their screen. Optionally keep the sentries out of a zone while players are near it and keep guards of your own choosing, armed NPCs, puppets or animals, standing where they stood.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "5.16.2",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "config": "config.json",
+  "dependencies": [
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "notify",
+        "switches": [
+          "enabled",
+          "broadcast",
+          "killfeed",
+          "sound"
+        ],
+        "why": "Carries the on-screen routes for the messages, a HUD line, an alert and a kill-feed entry, for everyone at once. Chat needs none of this; leave it off and the messages still reach players there."
+      },
+      {
+        "module": "actions",
+        "switches": [
+          "enabled",
+          "messages"
+        ],
+        "why": "The same on-screen routes for ONE player, which is what the line a player gets as they log in uses. Without it that line can still go to their chat."
+      },
+      {
+        "module": "place",
+        "switches": [
+          "enabled",
+          "describe"
+        ],
+        "why": "Answers where the GROUND is at a point, which is what lets a guard of your own stand on it. A grid position inside your rectangle has no height of its own, and the game refuses a spawn below the terrain outright, so without this the plugin has to guess the height from whatever else is standing in the zone, and in an empty zone it cannot. It only reads: this module never blocks or changes anything."
+      },
+      {
+        "module": "live",
+        "switches": [
+          "enabled",
+          "where"
+        ],
+        "why": "Where the players are standing. A zone is worked only while somebody is near it, because the game has no sentries or guards in a place nobody is close to, and a guard is never made to appear right next to a player. Both are reads. ⚠ Without this the plugin cannot find out where anybody is, and it will not guess: it leaves every zone's sentries and guards alone and says so."
+      }
+    ],
+    "wants": [
+      {
+        "module": "zones",
+        "switches": [
+          "enabled",
+          "write",
+          "guarded",
+          "guardedwrite"
+        ],
+        "why": "The zone a player sees on the map is a real custom zone in the running game. Drawing it needs 'Allow creating and changing zones', which rewrites the server's zone set, so the plugin's tab asks you before turning it on. The two guarded-zone switches are used only if you ask the plugin to lengthen SCUM's own sentry respawn delay, which reaches every guarded place on the map."
+      },
+      {
+        "module": "spawn",
+        "switches": [
+          "enabled",
+          "creatures",
+          "persistent"
+        ],
+        "why": "Puts the guard of your choosing where a sentry stood, and puts a new one there when it dies, an armed NPC, a puppet or an animal, whichever you pick. Used only if you set the sentries inside a zone to be replaced rather than simply cleared."
+      },
+      {
+        "module": "despawn",
+        "switches": [
+          "enabled",
+          "sentries",
+          "stowSentries",
+          "puppets"
+        ],
+        "why": "Keeps the sentries, and if you ask for it the puppets, out of a zone while somebody is near it. A fixed map sentry is put away under the ground, because a removed one is rebuilt by the game within seconds; a sentry a dropship brought and a puppet are removed. Nothing switches these on for you and nothing should: this module changes the running world. They are listed here so you can see exactly which four they are, and the plugin leaves everything alone until you decide."
+      },
+      {
+        "module": "entities",
+        "switches": [
+          "enabled"
+        ],
+        "why": "The only reading that answers whether a guard standing at a post is ALIVE. SCUM leaves a killed character lying where it fell, so without this the plugin can only ask whether something is at the post and a body counts, a place would stay 'guarded' by a corpse. 'What to track' also has to include the kind your guards are; the list it ships with covers guards and drifters and does not cover every armed NPC. Used only if you set the sentries inside a zone to be replaced."
+      }
+    ]
+  },
+  "premium": true
+}

@@ -547,7 +547,7 @@
       var embDiv = h('div', {});
       var ed = SSA.consume('embed-editor');
       if (ed) ed.mount(embDiv, { value: config.menuEmbed || {}, onChange: function (json) { config.menuEmbed = json; } });
-      else embDiv.appendChild(h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Enable the "Discord Embed Editor" plugin to design the menu embed here.'));
+      else embDiv.appendChild(h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Enable the "Discord Embeds" plugin to design the menu embed here.'));
       body.appendChild(card('Rental menu embed', [embDiv]));
 
       // ── save + post + rentals ──
@@ -567,7 +567,9 @@
       // One timer for the tab, not one per redraw.
       if (window.vrDirtyTick) clearInterval(window.vrDirtyTick);
       window.vrDirtyTick = setInterval(function () {
-        if (!body.parentNode) { clearInterval(window.vrDirtyTick); window.vrDirtyTick = null; return; }
+        // `isConnected`, not `parentNode`: leaving the tab removes the tab's ROOT, and `body` keeps its
+        // parent inside that detached root, so a parent test never fired.
+        if (!body.isConnected) { clearInterval(window.vrDirtyTick); window.vrDirtyTick = null; return; }
         if (dirty() && !statusHold && !/Saving|Posting/.test(status.textContent)) status.textContent = '● Unsaved changes';
       }, 1200);
       if (window.vrBeforeUnload) window.removeEventListener('beforeunload', window.vrBeforeUnload);
@@ -714,7 +716,12 @@
       // While a fetch is failing it re-fetches instead, which is what makes "it keeps retrying" in
       // the message above true rather than a promise nothing here was keeping.
       if (window.vrTick) clearInterval(window.vrTick);
-      window.vrTick = setInterval(function () { if (rentalsErr) loadRentals(); else activeTbl.refresh(); }, 30000);
+      // It stops once the tab has been left and skips a round while the browser tab is hidden.
+      window.vrTick = setInterval(function () {
+        if (!body.isConnected) { clearInterval(window.vrTick); window.vrTick = null; return; }
+        if (document.hidden) return;
+        if (rentalsErr) loadRentals(); else activeTbl.refresh();
+      }, 30000);
 
       body.appendChild(rentalsErrBar);
       body.appendChild(card('Active rentals', [activeTbl.el]));

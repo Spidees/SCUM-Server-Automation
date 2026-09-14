@@ -1,0 +1,45 @@
+{
+  "id": "raid-window",
+  "name": "Raid Window",
+  "type": "manager",
+  "version": "1.1.3",
+  "updated": "2026-09-14",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "Stops defenders ending a raid by logging out. While a base is taking real raid damage, the plugin keeps pushing that base's offline protection back, so the raid can be finished. Only the base under attack is touched, its protection length stays what it was, and the push stops once the base has been quiet for a while. Every push is listed with what the game did about it.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "5.16.2",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css"
+  },
+  "config": "config.json",
+  "dependencies": [
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "raid",
+        "switches": [
+          "enabled"
+        ],
+        "why": "Tells the plugin when a base is taking real raid damage, with decay, upgrades and admin clearing already left out. Without it the plugin never knows a raid is going on, and nothing is pushed."
+      },
+      {
+        "module": "protect",
+        "switches": [
+          "enabled",
+          "set"
+        ],
+        "why": "Reads a base's protection and pushes its start back. 'Set a flag's protection window' is the write: without it every push is refused. A changed protection window cannot be undone, which is why you turn it on yourself."
+      }
+    ]
+  },
+  "premium": true
+}

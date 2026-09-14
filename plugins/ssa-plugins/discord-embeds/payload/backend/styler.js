@@ -483,12 +483,66 @@ module.exports = {
     }
 
     // ── resolution + apply ──────────────────────────────────────────────────────
-    const loadStyles = () => host.store.get('styles', {});
-    function tokenMapFor(kind, ctx) {
+    // The saved collections, held in memory. `applyStyle` runs for every embed the manager sends and
+    // the custom-embed check runs every 15 s; each used to parse the plugin's whole store file to
+    // read one key. A save through this plugin's own routes refreshes the copy at once, and it is
+    // re-read once a minute anyway, so a store that could not be read at boot still recovers.
+    const STORE_REREAD_MS = 60000;
+    const _held = new Map();   // key → { v, at }
+    function held(key, dflt) {
+      const c = _held.get(key);
+      if (c && (Date.now() - c.at) < STORE_REREAD_MS) return c.v;
+      const v = host.store.get(key, dflt);
+      _held.set(key, { v, at: Date.now() });
+      return v;
+    }
+    const forget = (key) => { _held.delete(key); };
+    const loadStyles = () => held('styles', {});
+
+    // Only the tokens a template USES. Resolving an embed used to build the manager's whole token
+    // catalogue first — every value of every token, several hundred getters — to fill in the handful
+    // the template names. `host.data.value()` reads one token through the same getter the catalogue
+    // runs, so the answer is identical. A token with a `:` in it is parametric ({img:…},
+    // {contents:…}) and was never in the catalogue map either; those still resolve on demand below.
+    // A manager without `host.data.value` keeps the old whole-catalogue path.
+    const TOKEN_IN_TEXT = /\{([\w.:\- ]+)\}/g;
+    const _tokVal = new Map();   // token → { v, at }, the same 5 s the catalogue map was held for
+    function tokenKeysIn(x, out, depth) {
+      if (depth > 12 || x == null) return;
+      if (typeof x === 'string') {
+        if (x.indexOf('{') < 0) return;
+        TOKEN_IN_TEXT.lastIndex = 0;
+        let mm;
+        while ((mm = TOKEN_IN_TEXT.exec(x))) { const k = String(mm[1]).trim(); if (k && k.indexOf(':') < 0) out.add(k); }
+        return;
+      }
+      if (Array.isArray(x)) { for (const v of x) tokenKeysIn(v, out, depth + 1); return; }
+      if (typeof x === 'object') { for (const k of Object.keys(x)) tokenKeysIn(x[k], out, depth + 1); }
+    }
+    function tokenMapForTemplate(tpl) {
+      if (!host.data || typeof host.data.value !== 'function') return globalMapCached();
+      const keys = new Set();
+      tokenKeysIn(tpl, keys, 0);
+      const m = {};
+      const now = Date.now();
+      if (_tokVal.size > 4000) _tokVal.clear();
+      for (const k of keys) {
+        const c = _tokVal.get(k);
+        if (c && (now - c.at) < 5000) { if (c.v != null) m[k] = c.v; continue; }
+        let v = null;
+        try { v = host.data.value(k, {}); } catch (e) { v = null; }
+        _tokVal.set(k, { v, at: now });
+        if (v != null) m[k] = v;
+      }
+      return m;
+    }
+
+    function tokenMapFor(kind, ctx, tpl) {
       try {
         const c = CATALOG[kind];
         const evt = (c && c.resolve) ? (c.resolve(ctx || {}) || {}) : base(ctx || {});
-        return Object.assign(globalMapCached(), evt);   // every embed can use the global data too; event data wins on overlap
+        const global = tpl === undefined ? globalMapCached() : tokenMapForTemplate(tpl);
+        return Object.assign(global, evt);   // every embed can use the global data too; event data wins on overlap
       } catch (e) { host.logger.warn(`resolve(${kind}) failed: ${e.message}`); return {}; }
     }
     function resolveTpl(tpl, m) {
@@ -584,7 +638,7 @@ module.exports = {
     function applyStyle(embed, kind, ctx) {
       const entry = loadStyles()[kind];
       if (!entry || !entry.enabled || !entry.model || !editor) return embed;
-      const m = tokenMapFor(kind, ctx);
+      const m = tokenMapFor(kind, ctx, entry.model);
       const model = fitLimits(resolveModel(entry.model, m));
       const e = editor.apiEmbed(model);
       if (!e) return embed;
@@ -649,8 +703,8 @@ module.exports = {
       try {
         const url = embed && embed.data && embed.data.image && embed.data.image.url;
         if (!url) return;
-        const im = host.store.get('liveImages', {});
-        if (im[kind] !== url) { im[kind] = url; host.store.set('liveImages', im); }
+        const im = held('liveImages', {});
+        if (im[kind] !== url) { im[kind] = url; host.store.set('liveImages', im); forget('liveImages'); }
       } catch { /* best-effort */ }
     }
 
@@ -702,7 +756,7 @@ module.exports = {
       const body = req.body || {};
       const stale = staleSave('styles', body);
       if (stale) return res.json(stale);
-      if (body.styles && typeof body.styles === 'object') { host.store.set('styles', body.styles); bumpRev('styles'); }
+      if (body.styles && typeof body.styles === 'object') { host.store.set('styles', body.styles); forget('styles'); bumpRev('styles'); }
       res.json({ ok: true, rev: revOf('styles') });
     });
 
@@ -756,8 +810,43 @@ module.exports = {
     }
 
 
-    const loadCustom = () => host.store.get('custom', []);
+    const loadCustom = () => held('custom', []);
     const lastPost = {};
+    // What each custom embed last put in Discord: `{ sig, channelId, msgId, msg, at }`. A refresh
+    // whose message would come out byte-identical is not sent — every check used to fetch the message
+    // and edit it regardless, two Discord calls per embed per interval for a message that had not
+    // changed. The Message object is kept too, so a changed payload is one call rather than two;
+    // an edit through it that fails falls back to fetching by id, then to posting a new one, exactly
+    // as before. A message somebody deletes in Discord is forgotten on the bot's delete event, and an
+    // unchanged message is still re-edited every ten minutes, which catches a delete that was missed
+    // (the bot offline at the time).
+    const lastSent = {};
+    const REVERIFY_MS = 10 * 60000;
+    // A message deleted in Discord should come back on its next refresh, not ten minutes later, so
+    // the bot's own delete event drops what was remembered about it. Attached once, when the bot is
+    // up, and taken off again when the plugin unloads.
+    let deleteWatch = null;
+    function watchDeletes() {
+      if (deleteWatch) return;
+      try {
+        const client = host.discord && typeof host.discord.client === 'function' ? host.discord.client() : null;
+        if (!client || typeof client.on !== 'function') return;
+        deleteWatch = (msg) => {
+          const id = msg && msg.id != null ? String(msg.id) : '';
+          if (!id) return;
+          for (const k of Object.keys(lastSent)) if (lastSent[k] && lastSent[k].msgId === id) delete lastSent[k];
+        };
+        client.on('messageDelete', deleteWatch);
+        if (typeof host.onUnload === 'function') {
+          host.onUnload(() => { try { (client.off || client.removeListener).call(client, 'messageDelete', deleteWatch); } catch (e) { /* client gone */ } });
+        }
+      } catch (e) { deleteWatch = null; }
+    }
+    function payloadSig(channelId, payload) {
+      try {
+        return require('crypto').createHash('sha1').update(String(channelId) + '\n' + JSON.stringify(payload)).digest('hex');
+      } catch (e) { return null; }       // nothing to compare against → always send
+    }
     async function refreshCustom(ce, force) {
       // Each silent exit names itself. "Nothing happened" was the same answer for six different
       // reasons, and the panel printed the cheerful one for all of them.
@@ -769,7 +858,7 @@ module.exports = {
       if (!force && lastPost[ce.id] && (Date.now() - lastPost[ce.id]) < interval) return { ok: true, skipped: true };
       lastPost[ce.id] = Date.now();
       try {
-        const m = fitLimits(resolveModel(ce.model, globalMapCached()));
+        const m = fitLimits(resolveModel(ce.model, tokenMapForTemplate(ce.model)));
         const e = editor.apiEmbed(m);
         if (!e) return;
         const embed = host.discord.js.EmbedBuilder.from(e);
@@ -791,21 +880,33 @@ module.exports = {
           const ex = editor.apiEmbed(x);
           if (ex) payload.embeds.push(host.discord.js.EmbedBuilder.from(ex));
         });
+        watchDeletes();
+        const sig = payloadSig(ce.channelId, payload);
+        const ids = held('customMsg', {});
+        const prev = lastSent[ce.id];
+        const same = !!(prev && sig && prev.sig === sig && prev.channelId === ce.channelId && ids[ce.id] && prev.msgId === ids[ce.id]);
+        if (!force && same && (Date.now() - prev.at) < REVERIFY_MS) return { ok: true, skipped: true, unchanged: true };
+        const remember = (msg) => { lastSent[ce.id] = { sig, channelId: ce.channelId, msgId: String(msg.id), msg, at: Date.now() }; };
+        // The kept Message belongs to the channel it was posted in. A changed channel must not edit
+        // the old one — it has to reach the fetch below, which fails in the new channel and reposts.
+        if (ids[ce.id] && prev && prev.msg && prev.channelId === ce.channelId && prev.msgId === ids[ce.id]) {
+          try { await prev.msg.edit(payload); remember(prev.msg); return { ok: true }; }
+          catch { delete lastSent[ce.id]; /* stale object or deleted message → fetch by id below */ }
+        }
         const ch = await host.discord.channel(ce.channelId);
         // Say which of the several silent exits happened. The panel used to print
         // "Posted ✓ — keeps updating" for a missing channel, a disabled embed, a bot that cannot see
         // the channel, and a missing editor service alike.
         if (!ch || !ch.send) { return { ok: false, why: 'the bot cannot see that channel' }; }
-        const ids = host.store.get('customMsg', {});
         if (ids[ce.id]) {
           // An edit that WORKED has to say so. Returning nothing here made the panel report every
           // successful refresh of an existing message as a failure — which is every refresh after
           // the first one.
-          try { const msg = await ch.messages.fetch(ids[ce.id]); await msg.edit(payload); return { ok: true }; }
+          try { const msg = await ch.messages.fetch(ids[ce.id]); await msg.edit(payload); remember(msg); return { ok: true }; }
           catch { /* message deleted → repost below */ }
         }
         const sent = await ch.send(payload);
-        if (sent && sent.id) { ids[ce.id] = sent.id; host.store.set('customMsg', ids); }
+        if (sent && sent.id) { ids[ce.id] = sent.id; host.store.set('customMsg', ids); forget('customMsg'); remember(sent); }
         return { ok: true };
       } catch (err) {
         host.logger.warn(`custom embed "${ce.id}" failed: ${err.message}`);
@@ -920,7 +1021,7 @@ module.exports = {
     }
 
     async function runAction(i, act, extra, key) {
-      const m = Object.assign({}, globalMapCached(), extra || {});
+      const m = Object.assign({}, tokenMapForTemplate(act.value || ''), extra || {});
       if (act.type === 'command') {
         const gate = actionGate(i, act, key || act.value || 'action');
         if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
@@ -1019,6 +1120,10 @@ module.exports = {
         const ids = host.store.get('customMsg', {}); for (const k of Object.keys(ids)) if (!keep[k]) delete ids[k];
         host.store.set('customMsg', ids);
         host.store.set('custom', b.items);
+        forget('customMsg'); forget('custom');
+        // A saved embed is sent on its next check whatever it compares equal to: the owner just
+        // pressed Save, and "nothing changed in Discord" is not what they expect to see.
+        for (const k of Object.keys(lastSent)) delete lastSent[k];
         bumpRev('custom');
       }
       res.json({ ok: true, rev: revOf('custom') });
@@ -1045,7 +1150,7 @@ module.exports = {
     //   sd.catalog();              → [{ t, label, sample, group }] for building a token picker
     host.provide('server-data', {
       data: () => globalMapCached(),
-      resolve: (tpl) => resolveTpl(tpl, globalMapCached()),
+      resolve: (tpl) => resolveTpl(tpl, tokenMapForTemplate(tpl)),
       catalog: () => globalTokenCatalog(),
     });
 

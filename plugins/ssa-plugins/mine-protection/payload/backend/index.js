@@ -135,7 +135,15 @@ function overlayConfig(stored, body) {
 
 module.exports = {
   async register(host) {
-    const cfg = () => normalizeConfig(host.store.get('config', {}));
+    // The config is held in memory. The heartbeat below runs every second, and reading it from the
+    // store there parsed the plugin's whole store file once a second, enabled or not. It is re-read
+    // after every save and once a minute, so a store that could not be read at boot (and answered
+    // the defaults) still recovers on its own, exactly as the per-second read did.
+    const CONFIG_REREAD_MS = 60000;
+    let configNow = normalizeConfig(host.store.get('config', {}));
+    let configReadAt = Date.now();
+    const reloadConfig = () => { configNow = normalizeConfig(host.store.get('config', {})); configReadAt = Date.now(); return configNow; };
+    const cfg = () => (Date.now() - configReadAt >= CONFIG_REREAD_MS ? reloadConfig() : configNow);
 
     // The plugin leans on two shared manager facilities; without them it refuses to run rather than
     // guess (and risk punishing legal mines): the flag-area test and the canonical world scan.
@@ -224,7 +232,7 @@ module.exports = {
     // switch is named here — by the label the panel actually shows, not by the config key.
     const SWITCH = {
       traps: "Read live inventories (Settings → Bridge → Inventories)",
-      squads: "Report live squads (Settings → Bridge → Squads)",
+      squads: "Read live squads, and allow the changes below (Settings → Bridge → Squads)",
     };
     function noteLive(key, q) {
       const code = (q && q.code) || 'bridge_off';
@@ -448,6 +456,11 @@ module.exports = {
         const placer = resolvePlacer(m.ownerId);
         if (!placer) continue;                      // can't resolve the placer yet → retry next scan
         if (exempt.has(placer.steamId)) { handled.add(id); continue; }
+        // Offline → retry when they return. Asked BEFORE anything else is: a placer who is not here
+        // can be neither warned nor moved, so neither the flag test nor the live squad read below
+        // buys anything for them — and both were paid again on every scan, per offline placer, for
+        // as long as they stayed away.
+        if (c.requireOnline && online && !online.has(placer.steamId)) continue;
         // THREE answers, not two. `null` means the manager could not say — the game database was
         // unreadable, or that player is not resolvable in it yet — and it must never be read as
         // "outside their flag", because the next line teleports them onto an armed mine.
@@ -467,7 +480,6 @@ module.exports = {
         const liveArea = await liveSquadAllows(m, marginCm, m.ownerId, cache);
         if (liveArea === true) { handled.add(id); continue; }                                        // legal by a squad the save has not caught up with
         if (liveArea === null) { noteUnknownArea(placer, m); continue; }
-        if (c.requireOnline && online && !online.has(placer.steamId)) continue;                          // offline → retry when they return
         if (await act(m, placer, c, cache)) handled.add(id);   // only mark handled once the action succeeded
       }
 
@@ -485,19 +497,35 @@ module.exports = {
     // ── scheduling: a light 1 s heartbeat runs the scan when it's due, so a changed interval takes
     //    effect live (no manager restart) and a fresh join can force an immediate re-scan. ──
     let lastRun = 0, busy = false;
+    // Who the bridge has seen join and not yet leave. The saved online list trails a real join by up
+    // to a save, so "the save lists nobody" alone is not "nobody is here" — a player the bridge
+    // announced a moment ago keeps the scan running. A leave that never arrives only keeps scanning,
+    // which is what this did before the check existed.
+    const liveHere = new Set();
+    const sidOf = (p) => String((p && (p.steamId || p.steamid || p.SteamID || p.steam_id)) || '');
+    // Nobody in the world means nobody can be warned (a warning counts only once delivered) or moved
+    // (the teleport runs through the placer), so a scan then walks the whole world to change
+    // nothing. Skipped — except before the first scan, which only learns what is already placed.
+    function anybodyHere() {
+      if (liveHere.size) return true;
+      try { return (host.players.online() || []).length > 0; } catch (e) { return true; }
+    }
     async function tick() {
       if (busy) return;
       const c = cfg();
       if (!c.enabled) return;
       if (Date.now() - lastRun < c.pollSeconds * 1000) return;
-      busy = true; lastRun = Date.now();
+      lastRun = Date.now();
+      if (seeded && !anybodyHere()) return;        // the join hook below forces a scan the moment somebody arrives
+      busy = true;
       try { await poll(); } catch (e) { host.logger.warn('poll error: ' + e.message); } finally { busy = false; }
     }
     host.schedule.every(1000, () => { tick(); });
 
     // Punish the moment an offender reconnects (offline mines waiting on `requireOnline`) — the bridge
     // join hook fires with no log-tail lag; nudge the next heartbeat to scan right away.
-    try { host.players.onJoin(() => { lastRun = 0; }); } catch (e) { /* join hook optional */ }
+    try { host.players.onJoin((p) => { const s = sidOf(p); if (s) liveHere.add(s); lastRun = 0; }); } catch (e) { /* join hook optional */ }
+    try { if (typeof host.players.onLeave === 'function') host.players.onLeave((p) => { const s = sidOf(p); if (s) liveHere.delete(s); }); } catch (e) { /* leave hook optional */ }
 
     // ── admin-panel endpoints ──
     host.routes.get('/config', (req, res) => res.json(cfg()));
@@ -506,6 +534,7 @@ module.exports = {
         // Over what is STORED first, filled from DEFAULTS second — see `overlayConfig`.
         const next = normalizeConfig(overlayConfig(host.store.get('config', {}), req.body || {}));
         host.store.set('config', next);
+        reloadConfig();                            // what the store really holds now, not what was sent
         lastRun = 0;                               // apply immediately (interval/type changes take effect now)
         res.json({ ok: true, config: next });
       } catch (e) { res.status(500).json({ error: e.message }); }

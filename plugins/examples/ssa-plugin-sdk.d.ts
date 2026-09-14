@@ -166,6 +166,36 @@ export interface Host {
      * rule out `null` first.
      */
     isInOwnerArea(steamId: string, x: number, y: number, margin?: number): boolean | null;
+
+    /**
+     * Can custom zones be written into the save right now, and if not, why not.
+     *
+     * Reads only — no backup is taken and nothing is written. Ask this before offering a button:
+     * `reason` is a sentence meant to be shown, and a disabled control with no explanation is the
+     * failure the zone writer is careful about.
+     */
+    zonesWritable(opts?: { allowUserVersion?: number }): Promise<{
+      ok: boolean; code?: string; reason?: string; userVersion?: number;
+      writes?: string[]; refuses?: string[]; [k: string]: unknown;
+    }>;
+
+    /**
+     * Write the server's custom zones into `SCUM.db`, **with the game stopped**.
+     *
+     * The one route in this product that writes an owner's save. It exists because the bridge
+     * cannot do this at all when nobody is on: the game hands over its zone list only through a
+     * player. Takes a verified backup every time, refuses while anything might be using the save,
+     * and refuses rather than repairing anything it did not expect.
+     *
+     * `{ ok: false, code, reason }` is a real answer rather than an error.
+     */
+    writeZones(
+      plan: {
+        regions?: { create?: unknown[]; update?: unknown[]; delete?: unknown[] };
+        configs?: { create?: unknown[]; update?: unknown[]; delete?: unknown[] };
+      },
+      opts?: { dryRun?: boolean; allowUserVersion?: number },
+    ): Promise<{ ok: boolean; code?: string; reason?: string; applied?: unknown; backup?: string }>;
     /**
      * World→map calibration from the host, or null when it has none. ASYNC.
      * Never substitute your own bounds — a wrong calibration places things
@@ -1061,6 +1091,14 @@ export interface Host {
      */
     despawnAt(kind: string, x: number, y: number, z: number, radius: number,
               objectId?: string): Promise<BridgeCommandResult>;
+    /**
+     * Put ONE fixed map sentry away instead of removing it: hidden under the ground with its clock
+     * stopped, so the game does not build a replacement. `kind` is `mapsentry` and `objectId` is the
+     * id a `despawnPreview()` gave; a preview marks one already put away with `stowed: true`. It
+     * lasts until nobody is near that place or the server restarts, so keep putting new ones away.
+     */
+    despawnStow(kind: string, x: number, y: number, z: number, radius: number,
+                objectId: string): Promise<BridgeCommandResult>;
 
     // ── doors (the Door Shuffle module) ──────────────────────────────────────────────────────────
     // A door key is `<Level>:<Actor>` and CONTAINS a colon, which is why these take the two halves
@@ -1911,6 +1949,42 @@ export interface Host {
     setSentryTuning(field: 'respawn' | 'standdown' | 'hits' | 'hitsreset',
                     value: number): Promise<BridgeCommandResult>;
     /**
+     * Every sentry POST the island still has an actor for, grouped by the level it belongs to — or,
+     * given a circle, the levels of the sentries STANDING in it.
+     *
+     * THIS IS A READING AND THERE IS NOTHING TO WRITE TO BEHIND IT. A sentry spawner copies what it
+     * carries into its guarded place's own private record and then deletes itself during BeginPlay,
+     * so the actor is a loader rather than a live handle. There is no write verb here.
+     *
+     * WHICH IS ALSO WHY `found` DECAYS TO ZERO. It counts the actors that have not deleted
+     * themselves yet, so it answers in the window after a level loads and not afterwards: measured
+     * as 94 shortly after a boot, then 10, then 0, with eleven sentries still standing. `found: 0`
+     * is not an island with no posts. Treat this as "where the game put posts, when it last told
+     * us", never as a live inventory.
+     *
+     * THE LEVEL IS THE ONLY IDENTITY A POST HAS: the actor's single component is an editor-only
+     * billboard, stripped from a shipping server build, so it has no position anything can read. A
+     * caller holding a coordinate asks the circle form, which translates through the sentries
+     * standing there. An empty `levels` from it means none is standing right now, not that the
+     * place has no posts.
+     *
+     * A field that could not be read is omitted rather than defaulted: `respawning` absent and
+     * `respawning: 0` are different facts.
+     */
+    sentrySpawners(x?: number, y?: number, radius?: number): Promise<{
+      found: number;
+      sentriesStanding?: number;
+      levels: Array<{
+        level: string;
+        posts: number;
+        respawning?: number;
+        respawnRead?: number;
+        activationDistance?: number;
+        activationVaries?: boolean;
+      }>;
+      note?: string;
+    } | null>;
+    /**
      * One zone-configuration verb, passed through as a string: `'add:<name>'`,
      * `'copy:<index>:<name>'`, `'rename:<index>:<name>'`,
      * `'setting:<index>:<none|visibleOnMap|notifyOnEntry>'`,
@@ -1927,6 +2001,13 @@ export interface Host {
      *  `'eventall:<handling>'`, `'rename:<name>'`, `'color:<r>:<g>:<b>:<a>'`,
      *  `'damage:<instigator>:<channel>:<receiver>:<handling>'`, `'damageclear:<instigator>'`. */
     globalZoneCommand(rest: string): Promise<BridgeCommandResult>;
+    /**
+     * Several zone edits sent to the game as ONE zone set, each written as it is on the wire
+     * (`'set:…'`, `'move:…'`, `'config:color:…'`, `'delete:…'`). All or nothing: the first edit the
+     * bridge refuses abandons the batch and the refusal names it. `config:delete:` is not allowed in
+     * a batch. A set that changes nothing is not sent and answers `changed: false`.
+     */
+    zoneBatch(edits: string[]): Promise<BridgeCommandResult>;
 
     // ── quests ───────────────────────────────────────────────────────────────────────────────────
     //
@@ -2892,10 +2973,31 @@ export interface Host {
     /** Change the in-game command prefix (default `/`) for every plugin, not just yours. */
     setPrefix(prefix: string): void;
     prefix(): string;
-    /** `targets` narrows delivery to those SteamIDs; `channel` only decides where it appears. */
-    send(text: string, opts?: ChatOpts): Promise<{ channel: string; delivered: number }>;
+    /**
+     * `targets` narrows delivery to those SteamIDs; `channel` only decides where it appears.
+     *
+     * `history: true` also puts the line in the chat history — see `record()` below, whose rules it
+     * follows exactly, including the refusal.
+     */
+    send(text: string, opts?: ChatOpts & { history?: boolean }): Promise<{ channel: string; delivered: number }>;
     dm(steamId: string, text: string, opts?: ChatOpts): Promise<{ channel: string; delivered: number }>;
-    broadcast(text: string, opts?: ChatOpts): Promise<{ channel: string; delivered: number }>;
+    broadcast(text: string, opts?: ChatOpts & { history?: boolean }): Promise<{ channel: string; delivered: number }>;
+    /**
+     * Put a line in the CHAT HISTORY: the admin chat view, the Field Console, and your Discord chat
+     * channel. Synchronous, and it does not need the bridge.
+     *
+     * **SCUM does not log a line the bridge injects.** The Discord relay and the Field Console both
+     * read the game's own chat log, so a line your plugin sends is visible in game and NOWHERE ELSE
+     * until you ask for this.
+     *
+     * A private line is never history: `targets` is what makes a chat line private and the Field
+     * Console is a page strangers read, so a targeted line is REFUSED with a reason rather than
+     * quietly dropped (`exclude` likewise). Guard it on your side too.
+     *
+     * Feature-detect it — it is an addition, so an older manager simply does not have it:
+     * `typeof host.chat.record === 'function'`.
+     */
+    record?(text: string, opts?: { channel?: string; name?: string }): { ok: boolean; reason?: string };
   };
 
   /** Push a notification through the manager's own pipeline (Discord + admin realtime). */

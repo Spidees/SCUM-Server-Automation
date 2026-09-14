@@ -1,0 +1,169 @@
+/* Raid Window — admin tab.
+ *
+ * Only the panel's own tokens: `--amber` / `--amber-hi` / `--on-amber` for "on", `--online`,
+ * `--standby` and `--alarm` for good / waiting / bad, `--panel` / `--panel-2` / `--inset` for the
+ * three surfaces. A token the panel does not define resolves to nothing and the rule silently does
+ * not apply, so nothing here invents one.
+ *
+ * Two rules this sheet keeps: a grid minimum is always `minmax(min(100%, N), 1fr)`, and a hover
+ * retunes `--hov-bg` / `--hov-fg` / `--hov-line` together on the element, never one colour alone. */
+
+.rw { display: flex; flex-direction: column; gap: 1rem; }
+.rw-lead { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; max-width: 75ch; }
+
+/* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
+.rw-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 0.7rem;
+}
+.rw-fig {
+  text-align: center; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-md);
+  padding: 0.6rem 0.4rem;
+}
+.rw-fig b { display: block; font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.rw-fig span { display: block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.rw-fig.good b { color: var(--online); }
+.rw-fig.wait b { color: var(--standby); }
+
+/* ── cards ─────────────────────────────────────────────────────────────────────────────────────── */
+.rw-card { display: flex; flex-direction: column; }
+.rw-card > h3 {
+  margin: 0 0 0.75rem; padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--line-amber);
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 1.15rem; font-weight: 700; color: var(--amber-hi); line-height: 1.25;
+}
+.rw-card > h3 .ico, .rw-card > h3 svg { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+
+/* ── notes ─────────────────────────────────────────────────────────────────────────────────────── */
+.rw-notes { display: flex; flex-direction: column; gap: 0.5rem; }
+.rw-notes:empty { display: none; }
+.rw-note {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--faint);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem; line-height: 1.55;
+  padding: 0.6rem 0.85rem;
+  overflow-wrap: anywhere;
+}
+.rw-note strong { color: var(--text); font-weight: 600; }
+.rw-note.good { background: rgba(84, 201, 138, 0.06); border-left-color: var(--online); }
+.rw-note.wait { background: rgba(230, 178, 58, 0.06); border-left-color: var(--standby); }
+.rw-note.bad  { background: rgba(255, 92, 92, 0.06); border-left-color: var(--alarm); }
+
+.rw-small { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; overflow-wrap: anywhere; }
+.rw-warn { color: var(--standby); }
+.rw-empty { color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0; }
+
+/* ── a settings row: label and "?" on the left, control on the right ───────────────────────────── */
+.rw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(min(100%, 13rem), 22rem);
+  grid-template-areas: "label control" "desc control";
+  align-items: center;
+  column-gap: 1.5rem; row-gap: 0.25rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line-2);
+}
+.rw-card > .rw-row:first-of-type { border-top: 0; }
+.rw-lab { grid-area: label; display: flex; align-items: center; gap: 0.4rem; font-size: 0.92rem; font-weight: 600; color: var(--text); min-width: 0; }
+.rw-hint { grid-area: desc; margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; overflow-wrap: anywhere; max-width: 72ch; }
+.rw-hint[hidden] { display: none; }
+.rw-ctl { grid-area: control; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+
+@media (max-width: 640px) {
+  .rw-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "label" "desc" "control"; row-gap: 0.4rem; }
+}
+
+/* ── controls ──────────────────────────────────────────────────────────────────────────────────── */
+.rw-in {
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+  background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--text); font: inherit; font-size: 0.9rem; padding: 0.4rem 0.6rem;
+}
+.rw-in:hover { border-color: var(--line-amber); }
+.rw-in:focus { border-color: var(--amber); outline: none; }
+.rw-num { width: min(100%, 7rem); font-variant-numeric: tabular-nums; }
+.rw-unit { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; color: var(--muted); font-size: 0.85rem; }
+.rw-unit[hidden] { display: none; }
+.rw-stack { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.rw-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+
+/* The explanation on demand. A ghost-shaped round button whose hover pair lives on the element. */
+.rw-q {
+  --hov-bg: var(--inset); --hov-fg: var(--amber-hi); --hov-line: var(--amber);
+  flex: 0 0 auto;
+  min-width: 1.4rem; height: 1.4rem; padding: 0 0.35rem;
+  border-radius: var(--pill); font-size: 0.8rem; line-height: 1;
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+}
+.rw-q:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.rw-q.on { color: var(--amber-hi); border-color: var(--amber); }
+
+.rw-more { margin-top: 0.6rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.rw-more > summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; padding: 0.3rem 0; }
+.rw-more[open] > summary { color: var(--text); }
+.rw-more > .rw-row:first-of-type { border-top: 0; }
+
+/* The save bar rides at the bottom of the settings and says whether there is anything to save. */
+.rw-save {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
+  position: sticky; bottom: 0; z-index: 2;
+  margin-top: 0.8rem;
+  background: var(--panel); border-top: 1px solid var(--line);
+  padding: 0.7rem 0 0.2rem;
+}
+.rw-save .ico, .rw-save svg, .rw-actions .ico, .rw-actions svg { width: 1.05em; height: 1.05em; }
+.rw-dirty { color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; min-width: 0; }
+.rw-dirty.unsaved { color: var(--standby); }
+.rw-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+
+/* ── the bridge checklist ──────────────────────────────────────────────────────────────────────── */
+.rw-need { display: flex; gap: 0.5rem; align-items: flex-start; padding: 0.25rem 0; font-size: 0.88rem; line-height: 1.45; overflow-wrap: anywhere; }
+.rw-need svg { flex: 0 0 auto; margin-top: 0.15rem; width: 1em; height: 1em; color: var(--standby); }
+.rw-card > .rw-small { margin-top: 0.5rem; }
+
+/* ── state, in words ───────────────────────────────────────────────────────────────────────────── */
+.rw-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.1rem 0.5rem; border-radius: var(--pill);
+  border: 1px solid var(--line); background: var(--inset); color: var(--muted);
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  white-space: nowrap; flex: 0 0 auto;
+}
+.rw-badge::before { content: ""; width: 0.4rem; height: 0.4rem; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.rw-badge.on   { background: var(--amber); border-color: var(--amber); color: var(--on-amber); }
+.rw-badge.good { color: var(--online);  border-color: rgba(84, 201, 138, 0.35); }
+.rw-badge.wait { color: var(--standby); border-color: rgba(230, 178, 58, 0.35); }
+.rw-badge.bad  { color: var(--alarm);   border-color: rgba(255, 92, 92, 0.35); }
+
+/* ── a base under raid ─────────────────────────────────────────────────────────────────────────── */
+.rw-base {
+  background: var(--panel-2); border: 1px solid var(--line-amber); border-radius: var(--radius-md);
+  box-shadow: inset 3px 0 0 var(--amber);
+  padding: 0.7rem 0.9rem; margin-bottom: 0.6rem;
+  display: flex; flex-direction: column; gap: 0.45rem; min-width: 0;
+}
+.rw-base:last-child { margin-bottom: 0; }
+.rw-base-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.rw-base-head strong { overflow-wrap: anywhere; }
+.rw-stop { margin-left: auto; }
+.rw-flag { border-top: 1px dashed var(--line); padding-top: 0.45rem; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.rw-flag-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.rw-say { margin: 0; font-size: 0.85rem; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.rw-detail > summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; }
+.rw-detail[open] > summary { color: var(--text); }
+.rw-detail p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; overflow-wrap: anywhere; }
+
+/* ── recent activity ───────────────────────────────────────────────────────────────────────────── */
+.rw-h {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.7rem;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--line-2);
+  font-size: 0.85rem; min-width: 0;
+}
+.rw-h-who { font-weight: 600; overflow-wrap: anywhere; }
+.rw-h-t { flex: 1 1 14rem; min-width: 0; color: var(--text); overflow-wrap: anywhere; }

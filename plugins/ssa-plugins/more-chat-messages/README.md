@@ -1,43 +1,64 @@
 # More Chat Messages
 
-Tell your players what is happening, **in the game's own chat**. Kills, players joining and leaving, cargo drops, game events opening and starting, secret and abandoned bunkers opening, and bases being raided — **each one switched on separately**, sent to **whichever chat channel you choose**, and **worded however you like**. Everything ships **off**, so your server says nothing new until you decide it should.
+Tells your players what is happening **in the game's own chat**: kills, players joining and leaving,
+cargo drops, game events, secret and abandoned bunkers, and bases being raided. **Each announcement is
+its own switch**, goes to **the chat channel you choose** and is **worded however you like**.
+Everything ships **off**, so your server says nothing new until you turn something on.
 
 ## How it works
-
-- **Every announcement is its own switch.** Kills, joins, leaves, cargo drops, game events, secret bunkers, abandoned bunkers and raids are all independent — turn on the two you want and leave the rest silent.
-- **Game events get four moments**: sign-ups opening, each person signing up, the start and the end. The sign-up count comes free; naming the person needs **"Who is in the event"** in the bridge, because that costs the game a call per participant.
-- **You pick the channel.** Every announcement goes to **local, global, squad, admin or server**, chosen per announcement. A kill feed in global and raid alerts in admin is a perfectly ordinary setup.
-- **You write the words.** Each message is a text box with **placeholders** — `{killer}`, `{victim}`, `{weapon}`, `{distance}`, `{name}`, `{sector}`, `{owner}` — listed under the box you are typing in.
-- **Kills come from the manager's own kill feed**, so a weapon and an actor are named the way the game names them rather than as a blueprint class. A death the game could not attribute to anybody gets its **own wording**, and so does a suicide.
-- **Cargo is asked for, not waited for.** A drop exists only in the running game, so the plugin **asks the SSA Bridge on a timer and announces the difference** — while it is still in the air, when it lands, and when it is gone.
-- **Bunkers come from the server's own log**, so they need no bridge. The two kinds are separate switches because they are separate things: the **abandoned** ones open and lock on their own rota, and a **secret** one only ever opens because a player used a key card on it.
+- **Every announcement is independent.** Turn on the ones you want and leave the rest silent.
+- **You pick the channel** per announcement: local, global, squad, admin or server.
+- **You write the words.** Each message box lists the **placeholders** it can use, such as `{killer}`,
+  `{victim}`, `{weapon}`, `{distance}`, `{name}`, `{sector}` or `{owner}`. Click one to insert it.
+- **Kills, joins, leaves and raids** are announced as soon as the manager reads them from the server
+  log. Kill lines name weapons and creatures the way the game does, and a suicide has its own message.
+- **Bunkers** come from the server log too, so they need no bridge. **Abandoned** bunkers open and lock
+  on their own schedule; a **secret** bunker opens when a player uses a key card on it.
+- **Cargo drops and game events** exist only in the running game, so the plugin **asks the SSA Bridge**
+  on a timer and announces what changed. A cargo drop can be announced on the way down, when it lands
+  and when it is gone. A game event can be announced when sign-ups open, for each person who signs up,
+  when the sign-up count changes, when it starts and when it ends.
+- **Chat history is optional.** SCUM does not record what a plugin says in chat, so each announcement
+  can also be kept in the admin chat view, the Field Console and your Discord chat channel.
 
 ## Requirements
-
-- The **SSA Bridge**, for the cargo and game-event announcements. Kills, joins, leaves, bunkers and raids work without it.
-- In the bridge's **World events** module: `enabled`, `cargo` and `events`. The plugin's card offers to switch them on for you. `players` is optional and is what puts a name on each sign-up.
-- Manager **5.15.0** or newer. That is what the manifest enforces, so it is what the panel will let you enable.
+- The **SSA Bridge** plugin, for cargo drops and game events. Kills, joins, leaves, bunkers and raids
+  work without it.
+- In the bridge's **Live world events** module: *Report world events*, *Cargo drops* and
+  *Deathmatch, CTF, drop zone*. The plugin's card on the **Plugins** page lists them and offers to
+  switch them on. *Who is in the event* is optional and puts a name on each sign-up.
+- Manager **5.16.2+**.
 
 ## Configuration
-
 Everything is configured from the plugin's **admin tab** (💬 Chat Messages):
 
-- Every setting can be written **with the server stopped** and goes live the moment it starts. Only the counters wait for a running game.
-- Each card has the same three questions: **is it on**, **which chat**, and **what does it say**.
-- The recent list shows what was actually said, and says when nobody was online to hear it.
+- **Right now**: how many announcements are on, and how many lines were sent, failed and skipped since
+  the manager started.
+- **One card per announcement**: Kills, Players joining, Players leaving, Cargo drops, Game events,
+  Secret bunkers, Abandoned bunkers and Bases being raided. Each card has its on/off switch, the
+  **Chat channel**, **Keep it in the chat history** and its messages.
+- **Kills**: **Say nothing under this many metres** skips short-range kills (0 announces every kill).
+- **Bases being raided**: **Name the base owner** switches to a message that names whose base it is.
+- **Ask every … seconds** on the cargo, event and bunker cards, and a **Shared interval** (default 30)
+  used by any card set to 0.
+- **What it has said**: the last sixty lines, newest first, with the ones that reached nobody marked.
 
 ## Good to know
-
-- **Everything is off out of the box.** Installing this plugin changes nothing until you switch an announcement on.
-- **Naming a raided base's owner is off on purpose.** On a PVP server, announcing whose base is being hit and where is a raid advertisement rather than news. Turn it on if your server wants it.
-- **A bridge that is not answering is not an empty island.** If the cargo poll fails, the plugin says nothing rather than announcing every crate as gone — and the screen tells you which of the two it is.
-- **Each announcement has its own interval, and only four of them poll at all.** Kills, joins, leaves and raids are announced the moment the manager reads them out of the log. Cargo drops and game events ask the **SSA Bridge**, and one ask walks every object in the running game, so those two are the ones worth slowing down rather than speeding up. Bunkers poll the manager's own parsed log and cost the game nothing. Two cards falling due together share one ask.
-- **The game logs nothing at all about events.** Every other announcement here can fall back to the server's own log; this one cannot, so with no bridge the event section simply stays quiet.
-- **A kill line has no sector.** The kill log records where the killer and the victim were, but the manager hands that on as a sentence rather than as a position, so there is nothing to turn into a sector. The other announcements all have one.
-- **One cargo drop is one announcement, even though a crate has two positions.** The game reports where a crate is *going* and where it *is*, and which of the two you get changes while it falls. The plugin follows the crate itself rather than the numbers, so a drop is announced once however the readings move.
-- **A secret bunker has no position and no closing line.** The game gives it neither, so `{x}` and `{y}` stay empty in those two messages and the close is announced when its key card window runs out.
-- **Nothing is announced from the first poll after a restart.** The plugin has to see the world twice before it can tell what changed, so it will not announce every open bunker as newly open when the server comes up.
-- **Chat goes to whoever is online.** A message sent while the server is empty reaches nobody and is not resent.
+- **Naming the raided base's owner is off by default.** On a PvP server it tells everyone whose base is
+  being hit.
+- **Cargo drops and game events never ask faster than every 30 seconds**, because each ask makes the
+  game look through the whole world. Bunkers cost the game nothing.
+- **Nothing is announced from the first reading after a restart.** The plugin has to see the world
+  twice before it can tell what changed.
+- **Cargo drops and game events are not checked while nobody is online**, unless that card keeps its
+  lines in the chat history.
+- **A bridge that does not answer is not an empty island.** The plugin then announces nothing, instead
+  of reporting every cargo drop as gone.
+- **Kill lines have no sector**, and secret bunker lines have only `{sector}`, because the game gives
+  no position for them.
+- When the game writes a placeholder such as *Unknown* as the killer, the ordinary kill message is used.
+- Chat goes to whoever is online. A line sent to an empty server is not resent.
+- Everything can be configured with the server stopped; only the counters need it running.
 
 ---
 

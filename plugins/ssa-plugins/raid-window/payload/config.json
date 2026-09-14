@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "pollSeconds": 20,
+  "pushSeconds": 3600,
+  "reapplySeconds": 600,
+  "holdSeconds": 3600,
+  "minHits": 3,
+  "acceptDeclared": false,
+  "useOwnerAlerts": true,
+  "resetCooldownFirst": false,
+  "durationSeconds": null,
+  "allowDecodedDuration": true,
+  "maxPushesPerRaid": 24,
+  "countFromLastHit": false,
+  "exemptBaseIds": [],
+  "exemptFlagIds": []
+}
