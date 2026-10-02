@@ -2,11 +2,11 @@
   "id": "commands-kits",
   "name": "Chat Commands & Kits",
   "type": "manager",
-  "version": "1.6.3",
-  "updated": "2026-09-13",
+  "version": "1.9.0",
+  "updated": "2026-09-29",
   "author": "SCUMSA",
-  "website": "https://scumsa.com",
-  "description": "A complete in-game command & reward system. Custom /commands that reply AND/OR run admin actions (teleport, give currency, spawn, weather…) with rich live tokens ({player}, {online}, {money}, {location}, {x}/{y}/{z}…), optional cost, cooldown and per-player allow/deny. Welcome message on join. Reward packs & kits (items + vehicles picker), free or for money/gold/fame, on join or via command, with cooldowns, per-player claim limits, mutually-exclusive groups and spawn-failure fuses (no charge if it can't be delivered). Every command and every kit can also be limited to a time window, a weekend kit, a happy hour, a command that stops overnight, on the server's real clock, with the player told when to come back. Every player-facing line is configurable in any language. Manage who claimed what and reset it from the panel. Requires the SSA Bridge.",
+  "website": "https://scumsa.com/plugins.php?p=commands-kits",
+  "description": "Your own in-game chat commands and reward kits. Players type a command and get a reply, an admin action, or a kit of items, vehicles and containers. A kit can have variants, so it gives something different each time — by chance or in turn. Free or priced in money, gold or fame, with cooldowns, claim limits and time windows on both the server's clock and the game's, and nothing is charged for a delivery that did not happen.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
@@ -14,7 +14,8 @@
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
-    "style": "web/plugin.css"
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
   },
   "config": "config.json",
   "dependencies": [
@@ -28,10 +29,14 @@
         "module": "live",
         "switches": [
           "enabled",
+          "identity",
+          "where",
+          "vitals",
           "money",
-          "fame"
+          "fame",
+          "time"
         ],
-        "why": "Judges whether a player can afford a kit against the balance the running game holds this second. With these off the price is checked against the last server save, so a player can send their money to a friend and still buy the kit."
+        "why": "Judges whether a player can afford a kit against the balance the running game holds this second, and reads the hour it is INSIDE the game. With the money switches off the price is checked against the last server save, so a player can send their money to a friend and still buy the kit. With the time switch off an in-game time window is not applied at all — the kit or command is handed out at any hour, exactly as if no in-game window were set, and the plugin's tab says so on the window itself. The name, position and health switches fill the {ping}, {sector} and {health} tokens; with them off those tokens read \"?\". All of them are reads and none of them changes anything in the game."
       }
     ]
   },

@@ -43,7 +43,7 @@ Everything is configured from the plugin's **admin tab** (🛡️ Mine Protectio
 - **Only act while the placer is online** (on by default).
 - **In-game messages**: the chat channel, the warning message and the penalty message.
 - **Exemptions**: players who are never punished. Type a Steam ID or pick an online player.
-- **Placed mines (live)**: every watched mine on the server, who armed it, where, and its status.
+- **Placed mines**: every watched mine in the server's last save, who armed it, where, and its status.
 - **Recent actions**: every warning and teleport, with *Reset warnings* and *Clear history*.
 
 ## Good to know

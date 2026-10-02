@@ -6,6 +6,15 @@
 .ck-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
 .ck-err-act{margin-top:.7rem}
 
+/* What the tab IS, above the sub-nav. Every other plugin here opens with a line of its own; this
+   one opened on five tab buttons and a row of zeroes, so the biggest plugin in the library was the
+   one that explained least. `max-width` in `ch` keeps it a readable measure on a wide panel. */
+.ck-lead{margin:0;color:var(--muted,#8b9099);font-size:.9rem;line-height:1.5;max-width:75ch}
+/* The first-run hint. It owns no colours of its own — it reuses `.ck-note-off`, which is the
+   neutral, non-alarming note this tab already uses for "the server is not running": a plugin nobody
+   has configured yet is an ordinary state, not a fault. */
+.ck-firstrun{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+
 /* top bar: sub-nav + save */
 .ck-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 2px}
 .ck-nav{display:flex;gap:10px;flex-wrap:wrap}
@@ -64,8 +73,17 @@
 .ck-tok-pal{display:flex;flex-direction:column;gap:8px;padding:4px 0 12px}
 .ck-tok-grp{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .ck-tok-lbl{font-size:.64rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099);min-width:92px}
+/* ⚠ NO `min-width: 0` HERE, AND THE TOKEN ITSELF NEVER SHRINKS. The wrap is a flex item in a
+   wrapping row, so its automatic content floor is the only thing keeping `{squadsize}` whole —
+   without it the chip lost two to eight pixels of its own name on every narrow view. The
+   description is the half with room to give. */
+.ck-tokwrap{display:inline-flex;align-items:center;gap:7px}
+.ck-tokwrap>.ck-tokbtn{flex:0 0 auto}
 .ck-tokbtn{font:inherit;cursor:pointer;font-size:.74rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:.18rem .45rem;border-radius:5px;border:1px solid var(--line-2,#343943);background:var(--bg,#0b0c0e);color:var(--accent,var(--amber,#ff6a1a))}
 .ck-tokbtn:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+/* The tooltip's text, on the screens where a tooltip cannot happen. See the note beside tokenBar(). */
+.ck-tokdesc{display:none}
+.ck-tok-tip-narrow{display:none}
 
 /* cards (collapsible command / pack) */
 /* section = a titled native card (like mine-protection); its command/pack rows sit inside as a list */
@@ -95,6 +113,10 @@
 .ck-badge{font-size:.66rem;font-weight:600;letter-spacing:.02em;padding:.13rem .45rem;border-radius:999px;white-space:nowrap;background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099);border:1px solid var(--line-2,#343943)}
 .ck-badge.cost{background:rgba(250,166,26,.16);color:#f5b942;border-color:transparent}
 .ck-badge.trig{background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,transparent);color:var(--accent,#ff6a1a);border-color:transparent}
+/* A kit that would give a player nothing. Dashed rather than filled: it is unfinished work, not a
+   fault, and a red badge on a kit somebody is halfway through building is an alarm about nothing.
+   Both halves of the pair are in this one rule so the cascade cannot leave unreadable text. */
+.ck-badge.empty{background:transparent;color:#e6b96a;border:1px dashed rgba(230,185,106,.55)}
 .ck-card-b{padding:14px;display:flex;flex-direction:column;gap:14px;background:var(--bg,#0b0c0e)}
 
 /* fields */
@@ -277,3 +299,121 @@
    the screen says whose clock, and this is that something. It stays visible even when
    no window is set, so an owner reads it before they configure rather than after. */
 .tw-clock { margin: 4px 0 0; font-size: .72rem; color: var(--muted, #9aa3ad); opacity: .85; }
+
+/* ── a thumb, at 320px ──────────────────────────────────────────────────────
+   The panel puts a 44px floor under every control inside a plugin's tab, and it
+   can only floor a HEIGHT: a width floor on a flex item replaces the automatic
+   content minimum that is the only thing stopping a word being cut in half. So
+   the four controls here whose WIDTH was the problem state their own answer, and
+   each of the three shapes wants a different one.
+
+   A NAME BOX THAT LOST A FIGHT WITH ITS ROW. `.ck-name` is `width: auto` inside a
+   `min-width: 0` flex header, so at 320px the kit's own name field was squeezed to
+   FOURTEEN PIXELS — a text box nobody can see the caret in, let alone type into.
+   The row wraps now and the field keeps a real floor, so the name gets a line of
+   its own rather than a sliver of one.
+
+   AN ICON BUTTON HAS NO WORD TO CUT, so a square is exactly right for it.
+
+   A SWITCH IS THE ONE THAT MUST NOT GROW. The track is 38×22 by design and its
+   pieces are positioned off it, so a taller box makes a tall rounded rectangle
+   with the knob adrift in it. It opts out of the panel's height floor in one
+   declaration and takes its 44×44 hit area from transparent slop instead, so the
+   switch stays the size it is drawn and the finger gets the room. */
+@media (max-width: 760px) {
+  .ck-card-title { flex-wrap: wrap; row-gap: 6px; }
+  .ck-name { flex: 1 1 7rem; min-width: 7rem; max-width: 100%; }
+  .ck-chev, .ck-tokbtn { min-width: 44px; }
+  /* The 3px the reach goes out each side is audited rather than assumed: the manager's own render
+     check drives this tab at 310px and asks whether any control's transparent hit area covers a
+     neighbour's visible box. It does not — the switch sits at the end of its row with the card's
+     padding beside it. */
+  .ck-switch { min-height: 22px; }
+  .ck-switch::after { content: ''; position: absolute; inset: -11px -3px; border-radius: 999px; }
+  /* A TOOLTIP IS A HOVER AND A PHONE HAS NONE, so what the tooltip says becomes text. The group
+     turns into one row per token — a chip and its sentence — rather than a wrapped bed of chips
+     whose meanings are all unreachable. The caption swaps for the same reason. */
+  .ck-tok-grp { flex-direction: column; align-items: stretch; }
+  .ck-tok-lbl { min-width: 0; }
+  .ck-tokwrap { width: 100%; }
+  .ck-tokdesc { display: inline; flex: 1 1 auto; min-width: 0; font-size: .72rem; color: var(--muted, #8b9099);
+    white-space: normal; overflow-wrap: anywhere; }
+  .ck-tok-tip-wide { display: none; }
+  .ck-tok-tip-narrow { display: inline; }
+}
+
+/* ── VARIANTS, THE SECOND CLOCK, AND THE TWO NEW BUTTONS ──────────────────────────────────────
+ *
+ * Every hover state below declares BOTH halves on the element (`--hov-bg` and `--hov-fg`), never
+ * one of them in a `:hover` rule. The panel's blanket `button:hover` paints every button amber with
+ * dark text, so a rule that changes only the background keeps the dark text and one that changes
+ * only the colour keeps the amber fill — both invisible, and both are what `check-contrast` exists
+ * to catch. Two shapes cover all of it: ghost (no fill, the colour change is the affordance) and
+ * tinted (its own soft fill, ordinary text).
+ *
+ * No `minmax()` here is given a bare length: every one collapses to a single column rather than
+ * widening the card, which on a phone is the difference between a control being reachable and being
+ * clipped off by the card's own `overflow: hidden`. */
+
+/* The copy button beside a delete. A link shape rather than a second icon: "copy" said in a word
+   cannot be mistaken for the ✕ next to it, which is the one mistake on this row that cannot be
+   undone. */
+.ck-link {
+  font-size: .74rem; line-height: 1; padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; background: transparent; color: var(--muted, #8b9099);
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: currentColor;
+}
+.ck-headbtns { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+
+/* A state an owner has to act on — "no variant can come up" — and it is not an error: the save
+   worked and the kit still gives its own contents. Amber rather than red for exactly that reason. */
+.ck-warn {
+  margin: 0; font-size: .74rem; color: #e6b96a;
+  border-left: 2px solid rgba(230, 185, 106, .55); padding-left: .6rem;
+}
+
+.ck-vars { gap: 8px; }
+.ck-var {
+  border: 1px solid var(--line, #24272e); border-radius: 8px;
+  background: var(--panel-2, #1c1f25); overflow: hidden;
+}
+.ck-var.open { border-color: color-mix(in srgb, var(--accent, #ff6a1a) 34%, var(--line, #24272e)); }
+.ck-varhead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+.ck-var-b {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px; border-top: 1px solid var(--line, #24272e);
+}
+/* THE ODDS, AND WHY THEY ARE ON THE ROW AT ALL: a weight is a number with no meaning until
+   something says what it is a share OF. `.bad` is the one that never comes up — stated, never left
+   for somebody to work out from a 0 in a box. */
+.ck-varodds {
+  font-size: .72rem; color: var(--muted, #8b9099); white-space: nowrap;
+  flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere;
+}
+.ck-varodds.bad { color: #e6b96a; }
+
+/* The game-clock editor shares the wall-clock editor's furniture (`.tw-note`, `.tw-times`,
+   `.tw-clock`) so the two read as one pair of settings rather than two unrelated boxes. Only the
+   left rule differs, because on this one screen a reader has to be able to tell at a glance which
+   clock they are looking at. */
+.gw { border-left: 2px solid color-mix(in srgb, var(--accent, #ff6a1a) 30%, transparent); padding-left: 10px; }
+.gw .tw-rows { gap: 8px; }
+.gw .ck-num { width: 5rem; max-width: 100%; min-width: 0; }
+
+@media (max-width: 760px) {
+  /* The odds wrap under the name instead of squeezing it: the name is what somebody is looking
+     for and the percentage is what they are checking, and a phone has room for one line each. */
+  .ck-varodds { flex: 1 1 100%; white-space: normal; }
+  .ck-varhead { row-gap: 6px; }
+  .ck-link { min-width: 44px; }
+}
+
+/* WHICH VARIANT went out, beside the kit's name in the delivery log. A pill rather than more text:
+   the column is already a name, and a second name run together with it reads as one longer name.
+   Tinted shape, so it stays legible against the row in both themes. */
+.ck-varpill {
+  margin-left: .4rem; font-size: .66rem; font-weight: 600; letter-spacing: .02em;
+  padding: .1rem .4rem; border-radius: 999px; white-space: nowrap;
+  background: color-mix(in srgb, var(--accent, #ff6a1a) 14%, transparent);
+  color: var(--accent, #ff6a1a);
+}

@@ -2,11 +2,11 @@
   "id": "loot-zones",
   "name": "Loot Zones",
   "type": "manager",
-  "version": "1.3.12",
-  "updated": "2026-09-13",
+  "version": "1.9.5",
+  "updated": "2026-09-28",
   "author": "SCUMSA",
-  "website": "https://scumsa.com",
-  "description": "Rotate loot around the island. Each zone is a rectangle with its own loot: the plugin draws it on the players' map, drops your loot files into the server's own Loot folder, and reloads the loot on a running server so it goes live straight away (SSA Bridge 2.22.2 or newer). Rotate on a clock, on every server restart, or switch by hand from the admin tab. Tell players in your own words when a zone opens, when it closes, while it runs and as they log in, in chat or on their screen. Optionally keep the sentries out of a zone while players are near it and keep guards of your own choosing, armed NPCs, puppets or animals, standing where they stood.",
+  "website": "https://scumsa.com/plugins.php?p=loot-zones",
+  "description": "Rotate loot around the island. Each zone is a rectangle with its own loot, drawn on the players' map and live on the ground straight away. Switch zones by hand, on a schedule or once per server restart, tell players in your own words, and keep the sentries and zombies out or post guards of your own.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
@@ -14,7 +14,8 @@
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
-    "style": "web/plugin.css"
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
   },
   "config": "config.json",
   "dependencies": [
@@ -54,9 +55,10 @@
         "module": "live",
         "switches": [
           "enabled",
-          "where"
+          "where",
+          "time"
         ],
-        "why": "Where the players are standing. A zone is worked only while somebody is near it, because the game has no sentries or guards in a place nobody is close to, and a guard is never made to appear right next to a player. Both are reads. ⚠ Without this the plugin cannot find out where anybody is, and it will not guess: it leaves every zone's sentries and guards alone and says so."
+        "why": "Where the players are standing, and what time it is in the GAME. A zone is worked only while somebody is near it, because the game has no sentries or guards in a place nobody is close to, and a guard is never made to appear right next to a player; the clock is what a guard's time window is measured against, in game hours, and with it off a window you set is not applied at all and the zone says so. All three are reads. ⚠ Without this the plugin cannot find out where anybody is, and it will not guess: it leaves every zone's sentries and guards alone and says so."
       }
     ],
     "wants": [
@@ -75,9 +77,10 @@
         "switches": [
           "enabled",
           "creatures",
+          "bosses",
           "persistent"
         ],
-        "why": "Puts the guard of your choosing where a sentry stood, and puts a new one there when it dies, an armed NPC, a puppet or an animal, whichever you pick. Used only if you set the sentries inside a zone to be replaced rather than simply cleared."
+        "why": "Puts the guard of your choosing where a sentry stood, and puts a new one there when it dies, an armed NPC, a puppet or an animal, whichever you pick. Used only if you set the sentries inside a zone to be replaced rather than simply cleared. 'Bosses' is a separate switch because the bridge decides what a boss is from the CLASS NAME and not from the kind you picked: a Brenner, a Razor, a Dropship or a Sentry is refused without it however it was asked for, and the refusal names no switch you can see on this plugin's tab."
       },
       {
         "module": "despawn",
@@ -90,7 +93,15 @@
         "why": "Keeps the sentries, and if you ask for it the puppets, out of a zone while somebody is near it. A fixed map sentry is put away under the ground, because a removed one is rebuilt by the game within seconds; a sentry a dropship brought and a puppet are removed. Nothing switches these on for you and nothing should: this module changes the running world. They are listed here so you can see exactly which four they are, and the plugin leaves everything alone until you decide."
       },
       {
-        "module": "entities",
+        "module": "encounters",
+      "switches": [
+        "enabled",
+        "zonetune"
+      ],
+      "why": "The game never makes a place busy by placing a creature. It keeps a spawn plan for every place on the island and reads that plan while the server runs, and this is what lets the plugin change it. It is the one thing here that needs nobody online to apply. What it still cannot do is fill an empty server - the game spawns when a player comes near a place, and it always has. \u26a0 One plan is shared by every place of its kind, so a change reaches every village rather than yours; the plugin counts how many before you choose, and it will leave a plan alone entirely if you set a ceiling. Everything it changes it puts back: when the zone goes off, when this plugin is switched off, by itself after a time the bridge decides, and at the next server restart."
+    },
+    {
+      "module": "entities",
         "switches": [
           "enabled"
         ],

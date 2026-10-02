@@ -1,9 +1,10 @@
 # Raid Window
 
 Stops defenders ending a raid by **logging out**. While a base is taking **real raid damage**, the
-plugin keeps **pushing that base's offline protection back**, so it cannot switch on in the middle of
-the raid. Only the base under attack is touched, its **protection length stays what it was**, and the
-pushing stops once the base has been **quiet for a while**.
+plugin keeps **pushing the start of that base's offline protection later**, so it cannot switch on in
+the middle of the raid. It works with **offline** and **flag-specific** raid protection and **changes
+no server setting**. Only the base under attack is touched, its **protection length stays what it
+was**, and the pushing stops once the base has been **quiet for a while**.
 
 ## How it works
 - **Raid damage comes from the game itself**, through the SSA Bridge. Decay, upgrades and an admin
@@ -11,7 +12,15 @@ pushing stops once the base has been **quiet for a while**.
 - **It does not look for players near the base.** Damage is what counts, so it keeps working after the
   defenders have logged off, which is when it matters.
 - **A push sets protection to start later** by the time you choose, and it is **repeated** while the
-  raid goes on. The protection length written back is the one that base already had.
+  raid goes on.
+- **Offline raid protection**: the game arms a base's protection when its last owner or squadmate
+  logs out, to start after your server's start delay. The plugin **moves that start later and never
+  earlier**, never touches protection that is **already running**, and never touches a base whose
+  protection is **not armed** because a defender is still online. The length is left alone.
+- **Flag-specific raid protection**: the push sets the flag's protection window, and the length
+  written back is the one that base already had.
+- **The plugin reads which mode your server runs** before it writes anything. If it cannot tell, or
+  the server runs global protection or none, **nothing is pushed** and the tab says why.
 - **A raid ends only after real quiet**: no damage for as long as you set. A bridge that stops
   answering never ends a raid early.
 - **Every push is checked.** The bridge reads the base's protection before and after, so each push
@@ -22,9 +31,12 @@ pushing stops once the base has been **quiet for a while**.
 - Two bridge modules. The **Bridge** box on the plugin's tab names them and turns them on after you
   confirm:
   - **Raid detection**: *Detect raids as they happen*.
-  - **Raid protection control**: *Read and change raid protection* and *Set a flag's protection
-    window*. A changed protection window cannot be undone, which is why you confirm it yourself.
-- **Offline raid protection switched on in your server settings.** Without it there is nothing to push.
+  - **Raid protection control**: *Read and change raid protection*, plus *Postpone offline
+    protection* on offline raid protection or *Set a flag's protection window* on flag-specific raid
+    protection. A changed protection window cannot be undone, which is why you confirm it yourself.
+- **Offline or flag-specific raid protection switched on in your server settings.** Without it there
+  is nothing to push. Postponing offline protection needs an SSA Bridge that has *Postpone offline
+  protection*; an older one is named on the tab.
 - Manager **5.16.2+**.
 
 ## Configuration
@@ -48,7 +60,15 @@ stopped. The **?** beside each setting explains what it does:
 - **Nothing is put back when a raid ends.** The last push already set when protection starts.
 - **No change is normal while someone from the base is online.** The game keeps offline protection off
   while an owner or squadmate is connected, so the push that matters is the one after they log out.
-  That is why it repeats.
+  That is why it repeats, and on offline protection a base in that state is checked again **every
+  minute**, so protection cannot switch on between two pushes unless your server's start delay is
+  under about a minute. On offline protection these pushes do not count towards **Most pushes for one
+  raid**.
+- **On offline protection a push is live only.** The game's save keeps the start it wrote itself, so
+  after a server restart protection starts when the game had set it, which ends a raid anyway.
+- **Every hit restarts the countdown** starts offline protection **Push protection back by** after the
+  last hit. Set that to your server's offline start delay and a raided base behaves as if its owners
+  had only just logged off.
 - **Nothing happens while nobody is online**, because nobody can raid. It starts again as soon as
   someone connects.
 - **Keep the repeat shorter than the push**, or protection can switch on between two pushes. The tab

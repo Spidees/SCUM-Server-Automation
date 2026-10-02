@@ -2,23 +2,24 @@
   "id": "discord-embeds",
   "name": "Discord Embeds",
   "type": "manager",
-  "version": "1.6.7",
-  "updated": "2026-09-13",
+  "version": "1.8.0",
+  "updated": "2026-09-28",
   "author": "SCUMSA",
-  "website": "https://scumsa.com",
-  "description": "Everything Discord-embed in one place: write a message with a live preview that renders real markdown, your server’s own emoji and live server data, send it and edit it in place afterwards, plus restyle the manager’s own embeds (kill feed, economy, status, leaderboards) and build custom embeds that keep themselves updated in a channel.",
+  "website": "https://scumsa.com/plugins.php?p=discord-embeds",
+  "description": "Write, send and later edit Discord messages from the panel, with a live preview that renders real markdown, your server's emoji and live server data. Restyle the manager's own embeds, kill feed, economy, status and leaderboards, and build custom embeds that keep themselves updated in a channel.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
-    "style": "web/plugin.css"
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
   },
   "config": "config.json",
   "premium": true,
   "minManagerVersion": "5.16.2",
-  "dependencies": [
+  "optionalDependencies": [
     {
       "id": "ssa-bridge"
     }

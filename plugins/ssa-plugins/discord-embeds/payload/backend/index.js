@@ -498,7 +498,7 @@ module.exports = {
       // `{ok: true}`. The owner scheduled an announcement, was told it was booked, and it never
       // existed — the one failure mode a scheduler must never have.
       if (list.length >= SCHED_MAX) {
-        return res.status(400).json({ error: `the schedule is full (${SCHED_MAX} messages). Delete one that has already gone out, or is no longer wanted, and book again.` });
+        return res.status(400).json({ error: `the schedule is full (${SCHED_MAX} messages). Delete one, then book again.` });
       }
       list.push({
         id: 'sch_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
@@ -534,7 +534,8 @@ module.exports = {
           // never ran and a booked announcement that never posted was logged as sent and dropped
           // from the queue. Nothing anywhere said it had not gone out.
           if (!msg) {
-            host.logger.warn(`scheduled embed for channel ${item.channelId} was NOT posted (channel gone, or the bot cannot post there). It has been dropped from the queue — re-book it.`);
+            // Channel gone, or the bot cannot post there. The item is dropped from the queue.
+            host.logger.warn(`scheduled embed for channel ${item.channelId} was not posted and was dropped. Check the channel, then book it again.`);
             continue;
           }
           if (msg && msg.id) {

@@ -8,11 +8,12 @@ embeds** that keep themselves updated in a channel.
 ## How it works
 - **An honest preview.** Markdown, mentions, custom emoji and `<t:…>` timestamps render the way
   Discord renders them.
-- **Live data tokens** such as `{online}`, `{serverName}` and `{gameTime}` can go in any text box,
+- **Live data tokens** such as `{online}`, `{serverName}` and `{nextRestart}` can go in any text box,
   button, menu option or image URL. They are filled in **when the message is sent**, and the preview
   shows this server's current values.
-- **Player figures come from the last game save.** `{money}`, `{fame}`, `{gold}`, `{squad}` and every
-  `{stat_…}` are marked *the last game save* in the picker, because they can lag the running game.
+- **Player figures, the in-game time and the temperatures come from the last game save.** `{money}`,
+  `{fame}`, `{gold}`, `{squad}`, every `{stat_…}`, `{gameTime}` and the temperature tokens are marked
+  *the last game save* in the picker, because they can lag the running game.
 - **Pickers for everything:** formatting, the full emoji set plus your server's own emoji, live data,
   and the game database (items, tradeables, vehicles, animals, zombies, NPCs, building).
 - **Sent messages stay editable.** Every post is recorded, so you can update it in place, load a copy
@@ -30,8 +31,8 @@ embeds** that keep themselves updated in a channel.
 
 ## Requirements
 - The Discord bot configured and running.
-- The **SSA Bridge** plugin, for click actions that run an in-game command. Everything else works
-  without it.
+- Optional: the **SSA Bridge** plugin, only for click actions that run an in-game command.
+  Everything else works without it, and the plugin switches on without it.
 - Manager **5.16.2+**.
 
 ## Configuration

@@ -25,13 +25,18 @@
   // this file. Both IIFEs in this file capture their own copy; they still resolve to the same
   // plugin id, since both live in the same script.
   var api = SSA.apiClient();
+  // Every word an admin reads on this screen goes through the panel's translator, with the English
+  // written beside the key: a language nobody has translated yet renders exactly what it renders
+  // today. Each of the two IIFEs in this file binds its own `T` — they share no scope.
+  var T = SSA.t;
   // One sentence for a failure, the route's own words first. Used by every catch in this file.
   function why(err) { return SSA.apiError(err); }
   // Shared by all three tabs (they live in two separate IIFEs), so the module identifies itself the
   // same way wherever you land. Before, one tab had an <h2> and the other two had a bare paragraph,
   // which made the module look like it started and stopped depending on where you clicked.
   window.eeHead = function (tab, sub) {
-    return '<div class="ee-head"><div class="ee-head-t"><span class="ee-head-m">Discord Embeds</span>'
+    return '<div class="ee-head"><div class="ee-head-t"><span class="ee-head-m">'
+      + T('pl.discord-embeds.name', 'Discord Embeds') + '</span>'
       + '<span class="ee-head-sep">/</span><span class="ee-head-s">' + tab + '</span></div>'
       + (sub ? '<p class="ee-head-p">' + sub + '</p>' : '') + '</div>';
   };
@@ -59,11 +64,30 @@
       selects: [] };          // select menus, each taking a whole component row
   }
 
-  var STYLES = [['1', 'Primary (blurple)'], ['2', 'Secondary (grey)'], ['3', 'Success (green)'], ['4', 'Danger (red)'], ['5', 'Link (URL)']];
+  // A FUNCTION rather than a table, like every label list in this file: it is read when the control
+  // is drawn, so the dictionary the panel has loaded by then is the one that answers. A table built
+  // at script load freezes whatever was known before the panel booted, which is English.
+  function styles() {
+    return [['1', T('pl.discord-embeds.style.primary', 'Primary (blurple)')],
+      ['2', T('pl.discord-embeds.style.secondary', 'Secondary (grey)')],
+      ['3', T('pl.discord-embeds.style.success', 'Success (green)')],
+      ['4', T('pl.discord-embeds.style.danger', 'Danger (red)')],
+      ['5', T('pl.discord-embeds.style.link', 'Link (URL)')]];
+  }
   // Everything the game DB can be searched by. The picker used to query only `items`, so vehicles,
-  // animals and the rest were simply unreachable from the editor.
-  var DOMAINS = [['items', 'Items'], ['tradeables', 'Tradeables'], ['vehicles', 'Vehicles'],
-    ['animals', 'Animals'], ['zombies', 'Zombies'], ['npcs', 'NPCs'], ['building', 'Building']];
+  // animals and the rest were simply unreachable from the editor. The ids are the wire; the word
+  // beside each one is spelled out separately so no translation key is ever computed.
+  var DOMAINS = ['items', 'tradeables', 'vehicles', 'animals', 'zombies', 'npcs', 'building'];
+  function domainLabel(d) {
+    if (d === 'items') return T('pl.discord-embeds.domain.items', 'Items');
+    if (d === 'tradeables') return T('pl.discord-embeds.domain.tradeables', 'Tradeables');
+    if (d === 'vehicles') return T('pl.discord-embeds.domain.vehicles', 'Vehicles');
+    if (d === 'animals') return T('pl.discord-embeds.domain.animals', 'Animals');
+    if (d === 'zombies') return T('pl.discord-embeds.domain.zombies', 'Zombies');
+    if (d === 'npcs') return T('pl.discord-embeds.domain.npcs', 'NPCs');
+    if (d === 'building') return T('pl.discord-embeds.domain.building', 'Building');
+    return d;
+  }
 
   // ── Discord-flavoured markdown, for the preview ──────────────────────────────
   // A small subset renderer rather than a markdown library: it only has to show what Discord itself
@@ -252,7 +276,7 @@
     // form short, and insertion is never ambiguous.
     var pop = h('div', { class: 'ee-pop', hidden: true });
     var popBody = h('div', { class: 'ee-pop-body' });
-    pop.appendChild(h('button', { class: 'ee-pop-x', type: 'button', title: 'Close', onclick: function () { closePop(); } }, '×'));
+    pop.appendChild(h('button', { class: 'ee-pop-x', type: 'button', title: T('pl.discord-embeds.tip.close', 'Close'), onclick: function () { closePop(); } }, '×'));
     pop.appendChild(popBody);
     container.appendChild(pop);
     var popFor = null, popKind = null;
@@ -343,6 +367,20 @@
       });
       return _std;
     }
+    // The category keys above are the identifiers the grid is built from; this is the word beside
+    // them. Spelled out one by one so no key is computed — a computed key is invisible to the
+    // checker, and every translation of it is then reported as a key nothing asks for.
+    function emojiCat(c) {
+      if (c === 'Smileys') return T('pl.discord-embeds.emoji.smileys', 'Smileys');
+      if (c === 'People') return T('pl.discord-embeds.emoji.people', 'People');
+      if (c === 'Animals') return T('pl.discord-embeds.emoji.animals', 'Animals');
+      if (c === 'Food') return T('pl.discord-embeds.emoji.food', 'Food');
+      if (c === 'Travel') return T('pl.discord-embeds.emoji.travel', 'Travel');
+      if (c === 'Activity') return T('pl.discord-embeds.emoji.activity', 'Activity');
+      if (c === 'Objects') return T('pl.discord-embeds.emoji.objects', 'Objects');
+      if (c === 'Symbols') return T('pl.discord-embeds.emoji.symbols', 'Symbols');
+      return c;
+    }
 
     var _custom = null, _customErr = null;
     function emojiPop(input) {
@@ -351,7 +389,7 @@
       var body = h('div', {});
       var mode = 'std';
       var cat = 'Smileys';
-      var search = h('input', { type: 'text', placeholder: 'Search…', class: 'ee-popsearch' });
+      var search = h('input', { type: 'text', placeholder: T('pl.discord-embeds.ph.search', 'Search…'), class: 'ee-popsearch' });
 
       function drawStd() {
         body.innerHTML = '';
@@ -359,7 +397,7 @@
         var cats = h('div', { class: 'ee-chips' });
         Object.keys(std).forEach(function (c) {
           cats.appendChild(h('button', { class: 'ee-chip' + (c === cat ? ' active' : ''), type: 'button',
-            onclick: function () { cat = c; drawStd(); } }, c));
+            onclick: function () { cat = c; drawStd(); } }, emojiCat(c)));
         });
         body.appendChild(cats);
         var grid = h('div', { class: 'ee-emogrid' });
@@ -367,7 +405,8 @@
           grid.appendChild(h('button', { class: 'ee-emo', type: 'button', onclick: function () { insertInto(input, e); } }, e));
         });
         body.appendChild(grid);
-        body.appendChild(h('div', { class: 'ee-empty' }, std[cat].length + ' in ' + cat));
+        body.appendChild(h('div', { class: 'ee-empty' },
+          T('pl.discord-embeds.emoji.count', '{n} in {cat}', { n: std[cat].length, cat: emojiCat(cat) })));
       }
 
       function drawCustom() {
@@ -385,15 +424,17 @@
         // A load that failed must not read as "this Discord server simply has none" — that is a
         // fact about the SERVER, and the truth here is about the REQUEST.
         if (!list.length) {
-          body.appendChild(h('div', { class: 'ee-empty' }, _custom === null ? 'Loading…'
-            : _customErr ? ('Could not load custom emoji — ' + _customErr)
-              : (q ? 'Nothing matches.' : 'This Discord server has no custom emoji.')));
+          body.appendChild(h('div', { class: 'ee-empty' }, _custom === null ? T('pl.discord-embeds.loading', 'Loading…')
+            : _customErr ? T('pl.discord-embeds.emoji.loadFailed', 'Could not load custom emoji — {why}', { why: _customErr })
+              : (q ? T('pl.discord-embeds.noMatch', 'Nothing matches.')
+                : T('pl.discord-embeds.emoji.none', 'This Discord server has no custom emoji.'))));
         }
       }
 
       function draw() {
         tabs.innerHTML = '';
-        [['std', 'Discord'], ['srv', 'Server emoji']].forEach(function (t) {
+        [['std', T('pl.discord-embeds.emoji.discord', 'Discord')],
+          ['srv', T('pl.discord-embeds.emoji.server', 'Server emoji')]].forEach(function (t) {
           tabs.appendChild(h('button', { class: 'ee-chip' + (mode === t[0] ? ' active' : ''), type: 'button',
             onclick: function () { mode = t[0]; draw(); } }, t[1]));
         });
@@ -429,8 +470,11 @@
     // and every live read is asynchronous. There is no live value to put here without polling the
     // game on a timer, which costs more than the staleness it fixes for text on a screen. What an
     // owner needs instead is to know which numbers they are writing into their message.
+    // The in-game time and the temperatures belong here too: the manager reads them out of the save's
+    // `weather_parameters` row, so on a fast day cycle the clock moves in steps of one save interval.
     var SAVED_TOKENS = ['money', 'fame', 'gold', 'cash', 'bank', 'accountNumber',
-      'squad', 'squadSize', 'playerKills', 'playerDeaths'];
+      'squad', 'squadSize', 'playerKills', 'playerDeaths',
+      'gameTime', 'timeOfDay', 'temperature', 'airTemp', 'waterTemp'];
     function isSaved(t) {
       var k = String(t || '');
       return SAVED_TOKENS.indexOf(k) >= 0 || k.indexOf('stat_') === 0;
@@ -439,7 +483,7 @@
     function tokenPop(input) {
       var grid = h('div', { class: 'ee-tokgrid' });
       var tokPager = h('div', { class: 'ee-pagerbox' });
-      var search = h('input', { type: 'text', placeholder: 'Search live data…', class: 'ee-popsearch' });
+      var search = h('input', { type: 'text', placeholder: T('pl.discord-embeds.tok.search', 'Search live data…'), class: 'ee-popsearch' });
       var curGroup = '';
       var chips = h('div', { class: 'ee-chips' });
       function draw() {
@@ -452,7 +496,7 @@
             return h('button', { class: 'ee-chip' + (g === curGroup ? ' active' : ''), type: 'button',
               onclick: function () { curGroup = g; draw(); } }, label);
           };
-          chips.appendChild(mk('All', ''));
+          chips.appendChild(mk(T('pl.discord-embeds.tok.all', 'All'), ''));
           groups.forEach(function (g) { chips.appendChild(mk(g, g)); });
         }
         grid.innerHTML = '';
@@ -464,24 +508,26 @@
         tokPager.appendChild(paginate(grid, matches, function (tk) {
           var full = tk.sample != null ? String(tk.sample) : '';
           var saved = isSaved(tk.t);
-          var note = saved ? ' — the last game save' : '';
+          var note = saved ? ' — ' + T('pl.discord-embeds.tok.savedMark', 'the last game save') : '';
           return h('button', { class: 'ee-tok' + (tk.live ? ' live' : ''), type: 'button',
             // The value can be a whole rendered list, so the chip shows a clipped version and the
             // tooltip carries the token plus what it currently resolves to.
             title: '{' + tk.t + '}' + (full ? '\n' + full : '')
-              + (saved ? '\n\nThis figure comes from the game database, which is the state as of the last SAVE. For a player who is online it can be minutes behind what the game itself holds — they can spend money, gain fame or change squad and this will still show the old number until the server saves.' : ''),
+              + (saved ? '\n\n' + T('pl.discord-embeds.tok.savedTip', 'From the last save, so it can lag minutes behind an online player.') : ''),
             onclick: function () { insertInto(input, '{' + tk.t + '}'); } },
           [h('b', {}, tk.label || tk.t),
             (full || note) ? h('span', {}, (full.length > 40 ? full.slice(0, 40) + '…' : full) + note) : null]);
-        }, { perPage: 60, empty: !tokensReady ? 'Loading live data…'
-          : tokensLoadErr && !matches.length ? ('Could not load live data — ' + tokensLoadErr)
-            : 'Nothing matches.' }));
+        }, { perPage: 60, empty: !tokensReady ? T('pl.discord-embeds.tok.loading', 'Loading live data…')
+          : tokensLoadErr && !matches.length ? T('pl.discord-embeds.tok.loadFailed', 'Could not load live data — {why}', { why: tokensLoadErr })
+            : T('pl.discord-embeds.noMatch', 'Nothing matches.') }));
       }
       search.addEventListener('input', draw);
       draw();
       loadTokens().then(draw);   // opening the picker is a good moment to be current
       return h('div', { class: 'ee-tokpanel' }, [
-        h('div', { class: 'ee-tokhint' }, 'Values shown are this server as the manager reads it now. Greyed ones only exist while the event they belong to fires, and ones marked “the last game save” are a player’s saved figures — they can lag the running game.'),
+        h('div', { class: 'ee-tokhint' }, T('pl.discord-embeds.tok.hint',
+          'Greyed values exist only during their event; “{marker}” ones are saved and may lag.',
+          { marker: T('pl.discord-embeds.tok.savedMark', 'the last game save') })),
         search, chips, grid, tokPager]);
     }
 
@@ -499,7 +545,7 @@
       var pager = h('div', { class: 'ee-pager' });
       function draw() {
         grid.innerHTML = '';
-        if (!list.length) { grid.appendChild(h('span', { class: 'ee-empty' }, (opts && opts.empty) || 'Nothing found.')); return; }
+        if (!list.length) { grid.appendChild(h('span', { class: 'ee-empty' }, (opts && opts.empty) || T('pl.discord-embeds.nothingFound', 'Nothing found.'))); return; }
         var from = page * perPage;
         list.slice(from, from + perPage).forEach(function (it, i) {
           var el = drawRow(it, from + i);
@@ -508,16 +554,19 @@
         pager.innerHTML = '';
         if (pages > 1) {
           var info = h('span', { class: 'ee-pageinfo' },
-            (from + 1) + '–' + Math.min(from + perPage, list.length) + ' of ' + list.length);
+            T('pl.discord-embeds.pager.range', '{from}–{to} of {total}',
+              { from: from + 1, to: Math.min(from + perPage, list.length), total: list.length }));
           var prev = h('button', { class: 'ee-btn xs', type: 'button', disabled: page === 0 ? '' : null,
-            onclick: function () { if (page > 0) { page--; draw(); } } }, '‹ Prev');
+            onclick: function () { if (page > 0) { page--; draw(); } } }, T('pl.discord-embeds.pager.prev', '‹ Prev'));
           var next = h('button', { class: 'ee-btn xs', type: 'button', disabled: page >= pages - 1 ? '' : null,
-            onclick: function () { if (page < pages - 1) { page++; draw(); } } }, 'Next ›');
+            onclick: function () { if (page < pages - 1) { page++; draw(); } } }, T('pl.discord-embeds.pager.next', 'Next ›'));
           pager.appendChild(prev);
           pager.appendChild(info);
           pager.appendChild(next);
         } else {
-          pager.appendChild(h('span', { class: 'ee-pageinfo' }, list.length + (list.length === 1 ? ' result' : ' results')));
+          pager.appendChild(h('span', { class: 'ee-pageinfo' }, list.length === 1
+            ? T('pl.discord-embeds.pager.one', '{n} result', { n: list.length })
+            : T('pl.discord-embeds.pager.many', '{n} results', { n: list.length })));
         }
       }
       draw();
@@ -530,13 +579,13 @@
     // the choice could take effect.
     function dbPop(input) {
       var domain = 'items';
-      var search = h('input', { type: 'text', placeholder: 'Search…', class: 'ee-popsearch' });
+      var search = h('input', { type: 'text', placeholder: T('pl.discord-embeds.ph.search', 'Search…'), class: 'ee-popsearch' });
       var chips = h('div', { class: 'ee-chips' });
       var grid = h('div', { class: 'ee-dbgrid' });
       var pagerBox = h('div', { class: 'ee-pagerbox' });
       var tmr = null;
       function run() {
-        grid.innerHTML = '<span class="ee-empty">Searching…</span>';
+        grid.innerHTML = '<span class="ee-empty">' + esc(T('pl.discord-embeds.db.searching', 'Searching…')) + '</span>';
         // This is a PANEL route, not a plugin one, so it goes through a plain fetch rather than
         // apiClient — but it is a real picker, and `r.json()` resolves for a 4xx/5xx just as happily
         // as for a 200. Without the status check a refused search reads as "nothing found" instead
@@ -553,21 +602,21 @@
               return h('div', { class: 'ee-dbrow' }, [
                 img ? h('img', { src: img, alt: '', onerror: function () { this.style.display = 'none'; } }) : h('span', { class: 'ee-dbnoimg' }, '□'),
                 h('span', { class: 'ee-dbname', title: code }, nm),
-                h('button', { class: 'ee-btn xs', type: 'button', title: 'Insert the name', onclick: function () { insertInto(input, nm); } }, 'Name'),
-                img ? h('button', { class: 'ee-btn xs', type: 'button', title: 'Insert the image URL', onclick: function () { insertInto(input, img); } }, 'Image') : null,
-                code ? h('button', { class: 'ee-btn xs', type: 'button', title: 'Insert {img:CODE} — resolved when the embed is sent', onclick: function () { insertInto(input, '{img:' + code + '}'); } }, '{img}') : null,
+                h('button', { class: 'ee-btn xs', type: 'button', title: T('pl.discord-embeds.db.insertName', 'Insert the name'), onclick: function () { insertInto(input, nm); } }, T('pl.discord-embeds.db.name', 'Name')),
+                img ? h('button', { class: 'ee-btn xs', type: 'button', title: T('pl.discord-embeds.db.insertImage', 'Insert the image URL'), onclick: function () { insertInto(input, img); } }, T('pl.discord-embeds.db.image', 'Image')) : null,
+                code ? h('button', { class: 'ee-btn xs', type: 'button', title: T('pl.discord-embeds.db.insertToken', 'Insert {img:CODE} — resolved when the embed is sent'), onclick: function () { insertInto(input, '{img:' + code + '}'); } }, '{img}') : null,
               ]);
-            }, { empty: 'Nothing found.' });
+            }, { empty: T('pl.discord-embeds.nothingFound', 'Nothing found.') });
             if (pagerBox) pagerBox.appendChild(pager);
-          }).catch(function () { grid.innerHTML = '<span class="ee-empty">Search failed — try again.</span>'; });
+          }).catch(function () { grid.innerHTML = '<span class="ee-empty">' + esc(T('pl.discord-embeds.db.failed', 'Search failed — try again.')) + '</span>'; });
       }
       DOMAINS.forEach(function (d) {
-        chips.appendChild(h('button', { class: 'ee-chip' + (d[0] === domain ? ' active' : ''), type: 'button',
+        chips.appendChild(h('button', { class: 'ee-chip' + (d === domain ? ' active' : ''), type: 'button',
           onclick: function () {
-            domain = d[0];
-            chips.querySelectorAll('.ee-chip').forEach(function (x, i) { x.classList.toggle('active', DOMAINS[i][0] === domain); });
+            domain = d;
+            chips.querySelectorAll('.ee-chip').forEach(function (x, i) { x.classList.toggle('active', DOMAINS[i] === domain); });
             run();
-          } }, d[1]));
+          } }, domainLabel(d)));
       });
       search.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(run, 250); });
       run();
@@ -576,11 +625,17 @@
 
     // ── one labelled field, with its own tools underneath ───────────────────────
     var MD = [
-      ['B', 'Bold', '**', '**', false], ['I', 'Italic', '*', '*', false],
-      ['U', 'Underline', '__', '__', false], ['S', 'Strikethrough', '~~', '~~', false],
-      ['&lt;/&gt;', 'Inline code', '`', '`', false], ['▤', 'Code block', '```\n', '\n```', false],
-      ['❝', 'Quote', '> ', '', true], ['•', 'List', '- ', '', true], ['H', 'Heading', '## ', '', true],
-      ['◼', 'Spoiler', '||', '||', false], ['🔗', 'Link', '[', '](https://)', false],
+      ['B', T('pl.discord-embeds.md.bold', 'Bold'), '**', '**', false],
+      ['I', T('pl.discord-embeds.md.italic', 'Italic'), '*', '*', false],
+      ['U', T('pl.discord-embeds.md.underline', 'Underline'), '__', '__', false],
+      ['S', T('pl.discord-embeds.md.strikethrough', 'Strikethrough'), '~~', '~~', false],
+      ['&lt;/&gt;', T('pl.discord-embeds.md.inlineCode', 'Inline code'), '`', '`', false],
+      ['▤', T('pl.discord-embeds.md.codeBlock', 'Code block'), '```\n', '\n```', false],
+      ['❝', T('pl.discord-embeds.md.quote', 'Quote'), '> ', '', true],
+      ['•', T('pl.discord-embeds.md.list', 'List'), '- ', '', true],
+      ['H', T('pl.discord-embeds.md.heading', 'Heading'), '## ', '', true],
+      ['◼', T('pl.discord-embeds.md.spoiler', 'Spoiler'), '||', '||', false],
+      ['🔗', T('pl.discord-embeds.md.link', 'Link'), '[', '](https://)', false],
     ];
     function field(label, get, set, o) {
       o = o || {};
@@ -610,30 +665,30 @@
             tools.appendChild(h('button', { class: 'ee-tool', type: 'button', title: m[1], html: m[0],
               onclick: function () { wrapIn(ctl, m[2], m[3], m[4]); } }));
           });
-          tools.appendChild(h('button', { class: 'ee-tool', type: 'button', title: 'Timestamp — shown in each viewer’s own local time',
+          tools.appendChild(h('button', { class: 'ee-tool', type: 'button', title: T('pl.discord-embeds.tip.timestamp', 'Timestamp — shown in each viewer’s own local time'),
             onclick: function () {
-              var when = prompt('Timestamp — minutes from now (negative = past):', '60');
+              var when = prompt(T('pl.discord-embeds.prompt.timestamp', 'Timestamp — minutes from now (negative = past):'), '60');
               if (when === null) return;
               insertInto(ctl, '<t:' + Math.floor((Date.now() + (Number(when) || 0) * 60000) / 1000) + ':R>');
             } }, '⏱'));
-          tools.appendChild(h('button', { class: 'ee-tool', type: 'button', title: 'Mention a user, role, @everyone or @here',
+          tools.appendChild(h('button', { class: 'ee-tool', type: 'button', title: T('pl.discord-embeds.tip.mention', 'Mention a user, role, @everyone or @here'),
             onclick: function () {
-              var id = prompt('Mention — paste a user/role ID, or type everyone / here:', '');
+              var id = prompt(T('pl.discord-embeds.prompt.mention', 'Mention — paste a user/role ID, or type everyone / here:'), '');
               if (!id) return;
               id = String(id).trim();
               if (/^@?everyone$/i.test(id)) return insertInto(ctl, '@everyone');
               if (/^@?here$/i.test(id)) return insertInto(ctl, '@here');
               if (!/^\d+$/.test(id)) return;
-              insertInto(ctl, confirm('OK = role mention, Cancel = user mention') ? '<@&' + id + '>' : '<@' + id + '>');
+              insertInto(ctl, confirm(T('pl.discord-embeds.prompt.mentionKind', 'OK = role mention, Cancel = user mention')) ? '<@&' + id + '>' : '<@' + id + '>');
             } }, '@'));
         }
-        var eb = h('button', { class: 'ee-tool', type: 'button', title: 'Emoji' }, '😀');
+        var eb = h('button', { class: 'ee-tool', type: 'button', title: T('pl.discord-embeds.tip.emoji', 'Emoji') }, '😀');
         eb.addEventListener('click', function () { openPop('emoji', eb, ctl, emojiPop); });
         tools.appendChild(eb);
-        var tb = h('button', { class: 'ee-tool', type: 'button', title: 'Insert live data' }, '{ }');
+        var tb = h('button', { class: 'ee-tool', type: 'button', title: T('pl.discord-embeds.tip.liveData', 'Insert live data') }, '{ }');
         tb.addEventListener('click', function () { openPop('tok', tb, ctl, tokenPop); });
         tools.appendChild(tb);
-        var dbb = h('button', { class: 'ee-tool', type: 'button', title: 'Items, vehicles, animals…' }, '📦');
+        var dbb = h('button', { class: 'ee-tool', type: 'button', title: T('pl.discord-embeds.tip.gameDb', 'Items, vehicles, animals…') }, '📦');
         dbb.addEventListener('click', function () { openPop('db', dbb, ctl, dbPop); });
         tools.appendChild(dbb);
         kids.push(tools);
@@ -654,15 +709,15 @@
     // ── limits ──────────────────────────────────────────────────────────────────
     function limitProblems() {
       var out = [], len = function (x) { return String(x || '').length; };
-      if (len(model.title) > LIMITS.title) out.push('Title is ' + len(model.title) + '/' + LIMITS.title);
-      if (len(model.description) > LIMITS.description) out.push('Description is ' + len(model.description) + '/' + LIMITS.description);
-      if (len(model.content) > LIMITS.content) out.push('Message text is ' + len(model.content) + '/' + LIMITS.content);
-      if (len(model.footer.text) > LIMITS.footer) out.push('Footer is ' + len(model.footer.text) + '/' + LIMITS.footer);
-      if (len(model.author.name) > LIMITS.author) out.push('Author is ' + len(model.author.name) + '/' + LIMITS.author);
-      if (model.fields.length > LIMITS.fields) out.push(model.fields.length + ' fields (max ' + LIMITS.fields + ')');
+      if (len(model.title) > LIMITS.title) out.push(T('pl.discord-embeds.lim.title', 'Title is {n}/{max}', { n: len(model.title), max: LIMITS.title }));
+      if (len(model.description) > LIMITS.description) out.push(T('pl.discord-embeds.lim.description', 'Description is {n}/{max}', { n: len(model.description), max: LIMITS.description }));
+      if (len(model.content) > LIMITS.content) out.push(T('pl.discord-embeds.lim.content', 'Message text is {n}/{max}', { n: len(model.content), max: LIMITS.content }));
+      if (len(model.footer.text) > LIMITS.footer) out.push(T('pl.discord-embeds.lim.footer', 'Footer is {n}/{max}', { n: len(model.footer.text), max: LIMITS.footer }));
+      if (len(model.author.name) > LIMITS.author) out.push(T('pl.discord-embeds.lim.author', 'Author is {n}/{max}', { n: len(model.author.name), max: LIMITS.author }));
+      if (model.fields.length > LIMITS.fields) out.push(T('pl.discord-embeds.lim.fields', '{n} fields (max {max})', { n: model.fields.length, max: LIMITS.fields }));
       model.fields.forEach(function (f, i) {
-        if (len(f.name) > LIMITS.fieldName) out.push('Field ' + (i + 1) + ' name is ' + len(f.name) + '/' + LIMITS.fieldName);
-        if (len(f.value) > LIMITS.fieldValue) out.push('Field ' + (i + 1) + ' value is ' + len(f.value) + '/' + LIMITS.fieldValue);
+        if (len(f.name) > LIMITS.fieldName) out.push(T('pl.discord-embeds.lim.fieldName', 'Field {i} name is {n}/{max}', { i: i + 1, n: len(f.name), max: LIMITS.fieldName }));
+        if (len(f.value) > LIMITS.fieldValue) out.push(T('pl.discord-embeds.lim.fieldValue', 'Field {i} value is {n}/{max}', { i: i + 1, n: len(f.value), max: LIMITS.fieldValue }));
       });
       // Discord counts the 6000 across EVERY embed in the message, not per embed. Counting only the
       // first one meant a message with extra embeds passed here and was refused by Discord, with
@@ -674,10 +729,10 @@
       }
       var total = embedChars(model) + (model.extraEmbeds || []).reduce(function (a, e) { return a + embedChars(e); }, 0);
       if (total > LIMITS.total) {
-        out.push('All embeds total ' + total + '/' + LIMITS.total + ' characters');
+        out.push(T('pl.discord-embeds.lim.total', 'All embeds total {n}/{max} characters', { n: total, max: LIMITS.total }));
       }
       if (1 + (model.extraEmbeds || []).length > LIMITS.embeds) {
-        out.push((1 + model.extraEmbeds.length) + ' embeds (max ' + LIMITS.embeds + ' per message)');
+        out.push(T('pl.discord-embeds.lim.embeds', '{n} embeds (max {max} per message)', { n: 1 + model.extraEmbeds.length, max: LIMITS.embeds }));
       }
 
       // Components. The backend silently drops whatever will not fit, which is the right thing for a
@@ -686,19 +741,19 @@
       var sels = model.selects || [];
       var rows = sels.length + Math.ceil(btns.length / 5);
       if (rows > LIMITS.rows) {
-        out.push(rows + ' component rows (max ' + LIMITS.rows + ') — a select takes a whole row, buttons go five to a row');
+        out.push(T('pl.discord-embeds.lim.rows', '{n} component rows (max {max}); a menu takes a row, five buttons fit one.', { n: rows, max: LIMITS.rows }));
       }
       btns.forEach(function (b, i) {
-        if (len(b.label) > LIMITS.buttonLabel) out.push('Button ' + (i + 1) + ' label is ' + len(b.label) + '/' + LIMITS.buttonLabel);
+        if (len(b.label) > LIMITS.buttonLabel) out.push(T('pl.discord-embeds.lim.buttonLabel', 'Button {i} label is {n}/{max}', { i: i + 1, n: len(b.label), max: LIMITS.buttonLabel }));
       });
       sels.forEach(function (sl, i) {
-        if (len(sl.placeholder) > LIMITS.selectPlaceholder) out.push('Select ' + (i + 1) + ' placeholder is ' + len(sl.placeholder) + '/' + LIMITS.selectPlaceholder);
+        if (len(sl.placeholder) > LIMITS.selectPlaceholder) out.push(T('pl.discord-embeds.lim.selectPlaceholder', 'Select {i} placeholder is {n}/{max}', { i: i + 1, n: len(sl.placeholder), max: LIMITS.selectPlaceholder }));
         var opts = sl.options || [];
-        if (opts.length > LIMITS.options) out.push('Select ' + (i + 1) + ' has ' + opts.length + ' options (max ' + LIMITS.options + ')');
-        if (!opts.length) out.push('Select ' + (i + 1) + ' has no options — Discord refuses an empty menu');
+        if (opts.length > LIMITS.options) out.push(T('pl.discord-embeds.lim.selectOptions', 'Select {i} has {n} options (max {max})', { i: i + 1, n: opts.length, max: LIMITS.options }));
+        if (!opts.length) out.push(T('pl.discord-embeds.lim.selectEmpty', 'Select {i} has no options — Discord refuses an empty menu', { i: i + 1 }));
         opts.forEach(function (o, j) {
-          if (len(o.label) > LIMITS.optionLabel) out.push('Select ' + (i + 1) + ' option ' + (j + 1) + ' label is ' + len(o.label) + '/' + LIMITS.optionLabel);
-          if (len(o.description) > LIMITS.optionDescription) out.push('Select ' + (i + 1) + ' option ' + (j + 1) + ' description is ' + len(o.description) + '/' + LIMITS.optionDescription);
+          if (len(o.label) > LIMITS.optionLabel) out.push(T('pl.discord-embeds.lim.optionLabel', 'Select {i} option {j} label is {n}/{max}', { i: i + 1, j: j + 1, n: len(o.label), max: LIMITS.optionLabel }));
+          if (len(o.description) > LIMITS.optionDescription) out.push(T('pl.discord-embeds.lim.optionDescription', 'Select {i} option {j} description is {n}/{max}', { i: i + 1, j: j + 1, n: len(o.description), max: LIMITS.optionDescription }));
         });
       });
       return out;
@@ -721,16 +776,16 @@
       var grew = function (raw) { var a = String(raw || ''); var b = rs(a); return b.length !== a.length ? b.length : 0; };
       var check = function (raw, cap, what) {
         var n = grew(raw);
-        if (n > cap) out.push(what + ' fits now, but with live data it is ' + n + '/' + cap + ' — it will be trimmed when sent.');
+        if (n > cap) out.push(T('pl.discord-embeds.lim.grew', '{what} fits now, but live data makes it {n}/{max}; it will be trimmed.', { what: what, n: n, max: cap }));
       };
-      check(model.title, LIMITS.title, 'Title');
-      check(model.description, LIMITS.description, 'Description');
-      check(model.content, LIMITS.content, 'Message text');
+      check(model.title, LIMITS.title, T('pl.discord-embeds.part.title', 'Title'));
+      check(model.description, LIMITS.description, T('pl.discord-embeds.part.description', 'Description'));
+      check(model.content, LIMITS.content, T('pl.discord-embeds.part.content', 'Message text'));
       (model.fields || []).forEach(function (f, i) {
-        check(f.name, LIMITS.fieldName, 'Field ' + (i + 1) + ' name');
-        check(f.value, LIMITS.fieldValue, 'Field ' + (i + 1) + ' value');
+        check(f.name, LIMITS.fieldName, T('pl.discord-embeds.part.fieldName', 'Field {i} name', { i: i + 1 }));
+        check(f.value, LIMITS.fieldValue, T('pl.discord-embeds.part.fieldValue', 'Field {i} value', { i: i + 1 }));
       });
-      (model.buttons || []).forEach(function (b, i) { check(b.label, LIMITS.buttonLabel, 'Button ' + (i + 1) + ' label'); });
+      (model.buttons || []).forEach(function (b, i) { check(b.label, LIMITS.buttonLabel, T('pl.discord-embeds.part.buttonLabel', 'Button {i} label', { i: i + 1 })); });
       // And the 6000 across the whole message, which is the one that bites without any single field
       // looking wrong.
       var chars = function (e) {
@@ -740,7 +795,7 @@
           + (Array.isArray(e.fields) ? e.fields.reduce(function (a, f) { return a + l(f.name) + l(f.value); }, 0) : 0);
       };
       var total = chars(model) + (model.extraEmbeds || []).reduce(function (a, e) { return a + chars(e); }, 0);
-      if (total > LIMITS.total) out.push('With live data all embeds total ' + total + '/' + LIMITS.total + ' characters — the message will be trimmed when sent.');
+      if (total > LIMITS.total) out.push(T('pl.discord-embeds.lim.grewTotal', 'With live data, all embeds total {n}/{max} characters; the message will be trimmed.', { n: total, max: LIMITS.total }));
       return out;
     }
 
@@ -766,24 +821,24 @@
     function sec(title, body, open) { return h('details', { class: 'ee-sec', open: open ? true : false }, [h('summary', {}, title), h('div', { class: 'ee-body' }, body)]); }
 
     form.appendChild(limitBox);
-    form.appendChild(sec('Message text (above the embed)', [
-      field('Text', function () { return model.content; }, function (v) { model.content = v; changed(); },
-        { type: 'textarea', rows: 2, md: true, max: LIMITS.content, ph: 'Optional — only mentions HERE actually ping.' }),
+    form.appendChild(sec(T('pl.discord-embeds.sec.messageText', 'Message text (above the embed)'), [
+      field(T('pl.discord-embeds.f.text', 'Text'), function () { return model.content; }, function (v) { model.content = v; changed(); },
+        { type: 'textarea', rows: 2, md: true, max: LIMITS.content, ph: T('pl.discord-embeds.ph.content', 'Optional — only mentions HERE actually ping.') }),
     ]));
-    form.appendChild(sec('Content', [
-      field('Title', function () { return model.title; }, function (v) { model.title = v; changed(); }, { md: true, max: LIMITS.title, ph: 'Embed title' }),
-      field('Title URL', function () { return model.url; }, function (v) { model.url = v; changed(); }, { insert: true, ph: 'https://…' }),
-      field('Description', function () { return model.description; }, function (v) { model.description = v; changed(); }, { type: 'textarea', md: true, max: LIMITS.description, ph: 'Supports **markdown**' }),
-      h('label', { class: 'ee-f' }, [h('span', {}, 'Colour'), h('input', { type: 'color', value: model.color, oninput: function (e) { model.color = e.target.value; changed(); } })]),
+    form.appendChild(sec(T('pl.discord-embeds.sec.content', 'Content'), [
+      field(T('pl.discord-embeds.f.title', 'Title'), function () { return model.title; }, function (v) { model.title = v; changed(); }, { md: true, max: LIMITS.title, ph: T('pl.discord-embeds.ph.title', 'Embed title') }),
+      field(T('pl.discord-embeds.f.titleUrl', 'Title URL'), function () { return model.url; }, function (v) { model.url = v; changed(); }, { insert: true, ph: 'https://…' }),
+      field(T('pl.discord-embeds.f.description', 'Description'), function () { return model.description; }, function (v) { model.description = v; changed(); }, { type: 'textarea', md: true, max: LIMITS.description, ph: T('pl.discord-embeds.ph.description', 'Supports **markdown**') }),
+      h('label', { class: 'ee-f' }, [h('span', {}, T('pl.discord-embeds.f.colour', 'Colour')), h('input', { type: 'color', value: model.color, oninput: function (e) { model.color = e.target.value; changed(); } })]),
     ], true));
-    form.appendChild(sec('Author', [
-      field('Name', function () { return model.author.name; }, function (v) { model.author.name = v; changed(); }, { insert: true, max: LIMITS.author }),
-      field('URL', function () { return model.author.url; }, function (v) { model.author.url = v; changed(); }, { insert: true }),
-      field('Icon URL', function () { return model.author.icon_url; }, function (v) { model.author.icon_url = v; changed(); }, { insert: true }),
+    form.appendChild(sec(T('pl.discord-embeds.sec.author', 'Author'), [
+      field(T('pl.discord-embeds.f.name', 'Name'), function () { return model.author.name; }, function (v) { model.author.name = v; changed(); }, { insert: true, max: LIMITS.author }),
+      field(T('pl.discord-embeds.f.url', 'URL'), function () { return model.author.url; }, function (v) { model.author.url = v; changed(); }, { insert: true }),
+      field(T('pl.discord-embeds.f.iconUrl', 'Icon URL'), function () { return model.author.icon_url; }, function (v) { model.author.icon_url = v; changed(); }, { insert: true }),
     ]));
-    form.appendChild(sec('Images', [
-      field('Thumbnail URL', function () { return model.thumbnail.url; }, function (v) { model.thumbnail.url = v; changed(); }, { insert: true }),
-      field('Image URL', function () { return model.image.url; }, function (v) { model.image.url = v; changed(); }, { insert: true }),
+    form.appendChild(sec(T('pl.discord-embeds.sec.images', 'Images'), [
+      field(T('pl.discord-embeds.f.thumbnailUrl', 'Thumbnail URL'), function () { return model.thumbnail.url; }, function (v) { model.thumbnail.url = v; changed(); }, { insert: true }),
+      field(T('pl.discord-embeds.f.imageUrl', 'Image URL'), function () { return model.image.url; }, function (v) { model.image.url = v; changed(); }, { insert: true }),
     ]));
     // The footer is not editable, on ANY embed, and saying so is the whole point of this section.
     //
@@ -795,12 +850,10 @@
     // everywhere now, and the field is gone everywhere with it.
     //
     // The preview still draws the footer, because that IS what Discord will show.
-    form.appendChild(sec('Footer', [
+    form.appendChild(sec(T('pl.discord-embeds.sec.footer', 'Footer'), [
       h('p', { class: 'ee-note' },
-        'The footer and the timestamp come from your bot’s branding and are applied to every '
-        + 'embed as it is sent, so they cannot be set per embed — that is what keeps every '
-        + 'message the bot posts looking like the same bot. Change them by changing the branding '
-        + '(name and icon, with Premium). The preview below shows what Discord will show.'),
+        T('pl.discord-embeds.footer.note',
+          'Footer and timestamp come from your bot’s branding, on every embed. Change them there (Premium).')),
     ]));
 
     var fieldsBox = h('div', {});
@@ -809,21 +862,21 @@
       model.fields.forEach(function (f, i) {
         fieldsBox.appendChild(h('div', { class: 'ee-item' }, [
           h('div', { class: 'ee-itemhead' }, [
-            h('b', {}, 'Field ' + (i + 1)),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Move up', onclick: function () { if (i > 0) { model.fields.splice(i - 1, 0, model.fields.splice(i, 1)[0]); renderFields(); changed(); } } }, '↑'),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Move down', onclick: function () { if (i < model.fields.length - 1) { model.fields.splice(i + 1, 0, model.fields.splice(i, 1)[0]); renderFields(); changed(); } } }, '↓'),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Duplicate', onclick: function () { model.fields.splice(i + 1, 0, clone(f)); renderFields(); changed(); } }, '⧉'),
-            h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove', onclick: function () { model.fields.splice(i, 1); renderFields(); changed(); } }, '✕'),
+            h('b', {}, T('pl.discord-embeds.item.field', 'Field {i}', { i: i + 1 })),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.moveUp', 'Move up'), onclick: function () { if (i > 0) { model.fields.splice(i - 1, 0, model.fields.splice(i, 1)[0]); renderFields(); changed(); } } }, '↑'),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.moveDown', 'Move down'), onclick: function () { if (i < model.fields.length - 1) { model.fields.splice(i + 1, 0, model.fields.splice(i, 1)[0]); renderFields(); changed(); } } }, '↓'),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.duplicate', 'Duplicate'), onclick: function () { model.fields.splice(i + 1, 0, clone(f)); renderFields(); changed(); } }, '⧉'),
+            h('button', { class: 'ee-mini danger', type: 'button', title: T('pl.discord-embeds.tip.remove', 'Remove'), onclick: function () { model.fields.splice(i, 1); renderFields(); changed(); } }, '✕'),
           ]),
-          field('Name', function () { return f.name; }, function (v) { f.name = v; changed(); }, { md: true, max: LIMITS.fieldName }),
-          field('Value', function () { return f.value; }, function (v) { f.value = v; changed(); }, { type: 'textarea', rows: 2, md: true, max: LIMITS.fieldValue }),
-          h('label', { class: 'ee-chk' }, [(function () { var c = h('input', { type: 'checkbox', onchange: function (e) { f.inline = e.target.checked; changed(); } }); c.checked = !!f.inline; return c; })(), 'Inline']),
+          field(T('pl.discord-embeds.f.name', 'Name'), function () { return f.name; }, function (v) { f.name = v; changed(); }, { md: true, max: LIMITS.fieldName }),
+          field(T('pl.discord-embeds.f.value', 'Value'), function () { return f.value; }, function (v) { f.value = v; changed(); }, { type: 'textarea', rows: 2, md: true, max: LIMITS.fieldValue }),
+          h('label', { class: 'ee-chk' }, [(function () { var c = h('input', { type: 'checkbox', onchange: function (e) { f.inline = e.target.checked; changed(); } }); c.checked = !!f.inline; return c; })(), T('pl.discord-embeds.f.inline', 'Inline')]),
         ]));
       });
-      if (!model.fields.length) fieldsBox.appendChild(h('div', { class: 'ee-empty' }, 'No fields yet.'));
+      if (!model.fields.length) fieldsBox.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.empty.fields', 'No fields yet.')));
     }
     renderFields();
-    form.appendChild(sec('Fields', [fieldsBox, h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (model.fields.length < LIMITS.fields) { model.fields.push({ name: '', value: '', inline: false }); renderFields(); changed(); } } }, '+ Add field')]));
+    form.appendChild(sec(T('pl.discord-embeds.sec.fields', 'Fields'), [fieldsBox, h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (model.fields.length < LIMITS.fields) { model.fields.push({ name: '', value: '', inline: false }); renderFields(); changed(); } } }, T('pl.discord-embeds.btn.addField', '+ Add field'))]));
 
     var btnBox = h('div', {});
     function renderBtns() {
@@ -831,24 +884,24 @@
       model.buttons.forEach(function (b, i) {
         btnBox.appendChild(h('div', { class: 'ee-item' }, [
           h('div', { class: 'ee-itemhead' }, [
-            h('b', {}, 'Button ' + (i + 1)),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Move left', onclick: function () { if (i > 0) { model.buttons.splice(i - 1, 0, model.buttons.splice(i, 1)[0]); renderBtns(); changed(); } } }, '←'),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Move right', onclick: function () { if (i < model.buttons.length - 1) { model.buttons.splice(i + 1, 0, model.buttons.splice(i, 1)[0]); renderBtns(); changed(); } } }, '→'),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Duplicate', onclick: function () { model.buttons.splice(i + 1, 0, clone(b)); renderBtns(); changed(); } }, '⧉'),
-            h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove', onclick: function () { model.buttons.splice(i, 1); renderBtns(); changed(); } }, '✕'),
+            h('b', {}, T('pl.discord-embeds.item.button', 'Button {i}', { i: i + 1 })),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.moveLeft', 'Move left'), onclick: function () { if (i > 0) { model.buttons.splice(i - 1, 0, model.buttons.splice(i, 1)[0]); renderBtns(); changed(); } } }, '←'),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.moveRight', 'Move right'), onclick: function () { if (i < model.buttons.length - 1) { model.buttons.splice(i + 1, 0, model.buttons.splice(i, 1)[0]); renderBtns(); changed(); } } }, '→'),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.duplicate', 'Duplicate'), onclick: function () { model.buttons.splice(i + 1, 0, clone(b)); renderBtns(); changed(); } }, '⧉'),
+            h('button', { class: 'ee-mini danger', type: 'button', title: T('pl.discord-embeds.tip.remove', 'Remove'), onclick: function () { model.buttons.splice(i, 1); renderBtns(); changed(); } }, '✕'),
           ]),
-          field('Label', function () { return b.label; }, function (v) { b.label = v; changed(); }, { insert: true, max: LIMITS.buttonLabel }),
-          field('Style', function () { return b.style || '1'; }, function (v) { b.style = v; renderBtns(); changed(); }, { type: 'select', options: STYLES }),
-          field(String(b.style) === '5' ? 'URL' : 'Custom id',
+          field(T('pl.discord-embeds.f.label', 'Label'), function () { return b.label; }, function (v) { b.label = v; changed(); }, { insert: true, max: LIMITS.buttonLabel }),
+          field(T('pl.discord-embeds.f.style', 'Style'), function () { return b.style || '1'; }, function (v) { b.style = v; renderBtns(); changed(); }, { type: 'select', options: styles() }),
+          field(String(b.style) === '5' ? T('pl.discord-embeds.f.url', 'URL') : T('pl.discord-embeds.f.customId', 'Custom id'),
             function () { return String(b.style) === '5' ? b.url : b.custom_id; },
             function (v) { if (String(b.style) === '5') b.url = v; else b.custom_id = v; changed(); }),
-          field('Emoji', function () { return b.emoji; }, function (v) { b.emoji = v; changed(); }, { insert: true }),
+          field(T('pl.discord-embeds.f.emoji', 'Emoji'), function () { return b.emoji; }, function (v) { b.emoji = v; changed(); }, { insert: true }),
         ]));
       });
-      if (!model.buttons.length) btnBox.appendChild(h('div', { class: 'ee-empty' }, 'No buttons yet.'));
+      if (!model.buttons.length) btnBox.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.empty.buttons', 'No buttons yet.')));
     }
     renderBtns();
-    form.appendChild(sec('Buttons', [btnBox, h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (model.buttons.length < 25) { model.buttons.push({ label: 'Button', style: '1', custom_id: '', url: '', emoji: '' }); renderBtns(); changed(); } } }, '+ Add button')]));
+    form.appendChild(sec(T('pl.discord-embeds.sec.buttons', 'Buttons'), [btnBox, h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (model.buttons.length < 25) { model.buttons.push({ label: 'Button', style: '1', custom_id: '', url: '', emoji: '' }); renderBtns(); changed(); } } }, T('pl.discord-embeds.btn.addButton', '+ Add button'))]));
 
     // ── undo / redo ─────────────────────────────────────────────────────────────
     // Snapshots of the model, not of the DOM: setValue already rebuilds the whole editor, so
@@ -898,18 +951,18 @@
       list.forEach(function (ex, i) {
         box.appendChild(h('div', { class: 'ee-item' }, [
           h('div', { class: 'ee-itemhead' }, [
-            h('b', {}, 'Embed ' + (i + 2)),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Move up', onclick: function () { if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); renderExtras(box); changed(); } } }, '↑'),
-            h('button', { class: 'ee-mini', type: 'button', title: 'Move down', onclick: function () { if (i < list.length - 1) { list.splice(i + 1, 0, list.splice(i, 1)[0]); renderExtras(box); changed(); } } }, '↓'),
-            h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove', onclick: function () { list.splice(i, 1); renderExtras(box); changed(); } }, '✕'),
+            h('b', {}, T('pl.discord-embeds.item.embed', 'Embed {i}', { i: i + 2 })),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.moveUp', 'Move up'), onclick: function () { if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); renderExtras(box); changed(); } } }, '↑'),
+            h('button', { class: 'ee-mini', type: 'button', title: T('pl.discord-embeds.tip.moveDown', 'Move down'), onclick: function () { if (i < list.length - 1) { list.splice(i + 1, 0, list.splice(i, 1)[0]); renderExtras(box); changed(); } } }, '↓'),
+            h('button', { class: 'ee-mini danger', type: 'button', title: T('pl.discord-embeds.tip.remove', 'Remove'), onclick: function () { list.splice(i, 1); renderExtras(box); changed(); } }, '✕'),
           ]),
-          field('Title', function () { return ex.title; }, function (v) { ex.title = v; changed(); }, { md: true, max: LIMITS.title }),
-          field('Description', function () { return ex.description; }, function (v) { ex.description = v; changed(); }, { type: 'textarea', rows: 3, md: true, max: LIMITS.description }),
-          field('Image URL', function () { return (ex.image || (ex.image = {})).url; }, function (v) { ex.image.url = v; changed(); }, { insert: true }),
-          h('label', { class: 'ee-f' }, [h('span', {}, 'Colour'), h('input', { type: 'color', value: ex.color || '#ff6a1a', oninput: function (e) { ex.color = e.target.value; changed(); } })]),
+          field(T('pl.discord-embeds.f.title', 'Title'), function () { return ex.title; }, function (v) { ex.title = v; changed(); }, { md: true, max: LIMITS.title }),
+          field(T('pl.discord-embeds.f.description', 'Description'), function () { return ex.description; }, function (v) { ex.description = v; changed(); }, { type: 'textarea', rows: 3, md: true, max: LIMITS.description }),
+          field(T('pl.discord-embeds.f.imageUrl', 'Image URL'), function () { return (ex.image || (ex.image = {})).url; }, function (v) { ex.image.url = v; changed(); }, { insert: true }),
+          h('label', { class: 'ee-f' }, [h('span', {}, T('pl.discord-embeds.f.colour', 'Colour')), h('input', { type: 'color', value: ex.color || '#ff6a1a', oninput: function (e) { ex.color = e.target.value; changed(); } })]),
         ]));
       });
-      if (!list.length) box.appendChild(h('div', { class: 'ee-empty' }, 'Just the one embed. Discord allows up to 10 in a message.'));
+      if (!list.length) box.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.empty.extras', 'Just the one embed. Discord allows up to 10 in a message.')));
     }
 
     // ── select menus ────────────────────────────────────────────────────────────
@@ -922,42 +975,42 @@
           optBox.innerHTML = '';
           (sel.options || (sel.options = [])).forEach(function (o, oi) {
             optBox.appendChild(h('div', { class: 'ee-optrow' }, [
-              field('Label', function () { return o.label; }, function (v) { o.label = v; changed(); }, { insert: true, max: LIMITS.optionLabel }),
-              field('Value (id)', function () { return o.value; }, function (v) { o.value = v; changed(); }),
-              field('Description', function () { return o.description; }, function (v) { o.description = v; changed(); }, { insert: true, max: LIMITS.optionDescription }),
-              h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove option', onclick: function () { sel.options.splice(oi, 1); renderOpts(); changed(); } }, '✕'),
+              field(T('pl.discord-embeds.f.label', 'Label'), function () { return o.label; }, function (v) { o.label = v; changed(); }, { insert: true, max: LIMITS.optionLabel }),
+              field(T('pl.discord-embeds.f.optionValue', 'Value (id)'), function () { return o.value; }, function (v) { o.value = v; changed(); }),
+              field(T('pl.discord-embeds.f.description', 'Description'), function () { return o.description; }, function (v) { o.description = v; changed(); }, { insert: true, max: LIMITS.optionDescription }),
+              h('button', { class: 'ee-mini danger', type: 'button', title: T('pl.discord-embeds.tip.removeOption', 'Remove option'), onclick: function () { sel.options.splice(oi, 1); renderOpts(); changed(); } }, '✕'),
             ]));
           });
-          if (!sel.options.length) optBox.appendChild(h('div', { class: 'ee-empty' }, 'A menu needs at least one option, or Discord refuses the message.'));
+          if (!sel.options.length) optBox.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.empty.options', 'A menu needs at least one option, or Discord refuses the message.')));
         }
         renderOpts();
         box.appendChild(h('div', { class: 'ee-item' }, [
           h('div', { class: 'ee-itemhead' }, [
-            h('b', {}, 'Menu ' + (i + 1)),
-            h('button', { class: 'ee-mini danger', type: 'button', title: 'Remove', onclick: function () { list.splice(i, 1); renderSelects(box); changed(); } }, '✕'),
+            h('b', {}, T('pl.discord-embeds.item.menu', 'Menu {i}', { i: i + 1 })),
+            h('button', { class: 'ee-mini danger', type: 'button', title: T('pl.discord-embeds.tip.remove', 'Remove'), onclick: function () { list.splice(i, 1); renderSelects(box); changed(); } }, '✕'),
           ]),
-          field('Placeholder', function () { return sel.placeholder; }, function (v) { sel.placeholder = v; changed(); }, { insert: true, max: LIMITS.selectPlaceholder, ph: 'Choose…' }),
-          field('Custom id', function () { return sel.custom_id; }, function (v) { sel.custom_id = v; changed(); }, { ph: 'another plugin handles this id' }),
+          field(T('pl.discord-embeds.f.placeholder', 'Placeholder'), function () { return sel.placeholder; }, function (v) { sel.placeholder = v; changed(); }, { insert: true, max: LIMITS.selectPlaceholder, ph: T('pl.discord-embeds.ph.choose', 'Choose…') }),
+          field(T('pl.discord-embeds.f.customId', 'Custom id'), function () { return sel.custom_id; }, function (v) { sel.custom_id = v; changed(); }, { ph: T('pl.discord-embeds.ph.customId', 'another plugin handles this id') }),
           optBox,
-          h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (sel.options.length < 25) { sel.options.push({ label: 'Option', value: '' }); renderOpts(); changed(); } } }, '+ Add option'),
+          h('button', { class: 'ee-btn add', type: 'button', onclick: function () { if (sel.options.length < 25) { sel.options.push({ label: 'Option', value: '' }); renderOpts(); changed(); } } }, T('pl.discord-embeds.btn.addOption', '+ Add option')),
         ]));
       });
-      if (!list.length) box.appendChild(h('div', { class: 'ee-empty' }, 'No menus. Each one takes a whole row, and a message allows five rows in total.'));
+      if (!list.length) box.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.empty.menus', 'No menus. Each takes a whole row; a message has five rows.')));
     }
 
     var selBox = h('div', {});
     renderSelects(selBox);
-    form.appendChild(sec('Select menus', [selBox,
+    form.appendChild(sec(T('pl.discord-embeds.sec.selects', 'Select menus'), [selBox,
       h('button', { class: 'ee-btn add', type: 'button', onclick: function () {
         if ((model.selects || []).length < 5) { model.selects.push({ placeholder: '', custom_id: '', options: [{ label: 'Option', value: '' }] }); renderSelects(selBox); changed(); }
-      } }, '+ Add menu')]));
+      } }, T('pl.discord-embeds.btn.addMenu', '+ Add menu'))]));
 
     var extraBox = h('div', {});
     renderExtras(extraBox);
-    form.appendChild(sec('More embeds', [extraBox,
+    form.appendChild(sec(T('pl.discord-embeds.sec.moreEmbeds', 'More embeds'), [extraBox,
       h('button', { class: 'ee-btn add', type: 'button', onclick: function () {
         if ((model.extraEmbeds || []).length < 9) { model.extraEmbeds.push({ title: '', description: '', color: '#ff6a1a', image: { url: '' } }); renderExtras(extraBox); changed(); }
-      } }, '+ Add another embed')]));
+      } }, T('pl.discord-embeds.btn.addEmbed', '+ Add another embed'))]));
 
     // ── preview ─────────────────────────────────────────────────────────────────
     // Discord groups CONSECUTIVE inline fields into rows of up to three, and a row shares its width
@@ -1040,12 +1093,12 @@
       });
       pvBtns.innerHTML = '';
       (model.selects || []).forEach(function (sl) {
-        pvBtns.appendChild(h('div', { class: 'ee-pv-sel' }, (sl.placeholder || 'Select an option') + '  ▾'));
+        pvBtns.appendChild(h('div', { class: 'ee-pv-sel' }, (sl.placeholder || T('pl.discord-embeds.pv.selectPlaceholder', 'Select an option')) + '  ▾'));
       });
-      model.buttons.forEach(function (b) { pvBtns.appendChild(h('button', { class: 'ee-pv-btn s' + (b.style || '1'), type: 'button' }, (b.emoji ? b.emoji + ' ' : '') + (b.label || 'Button'))); });
+      model.buttons.forEach(function (b) { pvBtns.appendChild(h('button', { class: 'ee-pv-btn s' + (b.style || '1'), type: 'button' }, (b.emoji ? b.emoji + ' ' : '') + (b.label || T('pl.discord-embeds.pv.buttonLabel', 'Button')))); });
     }
 
-    var editorPane = h('div', { class: 'ee-wrap' }, [form, h('div', { class: 'ee-col ee-pv' }, [h('div', { class: 'ee-pvlabel' }, 'Preview'), pvContent, preview, pvExtra, pvBtns])]);
+    var editorPane = h('div', { class: 'ee-wrap' }, [form, h('div', { class: 'ee-col ee-pv' }, [h('div', { class: 'ee-pvlabel' }, T('pl.discord-embeds.pv.label', 'Preview')), pvContent, preview, pvExtra, pvBtns])]);
 
     var editor = {
       getValue: function () { return clone(model); },
@@ -1072,10 +1125,12 @@
     }
 
     // ── standalone: three pages ─────────────────────────────────────────────────
-    var chanSel = h('select', {}, [h('option', { value: '' }, 'Loading channels…')]);
+    var chanSel = h('select', {}, [h('option', { value: '' }, T('pl.discord-embeds.send.loadingChannels', 'Loading channels…'))]);
     api('/channels').then(function (list) {
       chanSel.innerHTML = '';
-      chanSel.appendChild(h('option', { value: '' }, list && list.length ? '— pick a channel —' : 'No channels (bot offline?)'));
+      chanSel.appendChild(h('option', { value: '' }, list && list.length
+        ? T('pl.discord-embeds.send.pickChannel', '— pick a channel —')
+        : T('pl.discord-embeds.send.noChannels', 'No channels (bot offline?)')));
       (list || []).forEach(function (c) { chanSel.appendChild(h('option', { value: c.id }, '#' + c.name)); });
     }).catch(function (err) {
       // An empty dropdown that failed to load must not read as "there are no channels" — that is a
@@ -1083,31 +1138,36 @@
       // all. Without this the box was left on "Loading channels…" forever, on a rejected promise
       // nothing here ever caught.
       chanSel.innerHTML = '';
-      chanSel.appendChild(h('option', { value: '' }, 'Could not load channels — ' + why(err)));
+      chanSel.appendChild(h('option', { value: '' }, T('pl.discord-embeds.send.channelsFailed', 'Could not load channels — {why}', { why: why(err) })));
     });
 
     var sendStatus = h('span', { class: 'ee-empty' });
     var editing = null;
-    var sendBtn = h('button', { class: 'ee-btn primary', type: 'button' }, 'Send to channel');
-    var newBtn = h('button', { class: 'ee-btn', type: 'button', style: 'display:none' }, 'New message');
+    var sendBtn = h('button', { class: 'ee-btn primary', type: 'button' }, T('pl.discord-embeds.send.button', 'Send to channel'));
+    var newBtn = h('button', { class: 'ee-btn', type: 'button', style: 'display:none' }, T('pl.discord-embeds.send.new', 'New message'));
     var editNote = h('div', { class: 'ee-empty' });
     function setEditing(entry) {
       editing = entry;
-      sendBtn.textContent = entry ? 'Update message' : 'Send to channel';
+      sendBtn.textContent = entry ? T('pl.discord-embeds.send.update', 'Update message') : T('pl.discord-embeds.send.button', 'Send to channel');
       newBtn.style.display = entry ? '' : 'none';
-      editNote.textContent = entry ? ('Editing the message posted ' + new Date(entry.sentAt).toLocaleString() + (entry.channelName ? ' in #' + entry.channelName : '')) : '';
+      // Two whole sentences rather than one with an optional tail: a translator needs the channel in
+      // the place their own grammar puts it, which is not always the end.
+      editNote.textContent = !entry ? ''
+        : (entry.channelName
+          ? T('pl.discord-embeds.send.editingIn', 'Editing the message posted {when} in #{channel}', { when: new Date(entry.sentAt).toLocaleString(), channel: entry.channelName })
+          : T('pl.discord-embeds.send.editing', 'Editing the message posted {when}', { when: new Date(entry.sentAt).toLocaleString() }));
       if (entry && entry.channelId) chanSel.value = entry.channelId;
     }
     newBtn.addEventListener('click', function () { setEditing(null); });
     sendBtn.addEventListener('click', function () {
       var probs = limitProblems();
-      if (probs.length) { sendStatus.textContent = 'Too long: ' + probs[0]; return; }   // Discord would reject it anyway
-      if (!chanSel.value && !editing) { sendStatus.textContent = 'Pick a channel first.'; return; }
+      if (probs.length) { sendStatus.textContent = T('pl.discord-embeds.send.tooLong', 'Too long: {what}', { what: probs[0] }); return; }   // Discord would reject it anyway
+      if (!chanSel.value && !editing) { sendStatus.textContent = T('pl.discord-embeds.send.needChannel', 'Pick a channel first.'); return; }
       // Mentions in the message TEXT really do ping everyone — unlike the same text inside the
       // embed, which never does. One confirm is cheap next to notifying a whole server by accident.
       var ping = /(^|\s)@(everyone|here)\b/.exec(model.content || '');
-      if (ping && !confirm('This will ping @' + ping[2] + ' — everyone in the channel gets a notification. Send it?')) {
-        sendStatus.textContent = 'Cancelled.';
+      if (ping && !confirm(T('pl.discord-embeds.send.pingConfirm', 'This will ping @{who} — everyone in the channel gets a notification. Send it?', { who: ping[2] }))) {
+        sendStatus.textContent = T('pl.discord-embeds.send.cancelled', 'Cancelled.');
         return;
       }
       var body = {
@@ -1117,42 +1177,50 @@
         extraEmbeds: model.extraEmbeds || [], content: model.content || '',
       };
       if (editing) body.messageId = editing.messageId;
-      sendStatus.textContent = editing ? 'Updating…' : 'Sending…';
+      sendStatus.textContent = editing ? T('pl.discord-embeds.send.updating', 'Updating…') : T('pl.discord-embeds.send.sending', 'Sending…');
       api(editing ? '/edit' : '/send', { method: 'POST', body: body }).then(function (r) {
-        sendStatus.textContent = (r && r.ok) ? (editing ? 'Updated ✓' : 'Sent ✓') : ('Failed' + (r && r.error ? ': ' + r.error : ''));
+        sendStatus.textContent = (r && r.ok)
+          ? (editing ? T('pl.discord-embeds.send.updated', 'Updated ✓') : T('pl.discord-embeds.send.sent', 'Sent ✓'))
+          : (r && r.error ? T('pl.discord-embeds.failedWhy', 'Failed: {why}', { why: r.error }) : T('pl.discord-embeds.failed', 'Failed'));
       }).catch(function (err) {
         // A rejected request is not the 200-with-refusal `Failed:` above — it never reached Discord
         // at all, and the sentence has to lead with what did NOT happen: nothing was sent or
         // updated, whatever this screen showed a moment ago is still what Discord has.
-        sendStatus.textContent = (editing ? 'NOT updated' : 'NOT sent') + ' — ' + why(err);
+        sendStatus.textContent = editing
+          ? T('pl.discord-embeds.send.notUpdated', 'NOT updated — {why}', { why: why(err) })
+          : T('pl.discord-embeds.send.notSent', 'NOT sent — {why}', { why: why(err) });
       });
     });
     // Adopt a message this editor never sent — paste its link (or its id). Right-click a message
     // in Discord → Copy Message Link. Without this, anything posted before this plugin existed, or
     // by another feature, could never be corrected here.
-    var loadInp = h('input', { type: 'text', placeholder: 'https://discord.com/channels/…  or a message id', class: 'ee-loadinp' });
+    var loadInp = h('input', { type: 'text', placeholder: T('pl.discord-embeds.ph.messageLink', 'https://discord.com/channels/…  or a message id'), class: 'ee-loadinp' });
     var loadStatus = h('span', { class: 'ee-empty' });
-    var loadBtn = h('button', { class: 'ee-btn', type: 'button' }, 'Load message');
+    var loadBtn = h('button', { class: 'ee-btn', type: 'button' }, T('pl.discord-embeds.load.button', 'Load message'));
     loadBtn.addEventListener('click', function () {
       var v = loadInp.value.trim();
-      if (!v) { loadStatus.textContent = 'Paste a message link or id.'; return; }
+      if (!v) { loadStatus.textContent = T('pl.discord-embeds.load.needInput', 'Paste a message link or id.'); return; }
       // A link carries the channel; a bare id needs the channel picked above.
       var m = /channels\/\d+\/(\d+)\/(\d+)/.exec(v);
       var chId = m ? m[1] : chanSel.value;
       var msgId = m ? m[2] : (/^\d+$/.test(v) ? v : '');
-      if (!chId || !msgId) { loadStatus.textContent = m ? 'Could not read that link.' : 'Pick the channel first, or paste the full link.'; return; }
-      loadStatus.textContent = 'Loading…';
+      if (!chId || !msgId) {
+        loadStatus.textContent = m ? T('pl.discord-embeds.load.badLink', 'Could not read that link.')
+          : T('pl.discord-embeds.load.needChannel', 'Pick the channel first, or paste the full link.');
+        return;
+      }
+      loadStatus.textContent = T('pl.discord-embeds.loading', 'Loading…');
       api('/fetch', { method: 'POST', body: { channelId: chId, messageId: msgId } }).then(function (r) {
-        if (!r || !r.ok) { loadStatus.textContent = (r && r.error) || 'Could not load it.'; return; }
-        loadStatus.textContent = 'Loaded — editing it now.';
+        if (!r || !r.ok) { loadStatus.textContent = (r && r.error) || T('pl.discord-embeds.load.failed', 'Could not load it.'); return; }
+        loadStatus.textContent = T('pl.discord-embeds.load.loaded', 'Loaded — editing it now.');
         setEditing({ messageId: r.messageId, channelId: r.channelId, channelName: '', sentAt: r.sentAt, title: r.embed.title || '' });
         var v2 = r.embed; v2.content = r.content || '';
         editor.setValue(v2);
-      }).catch(function (err) { loadStatus.textContent = 'Could not load it — ' + why(err); });
+      }).catch(function (err) { loadStatus.textContent = T('pl.discord-embeds.load.failedWhy', 'Could not load it — {why}', { why: why(err) }); });
     });
 
-    undoBtn = h('button', { class: 'ee-btn', type: 'button', title: 'Undo (Ctrl+Z)', onclick: doUndo }, '↶ Undo');
-    redoBtn = h('button', { class: 'ee-btn', type: 'button', title: 'Redo (Ctrl+Shift+Z)', onclick: doRedo }, '↷ Redo');
+    undoBtn = h('button', { class: 'ee-btn', type: 'button', title: T('pl.discord-embeds.tip.undo', 'Undo (Ctrl+Z)'), onclick: doUndo }, '↶ ' + T('pl.discord-embeds.btn.undo', 'Undo'));
+    redoBtn = h('button', { class: 'ee-btn', type: 'button', title: T('pl.discord-embeds.tip.redo', 'Redo (Ctrl+Shift+Z)'), onclick: doRedo }, '↷ ' + T('pl.discord-embeds.btn.redo', 'Redo'));
     syncUndoBtns();
     // Ctrl+Z inside a textarea is the browser's own undo, which only knows about that one box —
     // ours restores the whole embed, so it takes over.
@@ -1166,27 +1234,28 @@
     // Scheduling. Kept next to Send because it is the same decision — now, or later.
     var whenInp = h('input', { type: 'datetime-local', class: 'ee-loadinp' });
     var schedStatus = h('span', { class: 'ee-empty' });
-    var schedBtn = h('button', { class: 'ee-btn', type: 'button' }, 'Schedule');
+    var schedBtn = h('button', { class: 'ee-btn', type: 'button' }, T('pl.discord-embeds.sched.button', 'Schedule'));
     schedBtn.addEventListener('click', function () {
       var probs = limitProblems();
-      if (probs.length) { schedStatus.textContent = 'Too long: ' + probs[0]; return; }
-      if (!chanSel.value) { schedStatus.textContent = 'Pick a channel first.'; return; }
-      if (!whenInp.value) { schedStatus.textContent = 'Pick a date and time.'; return; }
+      if (probs.length) { schedStatus.textContent = T('pl.discord-embeds.send.tooLong', 'Too long: {what}', { what: probs[0] }); return; }
+      if (!chanSel.value) { schedStatus.textContent = T('pl.discord-embeds.send.needChannel', 'Pick a channel first.'); return; }
+      if (!whenInp.value) { schedStatus.textContent = T('pl.discord-embeds.sched.needTime', 'Pick a date and time.'); return; }
       var at = new Date(whenInp.value).getTime();
-      if (!at || isNaN(at)) { schedStatus.textContent = 'That time is not valid.'; return; }
-      schedStatus.textContent = 'Scheduling…';
+      if (!at || isNaN(at)) { schedStatus.textContent = T('pl.discord-embeds.sched.badTime', 'That time is not valid.'); return; }
+      schedStatus.textContent = T('pl.discord-embeds.sched.scheduling', 'Scheduling…');
       api('/scheduled', { method: 'POST', body: {
         channelId: chanSel.value, channelName: (chanSel.options[chanSel.selectedIndex] || {}).text || '',
         at: at, embed: clone(model), extraEmbeds: model.extraEmbeds || [],
         buttons: model.buttons, selects: model.selects || [], content: model.content || '',
       } }).then(function (r) {
-        schedStatus.textContent = (r && r.ok) ? 'Scheduled ✓' : ('Failed' + (r && r.error ? ': ' + r.error : ''));
+        schedStatus.textContent = (r && r.ok) ? T('pl.discord-embeds.sched.done', 'Scheduled ✓')
+          : (r && r.error ? T('pl.discord-embeds.failedWhy', 'Failed: {why}', { why: r.error }) : T('pl.discord-embeds.failed', 'Failed'));
         if (r && r.ok) loadScheduled();
-      }).catch(function (err) { schedStatus.textContent = 'NOT scheduled — ' + why(err); });
+      }).catch(function (err) { schedStatus.textContent = T('pl.discord-embeds.sched.notScheduled', 'NOT scheduled — {why}', { why: why(err) }); });
     });
 
-    form.appendChild(sec('Send', [
-      h('label', { class: 'ee-f' }, [h('span', {}, 'Channel'), chanSel]),
+    form.appendChild(sec(T('pl.discord-embeds.sec.send', 'Send'), [
+      h('label', { class: 'ee-f' }, [h('span', {}, T('pl.discord-embeds.f.channel', 'Channel')), chanSel]),
       h('div', { class: 'ee-actions' }, [sendBtn, newBtn, sendStatus]),
       editNote,
       h('div', { class: 'ee-loadrow' }, [whenInp, schedBtn, schedStatus]),
@@ -1201,43 +1270,47 @@
     // panel, because a rejected `api('/templates')` had nothing downstream of it to catch it.
     function tplLoadFailed(err) {
       tplPane.innerHTML = '';
-      var retry = h('button', { type: 'button', class: 'ee-btn', onclick: loadTpls }, 'Try again');
+      var retry = h('button', { type: 'button', class: 'ee-btn', onclick: loadTpls }, T('pl.discord-embeds.tryAgain', 'Try again'));
       tplPane.appendChild(h('div', { class: 'ee-empty' }, [
-        document.createTextNode('This list could not load — ' + why(err) + ' '),
+        document.createTextNode(T('pl.discord-embeds.listFailed', 'This list could not load — {why} ', { why: why(err) })),
         retry,
       ]));
     }
     function loadTpls() {
       tplPane.innerHTML = '';
-      tplPane.appendChild(h('div', { class: 'ee-empty' }, 'Loading…'));
+      tplPane.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.loading', 'Loading…')));
       api('/templates').then(function (t) {
         t = t || {};
         tplPane.innerHTML = '';
         var names = Object.keys(t);
         // Templates accumulate the way saved files do, and are found by a name somebody half
         // remembers — so the list gets the same search the embed picker has.
-        var tq = h('input', { class: 'es-search', type: 'search', placeholder: 'Search templates…' });
-        var tCount = h('span', { class: 'ee-empty' }, names.length + ' saved');
+        var tq = h('input', { class: 'es-search', type: 'search', placeholder: T('pl.discord-embeds.tpl.search', 'Search templates…') });
+        var tCount = h('span', { class: 'ee-empty' }, T('pl.discord-embeds.tpl.count', '{n} saved', { n: names.length }));
         tplPane.appendChild(h('div', { class: 'ee-actions' }, [
           h('button', { class: 'ee-btn primary', type: 'button', onclick: function () {
-            var n = prompt('Save the current embed as:');
+            var n = prompt(T('pl.discord-embeds.tpl.savePrompt', 'Save the current embed as:'));
             if (!n) return;
             api('/templates', { method: 'POST', body: { name: n, data: clone(model) } }).then(loadTpls)
-              .catch(function (err) { try { SSA.toast('NOT saved — ' + why(err), 'error'); } catch (e) {} });
-          } }, 'Save current embed'),
+              .catch(function (err) { try { SSA.toast(T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: why(err) }), 'error'); } catch (e) {} });
+          } }, T('pl.discord-embeds.tpl.saveCurrent', 'Save current embed')),
           tq,
           tCount,
         ]));
-        if (!names.length) { tplPane.appendChild(h('div', { class: 'ee-empty' }, 'No templates yet. Build an embed on the Editor tab, then save it here.')); return; }
+        // The page this sends somebody to is one of this editor's own three, named from the same key
+        // the tab strip draws itself from — so it cannot drift from what is on the button.
+        if (!names.length) { tplPane.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.tpl.none', 'No templates yet. Build an embed on the {tab} tab, then save it here.', { tab: T('pl.discord-embeds.page.editor', 'Editor') }))); return; }
         var list = h('div', {});
         names.forEach(function (n) {
           var row = h('div', { class: 'ee-hrow' }, [
-            h('div', { class: 'ee-hmain' }, [h('b', {}, n), h('span', { class: 'ee-hmeta' }, (t[n] && t[n].title) || '(no title)')]),
-            h('button', { class: 'ee-btn', type: 'button', onclick: function () { editor.setValue(t[n]); } }, 'Load'),
+            h('div', { class: 'ee-hmain' }, [h('b', {}, n), h('span', { class: 'ee-hmeta' }, (t[n] && t[n].title) || T('pl.discord-embeds.noTitle', '(no title)'))]),
+            h('button', { class: 'ee-btn', type: 'button', onclick: function () { editor.setValue(t[n]); } }, T('pl.discord-embeds.tpl.load', 'Load')),
             h('button', { class: 'ee-btn danger', type: 'button', onclick: function () {
-              if (!confirm('Delete "' + n + '"?')) return;
+              // The quotes are ESCAPED rather than typed: a bare `"` inside the fallback is a string
+              // the locale reader cannot see whole, and its value rules then go quiet on this key.
+              if (!confirm(T('pl.discord-embeds.tpl.deleteConfirm', 'Delete \"{name}\"?', { name: n }))) return;
               api('/templates/delete', { method: 'POST', body: { name: n } }).then(loadTpls)
-                .catch(function (err) { try { SSA.toast('NOT deleted — ' + why(err), 'error'); } catch (e) {} });
+                .catch(function (err) { try { SSA.toast(T('pl.discord-embeds.notDeleted', 'NOT deleted — {why}', { why: why(err) }), 'error'); } catch (e) {} });
             } }, '✕'),
           ]);
           // The name AND the embed's own title: people look for either.
@@ -1252,19 +1325,20 @@
             row.style.display = hit ? '' : 'none';
             if (hit) shown++;
           });
-          tCount.textContent = q ? (shown + ' of ' + names.length + ' saved') : (names.length + ' saved');
+          tCount.textContent = q ? T('pl.discord-embeds.tpl.countFiltered', '{shown} of {total} saved', { shown: shown, total: names.length })
+            : T('pl.discord-embeds.tpl.count', '{n} saved', { n: names.length });
         });
         tplPane.appendChild(list);
-        tplPane.appendChild(h('details', { class: 'ee-sec' }, [h('summary', {}, 'JSON (import / export)'), h('div', { class: 'ee-body' }, (function () {
+        tplPane.appendChild(h('details', { class: 'ee-sec' }, [h('summary', {}, T('pl.discord-embeds.tpl.json', 'JSON (import / export)')), h('div', { class: 'ee-body' }, (function () {
           var ta = h('textarea', { rows: 8, style: 'width:100%' });
           return [ta, h('div', { class: 'ee-actions' }, [
-            h('button', { class: 'ee-btn', type: 'button', onclick: function () { ta.value = JSON.stringify(clone(model), null, 2); } }, 'Export current'),
+            h('button', { class: 'ee-btn', type: 'button', onclick: function () { ta.value = JSON.stringify(clone(model), null, 2); } }, T('pl.discord-embeds.tpl.export', 'Export current')),
             // `SSA.toast`, not `alert()`. A native alert is a blocking browser dialog that looks
             // nothing like the panel it is sitting in, and it is the one thing the SDK exists to
             // replace — every other failure on this tab already answers through the toast. It also
             // says WHAT is wrong: "Invalid JSON" sends somebody hunting through eight rows of a
             // textarea, where the parser's own message names the character it stopped at.
-            h('button', { class: 'ee-btn', type: 'button', onclick: function () { try { editor.setValue(JSON.parse(ta.value)); SSA.toast('Imported'); } catch (e) { try { SSA.toast('That is not valid JSON — ' + (e && e.message ? e.message : 'it could not be read'), 'error'); } catch (x) { /* nothing left to try */ } } } }, 'Import'),
+            h('button', { class: 'ee-btn', type: 'button', onclick: function () { try { editor.setValue(JSON.parse(ta.value)); SSA.toast(T('pl.discord-embeds.tpl.imported', 'Imported')); } catch (e) { try { SSA.toast(T('pl.discord-embeds.tpl.badJson', 'That is not valid JSON — {why}', { why: (e && e.message ? e.message : T('pl.discord-embeds.tpl.unreadable', 'it could not be read')) }), 'error'); } catch (x) { /* nothing left to try */ } } } }, T('pl.discord-embeds.tpl.import', 'Import')),
           ])];
         })())]));
       }).catch(tplLoadFailed);
@@ -1277,19 +1351,19 @@
       api('/scheduled').then(function (list) {
         schedBox.innerHTML = '';
         if (!list || !list.length) return;   // nothing booked — don't take up room saying so
-        schedBox.appendChild(h('div', { class: 'ee-pvlabel' }, 'Waiting to be sent'));
+        schedBox.appendChild(h('div', { class: 'ee-pvlabel' }, T('pl.discord-embeds.sched.waiting', 'Waiting to be sent')));
         list.forEach(function (it) {
           schedBox.appendChild(h('div', { class: 'ee-hrow' }, [
             h('div', { class: 'ee-hmain' }, [
-              h('b', {}, it.title || '(no title)'),
+              h('b', {}, it.title || T('pl.discord-embeds.noTitle', '(no title)')),
               h('span', { class: 'ee-hmeta' }, (it.channelName ? '#' + it.channelName + ' · ' : '') + new Date(it.at).toLocaleString()),
             ]),
-            h('button', { class: 'ee-btn', type: 'button', title: 'Load a copy into the editor',
-              onclick: function () { setEditing(null); editor.setValue(it.data.embed || {}); } }, 'Copy'),
-            h('button', { class: 'ee-btn danger', type: 'button', title: 'Cancel it',
+            h('button', { class: 'ee-btn', type: 'button', title: T('pl.discord-embeds.tip.copyIntoEditor', 'Load a copy into the editor'),
+              onclick: function () { setEditing(null); editor.setValue(it.data.embed || {}); } }, T('pl.discord-embeds.btn.copy', 'Copy')),
+            h('button', { class: 'ee-btn danger', type: 'button', title: T('pl.discord-embeds.tip.cancelIt', 'Cancel it'),
               onclick: function () {
                 api('/scheduled/delete', { method: 'POST', body: { id: it.id } }).then(loadScheduled)
-                  .catch(function (err) { try { SSA.toast('NOT cancelled — ' + why(err), 'error'); } catch (e) {} });
+                  .catch(function (err) { try { SSA.toast(T('pl.discord-embeds.sched.notCancelled', 'NOT cancelled — {why}', { why: why(err) }), 'error'); } catch (e) {} });
               } }, '✕'),
           ]));
         });
@@ -1298,29 +1372,29 @@
         // say so on its own rather than leaving whatever it last showed (nothing, on the first
         // visit) looking like "there is nothing scheduled".
         schedBox.innerHTML = '';
-        schedBox.appendChild(h('div', { class: 'ee-empty' }, 'Could not load scheduled messages — ' + why(err) + '.'));
+        schedBox.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.sched.loadFailed', 'Could not load scheduled messages — {why}.', { why: why(err) })));
       });
     }
     var histBox = h('div', {});
     function loadHistory() {
       histBox.innerHTML = '';
-      histBox.appendChild(h('div', { class: 'ee-empty' }, 'Loading…'));
+      histBox.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.loading', 'Loading…')));
       api('/history').then(function (list) {
         histBox.innerHTML = '';
-        if (!list || !list.length) { histBox.appendChild(h('div', { class: 'ee-empty' }, 'Nothing sent yet.')); return; }
+        if (!list || !list.length) { histBox.appendChild(h('div', { class: 'ee-empty' }, T('pl.discord-embeds.hist.none', 'Nothing sent yet.'))); return; }
         // This list only grows, and it is the one place an owner comes to find a message they sent
         // last week. Scrolling for it is not a way to find anything. Matches the title and the
         // channel, which is how somebody actually remembers a message.
-        var hq = h('input', { class: 'es-search', type: 'search', placeholder: 'Search sent messages…' });
-        var hCount = h('span', { class: 'ee-empty' }, list.length + ' message(s)');
+        var hq = h('input', { class: 'es-search', type: 'search', placeholder: T('pl.discord-embeds.hist.search', 'Search sent messages…') });
+        var hCount = h('span', { class: 'ee-empty' }, T('pl.discord-embeds.hist.count', '{n} message(s)', { n: list.length }));
         histBox.appendChild(h('div', { class: 'ee-actions' }, [
           hCount,
           hq,
           h('button', { class: 'ee-btn', type: 'button', onclick: function () {
-            if (!confirm('Clear the list? Messages in Discord are not touched.')) return;
+            if (!confirm(T('pl.discord-embeds.hist.clearConfirm', 'Clear the list? Messages in Discord are not touched.'))) return;
             api('/history/clear', { method: 'POST', body: {} }).then(loadHistory)
-              .catch(function (err) { try { SSA.toast('NOT cleared — ' + why(err), 'error'); } catch (e) {} });
-          } }, 'Clear list'),
+              .catch(function (err) { try { SSA.toast(T('pl.discord-embeds.hist.notCleared', 'NOT cleared — {why}', { why: why(err) }), 'error'); } catch (e) {} });
+          } }, T('pl.discord-embeds.hist.clear', 'Clear list')),
         ]));
         hq.addEventListener('input', function () {
           var n = hq.value.trim().toLowerCase();
@@ -1330,34 +1404,35 @@
             row.style.display = hit ? '' : 'none';
             if (hit) shown++;
           });
-          hCount.textContent = n ? (shown + ' of ' + list.length + ' message(s)') : (list.length + ' message(s)');
+          hCount.textContent = n ? T('pl.discord-embeds.hist.countFiltered', '{shown} of {total} message(s)', { shown: shown, total: list.length })
+            : T('pl.discord-embeds.hist.count', '{n} message(s)', { n: list.length });
         });
         var box = h('div', {});
         list.forEach(function (entry) {
           var when = new Date(entry.editedAt || entry.sentAt).toLocaleString();
           var row = h('div', { class: 'ee-hrow' }, [
             h('div', { class: 'ee-hmain' }, [
-              h('b', {}, entry.title || '(no title)'),
-              h('span', { class: 'ee-hmeta' }, (entry.channelName ? '#' + entry.channelName + ' · ' : '') + when + (entry.editedAt ? ' · edited' : '')),
+              h('b', {}, entry.title || T('pl.discord-embeds.noTitle', '(no title)')),
+              h('span', { class: 'ee-hmeta' }, (entry.channelName ? '#' + entry.channelName + ' · ' : '') + when + (entry.editedAt ? ' · ' + T('pl.discord-embeds.hist.edited', 'edited') : '')),
             ]),
-            h('button', { class: 'ee-btn', type: 'button', title: 'Load it and update the original in place',
-              onclick: function () { setEditing(entry); editor.setValue(entry.data.embed || {}); } }, 'Edit'),
-            h('button', { class: 'ee-btn', type: 'button', title: 'Load a copy, leaving the original alone',
-              onclick: function () { setEditing(null); editor.setValue(entry.data.embed || {}); } }, 'Copy'),
-            h('button', { class: 'ee-btn danger', type: 'button', title: 'Delete it in Discord',
+            h('button', { class: 'ee-btn', type: 'button', title: T('pl.discord-embeds.tip.editOriginal', 'Load it and update the original in place'),
+              onclick: function () { setEditing(entry); editor.setValue(entry.data.embed || {}); } }, T('pl.discord-embeds.btn.edit', 'Edit')),
+            h('button', { class: 'ee-btn', type: 'button', title: T('pl.discord-embeds.tip.copyLeaving', 'Load a copy, leaving the original alone'),
+              onclick: function () { setEditing(null); editor.setValue(entry.data.embed || {}); } }, T('pl.discord-embeds.btn.copy', 'Copy')),
+            h('button', { class: 'ee-btn danger', type: 'button', title: T('pl.discord-embeds.tip.deleteInDiscord', 'Delete it in Discord'),
               onclick: function () {
-                if (!confirm('Delete that message in Discord?')) return;
+                if (!confirm(T('pl.discord-embeds.hist.deleteConfirm', 'Delete that message in Discord?'))) return;
                 api('/delete', { method: 'POST', body: { channelId: entry.channelId, messageId: entry.messageId } })
                   .then(function (r) {
                     // A 200 that itself refuses (the route answers `{ok:false}`) must not be treated
                     // as a deletion any more than a rejected request is — Discord still has the
                     // message, so `editing` must not be cleared and the list must not be reloaded as
                     // if it were gone.
-                    if (r && r.ok === false) { try { SSA.toast('NOT deleted — ' + (r.error || 'the manager did not say why'), 'error'); } catch (e) {} return; }
+                    if (r && r.ok === false) { try { SSA.toast(T('pl.discord-embeds.notDeleted', 'NOT deleted — {why}', { why: r.error || T('pl.discord-embeds.noReason', 'the manager did not say why') }), 'error'); } catch (e) {} return; }
                     if (editing && editing.messageId === entry.messageId) setEditing(null);
                     loadHistory();
                   })
-                  .catch(function (err) { try { SSA.toast('NOT deleted — ' + why(err), 'error'); } catch (e) {} });
+                  .catch(function (err) { try { SSA.toast(T('pl.discord-embeds.notDeleted', 'NOT deleted — {why}', { why: why(err) }), 'error'); } catch (e) {} });
               } }, '✕'),
           ]);
           // What the row can be found by — title and channel, lower-cased once here rather than on
@@ -1368,15 +1443,17 @@
         histBox.appendChild(box);
       }).catch(function (err) {
         histBox.innerHTML = '';
-        var retry = h('button', { type: 'button', class: 'ee-btn', onclick: loadHistory }, 'Try again');
+        var retry = h('button', { type: 'button', class: 'ee-btn', onclick: loadHistory }, T('pl.discord-embeds.tryAgain', 'Try again'));
         histBox.appendChild(h('div', { class: 'ee-empty' }, [
-          document.createTextNode('This list could not load — ' + why(err) + ' '),
+          document.createTextNode(T('pl.discord-embeds.listFailed', 'This list could not load — {why} ', { why: why(err) })),
           retry,
         ]));
       });
     }
 
-    var PAGES = [['edit', 'Editor', editorPane], ['tpl', 'Templates', tplPane], ['hist', 'Sent messages', histPane]];
+    var PAGES = [['edit', T('pl.discord-embeds.page.editor', 'Editor'), editorPane],
+      ['tpl', T('pl.discord-embeds.page.templates', 'Templates'), tplPane],
+      ['hist', T('pl.discord-embeds.page.sent', 'Sent messages'), histPane]];
     var nav = h('div', { class: 'ee-tabs' });
     function go(id) {
       closePop();
@@ -1409,9 +1486,10 @@
   // standalone editor tab
   SSA.ready(function () {
     SSA.registerTab({
-      id: 'embed-editor', label: 'Embeds', icon: '📝', premium: true,
+      id: 'embed-editor', label: T('pl.discord-embeds.tab.editor', 'Embeds'), icon: '📝', premium: true,
       render: function (el) {
-        el.innerHTML = eeHead('Write &amp; send', 'Write a message, preview it exactly as Discord renders it, then send it — or fix one you already posted.');
+        el.innerHTML = eeHead(T('pl.discord-embeds.head.editor', 'Write &amp; send'),
+          T('pl.discord-embeds.head.editorSub', 'Write, preview as Discord shows it, send, or fix a posted message.'));
         var host = h('div', { style: 'padding:0 16px 16px' });
         el.appendChild(host);
         buildEditor(host, { standalone: true });
@@ -1437,8 +1515,18 @@
   // but a network failure still went unhandled, and the `_httpError` sentinel it used is gone now
   // that a failure REJECTS instead of resolving to a tagged object.
   var api = SSA.apiClient();
+  // This IIFE shares no scope with the editor's, so it binds the panel's translator again. Same
+  // dictionary, same keys — a key written on one side is the one the other side reads.
+  var T = SSA.t;
   // One sentence for a failure, the route's own words first. Used by every catch in this IIFE.
   function why(err) { return SSA.apiError(err); }
+  /* THE SWITCH THIS TAB'S PROSE SENDS AN OWNER TO, NAMED ONCE.
+   *
+   * Two sentences on the Built-in Embeds tab tell an owner to turn on "Replace fields", and it is a
+   * checkbox on that same card. Writing the words into the sentence and into the label separately is
+   * how one of them survives a rename — and in eighteen locale files it is how one rename becomes
+   * eighteen wrong sentences. Both read this. */
+  function replaceFieldsLabel() { return T('pl.discord-embeds.builtin.replaceFields', 'Replace fields'); }
   // What to put next to the Save button. A refused save must not read like a saved one — and the one
   // refusal that costs work (another tab saved first) says what to do about it in a toast as well,
   // because the small grey status line beside the button is easy to miss.
@@ -1446,10 +1534,11 @@
     if (r && r.ok) return okText;
     if (r && r.stale) {
       try { SSA.toast(r.error, 'error'); } catch (e) { /* toast optional */ }
-      return 'NOT saved — another tab saved first. Reload the page.';
+      return T('pl.discord-embeds.save.stale', 'NOT saved — another tab saved first. Reload the page.');
     }
     var reason = (r && r.error) ? String(r.error) : '';
-    return reason ? ('Save failed — ' + reason) : 'Save failed';
+    return reason ? T('pl.discord-embeds.save.failedWhy', 'Save failed — {why}', { why: reason })
+      : T('pl.discord-embeds.save.failed', 'Save failed');
   }
 
   // Saving runs the same limit check Send does — and always answers with a promise, so a caller can
@@ -1487,7 +1576,8 @@
     const seen = {};
     const dup = [];
     (all || []).forEach(function (o) {
-      const label = (o && (o.name || o.id)) || 'an embed';
+      // Reaches a screen inside the clash warning below, so it is a word rather than a placeholder.
+      const label = (o && (o.name || o.id)) || T('pl.discord-embeds.act.anEmbed', 'an embed');
       const m = (o && o.model) || {};
       [].concat(m.buttons || [], m.selects || []).forEach(function (b) {
         const cid = b && (b.custom_id || b.customId);
@@ -1504,30 +1594,37 @@
     actionsBox.innerHTML = '';
     if (!owner) return;
     owner.actions = owner.actions || {};
-    actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '\u26a1 Click actions'));
+    actionsBox.appendChild(h('div', { class: 'ce-acts-h' }, '\u26a1 ' + T('pl.discord-embeds.act.heading', 'Click actions')));
     // `roles.loadError` is set by the /roles catch below when the dropdown could not be read at
     // all \u2014 an empty "Who" list that just falls back to "Anyone can use it" must say so, or a
     // failed request reads identically to a Discord server that genuinely has no roles.
     if (roles && roles.loadError) {
       actionsBox.appendChild(h('p', { class: 'ce-act-note' },
-        '\u26a0 Could not load this Discord server\u2019s roles \u2014 ' + roles.loadError
-        + ' Only \u201cAnyone can use it\u201d is offered until this succeeds; reopen this tab to try again.'));
+        '\u26a0 ' + T('pl.discord-embeds.act.rolesFailed',
+          'Server roles did not load — {why} Only “{option}” is offered; reopen the tab.',
+          { why: roles.loadError, option: T('pl.discord-embeds.act.anyone', 'Anyone can use it') })));
     }
     collidingIds(siblings, owner).forEach(function (d) {
       actionsBox.appendChild(h('p', { class: 'ce-act-note' },
-        '\u26a0 Custom ID \u201c' + d.cid + '\u201d is used by both \u201c' + d.a + '\u201d and \u201c' + d.b + '\u201d. '
-        + 'Whichever was saved first wins for BOTH, so one of these buttons runs the other one\u2019s action. '
-        + 'Give one of them a different Custom ID \u2014 note that doing so kills that button on any message already posted, so repost it afterwards.'));
+        '\u26a0 ' + T('pl.discord-embeds.act.idClash',
+          '“{a}” and “{b}” share ID “{id}”; one runs the other’s action. Change one, repost.',
+          { id: d.cid, a: d.a, b: d.b })));
     });
-    actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 10px' }, 'Step 1: add buttons or a select menu in the editor above. Step 2: each one shows up here \u2014 pick what it does when a player uses it.'));
+    actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 10px' },
+      T('pl.discord-embeds.act.steps', 'Add buttons or a select menu above, then choose here what each one does.')));
 
     // One action row, wherever it came from. `key` is what the backend looks the action up by:
     // a button's Custom ID, or MENU_ID::OPTION_VALUE for one choice in a menu.
     function actRow(key, label, hint) {
       var act = owner.actions[key] = owner.actions[key] || { type: '', value: '' };
-      var typeSel = h('select', {}, [['', '\u2014 no action \u2014'], ['command', 'Run in-game command'], ['message', 'Reply with a message'], ['announce', 'Post message to this channel']].map(function (o) { return h('option', { value: o[0] }, o[1]); }));
+      var typeSel = h('select', {}, [['', T('pl.discord-embeds.act.none', '— no action —')],
+        ['command', T('pl.discord-embeds.act.command', 'Run in-game command')],
+        ['message', T('pl.discord-embeds.act.message', 'Reply with a message')],
+        ['announce', T('pl.discord-embeds.act.announce', 'Post message to this channel')]].map(function (o) { return h('option', { value: o[0] }, o[1]); }));
       typeSel.value = act.type || ''; typeSel.addEventListener('change', function () { act.type = typeSel.value; redraw(); });
-      var valInp = h('input', { type: 'text', value: act.value || '', placeholder: act.type === 'command' ? '#SpawnItem BP_... 1  (supports {tokens})' : (hint || 'Text (supports {tokens})') });
+      var valInp = h('input', { type: 'text', value: act.value || '',
+        placeholder: act.type === 'command' ? T('pl.discord-embeds.act.phCommand', '#SpawnItem BP_... 1  (supports {tokens})')
+          : (hint || T('pl.discord-embeds.act.phText', 'Text (supports {tokens})')) });
       valInp.addEventListener('input', function () { act.value = valInp.value; });
       actionsBox.appendChild(h('div', { class: 'ce-act' }, [h('span', { class: 'ce-act-id' }, label), typeSel, act.type ? valInp : null]));
 
@@ -1539,12 +1636,12 @@
       // spawn command into a text box.
       if (act.type !== 'command' && act.type !== 'announce') return;
 
-      var roleSel = h('select', {}, [h('option', { value: '' }, 'Anyone can use it')]);
-      (roles || []).forEach(function (r) { roleSel.appendChild(h('option', { value: r.id }, '@' + r.name + ' only')); });
+      var roleSel = h('select', {}, [h('option', { value: '' }, T('pl.discord-embeds.act.anyone', 'Anyone can use it'))]);
+      (roles || []).forEach(function (r) { roleSel.appendChild(h('option', { value: r.id }, T('pl.discord-embeds.act.roleOnly', '@{role} only', { role: r.name }))); });
       // A role that no longer exists must still be visible, or saving this row would silently drop
       // the restriction the owner set.
       if (act.roleId && !(roles || []).some(function (r) { return r.id === act.roleId; })) {
-        roleSel.appendChild(h('option', { value: act.roleId }, 'role ' + act.roleId + ' (not found)'));
+        roleSel.appendChild(h('option', { value: act.roleId }, T('pl.discord-embeds.act.roleGone', 'role {id} (not found)', { id: act.roleId })));
       }
       roleSel.value = act.roleId || '';
       roleSel.addEventListener('change', function () { act.roleId = roleSel.value; redraw(); });
@@ -1554,14 +1651,13 @@
 
       actionsBox.appendChild(h('div', { class: 'ce-act ce-act-guard' }, [
         h('span', { class: 'ce-act-id' }, ''),
-        h('label', { class: 'ce-act-g' }, [h('span', {}, 'Who'), roleSel]),
-        h('label', { class: 'ce-act-g' }, [h('span', {}, 'Cooldown (s, 0 = none)'), cdInp]),
+        h('label', { class: 'ce-act-g' }, [h('span', {}, T('pl.discord-embeds.act.who', 'Who')), roleSel]),
+        h('label', { class: 'ce-act-g' }, [h('span', {}, T('pl.discord-embeds.act.cooldown', 'Cooldown (s, 0 = none)')), cdInp]),
       ]));
       if (!act.roleId) {
-        actionsBox.appendChild(h('p', { class: 'ce-act-note' },
-          act.type === 'command'
-            ? '\u26a0 Anyone who can see this message can run that in-game command. Pick a role, or set a cooldown, if that is not what you want.'
-            : '\u26a0 Anyone who can see this message can make the bot post that. Pick a role, or set a cooldown, if that is not what you want.'));
+        actionsBox.appendChild(h('p', { class: 'ce-act-note' }, '\u26a0 ' + (act.type === 'command'
+          ? T('pl.discord-embeds.act.openCommand', 'Anyone seeing this message can run that command. Limit it with a role or cooldown.')
+          : T('pl.discord-embeds.act.openAnnounce', 'Anyone seeing this can make the bot post it. Limit with a role or cooldown.'))));
       }
     }
 
@@ -1586,18 +1682,26 @@
       if (!(sl.custom_id || sl.customId)) sl.custom_id = idScope + '_menu' + (si + 1);
       var scid = sl.custom_id || sl.customId;
       var opts = (sl.options || []).filter(function (o) { return o && o.label; });
-      actionsBox.appendChild(h('div', { class: 'ce-acts-sub' }, '\u25be Menu \u00b7 ' + scid + (sl.placeholder ? ' \u2014 \u201c' + sl.placeholder + '\u201d' : '')));
-      if (!opts.length) { actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 8px' }, 'This menu has no options yet \u2014 add some in the editor\u2019s \u201cSelect menus\u201d section.')); return; }
+      actionsBox.appendChild(h('div', { class: 'ce-acts-sub' }, '\u25be ' + T('pl.discord-embeds.act.menu', 'Menu · {id}', { id: scid })
+        + (sl.placeholder ? ' \u2014 \u201c' + sl.placeholder + '\u201d' : '')));
+      if (!opts.length) {
+        actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.8rem;margin:0 0 8px' },
+          T('pl.discord-embeds.act.menuEmpty', 'This menu has no options yet — add some in the editor’s “{section}” section.',
+            { section: T('pl.discord-embeds.sec.selects', 'Select menus') })));
+        return;
+      }
       opts.forEach(function (o, oi) {
         var val = o.value || ('opt_' + oi);
         actRow(scid + '::' + val, o.label + ' \u00b7 ' + val);
       });
       // The catch-all, so a long menu does not need an entry per option.
-      actRow(scid, 'Any other choice \u00b7 ' + scid, 'Text \u2014 {picked} is the chosen option');
+      actRow(scid, T('pl.discord-embeds.act.otherChoice', 'Any other choice · {id}', { id: scid }),
+        T('pl.discord-embeds.act.phPicked', 'Text — {picked} is the chosen option'));
     });
 
     if (!allBtns.length && !sels.length) {
-      actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.82rem;margin:0' }, 'Nothing clickable yet \u2014 add a button (any style except \u201cLink\u201d) or a select menu in the editor above.'));
+      actionsBox.appendChild(h('p', { class: 'muted', style: 'font-size:.82rem;margin:0' },
+        T('pl.discord-embeds.act.nothingClickable', 'Nothing clickable yet — add a non-“Link” button or a select menu above.')));
     }
   }
   var mountedEditor = null;
@@ -1605,7 +1709,7 @@
     var bad = [];
     try { bad = (mountedEditor && mountedEditor.problems) ? mountedEditor.problems() : []; } catch (e) { bad = []; }
     if (bad.length) {
-      try { SSA.toast('Not saved — ' + bad[0], 'error'); } catch (e) { /* toast optional */ }
+      try { SSA.toast(T('pl.discord-embeds.save.notSavedWhy', 'Not saved — {why}', { why: bad[0] }), 'error'); } catch (e) { /* toast optional */ }
       return Promise.resolve({ ok: false, error: bad[0] });
     }
     return Promise.resolve(doSave());
@@ -1623,7 +1727,12 @@
   }
 
   function editor(el) {
-    el.innerHTML = eeHead('Built-in embeds', '') + '<div class="es-head"><p class="muted" style="font-size:.86rem;margin:0">Edit the manager\'s own embeds. Pick one to load its default fields as an editable template — change the colour/title, then turn on <b>Replace fields</b> to add, remove or reorder fields. Click a field box and insert a data <code>{token}</code> for live values (e.g. add a Squad field = <code>{squad}</code>).</p></div><div id="es-body" class="muted">Loading…</div>';
+    el.innerHTML = eeHead(T('pl.discord-embeds.head.builtin', 'Built-in embeds'), '')
+      + '<div class="es-head"><p class="muted" style="font-size:.86rem;margin:0">'
+      + T('pl.discord-embeds.builtin.lead',
+        'Pick an embed. Turn on <b>{switch}</b> to change fields; <code>{token}</code> inserts live values, e.g. <code>{squad}</code>.',
+        { switch: replaceFieldsLabel() })
+      + '</p></div><div id="es-body" class="muted">' + T('pl.discord-embeds.loading', 'Loading…') + '</div>';
     var body = el.querySelector('#es-body');
     var edSvc = SSA.consume('embed-editor');
 
@@ -1632,16 +1741,16 @@
     // reads as slow rather than as broken.
     function loadFailed(err) {
       body.innerHTML = '';
-      var retry = h('button', { type: 'button', class: 'es-btn', onclick: load }, 'Try again');
+      var retry = h('button', { type: 'button', class: 'es-btn', onclick: load }, T('pl.discord-embeds.tryAgain', 'Try again'));
       var w = h('div', { class: 'es-warn' });
-      w.appendChild(document.createTextNode('This tab could not load — ' + why(err) + ' '));
+      w.appendChild(document.createTextNode(T('pl.discord-embeds.tabFailed', 'This tab could not load — {why} ', { why: why(err) })));
       w.appendChild(retry);
       body.appendChild(w);
     }
     function load() {
-      body.innerHTML = '<div class="muted">Loading…</div>';
+      body.innerHTML = '<div class="muted">' + T('pl.discord-embeds.loading', 'Loading…') + '</div>';
       api('/config').then(function (cfg) {
-        if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
+        if (!edSvc) { body.innerHTML = '<div class="es-warn">' + T('pl.discord-embeds.editorMissing', 'Embed editor did not load. Reload the page; if it persists, check the manager log.') + '</div>'; return; }
         render(cfg || {});
       }).catch(loadFailed);
     }
@@ -1663,7 +1772,7 @@
       if (!kinds.length) { (function () {
         body.innerHTML = '';
         var w = h('div', { class: 'es-warn' });
-        w.textContent = 'The styler backend isn’t loaded yet. Restart the manager (or toggle this plugin off and on) to finish enabling it, then reopen this tab.';
+        w.textContent = T('pl.discord-embeds.builtin.backendMissing', 'Styler not loaded yet. Restart the manager or toggle this plugin, then reopen this tab.');
         body.appendChild(w);
       }()); return; }
       var byKey = {}; kinds.forEach(function (k) { byKey[k.key] = k; });
@@ -1681,7 +1790,7 @@
 
       // With every manager embed editable the list runs to dozens, so it needs filtering to stay
       // usable. A native <select> keeps keyboard behaviour and cannot clash with a popover.
-      var search = h('input', { class: 'es-search', type: 'search', placeholder: 'Search embeds…' });
+      var search = h('input', { class: 'es-search', type: 'search', placeholder: T('pl.discord-embeds.searchEmbeds', 'Search embeds…') });
       function fillSelect(q) {
         var needle = (q || '').trim().toLowerCase();
         var keep = sel.value;
@@ -1702,15 +1811,15 @@
             // without ever having sent one; what is left is the property alerts and intel cards,
             // whose text only exists once a real event supplies it. Say that, not "not seen".
             var note = '';
-            if (!k.live && !k.sample) note = (k.group === 'dm' || k.group === 'intel')
-              ? ' — shape after the first alert'
-              : ' — not captured yet';
+            if (!k.live && !k.sample) note = ' — ' + ((k.group === 'dm' || k.group === 'intel')
+              ? T('pl.discord-embeds.builtin.shapeLater', 'shape after the first alert')
+              : T('pl.discord-embeds.builtin.notCaptured', 'not captured yet'));
             og.appendChild(h('option', { value: k.key }, k.label + note));
             shown++;
           });
           sel.appendChild(og);
         });
-        if (!shown) sel.appendChild(h('option', { value: '' }, 'No embed matches “' + (q || '') + '”'));
+        if (!shown) sel.appendChild(h('option', { value: '' }, T('pl.discord-embeds.noEmbedMatch', 'No embed matches “{q}”', { q: q || '' })));
         if (keep && sel.querySelector('option[value="' + keep.replace(/"/g, '\\"') + '"]')) sel.value = keep;
         return shown;
       }
@@ -1721,7 +1830,7 @@
 
       var enableChk = h('input', { type: 'checkbox' });
       var fieldsChk = h('input', { type: 'checkbox' });
-      var fieldsLabel = h('label', { class: 'es-chk' }, [fieldsChk, 'Replace fields']);
+      var fieldsLabel = h('label', { class: 'es-chk' }, [fieldsChk, replaceFieldsLabel()]);
       var edBox = h('div', { class: 'es-editor' });
       var noteEl = h('p', { class: 'es-note' });
       var status = h('span', { class: 'muted', style: 'font-size:.85rem' });
@@ -1738,9 +1847,13 @@
       // This text has to match what applyStyle() really does. It used to end “buttons stay manager
       // controlled”, which stopped being true the moment the send started delivering them — and a note
       // that contradicts the behaviour is worse than no note, because it stops people trying.
-      var NOTE_NORMAL = 'Leave a field blank to keep the manager default. Applied: colour, title (and its link), description, author, thumbnail, image, the text above the embed, buttons, select menus and any extra embeds. Turn on “Replace fields” to fully control the field list — click a field, then a data token to insert it. The footer and timestamp come from your bot’s branding on every embed, so they are not editable here.';
-      var NOTE_STYLE = 'This embed shows a generated list, so its fields are not editable here — but everything around them is: colour, title, author, image, the text above the embed, buttons, select menus and extra embeds. It keeps the image you set in the manager unless you set one here.';
-      var NOTE_PLAYER = 'This embed is tied to a player, so the {stat_…} tokens fill in with THAT player’s numbers when it fires. On embeds without a player (server status, leaderboards, custom live embeds) use {pstat:PlayerName:Field} instead to pull a specific player’s stat.';
+      var NOTE_NORMAL = T('pl.discord-embeds.builtin.noteNormal',
+        'Blank keeps defaults. Turn on “{switch}” to edit fields. Footer and timestamp follow branding.',
+        { switch: replaceFieldsLabel() });
+      var NOTE_STYLE = T('pl.discord-embeds.builtin.noteStyle',
+        'Fields are generated; everything around them is editable. Your manager image stays unless set here.');
+      var NOTE_PLAYER = T('pl.discord-embeds.builtin.notePlayer',
+        '{stat_…} tokens use this embed’s player. Elsewhere use {pstat:PlayerName:Field} for one player’s stat.');
 
       // Seed a kind's editor model from its catalog: default field template + (for live embeds) a
       // starting title, so picking a kind loads a real, editable layout — no event needed.
@@ -1785,9 +1898,9 @@
         // Be explicit about where this layout came from. "Not seen yet" is the honest answer for an
         // embed the manager has not sent since it started, and explains an empty field list.
         var origin = !kd ? ''
-          : kd.live ? ' This is the layout the manager last actually sent, with its real values.'
-            : (kd.sample ? ' Built from the manager’s own builder — it will switch to the real one once this embed fires.'
-              : ' The manager hasn’t sent this embed since it started, so there is no captured layout yet. You can still write one.');
+          : ' ' + (kd.live ? T('pl.discord-embeds.builtin.originLive', 'This is the layout the manager last actually sent, with its real values.')
+            : (kd.sample ? T('pl.discord-embeds.builtin.originBuilder', 'Built by the manager’s builder; the real layout replaces it once this embed is sent.')
+              : T('pl.discord-embeds.builtin.originNone', 'Not sent since the manager started, so no captured layout yet. You can write one.')));
         noteEl.textContent = (kd && kd.styleOnly ? NOTE_STYLE : NOTE_NORMAL) + (hasPlayer ? ' ' + NOTE_PLAYER : '') + origin;
         edBox.classList.toggle('off', !entry.enabled);
         // Prefill the image you set in the manager for this embed (so the preview matches Discord).
@@ -1818,9 +1931,9 @@
 
       body.appendChild(h('div', { class: 'card es-card' }, [
         h('div', { class: 'es-bar' }, [
-          h('label', { class: 'es-f es-f-grow' }, [h('span', {}, 'Embed'), sel]),
-          h('label', { class: 'es-f' }, [h('span', {}, 'Find'), search]),
-          h('label', { class: 'es-chk' }, [enableChk, 'Customize this embed']),
+          h('label', { class: 'es-f es-f-grow' }, [h('span', {}, T('pl.discord-embeds.f.embed', 'Embed')), sel]),
+          h('label', { class: 'es-f' }, [h('span', {}, T('pl.discord-embeds.f.find', 'Find')), search]),
+          h('label', { class: 'es-chk' }, [enableChk, T('pl.discord-embeds.builtin.customize', 'Customize this embed')]),
           fieldsLabel,
         ]),
         noteEl,
@@ -1830,17 +1943,17 @@
         h('div', { class: 'ce-acts' }, [actionsBox]),
         h('div', { class: 'es-actions' }, [
           h('button', { class: 'es-btn primary', onclick: function () {
-            status.textContent = 'Saving…';
+            status.textContent = T('pl.discord-embeds.saving', 'Saving…');
             saveGuard(function () { return api('/config', { method: 'POST', body: { styles: styles, rev: rev } }); })
-              .then(function (r) { status.textContent = saveResult(r, 'Saved ✓ — applies to the next embed'); if (r && typeof r.rev === 'number' && !r.stale) rev = r.rev; })
+              .then(function (r) { status.textContent = saveResult(r, T('pl.discord-embeds.builtin.saved', 'Saved ✓ — applies to the next embed')); if (r && typeof r.rev === 'number' && !r.stale) rev = r.rev; })
               .catch(function (err) {
                 // The sentence STAYS beside the button until the next attempt — a save that never
                 // reached the manager is not a transient notice, and a toast is gone in four
                 // seconds while the owner's unsaved styling is still sitting right here.
-                status.textContent = 'NOT saved — ' + why(err);
-                try { SSA.toast('NOT saved — ' + why(err), 'error'); } catch (e) {}
+                status.textContent = T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: why(err) });
+                try { SSA.toast(T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: why(err) }), 'error'); } catch (e) {}
               });
-          } }, 'Save styles'),
+          } }, T('pl.discord-embeds.builtin.save', 'Save styles')),
           status,
         ]),
       ]));
@@ -1852,7 +1965,10 @@
 
   // ── Custom Live Embeds — design your own auto-updating embeds ────────────────
   function customEditor(el) {
-    el.innerHTML = eeHead('Custom live embeds', '') + '<div class="es-head"><p class="muted" style="font-size:.86rem;margin:0">Create your own embeds that the bot keeps updated in a channel — like the built-in Server Status, but yours. Pick a channel + refresh interval and design it with {tokens} for live data.</p></div><div id="ce-body" class="muted">Loading…</div>';
+    el.innerHTML = eeHead(T('pl.discord-embeds.head.custom', 'Custom live embeds'), '')
+      + '<div class="es-head"><p class="muted" style="font-size:.86rem;margin:0">'
+      + T('pl.discord-embeds.custom.lead', 'Your own live embeds in a channel. Pick channel and interval; add {tokens} for live data.')
+      + '</p></div><div id="ce-body" class="muted">' + T('pl.discord-embeds.loading', 'Loading…') + '</div>';
     var body = el.querySelector('#ce-body');
     var edSvc = SSA.consume('embed-editor');
     var channels = [];
@@ -1863,14 +1979,14 @@
     // "first load" here.
     function loadFailed(err) {
       body.innerHTML = '';
-      var retry = h('button', { type: 'button', class: 'es-btn', onclick: load }, 'Try again');
+      var retry = h('button', { type: 'button', class: 'es-btn', onclick: load }, T('pl.discord-embeds.tryAgain', 'Try again'));
       var w = h('div', { class: 'es-warn' });
-      w.appendChild(document.createTextNode('This tab could not load — ' + why(err) + ' '));
+      w.appendChild(document.createTextNode(T('pl.discord-embeds.tabFailed', 'This tab could not load — {why} ', { why: why(err) })));
       w.appendChild(retry);
       body.appendChild(w);
     }
     function load() {
-      body.innerHTML = '<div class="muted">Loading…</div>';
+      body.innerHTML = '<div class="muted">' + T('pl.discord-embeds.loading', 'Loading…') + '</div>';
       Promise.all([
         api('/custom').then(function (c) { return c || {}; }),
         // `api('/channels')`, not a hand-written URL. Routes mount under the MANIFEST id, which is
@@ -1887,7 +2003,7 @@
           var arr = []; arr.loadError = why(err); return arr;
         }),
       ]).then(function (res) {
-        if (!edSvc) { body.innerHTML = '<div class="es-warn">The embed editor did not load — reload the page, and if it persists check the manager log.</div>'; return; }
+        if (!edSvc) { body.innerHTML = '<div class="es-warn">' + T('pl.discord-embeds.editorMissing', 'Embed editor did not load. Reload the page; if it persists, check the manager log.') + '</div>'; return; }
         channels = res[1] || [];
         roles = res[2] || [];
         render(res[0]);
@@ -1919,7 +2035,7 @@
       var cur = 0;
 
       var sel = h('select', { class: 'es-sel' });
-      var nameInp = h('input', { type: 'text', placeholder: 'My live status' });
+      var nameInp = h('input', { type: 'text', placeholder: T('pl.discord-embeds.custom.phName', 'My live status') });
       var chanSel = h('select', {});
       var iv = h('input', { type: 'number', min: '15' });
       var active = h('input', { type: 'checkbox' });
@@ -1927,12 +2043,15 @@
       var actionsBox = h('div', { class: 'ce-acts' });
       var st = h('span', { class: 'muted', style: 'font-size:.82rem' });
       // Clicking through a dropdown is fine for three embeds and hopeless for thirty.
-      var search = h('input', { class: 'es-search', type: 'search', placeholder: 'Search embeds…' });
+      var search = h('input', { class: 'es-search', type: 'search', placeholder: T('pl.discord-embeds.searchEmbeds', 'Search embeds…') });
 
       // Wire each embed button (Custom ID, not a Link) to an action fired when a player clicks it.
       function renderActions() { renderActionsInto(actionsBox, items[cur], roles, renderActions, items); }
 
-      function optLabel(ce, i) { return (ce.name || ('Embed ' + (i + 1))) + (ce.enabled === false ? ' · off' : ''); }
+      function optLabel(ce, i) {
+        return (ce.name || T('pl.discord-embeds.item.embed', 'Embed {i}', { i: i + 1 }))
+          + (ce.enabled === false ? ' · ' + T('pl.discord-embeds.custom.off', 'off') : '');
+      }
       // Find the option belonging to an item by its VALUE, never by position: once the list can be
       // filtered, the nth option is no longer the nth embed, and renaming one would relabel another.
       function optFor(i) { return sel.querySelector('option[value="' + i + '"]'); }
@@ -1946,11 +2065,11 @@
           sel.appendChild(h('option', { value: String(i) }, label));
           shown++;
         });
-        if (!items.length) sel.appendChild(h('option', { value: '' }, '— no embeds —'));
-        else if (!shown) sel.appendChild(h('option', { value: '' }, 'No embed matches “' + search.value + '”'));
+        if (!items.length) sel.appendChild(h('option', { value: '' }, T('pl.discord-embeds.custom.noEmbeds', '— no embeds —')));
+        else if (!shown) sel.appendChild(h('option', { value: '' }, T('pl.discord-embeds.noEmbedMatch', 'No embed matches “{q}”', { q: search.value })));
         // Keep showing whatever is open even when the filter hides it — a search box that silently
         // switched you to a different embed while you were editing one would lose work.
-        if (shown && !optFor(cur) && items[cur]) sel.appendChild(h('option', { value: String(cur) }, optLabel(items[cur], cur) + ' · editing'));
+        if (shown && !optFor(cur) && items[cur]) sel.appendChild(h('option', { value: String(cur) }, optLabel(items[cur], cur) + ' · ' + T('pl.discord-embeds.custom.editing', 'editing')));
         sel.value = String(cur);
       }
       function showOne() {
@@ -1979,13 +2098,13 @@
             // caller's continuation (posting, or trusting a local list edit as persisted) must
             // never fire as if a save the manager never saw had gone through. `saveAll` always
             // resolves, never rejects, so every caller's own `.then` still runs normally.
-            var msg = 'NOT saved — ' + why(err);
+            var msg = T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: why(err) });
             try { SSA.toast(msg, 'error'); } catch (e) {}
             return { ok: false, error: msg };
           });
       }
 
-      chanSel.appendChild(h('option', { value: '' }, '— pick a channel —'));
+      chanSel.appendChild(h('option', { value: '' }, T('pl.discord-embeds.send.pickChannel', '— pick a channel —')));
       channels.forEach(function (c) { chanSel.appendChild(h('option', { value: c.id }, '#' + c.name)); });
 
       sel.addEventListener('change', function () { if (sel.value === '') return; cur = +sel.value || 0; showOne(); });
@@ -1999,7 +2118,7 @@
         h('div', { class: 'es-bar' }, [
           h('label', { class: 'es-f', style: 'flex:1 1 180px' }, [h('span', {}, 'Embed'), sel]),
           h('label', { class: 'es-f', style: 'flex:1 1 150px' }, [h('span', {}, 'Find'), search]),
-          h('button', { class: 'es-btn', onclick: function () { items.push({ id: 'ce_' + Date.now(), name: 'Live status', channelId: '', intervalSec: 60, enabled: true, model: starterModel() }); cur = items.length - 1; search.value = ''; refreshSel(); showOne(); } }, '+ Add'),
+          h('button', { class: 'es-btn', onclick: function () { items.push({ id: 'ce_' + Date.now(), name: 'Live status', channelId: '', intervalSec: 60, enabled: true, model: starterModel() }); cur = items.length - 1; search.value = ''; refreshSel(); showOne(); } }, T('pl.discord-embeds.custom.add', '+ Add')),
           h('button', { class: 'es-btn', onclick: function () {
             if (!items[cur]) return;
             // Removed locally right away so the UI feels immediate, but if the save that is
@@ -2014,14 +2133,14 @@
                 refreshSel(); showOne();
               }
             });
-          } }, 'Remove'),
-          h('button', { class: 'es-btn primary', onclick: function () { saveAll(function () { SSA.toast('Saved'); }); } }, 'Save all'),
+          } }, T('pl.discord-embeds.custom.remove', 'Remove')),
+          h('button', { class: 'es-btn primary', onclick: function () { saveAll(function () { SSA.toast(T('pl.discord-embeds.custom.savedToast', 'Saved')); }); } }, T('pl.discord-embeds.custom.saveAll', 'Save all')),
         ]),
         h('div', { class: 'ce-head' }, [
-          h('div', { class: 'ce-head-f grow' }, h('label', { class: 'es-f' }, [h('span', {}, 'Name'), nameInp])),
-          h('div', { class: 'ce-head-f' }, h('label', { class: 'es-f' }, [h('span', {}, 'Channel'), chanSel])),
-          h('div', { class: 'ce-head-f' }, h('label', { class: 'es-f' }, [h('span', {}, 'Refresh (sec)'), iv])),
-          h('label', { class: 'es-chk' }, [active, 'Active']),
+          h('div', { class: 'ce-head-f grow' }, h('label', { class: 'es-f' }, [h('span', {}, T('pl.discord-embeds.f.name', 'Name')), nameInp])),
+          h('div', { class: 'ce-head-f' }, h('label', { class: 'es-f' }, [h('span', {}, T('pl.discord-embeds.f.channel', 'Channel')), chanSel])),
+          h('div', { class: 'ce-head-f' }, h('label', { class: 'es-f' }, [h('span', {}, T('pl.discord-embeds.custom.refresh', 'Refresh (sec)')), iv])),
+          h('label', { class: 'es-chk' }, [active, T('pl.discord-embeds.custom.active', 'Active')]),
         ]),
       ]));
       body.appendChild(h('div', { class: 'card es-card' }, [
@@ -2029,28 +2148,29 @@
         actionsBox,
         h('div', { class: 'es-actions' }, [
           h('button', { class: 'es-btn primary', onclick: function () {
-            if (!items[cur]) { st.textContent = 'Add an embed first.'; return; }
-            st.textContent = 'Saving…';
+            if (!items[cur]) { st.textContent = T('pl.discord-embeds.custom.addFirst', 'Add an embed first.'); return; }
+            st.textContent = T('pl.discord-embeds.saving', 'Saving…');
             saveAll(function () {
               // Only reached once the save actually landed (see `saveAll`'s own guard above) — the
               // status line is safe to move on to the next step here.
-              st.textContent = 'Posting…';
+              st.textContent = T('pl.discord-embeds.custom.posting', 'Posting…');
               api('/custom/post', { method: 'POST', body: { id: items[cur].id } }).then(function (r) {
                 // Say WHICH thing went wrong — the backend now tells us. "Failed (channel / bot?)"
                 // covered four different causes and pointed at none of them.
-                st.textContent = (r && r.ok) ? 'Posted ✓ — keeps updating' : ('⚠ ' + ((r && r.error) || 'could not post'));
+                st.textContent = (r && r.ok) ? T('pl.discord-embeds.custom.posted', 'Posted ✓ — keeps updating')
+                  : ('⚠ ' + ((r && r.error) || T('pl.discord-embeds.custom.postFailed', 'could not post')));
               }).catch(function (err) {
                 // The post is a SECOND request, after the save already succeeded — its own failure
                 // must say so on its own, not leave the status line reading "Posting…" forever.
-                st.textContent = '⚠ NOT posted — ' + why(err);
+                st.textContent = '⚠ ' + T('pl.discord-embeds.custom.notPosted', 'NOT posted — {why}', { why: why(err) });
               });
             }).then(function (r) {
               // `cb` above only ran on a real success; if the save itself was refused or thrown,
               // `saveAll` already toasted it — this is what stops the status LINE (which nothing
               // else here updates) from being left on "Saving…" in that case.
-              if (r && r.ok === false) st.textContent = 'NOT saved — ' + (r.error || 'the manager did not say why');
+              if (r && r.ok === false) st.textContent = T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: r.error || T('pl.discord-embeds.noReason', 'the manager did not say why') });
             });
-          } }, 'Save & post now'),
+          } }, T('pl.discord-embeds.custom.savePost', 'Save & post now')),
           st,
         ]),
       ]));
@@ -2060,7 +2180,7 @@
   }
 
   SSA.ready(function () {
-    SSA.registerTab({ id: 'embed-styler', label: 'Built-in Embeds', icon: '🎨', premium: true, render: editor });
-    SSA.registerTab({ id: 'embed-custom', label: 'Custom Live Embeds', icon: '📡', premium: true, render: customEditor });
+    SSA.registerTab({ id: 'embed-styler', label: T('pl.discord-embeds.tab.builtin', 'Built-in Embeds'), icon: '🎨', premium: true, render: editor });
+    SSA.registerTab({ id: 'embed-custom', label: T('pl.discord-embeds.tab.custom', 'Custom Live Embeds'), icon: '📡', premium: true, render: customEditor });
   });
 }());

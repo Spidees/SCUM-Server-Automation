@@ -49,7 +49,17 @@ function fitLines(lines, more) {
     used += line.length + 1;
   }
   const left = lines.length - out.length;
-  if (left > 0) out.push('… and ' + left + ' more — ' + (more || 'see the rental menu in Discord'));
+  // ⚠ **IT USED TO SEND EVERY SERVER'S PLAYERS TO DISCORD.** The tail was an English literal with a
+  // hard-coded "see the rental menu in Discord" fallback, and `/rent` passed no override at all — so
+  // a chat-only server (which this plugin supports; its own `/discord-state` route exists to say so)
+  // told a player to go somewhere that is not there, in a language they may not read. A template
+  // carrying `{n}` is the whole line and the owner writes it; a template WITHOUT one is an owner's
+  // existing wording from before this changed, so it keeps its old shape rather than losing the
+  // count that used to sit in front of it.
+  if (left > 0) {
+    const tpl = String(more || '');
+    out.push(/\{n\}/.test(tpl) ? tpl.replace(/\{n\}/g, String(left)) : ('… and ' + left + ' more' + (tpl ? ' — ' + tpl : '')));
+  }
   return out.join('\n');
 }
 
@@ -145,6 +155,92 @@ module.exports = {
           // always names the clock — a player reading "from 20:00" has no way to know otherwise
           // whether that is the server's evening or the game's.
           closedNow: '⏳ {vehicle} is not available right now — {window}',
+          // ── THE ORDINARY REFUSALS, WHICH USED TO BE HARD-CODED ENGLISH ────────────────────────
+          //
+          // This screen tells an owner it holds "every line a player sees", and these five were not
+          // in it: they were string literals down in the command handlers, so a server running in
+          // any other language answered its players in English on the paths they meet MOST — a
+          // player typing the rent command before any vehicle has been set up, one asking for a
+          // plan, and one trying to hand a vehicle back. The fault paths ("tell an admin") are
+          // deliberately still literals: they are for the admin's benefit, not the player's.
+          noVehicles: 'No vehicles are available to rent right now.',
+          pickPlan: '{vehicle} — pick a plan: {list}',
+          returnOff: 'Returning a vehicle early is turned off on this server.',
+          nothingToReturn: '⌛ That rental has already ended, so there is nothing to return.',
+          // ⚠ **A RETURN THAT CANNOT BE CARRIED OUT MUST NOT BE STARTED.** `endRental` claims the row
+          // first — `UPDATE … WHERE id=? AND active=1`, which is exactly right against the expiry
+          // sweep and against Discord — and only then removes the vehicle and pays the refund. With
+          // the bridge unreachable neither of those can run, so the rental was closed, the refund
+          // was not paid, the vehicle stayed in the world untracked, and `/return` could not be
+          // tried again because the row was already closed. One click, three losses, and a "Thanks!"
+          // on the end of it. Refusing before the claim leaves everything exactly as it was.
+          returnNoBridge: '⚠️ The server can’t take the vehicle back right now. Nothing has changed — try again in a minute.',
+          extendOff: 'Extending a rental is turned off on this server.',
+          // A cap a player has reached. It was an English literal, and it is one of the commonest
+          // refusals on the plugin's most-used command.
+          extendMaxed: 'This rental has reached the maximum number of extensions ({max}).',
+          // ── AND THE FRAGMENTS, WHICH ARE THE SAME DEFECT WEARING A SHORTER COAT ────────────────
+          //
+          // The comment above used to say the fault paths were "deliberately still literals: they
+          // are for the admin's benefit, not the player's". They are not: every one of these is
+          // CONCATENATED onto the line the command replies with, so it is read by the player and by
+          // nobody else — a Czech server said "✅ Kolo vráceno. Díky! (the refund could not be paid
+          // out — tell an admin)". Telling somebody to fetch an admin is exactly the sentence that
+          // has to be in their own language.
+          // It is a note about the VEHICLE, not about the money: the refund is paid either way, so
+          // the old wording sat beside a refund that HAD been paid and read as its absence.
+          refundGone:     'the vehicle was already gone when you handed it back — you were still refunded',
+          refundNoPrice:  'no refund — this rental has no recorded price; tell an admin',
+          refundFailed:   'the refund could not be paid out — tell an admin',
+          returnStuck:    'heads up: the vehicle could not be removed — tell an admin',
+          // ── "I COULD NOT FIND OUT" IS A THIRD ANSWER AND IT USED TO READ AS THE GOOD ONE ───────
+          //
+          // `host.server.command` has THREE outcomes. With `allowNoExecutor` on and nobody in the
+          // world the bridge hands the line to the game's static entry point, which returns void, and
+          // answers `ok: true, dispatched: true, confirmed: false`. Handed over — not accepted, not
+          // recognised, not done. `ran()` below folds that into "it did not happen", which is the
+          // right thing to do with the RENTAL (never hand out a vehicle nobody paid for) and the
+          // wrong thing to say about the MONEY: every one of these paths told the player, flatly,
+          // "You were not charged", when the truth is that nobody on this side can say.
+          //
+          // A player who reads that and finds 500 missing has been lied to by the server. So the
+          // definite sentences stay definite — a REFUSED charge really did not happen — and these
+          // are what an UNCONFIRMED one says instead. Each names the one thing a player can actually
+          // do about it, because "we are not sure" with no next step is its own kind of useless.
+          chargeUnknown:  '⚠️ The server could not confirm your payment, so the rental was not started. Check your balance before trying again — if money is missing, show an admin this message.',
+          extendUnknown:  '⚠️ The server could not confirm your payment, so your rental was NOT extended. Check your balance before trying again — if money is missing, show an admin this message.',
+          extendRace:     '⌛ That rental ended while you were extending it. You have not been charged.',
+          extendRaceUnknown: '⌛ That rental ended while you were extending it. Your money was sent back but the server could not confirm it — check your balance and tell an admin if it is short.',
+          extendRaceFailed: '⌛ That rental ended while you were extending it, and the refund did NOT go through — you have been charged for time you did not get. Show an admin this message.',
+          refundUnknown:  'the refund was sent but the server could not confirm it — check your balance and tell an admin if it is missing',
+          // ── THE ORDINARY RENT FAILURES, WHICH WERE ENGLISH LITERALS ───────────────────────────
+          //
+          // All three happen BEFORE any money moves, so "you were not charged" is a fact here and
+          // stays. What was not a fact is that a Czech server said it in English.
+          rentFailedUnconfirmed: '⚠️ Rental failed — the server could not confirm the vehicle was spawned (is anyone online?). You were not charged.',
+          rentFailedNoBridge:    '⚠️ Rental failed — the in-game bridge is offline. You were not charged.',
+          rentFailedSpawn:       '⚠️ Rental failed — the vehicle couldn’t be spawned. You were not charged.',
+          // The game itself said no to the spawn — see `spawnVerdict`. Almost always an out-of-date
+          // spawn code, which is what a game update leaves behind.
+          spawnRefused:   '🚫 The server refused to spawn {vehicle}, so nothing was rented and you were not charged. The spawn code is probably out of date — please tell an admin.',
+          chargeFailed:   '⚠️ Payment failed, so the rental was cancelled. You were not charged.',
+          extendFailed:   '⚠️ Payment failed — the rental was not extended. You were not charged.',
+          // The running game answered with a CUT list of who is online, so "this player is not in it"
+          // does not mean they are offline and the saved balance beside it may be minutes old.
+          balanceListCut: '⏳ The server could not give a complete list of who is online, so your balance could not be checked. Nothing was charged — try again in a moment.',
+          // The three words a menu is built out of. Short is not the same as harmless: "no plans"
+          // against a vehicle an owner has not finished setting up is the whole of what a player is
+          // told about it.
+          free:           'Free',
+          noPlans:        'no plans',
+          noPlansPick:    'none configured',
+          closedMark:     '⏳ = not available right now; ask again for the times.',
+          // The tail on a list too long for one chat window. `{n}` is how many were left out, and
+          // the default names no other surface: not every server running this has a Discord.
+          moreElsewhere:  '… and {n} more',
+          // {window} on an older manager that cannot evaluate one. It reaches the player inside
+          // `closedNow`, so it has to be a sentence in their language like everything around it.
+          windowsNeedManager: 'time windows need a newer manager, so this is switched off until an admin updates it',
         },
       };
     }
@@ -180,6 +276,14 @@ module.exports = {
     // texts merge one level deeper, so a config saved before a line existed still gets its default
     // instead of an empty message.
     const txt = (c, key) => Object.assign(defaultConfig().texts, c.texts || {})[key] || '';
+    /**
+     * A parenthesised aside appended to a reply, in the owner's own words.
+     *
+     * The brackets and the leading space stay HERE rather than inside the text, so an owner editing
+     * the sentence cannot accidentally weld it onto the word in front of it — and so a language that
+     * does not use round brackets only has to change this one line.
+     */
+    const note = (c, key) => { const s = txt(c, key); return s ? ' (' + s + ')' : ''; };
 
     // ── time windows ───────────────────────────────────────────────────────────
     //
@@ -221,7 +325,7 @@ module.exports = {
       for (const [w, what] of levels) {
         if (!hasWindows(w)) continue;
         const t = timeApi();
-        if (!t) return fill(txt(c, 'closedNow'), vars(c, { vehicle: what, window: 'time windows need a newer manager, so this is switched off until an admin updates it' }));
+        if (!t) return fill(txt(c, 'closedNow'), vars(c, { vehicle: what, window: txt(c, 'windowsNeedManager') }));
         const r = t.isOpen(w);
         if (!r.open) return fill(txt(c, 'closedNow'), vars(c, { vehicle: what, window: r.why }));
       }
@@ -295,6 +399,26 @@ module.exports = {
     }
 
     /**
+     * The vehicle id the GAME named in its reply to the spawn, or '' when it named none.
+     *
+     * `SpawnVehicle` answers `Spawned BPC_Laika with ID 5510205`, and that number is the vehicle's
+     * entity id in SCUM.db — the same id the world scan lists and this plugin already removes by. Measured through
+     * the SSA Bridge: the row was in the save four seconds later at the requested x, y, z. Read
+     * strictly (the digits end the line) and only when exactly one id is named, because a wrong id
+     * here is a vehicle destroyed at expiry. An owner's own spawn template may use another command
+     * that answers differently, which is why the before/after diff below stays as the fallback.
+     */
+    function spawnedIdFrom(res) {
+      const lines = (res && Array.isArray(res.output)) ? res.output : [];
+      const ids = new Set();
+      lines.forEach(function (l) {
+        const m = /with ID (\d{1,18})\s*\.?\s*$/.exec(String(l == null ? '' : l));
+        if (m) ids.add(m[1]);
+      });
+      return ids.size === 1 ? Array.from(ids)[0] : '';
+    }
+
+    /**
      * Which vehicle did we just spawn?
      *
      * NOT "the one nearest the spawn point" — the thing nearest a player is usually the player's own
@@ -356,8 +480,14 @@ module.exports = {
     // left the vehicle standing and paid no refund — the fast path became the broken one.
     const pendingCapture = new Map();
 
-    function captureLater(rentalId, loc, before) {
+    function captureLater(rentalId, loc, before, knownId) {
       if (!db || !rentalId) return;
+      // The game named the vehicle in its reply: record it now, so a manager restart in the next few
+      // seconds cannot lose it.
+      if (knownId) {
+        try { db.prepare('UPDATE rentals SET vehId=? WHERE id=? AND active=1').run(String(knownId), rentalId); return; }
+        catch (e) { host.logger.warn('rental #' + rentalId + ': could not record the vehicle id the game named, looking it up instead: ' + e.message); }
+      }
       const p = captureVehicleId(loc, before).then(function (vehId) {
         if (!vehId) {
           // Two very different things look the same from here: the map could not tell us, or NOTHING
@@ -393,7 +523,26 @@ module.exports = {
     }
 
     // ── admin routes ──
-    host.routes.get('/config', function (req, res) { res.json(cfg()); });
+    /**
+     * ⚠ **A LINE THE STORED CONFIG DOES NOT CARRY HAS NO BOX ON THE SCREEN, SO IT CANNOT BE
+     * TRANSLATED AT ALL.**
+     *
+     * `setCfg` does `Object.assign(defaultConfig(), c)`, which is SHALLOW — so a stored `texts`
+     * object REPLACES the template's rather than merging with it. `txt()` merges on the way out, so
+     * the backend has always been right; the panel draws `config.texts[key] !== undefined` and
+     * therefore drew a field only for the keys that were already in the owner's file. Every line
+     * added after their last save was invisible: correct in English, untranslatable, and with
+     * nothing anywhere saying so.
+     *
+     * It is fixed HERE rather than on the screen because the screen is not the only reader — the
+     * same answer is what a checker marking every owner-editable sentence sees, and it reported
+     * these lines as hard-coded English for exactly the same reason. The merge is additive: a key
+     * the owner HAS wins, and saving the answer back stores the whole set.
+     */
+    host.routes.get('/config', function (req, res) {
+      const c = cfg();
+      res.json(Object.assign({}, c, { texts: Object.assign({}, defaultConfig().texts, c.texts || {}) }));
+    });
     /**
      * Does sector detection actually work right now?
      *
@@ -696,30 +845,82 @@ module.exports = {
      */
     function ran(res) { return !!res && res.ok !== false && res.confirmed !== false; }
 
+    /**
+     * …and the THIRD outcome, kept apart from `ran()` because they answer different questions.
+     *
+     * `ran()` decides what this plugin DOES. `outcome()` decides what the player is TOLD, and the
+     * two must not be the same word: a refused command definitely did not happen, an unconfirmed one
+     * may well have, and folding them together is how "You were not charged" ends up in front of
+     * somebody whose 500 is gone.
+     *
+     *   'ok'           the game confirmed it
+     *   'refused'      the bridge refused, or is not there — it did not run
+     *   'unconfirmed'  dispatched with no executor; nobody on this side can say
+     */
+    function outcome(res) { return (!res || res.ok === false) ? 'refused' : (res.confirmed === false ? 'unconfirmed' : 'ok'); }
+
+    /**
+     * WHAT THE GAME SAID ABOUT A SPAWN, which is not the same question as whether the command ran.
+     *
+     * `SpawnVehicle BPC_Gone_C` on a code a game update has moved is dispatched perfectly, confirmed
+     * perfectly, and spawns nothing — SCUM answers *"'BPC_Gone_C' is not allowed to be spawned."* and
+     * the bridge, which has read that reply since 2.1, hands it over as `status: "refused"` beside
+     * the game's own words in `output`. This plugin never looked. So a stale code charged the player
+     * the full price for a vehicle that was never created, every time, and the only trace was
+     * `captureLater` failing to identify it about sixteen seconds later — by which point the money
+     * had gone and the log line could not tell "nothing spawned" from "the map could not say".
+     *
+     * `status` rides on `SpawnItem` and `SpawnVehicle` and on nothing else, so an owner whose spawn
+     * template is some other command gets `null` here and is judged by nothing — the same shape as
+     * `confirmed !== false`, and for the same reason: a field that is absent is not a verdict.
+     */
+    function spawnVerdict(res) { return (res && typeof res.status === 'string') ? res.status : null; }
+
+    /** The game's own words about a spawn, for a log line an admin can act on. */
+    function spawnSaid(res) {
+      const out = (res && Array.isArray(res.output)) ? res.output.filter(Boolean) : [];
+      return out.length ? out.join(' | ') : '(the game said nothing)';
+    }
+
+    /**
+     * Take or give back money. `{ ok, why }` — `why` is 'refused' or 'unconfirmed' when it did not.
+     *
+     * It used to answer a BOOLEAN, and a boolean has no room for the third outcome: every caller read
+     * `false` as "definitely nothing moved" and said so to the player.
+     */
     async function charge(steamId, o, factor) {
       const refund = factor != null && factor < 0;
+      const DONE = { ok: true, why: null };
       // Free mode stops CHARGING. It must not stop a refund: someone who paid 500 yesterday and is
       // owed 250 today is owed it whether or not new rentals are free now. Skipping it silently
       // closed the rental, told the player "Thanks!" and paid nothing.
-      if (cfg().free && !refund) return true;
-      const raw = Math.max(0, parseInt(o.amount, 10) || 0) * (factor == null ? 1 : Math.abs(factor));
+      if (cfg().free && !refund) return DONE;
+      const base = Math.max(0, parseInt(o.amount, 10) || 0);
+      const raw = base * (factor == null ? 1 : Math.abs(factor));
       const amount = Math.round(raw);
       const cur = o.currency === 'gold' ? 'Gold' : 'Normal';
-      // A payout that rounds to nothing is not a payout. `Math.round(-0.4)` is `-0`, which is falsy,
-      // so a 40% refund on a 1-gold rental reported success and moved no gold.
-      if (!amount) return !refund;
+      // ⚠ **"NOTHING WAS OWED" AND "THE ROUNDING ATE IT" ARE OPPOSITES AND BOTH ARRIVE AS ZERO.**
+      // The rule below exists for the second — `Math.round(-0.4)` is `-0`, so a 40% refund on a
+      // 1-gold rental reported success and moved no gold — and it was deciding the first as well.
+      // A plan priced 0 (a free plan among paid ones) therefore made EVERY `/return` of it end
+      // "(the refund could not be paid out — tell an admin)" when nothing was owed and nothing had
+      // gone wrong. A price of zero is answered before the rounding is consulted.
+      if (!base) return DONE;
+      // The rounding ate it. That is a DEFINITE nothing — no command was sent — so it is 'refused'
+      // rather than the unknown, and only a refund cares.
+      if (!amount) return refund ? { ok: false, why: 'refused' } : DONE;
       // The sign is the whole difference between charging and refunding. Both are DELTAS, which is
       // what keeps a stale balance out of the amount: the game applies ±N to whatever the balance
       // really is at that instant, so a refund is never computed from a figure read minutes ago.
       const res = await host.server.command('#ChangeCurrencyBalance ' + cur + ' ' + (refund ? '' : '-') + Math.abs(amount) + ' ' + steamId);
-      if (res && res.confirmed === false) {
-        host.logger.warn(`the bridge dispatched #ChangeCurrencyBalance for ${steamId} with no executor, so the game never confirmed it — treating the ${refund ? 'refund' : 'charge'} of ${amount} ${o.currency === 'gold' ? 'gold' : 'money'} (their ${poolWord(o.currency)}) as NOT made`);
+      const why = outcome(res);
+      if (why === 'unconfirmed') {
+        host.logger.warn(`the bridge dispatched #ChangeCurrencyBalance for ${steamId} with no executor, so the game never confirmed it — the ${refund ? 'refund' : 'charge'} of ${amount} ${o.currency === 'gold' ? 'gold' : 'money'} (their ${poolWord(o.currency)}) MAY OR MAY NOT have been made. The rental is not handed out on it, and the player is told the outcome is unknown rather than that nothing moved — check their balance before reversing anything.`);
       }
-      const done = ran(res);
       // Which pool the money moved in, so an owner reconciling by hand knows which balance to look
       // at — "500 money" does not say whether that is the bank account or gold.
-      if (done) host.logger.debug(`${refund ? 'refunded' : 'took'} ${amount} ${refund ? 'to' : 'from'} ${steamId}'s ${poolWord(o.currency)}`);
-      return done;
+      if (why === 'ok') host.logger.debug(`${refund ? 'refunded' : 'took'} ${amount} ${refund ? 'to' : 'from'} ${steamId}'s ${poolWord(o.currency)}`);
+      return why === 'ok' ? DONE : { ok: false, why: why };
     }
 
     /**
@@ -762,17 +963,30 @@ module.exports = {
     async function balanceOf(steamId, currency) {
       let p = null;
       try { p = await host.players.live(steamId); } catch (e) { p = null; }
+      // ⚠ **A TRUNCATED LIST IS NOT A SHORT LIST — IT IS THE WRONG ANSWER, SILENTLY.**
+      //
+      // `mod_live`'s walk over connected players stops at its own ceiling, and when it does the
+      // bridge appends a marker saying so; `host.players.live()` turns that into `liveTruncated`.
+      // Without it a player PAST the ceiling is simply absent from the payload, which every reader —
+      // this one included — has to read as "they are offline", and their money then comes out of the
+      // save. That is the exact staleness this whole call exists to avoid, wearing the clothes of the
+      // one case where falling through is correct.
+      //
+      // So it is carried, not swallowed. The manager already refuses an area action over a world it
+      // could not enumerate rather than narrowing to what was visible; this is that rule applied to
+      // the one list a price is decided against.
+      const cut = !!(p && p.liveTruncated);
       if (p && p.source === 'live') {
         const v = currency === 'gold' ? finite(p.gold) : finite(p.money);
-        if (v != null) return { have: v, source: 'live', cash: null };
+        if (v != null) return { have: v, source: 'live', cash: null, cut: false };
         warnLiveOff();
       } else if (p && p.source === 'db') {
         const v = currency === 'gold' ? finite(p.gold) : finite(p.bank);
-        return { have: v, source: v == null ? null : 'db', cash: finite(p.cash) };
+        return { have: v, source: v == null ? null : 'db', cash: finite(p.cash), cut: cut };
       }
       const fin = host.players.finances(steamId) || {};
       const v = currency === 'gold' ? finite(fin.gold) : finite(fin.bank);
-      return { have: v, source: v == null ? null : 'db', cash: finite(fin.cash) };
+      return { have: v, source: v == null ? null : 'db', cash: finite(fin.cash), cut: cut };
     }
 
     /**
@@ -797,6 +1011,14 @@ module.exports = {
       const need = Math.max(0, parseInt(o.amount, 10) || 0);
       const unit = o.currency === 'gold' ? 'gold' : 'money';
       const bal = await balanceOf(steamId, o.currency);
+      // BEFORE the figure is looked at, because the figure is what is in doubt. A cut roster means
+      // this player may be standing in the world while the payload says they are not, so the saved
+      // balance beside it is not a reading of anything current. Refusing costs a retry; charging on
+      // it is the stale-balance failure with nothing anywhere saying so.
+      if (bal.cut) {
+        host.logger.warn(`the running game answered with a CUT list of connected players, so ${steamId} could not be looked up live and the saved balance is not safe to price against. The rental was refused. This is the bridge's own ceiling being reached — tell its authors.`);
+        return fill(txt(c, 'balanceListCut'), vars(c));
+      }
       if (bal.have == null) return null;
       if (bal.have >= need) return null;
       let msg = '💸 Not enough ' + unit + ' — this rental costs ' + need + ' ' + unit + ', your ' + poolWord(o.currency) + ' has ' + bal.have + '.';
@@ -893,18 +1115,34 @@ module.exports = {
         if (unconfirmed) {
           host.logger.warn(`rental refused: the bridge dispatched the spawn with no executor (nobody in the world), so the game could not confirm the ${v.name || 'vehicle'} exists. Nobody was charged.`);
         }
-        const reason = unconfirmed ? 'the server could not confirm the vehicle was spawned (is anyone online?)'
-          : (spawnRes && /unavailable|offline|refused/i.test(String(spawnRes.error || ''))) ? 'the in-game bridge is offline'
-            : 'the vehicle couldn’t be spawned';
-        return { ok: false, error: '⚠️ Rental failed — ' + reason + '. You were not charged.' };
+        const key = unconfirmed ? 'rentFailedUnconfirmed'
+          : (spawnRes && /unavailable|offline|refused/i.test(String(spawnRes.error || ''))) ? 'rentFailedNoBridge'
+            : 'rentFailedSpawn';
+        return { ok: false, error: fill(txt(c, key), vars(c, { vehicle: v.name || 'vehicle' })) };
+      }
+      // ⚠ **A SPAWN CAN BE DISPATCHED, CONFIRMED, AND STILL HAVE SPAWNED NOTHING.** That is what a
+      // stale code is: the command is perfect, the game answers *"'X' is not allowed to be spawned."*,
+      // and `ran()` above is entirely right that it ran. Charging on "it ran" is what put 500 on the
+      // bill for a vehicle that never existed after a game update moved the blueprint ids. The bridge
+      // has carried the game's own verdict all along; nothing here had ever read it. `null` — an
+      // owner's own spawn template, an older bridge — is judged by nothing.
+      if (spawnVerdict(spawnRes) === 'refused') {
+        host.logger.warn(`rental refused: the game declined to spawn "${v.code}" — ${spawnSaid(spawnRes)}. Nobody was charged. A spawn code that stops working like this is almost always one a game update has moved; check it against the item database.`);
+        try {
+          host.notify('admin.alert', {
+            message: `Vehicle rental: the game refused to spawn "${v.code}" (${v.name || 'vehicle'}) — ${spawnSaid(spawnRes)}. Nobody was charged. Check the spawn code.`,
+            severity: 'warning',
+          });
+        } catch (e) { /* notifications are optional */ }
+        return { ok: false, error: fill(txt(c, 'spawnRefused'), vars(c, { vehicle: v.name || 'vehicle' })) };
       }
       // A charge that silently fails hands out a free vehicle, so take the vehicle back rather than
       // leave the player with something they didn't pay for.
       const paid = await charge(who.steamId, o, 1);
-      if (!paid) {
+      if (!paid.ok) {
         // The payment failed, so take the vehicle back rather than leave the player with one they did
         // not pay for. This one CANNOT be deferred — it has to find the vehicle now to remove it.
-        const orphan = await captureVehicleId({ x: loc.x + 300, y: loc.y, z: loc.z }, before);
+        const orphan = spawnedIdFrom(spawnRes) || await captureVehicleId({ x: loc.x + 300, y: loc.y, z: loc.z }, before);
         if (orphan && c.removeCmd) {
           // The removal can fail too, and it fails by RETURNING — so an empty catch here covered a
           // case that never happens while missing the one that does. Either way the player is left
@@ -917,7 +1155,11 @@ module.exports = {
           } catch (e) { removed = false; }
           if (!removed) host.logger.warn(`rental: payment failed and the vehicle (${orphan}) could NOT be removed — ${who.playerName || who.steamId} has a ${v.name || 'vehicle'} they did not pay for`);
         } else if (!orphan) host.logger.warn('rental: payment failed and the spawned vehicle could not be found to remove — check for a stray ' + (v.name || 'vehicle'));
-        return { ok: false, error: '⚠️ Payment failed, so the rental was cancelled. You were not charged.' };
+        // Which of the two it was decides the SENTENCE and nothing else: the rental is cancelled
+        // either way, because handing out a vehicle on a payment nobody confirmed is the mistake in
+        // the other direction. What must not happen is telling somebody whose money may be gone that
+        // it certainly is not.
+        return { ok: false, error: fill(txt(c, paid.why === 'unconfirmed' ? 'chargeUnknown' : 'chargeFailed'), vars(c, { vehicle: v.name || 'vehicle', price: money(o) })) };
       }
 
       const now = Date.now(), exp = now + planMinutes(o) * 60000;
@@ -929,11 +1171,11 @@ module.exports = {
         rentalId = ins.lastInsertRowid;
       }
       // Filled in behind the confirmation — see captureLater.
-      captureLater(rentalId, { x: loc.x + 300, y: loc.y, z: loc.z }, before);
+      captureLater(rentalId, { x: loc.x + 300, y: loc.y, z: loc.z }, before, spawnedIdFrom(spawnRes));
 
-      await say(who.steamId, fill(txt(c, 'confirmed'), vars(c, { player: who.playerName || '', vehicle: v.name || 'vehicle', duration: fmtDur(planMinutes(o)), price: c.free ? 'Free' : money(o) })));
+      const told = await say(who.steamId, fill(txt(c, 'confirmed'), vars(c, { player: who.playerName || '', vehicle: v.name || 'vehicle', duration: fmtDur(planMinutes(o)), price: c.free ? txt(c, 'free') : money(o) })));
       host.notify('admin.alert', { message: 'Vehicle rented: ' + (v.name || '?') + ' by ' + (who.playerName || who.steamId), severity: 'info' });
-      return { ok: true, exp: exp, rentalId: rentalId, v: v, o: o };
+      return { ok: true, exp: exp, rentalId: rentalId, v: v, o: o, told: told };
     }
     // Is that vehicle still in the world? Used before claiming we removed it, and before letting a
     // player "return" something that no longer exists. Unknown (no id / no map data) ⇒ true, so a
@@ -951,11 +1193,25 @@ module.exports = {
     // ── in-game messaging ──────────────────────────────────────────────────────
     // Never let a chat failure break a rental: the Discord side is the record, the game line is a
     // courtesy. Every call is awaited but swallowed.
+    //
+    // ⚠ **AND IT ANSWERS WHETHER IT REALLY SAID ANYTHING**, because one caller cannot treat this as a
+    // courtesy. `host.chat.dm` THROWS — a bridge that is off, a refused channel, a timeout — and the
+    // failure went into a `debug` line. For a reminder that is right; for the confirmation after a
+    // rental has been CHARGED it means the player pays and hears nothing at all, types `/rent`
+    // again, and on `/extend` (unlimited by default, and the 1.5 s dedup long gone) pays twice. The
+    // command handlers reply themselves when this comes back false: `ctx.reply` is a different door
+    // and does not depend on the one that just failed.
+    //
+    // ⚠ A channel the bridge refuses (`CommandsOnly` is one) turns EVERY line here into that
+    // failure, so the configured channel is checked against the set the bridge accepts rather than
+    // passed through — the sibling plugins have had `safeChannel` since they were written.
+    const CHAN_OK = { local: 1, global: 1, squad: 1, admin: 1, server: 1 };
+    function safeChannel(ch) { const s = String(ch || '').toLowerCase(); return CHAN_OK[s] ? s : 'local'; }
     async function say(steamId, text) {
       const c = cfg();
-      if (c.inGameNotify === false || !text || !steamId) return;
-      try { await host.chat.dm(String(steamId), String(text), { channel: c.inGameChannel || 'local' }); }
-      catch (e) { host.logger.debug('in-game message failed: ' + e.message); }
+      if (c.inGameNotify === false || !text || !steamId) return false;
+      try { await host.chat.dm(String(steamId), String(text), { channel: safeChannel(c.inGameChannel || 'local') }); return true; }
+      catch (e) { host.logger.debug('in-game message failed: ' + e.message); return false; }
     }
     // The panel advertises {player} {vehicle} {duration} {price} {left} {sector} {cmd} {list} on
     // EVERY line, and `fill` replaces an unsupplied token with an empty string. So a line written
@@ -964,7 +1220,7 @@ module.exports = {
     // set, and a caller overrides the parts it actually knows.
     const vars = (c, extra) => Object.assign({
       cmd: host.chat.prefix ? host.chat.prefix() : '/',
-      player: '', vehicle: '', duration: '', price: '', left: '', sector: '', list: '', window: '',
+      player: '', vehicle: '', duration: '', price: '', left: '', sector: '', list: '', window: '', max: '',
     }, extra || {});
 
     // Sector rule. Async because map calibration is remote; null sector = unknown = allow.
@@ -1031,7 +1287,7 @@ module.exports = {
         player: r.playerName || '',
         vehicle: r.vehName || 'vehicle',
         duration: o ? fmtDur(planMinutes(o)) : '',
-        price: (c.free || !o) ? 'Free' : money(o),
+        price: (c.free || !o) ? txt(c, 'free') : money(o),
         left: r.expiresAt ? fmtLeft(r.expiresAt - Date.now()) : '',
       }, extra || {}));
     }
@@ -1223,11 +1479,11 @@ module.exports = {
 
     async function extendInner(r) {
       const c = cfg();
-      if (c.allowExtend === false) return { ok: false, error: 'Extensions are turned off.' };
+      if (c.allowExtend === false) return { ok: false, error: fill(txt(c, 'extendOff'), vars(c)) };
       const v = c.vehicles[Number(r.vehIdx)];
       const o = planOf(r, c);
       const effMaxExt = (v && v.maxExtensions != null && v.maxExtensions !== '') ? Number(v.maxExtensions) : c.maxExtensions;
-      if (effMaxExt && (r.extensions || 0) >= effMaxExt) return { ok: false, error: 'This rental has reached the maximum number of extensions (' + effMaxExt + ').' };
+      if (effMaxExt && (r.extensions || 0) >= effMaxExt) return { ok: false, error: fill(txt(c, 'extendMaxed'), rentalVars(r, c, { max: effMaxExt })) };
       if (!o) return { ok: false, error: 'This rental has no recorded price, so it cannot be extended. Ask an admin to end it and rent again.' };
       // An extension is a fresh purchase at the same price, so it has to obey the same window. Without
       // this the happy hour has a hole you can drive through: rent at 20:30 for the cheap plan, then
@@ -1260,7 +1516,7 @@ module.exports = {
       if (affErr) return { ok: false, error: affErr.replace('this rental costs', 'extending costs') };
       // Same rule as renting: if the charge doesn't land, don't hand out the time.
       const paid = await charge(r.steamId, o, 1);
-      if (!paid) return { ok: false, error: '⚠️ Payment failed — the rental was not extended.' };
+      if (!paid.ok) return { ok: false, error: fill(txt(c, paid.why === 'unconfirmed' ? 'extendUnknown' : 'extendFailed'), rentalVars(r, c)) };
       const exp = Math.max(Date.now(), r.expiresAt) + planMinutes(o) * 60000;
       // `AND active=1`, and check it landed. Without it a player could click Extend on the reminder
       // DM at the exact moment the sweep expired the rental: they were charged, the row was already
@@ -1268,11 +1524,19 @@ module.exports = {
       // point, so a lost race is refunded rather than pocketed.
       const upd = db.prepare('UPDATE rentals SET expiresAt=?, reminded=0, extensions=extensions+1 WHERE id=? AND active=1').run(exp, r.id);
       if (!upd || upd.changes !== 1) {
-        try { await charge(r.steamId, o, -1); } catch (e) { host.logger.warn(`rental #${r.id}: extension lost the race AND the refund failed — check ${r.playerName || r.steamId}`); }
-        return { ok: false, error: '⌛ That rental ended while you were extending it. You have not been charged.' };
+        // The charge HAS happened by here, so this sentence is only true if the refund also lands.
+        // It used to be said unconditionally — including when the refund threw, and including when
+        // the refund came back unconfirmed, which is the case where the player is most likely to be
+        // out of pocket and was told most firmly that they were not.
+        let back = { ok: false, why: 'refused' };
+        try { back = await charge(r.steamId, o, -1); }
+        catch (e) { back = { ok: false, why: 'refused' }; }
+        if (!back.ok) host.logger.warn(`rental #${r.id}: extension lost the race and the refund ${back.why === 'unconfirmed' ? 'could NOT BE CONFIRMED (it may or may not have been paid)' : 'FAILED'} — check ${r.playerName || r.steamId}`);
+        const raceKey = back.ok ? 'extendRace' : (back.why === 'unconfirmed' ? 'extendRaceUnknown' : 'extendRaceFailed');
+        return { ok: false, error: fill(txt(c, raceKey), rentalVars(r, c)) };
       }
-      await say(r.steamId, fill(txt(c, 'extendOk'), rentalVars(r, c, { duration: fmtDur(planMinutes(o)) })));
-      return { ok: true, exp: exp, v: v, o: o };
+      const told = await say(r.steamId, fill(txt(c, 'extendOk'), rentalVars(r, c, { duration: fmtDur(planMinutes(o)) })));
+      return { ok: true, exp: exp, v: v, o: o, told: told };
     }
 
     function confirmEmbed(v, o, exp) {
@@ -1308,12 +1572,70 @@ module.exports = {
       const c0 = cfg();
       if (c0.inGameCommands === false) { host.logger.info('in-game commands: off'); return; }
       const activeFor = (steamId) => (db ? db.prepare('SELECT * FROM rentals WHERE active=1 AND steamId=? ORDER BY expiresAt').all(String(steamId)) : []);
+      // ⚠ **`active=1` IS NOT "STILL RUNNING", AND THREE COMMANDS GAVE THREE ACCOUNTS OF ONE RENTAL.**
+      // The expiry sweep runs once a minute, so a rental that ran out is `active=1` until it fires —
+      // and every one of these commands took `rows[0]`, which is the one expiring FIRST. So a player
+      // holding an expired row and a live one was told "that rental has already ended, there is
+      // nothing to return" about the live one and could not return it at all; `/extend` had no
+      // expiry test and would happily CHARGE to resurrect the dead row; and `/myrent` reported the
+      // dead one as "1 min left" for ever, because `fmtLeft` floors a negative at zero.
+      //
+      // So the commands work on the rentals that are really running, and "you have rows but none of
+      // them are live" is the same answer as having none — which is what the sweep is about to make
+      // true anyway.
+      const liveFor = (steamId) => activeFor(steamId).filter((r) => !r.expiresAt || r.expiresAt > Date.now());
+
+      /**
+       * Where this player stands, for the built-in `/help`.
+       *
+       * Every limit this plugin has — a cap on active rentals, a rent cooldown, a daily count — was
+       * discoverable only by walking to a vehicle and being refused. The time WINDOWS were the one
+       * exception and they are done well (`/rent` marks a closed plan with ⏳ and names its hours);
+       * these are the rest.
+       *
+       * The rent cooldown is the one with a clock behind it, so it is answered as a time rather than
+       * as a sentence and the player reads "12m" instead of "too often". Everything reads the
+       * plugin's own SQLite and nothing else — no bridge, no game DB — because one `/help` runs
+       * every provider on the server.
+       *
+       * ⚠ `limitsError`'s sentences are still English literals in this file, so a cap answers in
+       * English on a translated server. That is the SAME sentence the refusal already gives, so the
+       * two agree; translating them is one job for all of it and is not this change.
+       */
+      const rentStatus = ({ steamId }) => {
+        const c = cfg();
+        if (c.enabled === false) return { ready: false, why: fill(txt(c, 'disabled'), vars(c)) };
+        const sid = String(steamId || '');
+        // The global rent cooldown, as a moment rather than as a complaint.
+        const gCd = Number(c.cooldownMinutes) || 0;
+        if (gCd && db) {
+          const last = db.prepare('SELECT MAX(startedAt) m FROM rentals WHERE steamId=?').get(sid).m;
+          if (last && (Date.now() - last) < gCd * 60000) return { ready: false, until: last + gCd * 60000 };
+        }
+        const list = (c.vehicles || []);
+        if (!list.length) return { ready: false, why: fill(txt(c, 'noVehicles'), vars(c)) };
+        // Ready when ANY vehicle can be rented: a per-vehicle cap on one of six is not "you cannot
+        // rent". The first vehicle's refusal is the one quoted, because a list of six is not a chat
+        // line — and a server-wide cap refuses every vehicle identically anyway.
+        let first = null;
+        for (let i = 0; i < list.length; i++) {
+          const why = limitsError(sid, i, list[i], c);
+          if (!why) return { ready: true };
+          if (first === null) first = why;
+        }
+        return first ? { ready: false, why: first } : { ready: true };
+      };
+      /** `/extend`, `/return` and `/myrent` are all about a rental you are holding right now. */
+      const haveRentalStatus = ({ steamId }) => {
+        const c = cfg();
+        return liveFor(String(steamId || '')).length ? { ready: true } : { ready: false, why: fill(txt(c, 'noRentals'), vars(c)) };
+      };
 
       cmdOffs.push(host.chat.onCommand(c0.cmdRent || 'rent', async function (ctx) {
         const c = cfg();
         if (c.enabled === false) return ctx.reply(fill(txt(c, 'disabled'), vars(c)));
         const list = (c.vehicles || []);
-        if (!list.length) return ctx.reply('No vehicles are available right now.');
+        if (!list.length) return ctx.reply(fill(txt(c, 'noVehicles'), vars(c)));
         const n = parseInt(ctx.args[0], 10);
         const p = parseInt(ctx.args[1], 10);
         // No arguments (or nonsense) → show what can be rented, numbered, so the next command is obvious.
@@ -1325,10 +1647,10 @@ module.exports = {
             const plans = (v.options || []).map(function (o, oi) {
               return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳');
             }).join('  ');
-            return (idx + 1) + '. ' + (v.name || 'Vehicle') + ' — ' + (plans || 'no plans') + (windowOpen(c, v, null) ? '' : ' ⏳');
+            return (idx + 1) + '. ' + (v.name || 'Vehicle') + ' — ' + (plans || txt(c, 'noPlans')) + (windowOpen(c, v, null) ? '' : ' ⏳');
           });
           const anyShut = list.some(function (v) { return !windowOpen(c, v, null) || (v.options || []).some(function (o) { return !windowOpen(c, v, o); }); });
-          return ctx.reply(fill(txt(c, 'rentUsage'), vars(c, { list: fitLines(lines) + (anyShut ? '\n⏳ = not available right now; ask again for the times.' : '') })));
+          return ctx.reply(fill(txt(c, 'rentUsage'), vars(c, { list: fitLines(lines, txt(c, 'moreElsewhere')) + (anyShut ? '\n' + txt(c, 'closedMark') : '') })));
         }
         const v = list[n - 1];
         const opts = v.options || [];
@@ -1337,7 +1659,7 @@ module.exports = {
           // Asking about one vehicle is specific enough to be told the actual times rather than a
           // symbol — this is the reply that answers "well, when then?".
           const shut = windowError(c, v, null);
-          return ctx.reply((v.name || 'Vehicle') + ' — pick a plan: ' + (plans || 'none configured') + (shut ? '\n' + shut : ''));
+          return ctx.reply(fill(txt(c, 'pickPlan'), vars(c, { vehicle: v.name || 'Vehicle', list: plans || txt(c, 'noPlansPick') })) + (shut ? '\n' + shut : ''));
         }
         const prof = host.players.bySteamId(ctx.steamId);
         const res = await rent({ steamId: ctx.steamId, discordId: (prof && prof.discord_user_id) || (prof && prof.discordUserId) || '', playerName: ctx.name || (prof && prof.player_name) || '' }, String(n - 1), String(p - 1));
@@ -1345,37 +1667,45 @@ module.exports = {
         // The confirmation normally arrives through say(). With "Send messages in-game" switched OFF
         // that never fires, and this reply used to stay silent too — so the player was charged and
         // told nothing at all, and typed the command again. A command always answers.
-        if (c.inGameNotify === false) {
-          return ctx.reply(fill(txt(c, 'confirmed'), vars(c, { player: ctx.name || '', vehicle: (res.v && res.v.name) || 'vehicle', duration: res.o ? fmtDur(planMinutes(res.o)) : '', price: (c.free || !res.o) ? 'Free' : money(res.o) })));
+        //
+        // ⚠ …and `inGameNotify` was only HALF of when it does not fire. `say()` also throws its way
+        // to silence when the bridge refuses the line, which is the same outcome from the player's
+        // side and was invisible from this one until it started reporting. `res.told === false` is
+        // that case; `ctx.reply` is a different door and still works.
+        if (c.inGameNotify === false || res.told === false) {
+          return ctx.reply(fill(txt(c, 'confirmed'), vars(c, { player: ctx.name || '', vehicle: (res.v && res.v.name) || 'vehicle', duration: res.o ? fmtDur(planMinutes(res.o)) : '', price: (c.free || !res.o) ? txt(c, 'free') : money(res.o) })));
         }
-      }));
+      }, { status: rentStatus }));
 
       cmdOffs.push(host.chat.onCommand(c0.cmdMine || 'myrent', async function (ctx) {
         const c = cfg();
-        const rows = activeFor(ctx.steamId);
+        const rows = liveFor(ctx.steamId);
         if (!rows.length) return ctx.reply(fill(txt(c, 'noRentals'), vars(c)));
         const now = Date.now();
         const lines = rows.map(function (r) { return fill(txt(c, 'mineLine'), rentalVars(r, c, { left: fmtLeft(r.expiresAt - now) })); });
-        return ctx.reply(fitLines(lines, 'check the rest in Discord'));
-      }));
+        return ctx.reply(fitLines(lines, txt(c, 'moreElsewhere')));
+      }, { status: haveRentalStatus }));
 
       cmdOffs.push(host.chat.onCommand(c0.cmdExtend || 'extend', async function (ctx) {
         const c = cfg();
-        const rows = activeFor(ctx.steamId);
+        const rows = liveFor(ctx.steamId);
         if (!rows.length) return ctx.reply(fill(txt(c, 'noRentals'), vars(c)));
         // The one running out first is the one they mean.
-        const out = await extendRental(rows[0]);
+        const row = rows[0];
+        const out = await extendRental(row);
         if (!out.ok) return ctx.reply(out.error);
-        // Same as /rent: with in-game messages off, extendRental's say() is silent, so this is the
-        // only thing that can tell the player their money bought more time.
-        if (c.inGameNotify === false) {
-          return ctx.reply(fill(txt(c, 'extendOk'), rentalVars(rows[0], c, { duration: out.o ? fmtDur(planMinutes(out.o)) : '' })));
+        // Same as /rent: with in-game messages off — or with the line refused, which looks identical
+        // to the player — extendRental's say() is silent, and this is the only thing that can tell
+        // them their money bought more time. An extension is the one that costs twice when it does
+        // not answer, because `maxExtensions` is unlimited by default.
+        if (c.inGameNotify === false || out.told === false) {
+          return ctx.reply(fill(txt(c, 'extendOk'), rentalVars(row, c, { duration: out.o ? fmtDur(planMinutes(out.o)) : '' })));
         }
-      }));
+      }, { status: haveRentalStatus }));
 
       cmdOffs.push(host.chat.onCommand(c0.cmdReturn || 'return', async function (ctx) {
         const c = cfg();
-        if (c.allowReturn === false) return ctx.reply('Returning early is turned off.');
+        if (c.allowReturn === false) return ctx.reply(fill(txt(c, 'returnOff'), vars(c)));
         const rows = activeFor(ctx.steamId);
         if (!rows.length) return ctx.reply(fill(txt(c, 'noRentals'), vars(c)));
         const r = rows[0];
@@ -1383,10 +1713,15 @@ module.exports = {
         // the next tick a player could hand back a rental that had already run out and collect the
         // full early-return refund — every single time, and for the whole backlog after a restart.
         if (r.expiresAt && r.expiresAt <= Date.now()) {
-          return ctx.reply('⌛ That rental has already run out — there is nothing to return.');
+          return ctx.reply(fill(txt(c, 'nothingToReturn'), vars(c)));
         }
+        // Only a definite NO stops it — `available` absent or the health call failing is "I could
+        // not find out", and refusing a return on that would strand a player whose bridge is fine.
+        let health = null;
+        try { health = await host.server.bridge(); } catch (e) { health = null; }
+        if (health && health.available === false) return ctx.reply(fill(txt(c, 'returnNoBridge'), vars(c)));
         const out = await endRental(r, 'returned');
-        if (out.alreadyClosed) return ctx.reply('⌛ That rental was just closed. Nothing to return.');
+        if (out.alreadyClosed) return ctx.reply(fill(txt(c, 'nothingToReturn'), vars(c)));
         // Refund only what was actually given back: no vehicle to reclaim, no refund.
         const pct = Math.max(0, Math.min(100, Number(c.refundPercent) || 0));
         let refundNote = '';
@@ -1395,28 +1730,41 @@ module.exports = {
         // entirely, closed the rental, and replied "Thanks!". The player handed the rental back; the
         // server failing to collect it is not their fault. What matters is that the rental is closed,
         // which by this point it is.
-        if (pct && !out.stillThere) refundNote = ' (the vehicle was already gone)';
+        // ⚠ **THE NOTE USED TO CONTRADICT THE MONEY.** `refundGone` was set here, the refund was then
+        // paid three lines below, and the note survived — so a player returning a vehicle somebody
+        // else had blown up was refunded AND told "(the vehicle was already gone)", which reads as
+        // the reason they were not. The comment above says the refund is owed either way and the
+        // code agrees with it; only the sentence disagreed. It is now what it claims to be — a note
+        // about the VEHICLE, said only when nothing else is being explained.
+        const gone = !!(pct && !out.stillThere);
         if (pct) {
           const o = planOf(r, c);
-          if (!o) refundNote = ' (no refund — this rental has no recorded price; tell an admin)';
+          if (!o) refundNote = note(c, 'refundNoPrice');
           else {
             // A refund that fails must not be reported as a refund that happened. This used to be a
             // bare `catch {}` around a return value nobody read, so a bridge refusal reached the
             // player as "Thanks!" and nothing in their bank.
-            let paid = false;
-            try { paid = await charge(r.steamId, o, -(pct / 100)); } catch (e) { paid = false; }
-            if (!paid) {
-              refundNote = ' (the refund could not be paid out — tell an admin)';
-              host.logger.warn('rental #' + r.id + ': refund of ' + pct + '% failed for ' + (r.playerName || r.steamId));
-            }
+            let paid = { ok: false, why: 'refused' };
+            try { paid = await charge(r.steamId, o, -(pct / 100)); } catch (e) { paid = { ok: false, why: 'refused' }; }
+            if (!paid.ok) {
+              // "The refund could not be paid out" is a claim about the money, and on the
+              // unconfirmed path it is a claim nobody can make: the delta went to the game's static
+              // dispatch, which answers nothing at all. Saying it failed sends the player to an
+              // admin to be paid twice.
+              refundNote = note(c, paid.why === 'unconfirmed' ? 'refundUnknown' : 'refundFailed');
+              host.logger.warn('rental #' + r.id + ': refund of ' + pct + '% '
+                + (paid.why === 'unconfirmed'
+                  ? 'could NOT BE CONFIRMED for ' + (r.playerName || r.steamId) + ' — it may or may not have been paid; check their balance before paying it by hand'
+                  : 'FAILED for ' + (r.playerName || r.steamId)));
+            } else if (gone) refundNote = note(c, 'refundGone');
           }
-        }
+        } else if (gone) refundNote = note(c, 'refundGone');
         if (!out.removed && out.stillThere) {
-          refundNote += ' (heads up: the vehicle could not be removed — tell an admin)';
+          refundNote += note(c, 'returnStuck');
           host.logger.warn(`rental #${r.id}: returned but the vehicle could not be removed — it is still in the world untracked`);
         }
         return ctx.reply(fill(txt(c, 'returned'), rentalVars(r, c)) + refundNote);
-      }));
+      }, { status: haveRentalStatus }));
 
       host.logger.info('in-game commands: ' + [c0.cmdRent || 'rent', c0.cmdMine || 'myrent', c0.cmdExtend || 'extend', c0.cmdReturn || 'return'].map(function (n) { return (host.chat.prefix ? host.chat.prefix() : '/') + n; }).join(' '));
     }
@@ -1480,7 +1828,8 @@ module.exports = {
      * removed at expiry, the player keeps it, and the warning that would have said so died with the
      * process. Nothing ever mentioned it again.
      *
-     * The id cannot be recovered afterwards. Guessing at "the nearest vehicle" is exactly the rule
+     * The id cannot be recovered afterwards: the game's reply naming it is gone with the process, and
+     * that reply is only read when the spawn command answers the way `SpawnVehicle` does. Guessing at "the nearest vehicle" is exactly the rule
      * this plugin refuses everywhere else, because it is usually the player's own car. So this does
      * the one honest thing left: it says which rentals are in that state, once, where an admin will
      * see it — the panel already marks them "not captured", but only if someone opens it.
@@ -1490,7 +1839,7 @@ module.exports = {
         const orphans = db.prepare("SELECT id, playerName, steamId, vehName FROM rentals WHERE active=1 AND (vehId IS NULL OR vehId='')").all();
         if (orphans.length) {
           const who = orphans.map((r) => '#' + r.id + ' ' + (r.vehName || 'vehicle') + ' (' + (r.playerName || r.steamId) + ')').join(', ');
-          host.logger.warn(`${orphans.length} active rental(s) have no identified vehicle, so those vehicles will NOT be removed when they expire: ${who}. This happens when the manager restarts in the ~16s after a spawn. End them from the panel and remove the vehicle by hand if it is still there.`);
+          host.logger.warn(`${orphans.length} active rental(s) have no identified vehicle, so those vehicles will NOT be removed when they expire: ${who}. This happens when the game's reply did not name the vehicle and the manager restarted in the ~16s after the spawn. End them from the panel and remove the vehicle by hand if it is still there.`);
           try {
             host.notify('admin.alert', {
               message: `Vehicle rental: ${orphans.length} active rental(s) have no identified vehicle and will not be cleaned up automatically. See the manager log for which.`,

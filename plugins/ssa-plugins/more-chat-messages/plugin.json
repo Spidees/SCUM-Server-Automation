@@ -2,11 +2,11 @@
   "id": "more-chat-messages",
   "name": "More Chat Messages",
   "type": "manager",
-  "version": "1.0.10",
-  "updated": "2026-09-13",
+  "version": "1.3.1",
+  "updated": "2026-10-01",
   "author": "SCUMSA",
-  "website": "https://scumsa.com",
-  "description": "Announce what happens on your server in the game's own chat. Kills, players joining and leaving, cargo drops, game events opening and starting, bunkers opening and closing, and bases being raided - each one switched on separately, sent to the chat channel you choose, and worded however you like. Everything ships off, so nothing is announced until you say so.",
+  "website": "https://scumsa.com/plugins.php?p=more-chat-messages",
+  "description": "Announce what happens on your server in the game's own chat: kills, joins and leaves, cargo drops, game events, bunkers, and bases being raided. Each announcement is a separate switch with its own channel and your own wording. Everything ships off, so nothing is said until you say so.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
@@ -14,7 +14,8 @@
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
-    "style": "web/plugin.css"
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
   },
   "config": "config.json",
   "dependencies": [

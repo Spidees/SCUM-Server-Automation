@@ -57,11 +57,26 @@ const DEFAULTS = {
       rosterLine:   '  {player}[ — {sector}][, {distance} m {direction}]',
       rosterEmpty:  'Nobody else from {squad} is online.',
       notInSquad:   'You are not in a squad.',
+      // …and the one that is NOT that. With the game's save unreadable — the server stopped, or
+      // restarting — the roster came back empty, which is indistinguishable from being in no squad,
+      // and the line above was said as a fact to people who have a squad. "I could not find out" is
+      // its own answer and gets its own sentence.
+      squadUnknown: 'I can’t read the server’s squad list right now — try again in a minute.',
       help:         'Squad commands: {list}',
       mutedOn:      'Squad alerts are OFF for you. Use {root} {on} to turn them back on.',
       mutedOff:     'Squad alerts are ON for you.',
       muteUsage:    'Use: {root} {mute} <{events}|all|none>. Currently muted: {muted}',
       muteSet:      'Muted: {muted}',
+      // ── THE TWO LINES THAT WERE LITERALS, AND WERE THE ONLY ENGLISH LEFT ON THIS COMMAND ───────
+      //
+      // Every other line a player reads here is a field an owner writes in their own language, which
+      // is what makes this plugin translatable at all. These two were string expressions down in the
+      // handler, so a Czech or Russian server answered its players in English on exactly the two
+      // paths that only ever fire when something went wrong: a word in `{root} mute` that nobody
+      // recognises, and a squad line the bridge would not deliver. Both are what a player takes to
+      // an admin, and neither could be edited anywhere.
+      muteUnknown:  "Didn't recognise: {unknown}. Try {events}, all or none.",
+      sendFailed:   'Could not reach your squad just now — try again in a moment.',
       here:         '{player} is[ at {sector}] — rally up.',
       hereOk:       'Told the squad where you are.',
       msgUsage:     'Use: {root} {msg} <your message>',
@@ -76,8 +91,10 @@ const DEFAULTS = {
   },
 };
 
-// Channels the client reliably renders for an individually-targeted recipient. ServerMessage and
-// CommandsOnly do not, so a line sent there would silently vanish — clamp to a safe one.
+// The four channels this plugin offers; anything else falls back to squad. The bridge delivers a
+// targeted line and a broadcast through the same per-player RPC, and it refuses CommandsOnly outright.
+// `server` (ServerMessage) is accepted by the bridge too — the old "server does not display" report
+// was the bridge's own feedback suppression eating the line, fixed there — it is simply not offered.
 const TARGET_OK = { local: 1, global: 1, squad: 1, admin: 1 };
 const EVENT_KEYS = Object.keys(DEFAULTS.events);
 const SUB_KEYS = Object.keys(DEFAULTS.commands.subs);
@@ -218,6 +235,13 @@ module.exports = {
       if (!key) return null;
       const hit = squadCache.get(key);
       if (!fresh && hit && Date.now() - hit.at < 20000) return hit.squad;
+      // ⚠ **`[]` IS NOT "NO SQUAD" WHEN THE SAVE COULD NOT BE OPENED AT ALL.** `host.db.scum.all`
+      // answers `[]` and never throws, so a stopped or restarting server produced an empty roster
+      // that read exactly like a player who has joined nobody — and the command then told them so,
+      // in a sentence, as a fact. That is the distinction `squadLive()` below takes such care over,
+      // lost one layer down. `undefined` means "could not say" and nothing is cached, so the next
+      // attempt asks again rather than remembering a gap as an answer.
+      if (typeof host.db.scum.available === 'function' && !host.db.scum.available()) return undefined;
       const rows = host.db.scum.all(SQUAD_SQL, key) || [];
       const squad = rows.length
         ? { id: rows[0].squadId, name: rows[0].squadName || 'your squad', members: rows.map((r) => ({ steamId: String(r.steamId), name: r.name })) }
@@ -254,9 +278,11 @@ module.exports = {
     const liveNote = { players: null, squads: null };
     const liveSaid = { players: 0, squads: 0 };
     const LIVE_SWITCH = {
-      players: "Read live player data, with Position, facing and speed (Settings → Bridge → Live data)",
-      squads: "Read live squads, and allow the changes below, with Include the member list (Settings → Bridge → Squads)",
+      players: "Read live player data, with Position, facing and speed",
+      squads: "Read live squads, and allow the changes below, with Include the member list",
     };
+    // The switch LABEL travels as its own field and the panel builds the route in front of it out of
+    // its own nav keys, so the sentence stays right in every language and survives a renamed tab.
     function noteLive(key, q) {
       const code = (q && q.code) || 'bridge_off';
       let text;
@@ -264,13 +290,13 @@ module.exports = {
       else if (code === 'module_off') text = `the in-game module is switched off — turn on '${LIVE_SWITCH[key]}'`;
       else if (code === 'no_module') text = 'this server runs an older SSA Bridge that does not have this module';
       else text = 'the SSA Bridge did not answer';
-      liveNote[key] = { code, text, at: Date.now() };
+      liveNote[key] = { code, text, at: Date.now(), switch: code === 'module_off' ? LIVE_SWITCH[key] : undefined };
       // `bridge_off` is the ordinary state and deserves silence; the rest are one switch or one
       // update away. Said once an hour, because this sits on the path of every squad message.
       if (code === 'bridge_off' || !text) return;
       if (Date.now() - liveSaid[key] < 3600000) return;
       liveSaid[key] = Date.now();
-      host.logger.warn(`the live ${key === 'players' ? 'position' : 'squad'} read could not run: ${text}. Better Squads carries on with the last save, which is what it did before this existed.`);
+      host.logger.warn(`the live ${key === 'players' ? 'position' : 'squad'} read could not run: ${text}. Better Squads uses the last save meanwhile.`);
     }
     const canQuery = () => !!(host.bridge && typeof host.bridge.query === 'function');
 
@@ -630,7 +656,7 @@ module.exports = {
           // counting that as sent is how the panel ends up disagreeing with what the squad saw.
           const delivered = (res && Number.isFinite(Number(res.delivered))) ? Number(res.delivered) : targets.length;
           if (delivered <= 0) {
-            host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s) — the bridge accepted it and delivered it to nobody.`);
+            host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s).`);
             stats.failed = (stats.failed || 0) + 1; persist();
             return;
           }
@@ -777,7 +803,8 @@ module.exports = {
           const prev = rosters.get(sq.id);
           rosters.set(sq.id, { name: sq.name, at: stamp, members });
 
-          // No baseline, or the name behind this id changed: SCUM reuses squad ids after a disband,
+          // No baseline, or the name behind this id changed: a squad id can come back after a disband
+          // (`squad.id` is a plain INTEGER PRIMARY KEY, so the highest one is free again once deleted),
           // and a rename means the snapshot describes a different group. Diffing either against the
           // old membership would announce a flood of joins and leaves that never happened — so the
           // new snapshot simply becomes the baseline and we compare from the next cycle.
@@ -888,7 +915,7 @@ module.exports = {
         persist();
         const done = fill(t.muteSet, { muted: Object.keys(p.muted).join(', ') || 'none' });
         return reply(unknown.length
-          ? `${done} (didn't recognise: ${unknown.join(', ')} — try ${EVENT_KEYS.join('|')}, all or none)`
+          ? `${done} ${fill(t.muteUnknown, { unknown: unknown.join(', '), events: EVENT_KEYS.join('|') })}`
           : done);
       }
       if (sub && subOn(c, 'help') && sub === subName(c, 'help')) {
@@ -896,6 +923,9 @@ module.exports = {
         return reply(fill(t.help, { root, list }));
       }
 
+      // `undefined` is "the save could not be read"; `null` is "this player is in no squad". Only the
+      // second is something we may state.
+      if (squad === undefined) return reply(fill(t.squadUnknown, {}));
       if (!squad) return reply(fill(t.notInSquad, {}));
 
       const online = onlineIndex();
@@ -917,14 +947,40 @@ module.exports = {
       // skipped the confirmation below and was swallowed by the caller's debug catch — so the player
       // saw NOTHING: no "sent", no error, just a command that appeared to be ignored. Both player
       // commands answer either way now.
+      //
+      // ⚠ **AND "IT DID NOT THROW" IS NOT "THEY HEARD IT".** `host.chat.send` resolves
+      // `{ channel, delivered }`, and this plugin already knows that — `announceInner` refuses to
+      // call an announcement delivered when `delivered <= 0`, with a warning saying the bridge
+      // accepted it and handed it to nobody. The PLAYER-driven path never asked, so
+      // `{root} msg regroup at B2` answered "Sent to 3 squadmate(s)." while three people heard
+      // nothing. It is the one lie on this surface a player then acts on, and the answer was one
+      // screen up in the same file.
+      //
+      // A reply with no `delivered` field at all is an older bridge, not a failure — so the count is
+      // only believed when it is really a number.
       const sendToSquad = async (line, targets, kind, who) => {
+        // ⚠ **THE ONE PATH A PERSON DRIVES WAS THE ONE WITH NO CEILING.** `rateOk` exists so that a
+        // "pathological burst … can never turn into a chat flood on a live server", and it was
+        // consulted only inside `announceInner` — where the SERVER chooses both the content and the
+        // volume. Here a PLAYER chooses both, and the dispatcher's own de-duplication only drops
+        // identical text, which varying one character defeats. Same ceiling, same counter, so a
+        // squad spammer and a runaway loop are bounded by the same number the owner set.
+        if (!rateOk(targets.length, Number(c.maxPerMinute) || 0)) {
+          host.logger.warn(`"${root} ${kind}" from ${who} was dropped — the outbound ceiling (${c.maxPerMinute}/min) is already reached.`);
+          return 0;
+        }
         try {
-          await host.chat.send(line, { channel: chan, targets });
-          note(kind, who, line, targets.length);
-          return true;
+          const res = await host.chat.send(line, { channel: chan, targets });
+          const n = (res && Number.isFinite(Number(res.delivered))) ? Number(res.delivered) : targets.length;
+          if (n <= 0) {
+            host.logger.warn(`"${root} ${kind}" from ${who} reached none of its ${targets.length} recipient(s).`);
+            return 0;
+          }
+          note(kind, who, line, n);
+          return n;
         } catch (e) {
           host.logger.warn(`"${root} ${kind}" from ${who} could not be delivered: ${e && e.message}`);
-          return false;
+          return 0;
         }
       };
 
@@ -933,7 +989,7 @@ module.exports = {
         const who = displayName(me, ctx.name);
         const line = fill(t.here, { player: who, sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: squad.name });
         const sent = await sendToSquad(line, reachable.map((m) => m.steamId), 'here', who);
-        return reply(sent ? fill(t.hereOk, {}) : 'Couldn’t reach your squad just now — try again in a moment.');
+        return reply(sent > 0 ? fill(t.hereOk, {}) : fill(t.sendFailed, {}));
       }
 
       if (sub && subOn(c, 'msg') && sub === subName(c, 'msg')) {
@@ -945,8 +1001,11 @@ module.exports = {
         if (!reachable.length) return reply(fill(t.nobodyOnline, {}));
         const who = displayName(me, ctx.name);
         const line = fill(t.msgLine, { player: who, text: rest, squad: squad.name });
+        // …and the count the player is told is the number the BRIDGE delivered to, never the number
+        // we aimed at. "Sent to 3 squadmate(s)" when one was mid-reconnect is the same defect in
+        // miniature.
         const sent = await sendToSquad(line, reachable.map((m) => m.steamId), 'msg', who);
-        return reply(sent ? fill(t.msgOk, { count: reachable.length }) : 'Couldn’t reach your squad just now — try again in a moment.');
+        return reply(sent > 0 ? fill(t.msgOk, { count: sent }) : fill(t.sendFailed, {}));
       }
 
       if (sub && subOn(c, 'base') && sub === subName(c, 'base')) {

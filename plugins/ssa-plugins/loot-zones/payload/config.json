@@ -69,16 +69,26 @@
     ],
     "wakeDistance": 40000,
     "nearbyPatrolSeconds": 5,
-    "patrolSeconds": 60,
     "centreZ": 0,
     "reachZ": 100000,
     "globalRespawn": {
       "enabled": false,
       "seconds": 3600
     },
-    "ownPosts": 0,
+    "ownPosts": 6,
+    "ownLife": {
+      "mode": "nearby",
+      "sleepGraceSeconds": 20,
+      "leash": "zone",
+      "leashSlackCm": 2000
+    },
     "replace": {
       "types": [],
+      "gameTime": {
+        "enabled": false,
+        "fromHour": 0,
+        "toHour": 24
+      },
       "route": "spawn",
       "spawnKind": "armednpc",
       "spawnName": "",
@@ -87,11 +97,18 @@
       "count": 1,
       "postRadius": 1500,
       "afterDeathSeconds": 120,
+      "moveAfterSeconds": 0,
       "maxPosts": 12,
       "cooldownSeconds": 0,
       "maxGuards": 0,
       "keepAwayFromPlayers": 5000
     }
+  },
+  "activity": {
+    "mode": "leave",
+    "percent": 200,
+    "checkSeconds": 0,
+    "maxPlaces": 0
   },
   "zones": []
 }

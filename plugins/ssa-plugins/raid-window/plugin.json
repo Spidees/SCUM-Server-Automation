@@ -2,11 +2,11 @@
   "id": "raid-window",
   "name": "Raid Window",
   "type": "manager",
-  "version": "1.1.3",
-  "updated": "2026-09-14",
+  "version": "1.5.0",
+  "updated": "2026-09-28",
   "author": "SCUMSA",
-  "website": "https://scumsa.com",
-  "description": "Stops defenders ending a raid by logging out. While a base is taking real raid damage, the plugin keeps pushing that base's offline protection back, so the raid can be finished. Only the base under attack is touched, its protection length stays what it was, and the push stops once the base has been quiet for a while. Every push is listed with what the game did about it.",
+  "website": "https://scumsa.com/plugins.php?p=raid-window",
+  "description": "Stops defenders ending a raid by logging out. While a base is taking real raid damage, its offline protection is kept from switching on mid-raid. Works with offline and flag-specific protection, changes no server setting, touches only the base under attack, and stops once the base is quiet.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
@@ -14,7 +14,8 @@
   "main": "backend/index.js",
   "web": {
     "script": "web/plugin.js",
-    "style": "web/plugin.css"
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
   },
   "config": "config.json",
   "dependencies": [
@@ -35,9 +36,10 @@
         "module": "protect",
         "switches": [
           "enabled",
-          "set"
+          "set",
+          "postpone"
         ],
-        "why": "Reads a base's protection and pushes its start back. 'Set a flag's protection window' is the write: without it every push is refused. A changed protection window cannot be undone, which is why you turn it on yourself."
+        "why": "Reads a base's protection and pushes its start back. On offline raid protection the write is 'Postpone offline protection', which only ever moves the start later. On flag-specific raid protection it is 'Set a flag's protection window', which cannot be undone. The tab names the one your server uses."
       }
     ]
   },

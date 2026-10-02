@@ -108,6 +108,8 @@
   color: var(--muted); font-size: 0.8rem; line-height: 1.45;
   overflow-wrap: anywhere;
 }
+/* `small.lz-warn` — the one caption that is not a remark — is declared once, near the bottom,
+   after every `small` colour rule it has to beat. See the note beside it. */
 /* The hint belongs under the LABEL, where the panel puts it — a hint under the control pushes every
    row's control out of line with the one above it. */
 .lz-hint {
@@ -150,18 +152,6 @@
 .lz-unit { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .lz-colour { width: 3rem; height: 2rem; padding: 0.1rem; cursor: pointer; }
 .lz-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; min-width: 0; }
-.lz-chip {
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%;
-  padding: 0.25rem 0.3rem 0.25rem 0.65rem;
-  border: 1px solid var(--line); border-radius: 999px;
-  font-size: 0.85rem; color: var(--text); overflow-wrap: anywhere;
-}
-.lz-chip-x {
-  --hov-bg: transparent; --hov-fg: var(--alarm, #e5443f); --hov-line: transparent;
-  background: transparent; color: var(--muted); border: 0;
-  padding: 0 0.35rem; font-size: 1rem; line-height: 1; cursor: pointer;
-}
-.lz-chip-x:hover { background: var(--hov-bg); color: var(--hov-fg); }
 .lz-wide { font-family: var(--mono); font-size: 0.8rem; }
 .lz-name { font-weight: 600; }
 
@@ -185,6 +175,10 @@
   font-size: 0.85rem;
   padding: 0.75rem 0.95rem;
   line-height: 1.6;
+  /* A note carries whatever it has to report, and some of that has no space in it to break at —
+     a folder on the server, a game class name. Without this the longest word sets the box's
+     minimum width and a phone scrolls sideways instead of wrapping. */
+  overflow-wrap: anywhere;
 }
 .lz-note b, .lz-note strong { color: var(--text); font-weight: 600; }
 .lz-note.good { background: rgba(84, 201, 138, 0.06); border-left-color: var(--online); }
@@ -192,7 +186,44 @@
 .lz-note.wait { background: rgba(230, 178, 58, 0.06); border-left-color: var(--standby); }
 /* A plain fact with nothing to feel about it — no wash, so the coloured ones keep their meaning. */
 .lz-note.flat { background: var(--panel-2); border-left-color: var(--faint); }
-.lz-tokens { color: var(--muted); margin-top: 0.5rem; font-size: 0.8rem; line-height: 1.45; }
+
+/* ── acting on the whole zone list at once ─────────────────────────────────────────────────────
+   A strip above the list: find, filter, fold, tick.
+
+   ⚠ **DELIBERATELY NOT STICKY.** A bar pinned to the top of the viewport is the obvious thing to
+   reach for here and it cannot be verified from inside a plugin: the panel owns the page's own
+   scroller and its own header, so `top: 0` is a promise about somebody else's layout. The save bar
+   at the foot of this tab sticks to the BOTTOM, where nothing of the panel's can be in front of it.
+   A bar that is sometimes under a header is worse than one that scrolls honestly. */
+.lz-bulkbar {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  border-bottom: 1px solid var(--line-2);
+  padding: 0.15rem 0 0.7rem;
+  margin-bottom: 0.7rem;
+}
+.lz-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+/* ⚠ `min()` even under 320: the card this sits in has 1.2rem of padding on each side that no
+   declaration here mentions, which is what put 19px of sideways scroll on a 310px phone once. */
+.lz-find { flex: 1 1 min(100%, 14rem); width: auto; min-width: 0; }
+.lz-bulk .lz-in:not(.lz-find) { width: auto; flex: 0 1 min(100%, 11rem); }
+.lz-bulk-n {
+  color: var(--muted); font-size: 0.8rem; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* The strip that only exists while something is ticked, picked out so it reads as a state rather
+   than as more buttons. */
+.lz-bulk-sel {
+  border-left: 3px solid var(--amber);
+  background: var(--inset);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.6rem;
+}
+/* The tick on a zone's own head. A checkbox the browser draws is right here — it is the one control
+   on this page whose whole job is to be recognised instantly as a multi-select. */
+.lz-pick {
+  flex: 0 0 auto; width: 1.05rem; height: 1.05rem;
+  accent-color: var(--amber); cursor: pointer; margin: 0;
+}
 
 /* ── a block inside a card: a zone, a message ─────────────────────────────────────────────────── */
 .lz-zone {
@@ -314,7 +345,20 @@
   transition: border-color .12s ease, background .12s ease;
 }
 .lz-chk .ico, .lz-chk svg { width: 0.8rem; height: 0.8rem; flex: 0 0 auto; }
+/* ⚠ **A TICKED CHIP STOPPED LOOKING TICKED UNDER THE POINTER, AND THE TWO RULES WEIGHED THE
+   SAME.** `.lz-chk.on` and `.lz-chk:hover` are both (0,2,0) — a pseudo-class weighs exactly what a
+   class does — so the later one won, and hovering a ticked **Chat** / **On screen** / **Kill feed**
+   chip painted the neutral hover fill over the only signal that the route was on. The reader's own
+   pointer took away the state they were reading.
+
+   The fix is the one this sheet already uses on `.lz-day.on` and the one `check-contrast` asks
+   for: the hover PAIR is retuned on the ELEMENT for the `on` state, so a hovered chip still says
+   "on" instead of one rule overwriting half of another's answer. Never by reordering — equal
+   specificity settled by source order is an invariant one edit away from coming back. */
 .lz-chk.on {
+  --hov-bg: rgba(255, 106, 26, 0.16);
+  --hov-fg: var(--amber-hi);
+  --hov-line: var(--amber-hi);
   border-color: var(--amber);
   background: rgba(255, 106, 26, 0.07);
   color: var(--amber-hi);
@@ -381,7 +425,23 @@
 .lz-win-sep { color: var(--faint); font-size: 0.8rem; }
 
 /* ── the rest ──────────────────────────────────────────────────────────────────────────────────── */
-.lz-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
+.lz-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
+/* The sentence beside a button that is about to refuse. It belongs on the screen rather than in a
+   tooltip — a reason nobody hovers over is a reason nobody reads, which is how "the button does
+   nothing" gets reported instead of the thing the button is waiting for. */
+.lz-actions > small { color: var(--muted); font-size: 0.8rem; line-height: 1.45; flex: 1 1 14rem; min-width: 0; }
+
+/* A guard this server cannot place yet, a boss that will not survive a restart. Amber is
+   "waiting", which is what these are. Colour only, on the same muted background, so the contrast
+   pair travels together.
+
+   ⚠ **ONE UNSCOPED RULE ON PURPOSE, AND IT USED TO BE TWO SCOPED COPIES.** `.lz-sub small.lz-warn`
+   and `.lz-actions > small.lz-warn` between them covered every emitter that existed the day they
+   were written. A class whose meaning depends on WHERE it is emitted goes plain grey the first
+   time somebody uses it somewhere new — silently, with the warning still on the screen and
+   nothing about it looking like one. This matches on the class alone and sits after both `small`
+   colour rules, which it ties with on specificity, so order is what settles it: keep it last. */
+small.lz-warn { color: var(--standby); }
 .lz-actions .ico, .lz-actions svg { width: 1.05em; height: 1.05em; }
 
 /* Wraps to one per line on a phone; never sets a minimum wider than the screen. */
@@ -404,19 +464,6 @@
 .lz-lines p { margin: 0 0 0.5rem; font-size: 0.85rem; line-height: 1.55; }
 .lz-lines p:last-child { margin-bottom: 0; }
 
-.lz-chosen {
-  color: var(--data-text);
-  font-family: var(--mono); font-size: 0.78rem;
-  word-break: break-all;
-}
-
-/* A list that is empty is a fact, and it gets said rather than left as a gap. */
-.lz-empty {
-  color: var(--muted); font-size: 0.85rem;
-  padding: 1.4rem; text-align: center;
-  display: flex; align-items: center; justify-content: center;
-}
-
 /* ── explanations on demand, folded options, and the bridge checklist ─────────────────────────────
    A hint used to sit open under every control, which made the page a wall of prose. The "?" opens
    it. Hover is retuned on the element as a pair, the way every button on this page is. */
@@ -428,7 +475,155 @@
 }
 .lz-q.on { color: var(--amber-hi); border-color: var(--amber); }
 .lz-more { margin-top: .6rem; border-top: 1px solid var(--line); padding-top: .5rem; }
+/* An explanation folded away. It is not a settings fold, so it gets no rule across the top — a
+   horizontal line between a control and the sentence explaining it reads as a section break. The
+   summary is quieter than `lz-more`'s for the same reason: it must not compete with a label. */
+.lz-why { margin-top: .35rem; border-top: 0; padding-top: 0; }
+/* ⚠ `--muted`, NOT `--faint`. A summary is something a reader presses, and `--faint` is this
+   sheet's colour for a disabled arrow and a row number — quieter than the caption beside it, which
+   would make the one control that reveals an explanation the hardest thing on the row to see. The
+   smaller size is what keeps it from competing with a label. */
+.lz-why > summary { font-size: .82rem; color: var(--muted); padding: .15rem 0; }
+.lz-why[open] > summary { color: var(--text); }
+.lz-why .lz-lead { margin: .3rem 0; }
+.lz-why > small, .lz-why .lz-when > small { display: block; margin: .3rem 0; }
+/* The one or two lines on a guard's row that say why it will not be sent. Stacked rather than run
+   together, because two of them can apply at once and a reader has to be able to count them. */
+.lz-warns { display: flex; flex-direction: column; gap: .2rem; }
+/* What the guard lifecycle did on the last patrol, as pills. `white-space: normal` because the badge
+   rule forbids wrapping and a translated "walked out, taken away" is wider than a 310px phone row. */
+.lz-lifechips { gap: .35rem; }
+.lz-lifechips .lz-badge { white-space: normal; text-align: left; }
+.lz-stops { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: .85rem; line-height: 1.5; }
+.lz-stops li { overflow-wrap: anywhere; margin-bottom: .2rem; }
+/* What the guard settings add up to, above them.
+   ⚠ `--inset`, NOT `--panel-2`. Every site that draws one of these is inside `.lz-zone`, which is
+   itself `--panel-2` — so the block and the block holding it were the same colour, a ratio of
+   1:1, and the summary had no edge at all. The sheet's own three surfaces say which one this is:
+   a card is `--panel`, a zone inside it is `--panel-2`, and anything inside THAT is `--inset`. */
+.lz-summary { margin: .2rem 0 .6rem; padding: .7rem .9rem; border-left: 3px solid var(--amber); background: var(--inset); border-radius: var(--radius); }
+.lz-summary p { margin: 0 0 .35rem; font-weight: 600; color: var(--text); }
+.lz-summary ul { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: .88rem; line-height: 1.5; }
+.lz-summary li { overflow-wrap: anywhere; }
+/* ── what each kind of place can actually produce ─────────────────────────────────────────────
+   THREE STATES AND THEY MUST NOT LOOK LIKE TWO. A plan that can spawn, a plan authored to make no
+   characters at all, and a plan that could not be READ are three different facts — the third is not
+   a weaker form of the second, and a screen with two treatments puts "I could not find out" and
+   "the game does not have it" in the same box. The edge colour separates them at a glance and the
+   SENTENCE in each row says which, because a colour alone is not a distinction everybody can see.
+   No width is declared anywhere in here: a game's own class name is long and wraps. */
+.lz-plan { margin: .2rem 0 .6rem; padding: 0; list-style: none; display: grid; gap: .3rem; }
+.lz-plan li { color: var(--muted); font-size: .88rem; line-height: 1.5; overflow-wrap: anywhere;
+  padding: .35rem .6rem; border-left: 3px solid var(--faint); background: var(--inset); border-radius: var(--radius); }
+.lz-plan li b { color: var(--text); font-weight: 600; }
+/* ⚠ **THE THREE COLOURS THIS BLOCK EXISTS FOR COULD NEVER PAINT, AND THE BLOCK ABOVE SAYS SO IN
+   WORDS WHILE THE CSS DID THE OPPOSITE.** `.lz-plan li` above is (0,1,1) and `.lz-plan-yes` was
+   (0,1,0) — a bare class loses to a class plus a type WHATEVER the order — so the grey `--faint`
+   edge won on all three and *can spawn*, *makes nothing* and *could not be read* drew identically.
+   Exactly the collapse the comment above was written to prevent, in the rule underneath it.
+   Reordering would not have fixed it; the selectors are qualified instead, so the three are (0,2,1)
+   and cannot be beaten by the row they sit on. */
+.lz-plan li.lz-plan-yes { border-left-color: var(--online); }
+.lz-plan li.lz-plan-no { border-left-color: var(--alarm); }
+.lz-plan li.lz-plan-unsure { border-left-color: var(--standby); }
+/* A game identifier standing where a reader expects a name. The game has no word for a spawn plan —
+   the manager's one resolver has never heard of an encounter class — so it is drawn as the CODE it
+   is, in the panel's data face, rather than tidied into something that reads like a name. */
+.lz-code { font-family: var(--mono); font-size: .82rem; color: var(--data-text); overflow-wrap: anywhere; }
+/* A number the GAME itself has made inert. Opacity rather than a colour of its own, so the pair the
+   contrast rules judge stays the pair every other box on this tab has. */
+.lz-in[disabled] { opacity: 0.55; cursor: not-allowed; }
+.lz-group { margin: 1rem 0 0; font-size: .78rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .lz-more > summary { cursor: pointer; color: var(--muted); font-size: .9rem; padding: .3rem 0; }
 .lz-more[open] > summary { color: var(--text); }
 .lz-need { display: flex; gap: .5rem; align-items: flex-start; padding: .25rem 0; }
 .lz-need svg { flex: 0 0 auto; margin-top: .15rem; color: var(--standby); }
+
+/* ── one place the owner named ─────────────────────────────────────────────────────────────────
+   A step deeper again than a guard's row, so it gets the next surface in rather than a fourth
+   colour: a card is --panel, a zone is --panel-2, and anything inside a zone is --inset. The amber
+   left rule is this sheet's "this one is set", which is exactly what a named point is. */
+.lz-pt {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  margin-top: 0.4rem;
+  background: var(--inset);
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--line-amber);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+/* ⚠ A POINT SWITCHED OFF IS NOT A POINT GREYED OUT. It is kept on purpose — the whole reason the
+   switch is there is that deleting it is the thing the owner did not want to do — and its boxes
+   stay every bit as editable as the ones above. So the only thing that changes is the rule down
+   the side, and the switch beside it says "not used" in words. Dimming the controls would say
+   they had stopped working, which is a different and untrue claim. */
+.lz-pt.off { border-left-color: var(--line); }
+/* The note's row sits inside the point rather than in the card's own column of settings, so it
+   loses the separator and the padding that space a settings screen out. */
+.lz-pt .lz-row { border-top: 0; padding: 0.35rem 0; }
+
+/* ── moving a zone up and down the list ───────────────────────────────────────────────────────
+   `.lz-link` is a text control and grows to fill its row (`flex: 1 1 8rem`); an arrow must not, or
+   two of them push the zone's name box off the line. It keeps `.lz-link`'s own hover pair, which is
+   retuned on the element, so the global amber `button:hover` cannot paint half of it. */
+.lz-move {
+  flex: 0 0 auto; min-width: 1.9rem; text-align: center;
+  font-size: 1rem; line-height: 1; color: var(--muted);
+}
+.lz-move[disabled] { color: var(--faint); cursor: not-allowed; }
+.lz-actions button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ── a guard's own settings, over the zone's ──────────────────────────────────────────────────
+   ⚠ THE WHOLE POINT OF THIS BLOCK IS THAT THE TWO STATES CANNOT BE MISTAKEN FOR EACH OTHER. An
+   inherited row is a sentence and a pill; a row the guard holds of its own is an editable box and a
+   filled pill, with the amber edge this stylesheet reserves for "this is set". A screen that drew
+   an inherited value in a box would be telling an owner they were editing one guard while they were
+   moving every guard in the zone. */
+.lz-ovr {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.4rem 0 0.4rem 0.6rem;
+  border-left: 2px solid var(--line);
+  margin-top: 0.35rem;
+}
+.lz-ovr.own { border-left-color: var(--line-amber); }
+/* A key the backend does not read. It gets neither the muted edge of "from the zone" nor the amber
+   of "set here", because it is neither: it is a leftover doing nothing, and the only thing on the
+   row is the button that takes it away. */
+.lz-ovr.stale { border-left-color: var(--standby); }
+.lz-ovr-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.lz-ovr-label { font-size: 0.86rem; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.lz-ovr .lz-link { flex: 0 0 auto; font-size: 0.82rem; }
+.lz-ovr-from { font-variant-numeric: tabular-nums; }
+/* A guard that does not follow the zone is picked out in the list before anything is opened. */
+.lz-sub.has-own { border-left-color: var(--amber); }
+
+/* ── a thumb, at 320px ────────────────────────────────────────────────────────────────────────
+   The panel's own stylesheet puts a 44px floor under every control inside a plugin tab, and a
+   height is all it can floor: a width floor on a flex item replaces the automatic content
+   minimum, which is the only thing stopping a word being cut in half. An icon-only button has no
+   word to cut, so it says the square out loud here. `.lz-del` REMOVES A ZONE — a destructive
+   control that was 32px wide is the worst one on the tab to make hard to hit accurately. */
+@media (max-width: 760px) {
+  .lz-del { min-width: 44px; }
+  /* ⚠ **24px WIDE AND 44px TALL, AND IT IS THE CONTROL THAT OPENS EVERY EXPLANATION ON THE PAGE.**
+     The panel's plugin-tab floor gives a control a `min-height` and can give it nothing else — a
+     width floor on a flex item replaces the automatic content minimum, which is the only thing
+     stopping a word being cut in half — so a button whose whole content is one `?` keeps whatever
+     its own `min-width: 1.4rem` says, and at the 106% root this panel uses under 640px that is
+     23.7 real pixels. Same reasoning as `.lz-move` below: one glyph has no word to cut. */
+  .lz-q { min-width: 44px; }
+  /* ⚠ Measured at 32×44 by the render rig on a 310px screen and fixed there, not here: an arrow is
+     one glyph, so it has almost no content floor of its own and takes whatever the flex row had
+     left. A single character is also the one case where a width floor cannot cut a word in half. */
+  .lz-move { min-width: 44px; }
+  /* ⚠ **A 44px SQUARE, AND IT IS THE RIGHT ANSWER RATHER THAN A CONCESSION.** A tick is the one
+     control on a zone's head whose whole job is to be hit accurately, it decides what a bulk
+     REMOVE acts on, and a checkbox has no word for a width floor to cut in half — which is the one
+     case where an explicit square is safe. It was measured at 23×23 on a 310px screen: the panel's
+     own plugin floor excludes `[type="checkbox"]`, so nothing above this was ever going to raise
+     it, and the size came from a font and whatever the flex row had left rather than from anything
+     anybody wrote. Chrome scales the native tick to the box, so it reads as a big tick box on a
+     phone and stays 1.05rem everywhere else. */
+  .lz-pick { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+}

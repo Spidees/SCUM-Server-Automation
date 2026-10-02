@@ -53,7 +53,8 @@ Everything is configured from the plugin's **admin tab** (👥 Better Squads):
   player's squad.
 
 ## Good to know
-- **Died** is a death with no killer. A death with a killer is **Killed**.
+- **Died** is a player's own death: the game's suicide, or their own mine or trap. A death at somebody
+  else's hands, a player's or an NPC's, is **Killed**.
 - On friendly fire only the *Killed* line is sent, because it already names the killer.
 - `/squad off` and `/squad mute` silence **alerts** only. Rallies and squad messages still arrive. An
   admin mute blocks those too.

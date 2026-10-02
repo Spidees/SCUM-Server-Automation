@@ -50,7 +50,34 @@
 // the bridge keeps the record: a log line, a feed entry and a store write every twenty seconds, and
 // the real feed pushed out of the history by the noise.
 //
-// ── WHAT IS WRITTEN, AND WHAT IS MEASURED ABOUT IT ───────────────────────────────────────────────
+// ── TWO PROTECTION MODES, TWO WRITES ─────────────────────────────────────────────────────────────
+//
+// Which write is right depends on the raid protection the server runs, and the plugin asks the
+// bridge which manager the game built before it writes anything:
+//
+//   · OFFLINE (scum.RaidProtectionType=1) — `postpone:<flag>:<seconds>`. The game arms a flag when
+//     the last of its owners and squadmates logs out, by storing a START (now + the configured start
+//     delay) and a length; protection is simply on while the server's clock is between the two, and
+//     logging back in clears it. There is no RPC to change that start under this mode: the offline
+//     manager's slot for the window setter is the engine's "return false" stub, which is why the
+//     `set` below "dispatched and nothing moved" on every offline server. `postpone` moves that
+//     stored start LATER — never earlier, never under protection that is already running, never into
+//     an entry that is not armed — and leaves the length alone, so no length is ever read or
+//     invented on this path. The server's start delay setting is not touched.
+//     Driven end to end on a test server: the game armed a flag 120 s after its owner logged out,
+//     the push moved that to 300 s, the 120 s mark passed with nothing happening, and protection
+//     began at 300 s with its full length in front of it.
+//   · FLAG-SPECIFIC (scum.RaidProtectionType=2) — `set:<flag>:<delay>:<duration>`, exactly as
+//     before, with everything the next section says about it.
+//   · Anything else, or a mode that could not be read — NOTHING is written, and the tab says why. A
+//     guess about which write applies is a write to somebody's base on a guess.
+//
+// On the offline path only a push that MOVED the start counts towards "Most pushes for one raid":
+// while a defender is still online the game keeps the entry empty and every push answers "nothing to
+// postpone", and letting those use up the allowance would leave the raid unguarded at the moment
+// the defender finally logs out.
+//
+// ── WHAT IS WRITTEN ON A FLAG-SPECIFIC SERVER, AND WHAT IS MEASURED ABOUT IT ─────────────────────
 //
 //   RaidProtection_Server_SetFlagProtectionTime(FlagId, Delay, Duration)
 //
@@ -62,13 +89,21 @@
 // plausible one, so it is read in this order and the source is recorded on every push:
 //
 //   1. `durationSeconds` — the owner's own number, if they set one.
-//   2. The flag's own saved window: `base_raid_protection.data`, three little-endian 32-bit words,
-//      of which word 2 is the duration in whole seconds. Measured on a real save: 22 of 23 rows read
-//      86400 (= the server's `RaidProtectionOfflineMaxProtectionTime` of 24:00:00) and the 23rd reads
-//      0, which is the game holding an entry with nothing in it.
-//   3. The running game's own decoded window, from the bridge's `protect` module. Marked as decoded
-//      because the game packs it into 15 bits and the nearest value that encoding can hold to 86400
-//      is 86528 — accurate to a couple of minutes in a day, and never to the second.
+//   2. The flag's own saved window: `base_raid_protection.data`, twelve bytes read as
+//      `u16 active, u16, u32 start, u32 duration`, so the duration is the little-endian word at
+//      byte 8, in whole seconds. Measured on a real save of an OFFLINE server: 22 of 23 rows read
+//      86400 (= its `RaidProtectionOfflineMaxProtectionTime` of 24:00:00) and the 23rd reads 0,
+//      which is the game holding an entry with nothing in it. This path only ever runs on a
+//      FLAG-SPECIFIC server, and no flag-specific save has been read: that the same bytes hold the
+//      duration there is the reasonable reading, not a measurement.
+//   3. The running game's own decoded window, from the bridge's `protect` module. Its decode is the
+//      one measured on an offline server, where the game packs the duration as a 15-bit float and
+//      86400 comes back as 86528. The unpacker has a second mode that stores whole MINUTES, and the
+//      bridge reads the mode byte as the manager's own protection type — so on a flag-specific server
+//      this figure may be decoded with the wrong mode. The game caps flag-specific protection at
+//      8 hours (its own setting description), and 480 minutes read the offline way decodes to 0.0,
+//      which `liveWindow` treats as "no length": the likely failure is a skipped base, not a wrong
+//      length. Not driven on a flag-specific server.
 //
 // If none of the three answers, the flag is NOT pushed and the tab says which of them was missing.
 // A window LONGER than the bridge will ever send (a week) is not pushed either: writing a shorter one
@@ -88,10 +123,10 @@
 //   · **Every push reports whether the flag's stored state actually MOVED**, because the bridge reads
 //     the packed word either side of the call on the same frame. A call that was accepted and moved
 //     nothing is recorded as exactly that. `accepted` on its own is never read as "it worked".
-//   · **Whether the call takes effect under OFFLINE protection.** It is the one the game's own
-//     flag-specific panel drives, and it writes into the per-flag list all three protection modes
-//     share, so there is every reason to expect it to — but expecting is not measuring, and the
-//     verdict above is what answers it on a real raid rather than a claim made here.
+//   · **The call does NOT take effect under OFFLINE protection, and that is settled.** It was driven
+//     on an offline server and moved nothing, and the bridge then found why in `SCUMServer.exe`: the
+//     offline manager's slot for the window setter is the engine's "return false" stub. That is why
+//     the offline path above uses `postpone` and never this call.
 //
 // ── ONE DELIBERATE NON-GATE, AND ONE GATE ────────────────────────────────────────────────────────
 //
@@ -102,8 +137,9 @@
 // It pushes on the cadence and lets the game decide; the re-apply is what catches the logout.
 //
 // It does NOTHING while the game database positively says nobody at all is online. Nobody can be
-// raiding then, and the game only accepts a protection change through a connected player, so a push
-// would be refused. The bridge keeps its raid records with absolute last-hit times, so nothing seen
+// raiding then. On a flag-specific server a push would be refused anyway, because the game takes that
+// call only through a connected player's channel; `postpone` on an offline server needs no player,
+// so there the idle is the "nobody is raiding" reason alone. The bridge keeps its raid records with absolute last-hit times, so nothing seen
 // before is lost: the first pass after somebody connects reads the same feed. An unreadable database
 // is not "nobody online" and does not idle anything.
 
@@ -112,6 +148,14 @@ const FLAG_ASSET_LIKE = '%BP_Base_Flag%';   // covers BP_Base_Flag_C and BP_Base
 const CONFIG_TTL_MS = 15000;        // re-read the config file at most this often (an edit on the card)
 const NAME_TTL_MS = 600000;         // base names barely change; the tab polls every ten seconds
 const QUIET_MS = 3600000;           // a repeating warning is said at most once an hour
+const MODE_TTL_MS = 300000;         // the manager is built at boot; a known answer is re-asked every 5 min
+
+/** The game's manager class, to the protection mode it means. Anything else writes nothing. */
+const MODE_BY_CLASS = {
+  OfflineRaidProtectionManager: 'offline',
+  FlagSpecificRaidProtectionManager: 'flagSpecific',
+  GlobalRaidProtectionManager: 'global',
+};
 
 const DEFAULTS = {
   enabled: true,
@@ -371,7 +415,7 @@ module.exports = {
 
     // What the last read of each source said, so the tab can show an owner why nothing is happening
     // rather than showing them a plugin that looks idle. `null` means the last attempt answered.
-    const notes = { raid: null, protect: null, db: null };
+    const notes = { raid: null, protect: null, db: null, mode: null };
     // Why the last pass did no work at all, or null when it did. Different from a note: a note is a
     // source that could not answer, this is a pass that had no reason to ask.
     let idle = null;
@@ -472,10 +516,11 @@ module.exports = {
     /**
      * The Duration this flag's own save row is holding, in seconds.
      *
-     * `base_raid_protection.data` is twelve bytes: three little-endian 32-bit words, of which word 2
-     * is the protection duration in whole seconds. Measured across every row of a real save — 22 read
-     * 86400 against a server configured for 24:00:00, and the one row whose protection had been
-     * cleared reads 0.
+     * `base_raid_protection.data` is twelve bytes, `u16 active, u16, u32 start, u32 duration`, so the
+     * little-endian word at byte 8 is the protection duration in whole seconds. Measured across every
+     * row of a real save of an OFFLINE server — 22 read 86400 against 24:00:00, and the one row whose
+     * protection had been cleared reads 0. Only a flag-specific server reaches this, and no save of one
+     * has been read (see the header).
      *
      * Three different answers, and they must stay apart:
      *   a number > 0 — this is the window the flag is holding (it may be longer than can be sent)
@@ -623,7 +668,7 @@ module.exports = {
     async function ensureSnapshot() {
       if (!canCommand()) return null;
       const r = (await host.bridge.command('protect', 'snapshot')) || {};
-      const already = !r.ok && r.code === 'refused' && /snapshot already exists/i.test(String(r.reason || ''));
+      const already = refusedAs(r, 'snapshot_exists', /snapshot already exists/i);
       if (!r.ok && !already) {
         warnQuietly('snapshot', `could not record a baseline of the protection state before writing: ${r.reason || r.error || 'the bridge did not say why'}`);
         return null;
@@ -636,13 +681,82 @@ module.exports = {
       return { at };
     }
 
+    /**
+     * ══ WHY A REFUSAL SAID NO — THE TOKEN FIRST, THE ENGLISH ONLY FOR AN OLDER BRIDGE ═══════════
+     *
+     * This plugin used to tell its six refusals apart by matching the bridge's SENTENCE —
+     * `/unknown verb 'postpone'/`, `/already running/i`, `/for offline raid protection only/i`,
+     * `/no raid-protection manager/i`, `/snapshot already exists/i`, and a range limit parsed out of
+     * the wording with a capture group. Every one of those breaks the moment somebody improves the
+     * sentence, and the reason text is the part of that surface that is MEANT to be rewritten.
+     *
+     * Since bridge **2.29.1** a refusal carries a machine token beside the sentence, and the SDK
+     * hands it up as `reasonCode`. So the token is asked first and the regex is kept only as the
+     * fallback for a bridge that predates it.
+     *
+     * ⚠ **`reasonCode` IS NOT `code`.** `code` classifies the whole call — `bridge_off`,
+     * `no_module`, `module_off`, `refused` — and answers whether it could be asked at all. This one
+     * is the module's answer to why it said no, and only exists inside `refused`.
+     *
+     * ⚠ **AN ABSENT TOKEN IS NOT A VERDICT**, so the prose fallback still runs when there is none.
+     * Owners run the bridge they have, and a plugin that treats `null` as "not that reason" would
+     * quietly stop recognising all six on every server that has not updated.
+     *
+     * ⚠ **`unknown_verb` IS THE VERSION GATE, AND THERE IS NO VERB CATALOGUE TO ASK INSTEAD.**
+     * Telling an owner their bridge is too old for `postpone` used to mean matching the words
+     * *"unknown verb 'postpone'"*, and the obvious replacement — ask the bridge which verbs it has —
+     * was proposed and REFUSED for a reason worth keeping: publishing one needs a new virtual on
+     * the bridge's module base class across all of its modules, and adding one there shifts every
+     * vtable slot after it with no compiler error. The token answers the same question with no
+     * parsing and no risk, so this is settled rather than pending.
+     */
+    function refusedAs(r, token, fallbackRe) {
+      if (!r || r.ok !== false || r.code !== 'refused') return false;
+      if (typeof r.reasonCode === 'string' && r.reasonCode) return r.reasonCode === token;
+      return !!fallbackRe && fallbackRe.test(String(r.reason || r.error || ''));
+    }
+
+    /**
+     * The `protect` module's own `maxValue` — the ceiling it refuses a delay or a duration above.
+     *
+     * Read off the module's CARD rather than parsed out of the refusal sentence. `bad_value` says
+     * THAT the number was out of range; it does not say what the range is, and the limit is a
+     * setting an owner can see and change. A capture group over the wording answered the same
+     * question by reading prose, and would have kept answering until the sentence was reworded.
+     *
+     * Memoised for a few minutes: it is a setting, so it changes when somebody saves the card, and
+     * this is only ever asked on a refusal. `null` when it could not be read, which is a real answer
+     * and is why the sentence below is built in two halves.
+     */
+    let maxValueSeen = { at: 0, value: null };
+    const MAXVALUE_TTL_MS = 300000;
+    async function protectMaxValue() {
+      if (maxValueSeen.at && Date.now() - maxValueSeen.at < MAXVALUE_TTL_MS) return maxValueSeen.value;
+      let v = null;
+      try {
+        const list = (host.bridge && typeof host.bridge.modules === 'function')
+          ? await host.bridge.modules() : null;
+        const m = (Array.isArray(list) ? list : []).find((x) => x && String(x.id) === 'protect');
+        const raw = m && m.config ? Number(m.config.maxValue) : NaN;
+        if (Number.isFinite(raw) && raw > 0) v = raw;
+      } catch (e) { v = null; }
+      maxValueSeen = { at: Date.now(), value: v };
+      return v;
+    }
+
     /** The bridge's range refusal, with the name of the setting that decides it. */
-    function explainRefusal(text) {
-      const m = /(delay|duration) must be a (?:plain decimal )?number between 0 and (\d+)/i.exec(String(text || ''));
-      if (!m) return text;
+    async function explainRefusal(text, r) {
+      const said = String(text || '');
       // A bridge that already names the setting says it once; saying it again reads as two limits.
-      if (/Refuse Delay or Duration above/.test(String(text))) return text;
-      return `${text}. That limit is the “Refuse Delay or Duration above” setting (${m[2]}) on the bridge's Raid protection control card in Settings → Bridge. Raise it there, or set a shorter fixed protection length under More options`;
+      if (/Refuse Delay or Duration above/.test(said)) return said;
+      const isRange = refusedAs(r, 'bad_value',
+        /(delay|duration) must be a (?:plain decimal )?number between 0 and \d+/i);
+      if (!isRange) return said;
+      const limit = await protectMaxValue();
+      // Two halves, because "I could not read the card" and "the card says 90000" are different
+      // facts and only one of them may put a number in front of an owner.
+      const named = limit === null ? '' : ` (${limit})`;
+      return `${said}. That limit is the “Refuse Delay or Duration above” setting${named} on the bridge's Raid protection control card, under Plugins → SSA Bridge. Raise it there, or set a shorter fixed protection length under More options`;
     }
 
     /**
@@ -701,7 +815,7 @@ module.exports = {
       let state, text;
       if (!r.ok) {
         state = 'refused';
-        text = explainRefusal(r.reason || r.error || 'the bridge did not say why');
+        text = await explainRefusal(r.reason || r.error || 'the bridge did not say why', r);
       } else if (r.changed === true) {
         state = 'moved';
         text = r.note || 'the flag’s stored protection state moved';
@@ -724,6 +838,179 @@ module.exports = {
         },
       });
       return r.ok === true;
+    }
+
+    // ── which protection mode the server runs ───────────────────────────────────────────────────
+    //
+    // `{ kind, managerClass, at, text }`, where `kind` is offline | flagSpecific | global | none |
+    // unknown. Only a real answer naming offline, flag-specific or global is kept for five minutes;
+    // "no manager" (a server still starting looks the same as one with protection off) and "could not
+    // ask" are asked again on the next pass that has a raid to push.
+    let modeInfo = null;
+    async function readMode() {
+      const t = now0();
+      if (modeInfo && MODE_BY_CLASS[modeInfo.managerClass] && t - modeInfo.at < MODE_TTL_MS && t >= modeInfo.at) return modeInfo;
+      if (!canQuery()) {
+        modeInfo = { kind: 'unknown', managerClass: null, at: t, text: 'the SSA Bridge did not answer, so the plugin cannot tell which raid protection this server runs. Nothing is pushed until it can' };
+        return modeInfo;
+      }
+      const q = await host.bridge.query('protect', 'manager');
+      if (q && q.ok) {
+        clearNote('protect');
+        const cls = (q.data && typeof q.data.managerClass === 'string') ? q.data.managerClass : null;
+        const kind = (cls && MODE_BY_CLASS[cls]) || 'unknown';
+        let text = null;
+        if (kind === 'global') text = 'this server runs global raid protection, which protects bases by the clock rather than by who is online. There is nothing for this plugin to push';
+        else if (kind === 'unknown') text = `the server runs a raid-protection manager this plugin does not know (${cls || 'it could not be named'}), so nothing is pushed`;
+        modeInfo = { kind, managerClass: cls, at: t, text };
+        return modeInfo;
+      }
+      if (refusedAs(q, 'no_manager', /no raid-protection manager/i)) {
+        modeInfo = { kind: 'none', managerClass: null, at: t, text: 'the game has no raid-protection manager right now: either the server runs no raid protection, or it is still starting. Nothing is pushed' };
+        return modeInfo;
+      }
+      noteFailure('protect', q, 'protect');
+      const said = notes.protect && notes.protect.text ? notes.protect.text : 'the SSA Bridge did not answer';
+      modeInfo = { kind: 'unknown', managerClass: null, at: t, text: `${said}, so the plugin cannot tell which raid protection this server runs. Nothing is pushed until it can` };
+      return modeInfo;
+    }
+
+    /**
+     * One flag's OFFLINE protection as the server decides with it, or null.
+     * `{ armed, running, startsInSeconds, durationSeconds }` — each key only when the bridge sent it.
+     */
+    async function offlineReading(flagId) {
+      if (!canQuery()) return null;
+      const q = await host.bridge.query('protect', `offline:${Number(flagId)}`);
+      if (!q || !q.ok || !q.data) return null;
+      const d = q.data;
+      const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+      return {
+        armed: d.armed === true ? true : (d.armed === false ? false : null),
+        running: d.running === true ? true : (d.running === false ? false : null),
+        startsInSeconds: num(d.startsInSeconds),
+        durationSeconds: num(d.durationSeconds),
+      };
+    }
+
+    /**
+     * Push one flag's OFFLINE protection start out: `postpone:<flag>:<seconds>`.
+     *
+     * The bridge moves a start only LATER and only while it is still to come, and says which of its
+     * outcomes it reached. `changed: true` is a start that moved. `changed: false` is a real answer
+     * that nothing needed doing — the entry is not armed because a defender is still online, or it
+     * already starts later than this push would set. A refusal saying protection is ALREADY RUNNING is
+     * kept apart from other refusals: the plugin never takes protection away, and the tab says so.
+     *
+     * Only a start that moved counts towards the per-raid ceiling (see the header).
+     */
+    async function pushOffline(record, flagId, c, delaySeconds) {
+      const delay = Math.round(Number.isFinite(delaySeconds) ? delaySeconds : c.pushSeconds);
+      const f = record.flags[flagId] || (record.flags[flagId] = { pushes: 0, lastPushAt: 0, lastTryAt: 0, lastVerdict: null, before: null });
+      f.lastTryAt = now0();
+
+      if (!f.before) {
+        const live = await offlineReading(flagId);
+        f.before = {
+          at: now0(), mode: 'offline',
+          armed: live ? live.armed : null,
+          running: live ? live.running : null,
+          startsInSeconds: live ? live.startsInSeconds : null,
+          liveDurationSeconds: live ? live.durationSeconds : null,
+        };
+      }
+
+      if (!record.snapshotAt) {
+        const s = await ensureSnapshot();
+        if (s) record.snapshotAt = s.at;
+      }
+
+      const r = (await host.bridge.command('protect', `postpone:${Number(flagId)}:${delay}`)) || {};
+      const at = now0();
+
+      /**
+       * ══ THE FIVE ANSWERS, AND THEY ARE NOT ALL THE SAME KIND OF ANSWER ═══════════════════════
+       *
+       * This block used to decide all five by matching the bridge's English. Three of them are
+       * REFUSALS and now carry a machine token (`reasonCode`, bridge 2.29.1 and newer), asked
+       * through `refusedAs()` with the old regex kept as the fallback for an older bridge.
+       *
+       * ⚠ **THE OTHER TWO ARE SUCCESSES AND NO TOKEN WILL EVER APPEAR ON THEM.** `postpone` on a
+       * flag that is not armed, one whose window has already run its course, and one that already
+       * starts later than asked all answer `ok: true` with `accepted: true, changed: false` and a
+       * note — the verb took the call and correctly did nothing. A rule waiting for a `reasonCode`
+       * there waits for ever. **`changed === false` is the test**, and converting these two the
+       * same way as the three above is the mistake this comment exists to prevent.
+       */
+      let state, text;
+      if (!r.ok) {
+        const reason = String(r.reason || r.error || '');
+        if (refusedAs(r, 'unknown_verb', /unknown verb 'postpone'/)) {
+          state = 'refused';
+          text = 'this server runs an SSA Bridge that cannot postpone offline protection yet. Update the SSA Bridge';
+        } else if (refusedAs(r, 'already_running', /already running/i)) {
+          state = 'running';
+          text = reason;
+        } else if (r.code === 'refused') {
+          state = 'refused';
+          text = await explainRefusal(reason || 'the bridge did not say why', r);
+          // The server was restarted into another mode since the mode was last read: ask again next pass.
+          if (refusedAs(r, 'wrong_protection_type', /for offline raid protection only/i)) modeInfo = null;
+        } else {
+          state = 'refused';
+          noteFailure('protect', r, 'protect');
+          text = (notes.protect && notes.protect.text) || 'the SSA Bridge did not answer';
+        }
+      } else if (r.changed === true) {
+        state = 'moved';
+        text = r.note || 'the flag\'s offline protection now starts later';
+      } else if (r.changed === false) {
+        /**
+         * ⚠ **A SUCCESS, AND THE LAST ENGLISH TEST IN THIS FILE — DELIBERATELY.**
+         *
+         * Three of the bridge's no-op paths land here and they are all `changed: false`: the entry
+         * is not armed (a defender is still online), the window has already run its course, and the
+         * start is already further out than this push would set. Only the third is worth a
+         * different badge — *"already later"* is good news and *"nothing needed changing"* is
+         * neutral — and the bridge does not separate them on the wire, because a token is for a
+         * REFUSAL and none of these refused anything.
+         *
+         * So the distinction is cosmetic and the fallback if the wording moves is the neutral
+         * badge, which is the safe direction. **Do not "fix" this by waiting for a `reasonCode`:**
+         * one will never come. What would remove it is a distinguishing FIELD on the three
+         * `say_unchanged` paths, which is a bridge change nobody has asked for.
+         */
+        state = /already starts in/i.test(String(r.note || '')) ? 'later' : 'unchanged';
+        text = r.note || 'nothing needed changing';
+      } else {
+        state = 'unconfirmed';
+        text = r.note || 'the bridge accepted the push and did not say whether the start moved';
+      }
+
+      if (r.ok === true) f.pushedForHitAt = record.lastHitAt;
+      if (state === 'moved') {
+        f.lastPushAt = at;
+        f.pushes = (f.pushes || 0) + 1;
+        record.pushes = (record.pushes || 0) + 1;
+      }
+
+      const prev = f.lastVerdict ? f.lastVerdict.state : null;
+      f.lastVerdict = { ok: r.ok === true, state, text, at, mode: 'offline' };
+
+      // A push that moved, or anything that went wrong, is always listed. "Nothing needed doing" is
+      // listed when it is NEW, so a defender sitting online for an evening is one line, not thirty.
+      if (state === 'moved' || state === 'refused' || state === 'running' || state === 'unconfirmed' || state !== prev) {
+        remember({
+          base: record.base, baseName: baseName(record.base), flag: Number(flagId), mode: 'offline',
+          delaySeconds: delay, durationSeconds: null, durationSource: null,
+          state, text,
+          evidence: {
+            hits: record.hits, destroyed: record.destroyed, damage: record.damage,
+            elements: record.elements, lastHitAgoSeconds: Math.round((at - record.lastHitAt) / 1000),
+          },
+        });
+      }
+      return state === 'moved';
     }
 
     // ── one pass ────────────────────────────────────────────────────────────────────────────────
@@ -801,8 +1088,21 @@ module.exports = {
         }
       }
 
-      // 3) push the open ones — unless there is nobody a push could travel through.
-      if (!idle && canCommand()) {
+      // 3) push the open ones — unless there is nobody a push could travel through, or the mode the
+      //    server runs cannot be read. The mode is asked only when there is something to push.
+      let mode = null;
+      const anyToPush = Object.keys(raids).some((k) => isOpen(raids[k]) && c.exemptBaseIds.indexOf(raids[k].base) < 0);
+      if (!anyToPush) notes.mode = null;
+      if (!idle && canCommand() && anyToPush) {
+        mode = await readMode();
+        const pushable = mode.kind === 'offline' || mode.kind === 'flagSpecific';
+        notes.mode = pushable ? null : { code: mode.kind, text: mode.text || 'the raid protection this server runs could not be read', at: now0() };
+        if (!pushable) {
+          warnQuietly('mode:' + mode.kind, `${mode.text || 'the raid protection mode could not be read'}.`);
+          mode = null;
+        }
+      }
+      if (mode) {
         for (const key of Object.keys(raids)) {
           const r = raids[key];
           if (r.closedAt) continue;
@@ -848,15 +1148,24 @@ module.exports = {
             if (c.exemptFlagIds.indexOf(flagId) >= 0) continue;
             const f = r.flags[flagId];
             const last = f ? (f.lastTryAt || f.lastPushAt || 0) : 0;
+            // ⚠ ON OFFLINE PROTECTION, "NOT ARMED YET" IS ASKED AGAIN WITHIN A MINUTE, NOT A RE-APPLY
+            // PERIOD LATER. The game arms the flag the moment the last defender logs out, to start after
+            // the SERVER's own start delay — and an owner who set that delay shorter than the repeat
+            // would see protection switch on between two pushes, ending the raid this plugin exists to
+            // keep going. A push on an entry that is not armed writes nothing, so asking once a minute
+            // costs a read, and the feed still says it once.
+            const waitMs = (mode.kind === 'offline' && f && f.lastVerdict && f.lastVerdict.state === 'unchanged')
+              ? Math.min(c.reapplySeconds, 60) * 1000 : c.reapplySeconds * 1000;
             if (c.countFromLastHit) {
               if (left < 60) continue;                                   // protection is about to start anyway
               const newHit = !f || !(f.pushedForHitAt >= r.lastHitAt);
               const dueByHit = newHit && (!last || now - last >= 60000 || now < last);
-              const dueByRepeat = !last || now - last >= c.reapplySeconds * 1000 || now < last;
+              const dueByRepeat = !last || now - last >= waitMs || now < last;
               if (!dueByHit && !dueByRepeat) continue;
-            } else if (last && now - last < c.reapplySeconds * 1000 && now >= last) continue;
+            } else if (last && now - last < waitMs && now >= last) continue;
             if ((r.pushes || 0) >= c.maxPushesPerRaid) break;
-            await push(r, flagId, c, cache, c.countFromLastHit ? left : undefined);
+            if (mode.kind === 'offline') await pushOffline(r, flagId, c, c.countFromLastHit ? left : undefined);
+            else await push(r, flagId, c, cache, c.countFromLastHit ? left : undefined);
             dirty = true;
           }
         }
@@ -971,6 +1280,9 @@ module.exports = {
         // "nothing is being raided" from "the evidence cannot reach me" from "there is nobody on".
         notes,
         idle,
+        // Which raid protection the server runs, as the last pass that had something to push read it.
+        // `null` until then: the mode is asked only when there is a raid, not on every tab refresh.
+        mode: modeInfo ? { kind: modeInfo.kind, managerClass: modeInfo.managerClass, at: modeInfo.at, text: modeInfo.text } : null,
         // ONE key for one fact, and it is named the way every sibling plugin names it.
         // `serverRunning` here means "the game database is readable right now", which is the
         // meaningful signal for this plugin and is not the same as a process check: a server
@@ -989,10 +1301,13 @@ module.exports = {
       if (!(Number.isFinite(flagId) && flagId > 0)) return res.status(400).json({ error: 'a positive flag id is required' });
       const cache = { flags: new Map() };
       const live = await liveWindow(flagId, cache);
+      // The offline reading answers only on an offline server with a new enough bridge; null otherwise.
+      const offline = await offlineReading(flagId);
       res.json({
         flag: flagId,
         savedDurationSeconds: savedDuration(flagId),
         live,
+        offline,
         note: 'the saved figure is the game’s own whole-second record; the live one is decoded out of a 15-bit packed word and is accurate to a couple of minutes in a day, never to the second',
       });
     });
@@ -1023,12 +1338,19 @@ module.exports = {
      */
     host.routes.get('/bridge-check', async (req, res) => {
       const c = cfg();
+      // Which write this server needs depends on its protection mode. While that is not known (the
+      // server is stopped, or no raid has asked yet) both are listed, because either may be the one.
+      let kind = modeInfo ? modeInfo.kind : 'unknown';
+      if (kind === 'unknown' || kind === 'none') {
+        try { kind = (await readMode()).kind; } catch (e) { kind = 'unknown'; }
+      }
       const want = [
         ['raid.enabled', 'Seeing raid damage'],
         ['protect.enabled', 'Pushing protection back'],
-        ['protect.set', 'Pushing protection back'],
       ];
-      if (c.resetCooldownFirst) want.push(['protect.reset', 'Clearing the cooldown first']);
+      if (kind !== 'flagSpecific') want.push(['protect.postpone', 'Pushing offline protection back']);
+      if (kind !== 'offline') want.push(['protect.set', 'Pushing protection back']);
+      if (c.resetCooldownFirst && kind !== 'offline') want.push(['protect.reset', 'Clearing the cooldown first']);
       let r = null;
       if (host.bridge && typeof host.bridge.needs === 'function') {
         try { r = await host.bridge.needs(); } catch (e) { r = null; }
@@ -1070,7 +1392,7 @@ module.exports = {
           noUndo: sw.tierFamily === 'danger',
         };
       });
-      res.json({ known: !!(r && r.declared), online: r ? r.online !== false : null, items });
+      res.json({ known: !!(r && r.declared), online: r ? r.online !== false : null, mode: kind, items });
     });
 
     host.logger.info('Raid Window active — offline protection is pushed out only for a base with evidenced raid damage');

@@ -167,3 +167,13 @@
 }
 .rw-h-who { font-weight: 600; overflow-wrap: anywhere; }
 .rw-h-t { flex: 1 1 14rem; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+
+/* ── a thumb, at 320px ────────────────────────────────────────────────────────────────────────
+   The panel's own stylesheet puts a 44px floor under every control inside a plugin tab, and a
+   height is all it can floor: a width floor on a flex item replaces the automatic content
+   minimum, which is the only thing stopping a word being cut in half. The `?` button is a single
+   character and has no word to lose, so it states the square itself — and it is the control that
+   explains what the setting beside it does, which is the last thing to leave out of reach. */
+@media (max-width: 760px) {
+  .rw-q { min-width: 44px; }
+}

@@ -3,8 +3,9 @@
 
 // More Chat Messages — the settings screen.
 //
-// The page is four things in this order: what it is doing right now, the eight announcements, the
-// timing that governs the four polled ones, and what it has actually said. The figures an owner
+// The page is three things in this order: what it is doing right now, the eight announcements, and
+// what it has actually said. There is no timing to set: everything polled is checked every five
+// seconds, which is cheap enough that an owner has nothing to trade off. The figures an owner
 // opens this tab for are at the top; the save bar rides at the bottom and says whether there is
 // anything to save.
 //
@@ -30,7 +31,7 @@
   const client = SSA.apiClient();
   const api = async (path, opts) => {
     try { return await client(path, opts); }
-    catch (err) { return { ok: false, error: SSA.apiError ? SSA.apiError(err) : 'that did not work' }; }
+    catch (err) { return { ok: false, error: SSA.apiError ? SSA.apiError(err) : SSA.t('pl.more-chat-messages.error.generic', 'that did not work') }; }
   };
 
   // ⚠ `SSA.el`, the SDK's own element helper. This file used to carry a second one of its own,
@@ -40,97 +41,90 @@
   const el = SSA.el;
   const icon = (name) => (SSA.icon ? SSA.icon(name) : el('span', {}));
 
+  // The panel's own translator, bound once. English stays at the call site as the second argument,
+  // so an owner with no locale file for this plugin — which is everybody until one is written —
+  // reads exactly what they read before. `{name}` in a sentence is filled from the third argument
+  // rather than by joining fragments: word order is not the same in every language.
+  const T = SSA.t;
+
   // One entry per announcement. `fields` is what the card draws; the order is the order an owner
   // reads it in. `seed` names the flag in `/status` that says whether this one has a baseline yet —
   // a polled announcement says nothing from its first reading, which is a real state and not a
   // fault, and without this the card is on, silent, and gives no reason.
   const CARDS = [
-    { key: 'kills', icon: 'skull', title: 'Kills',
-      what: 'Every death the manager\'s kill feed sees, in the words the game itself uses for a weapon and an actor. '
-        + 'The kill log carries no position the plugin can read, so a kill line has no sector.',
+    { key: 'kills', icon: 'skull', title: T('pl.more-chat-messages.kills.title', 'Kills'),
+      what: T('pl.more-chat-messages.kills.what', 'Every death the kill feed sees, in the game\'s words. Kill lines have no sector.'),
       fields: [
         // No `{sector}`: the kill event carries the two positions only inside a sentence the
         // manager formatted for an embed, so there is nothing here to turn into a sector. It was
         // offered on all three lines and was blank on every kill on every server.
-        ['message', 'When one player kills another', '{killer} {victim} {weapon} {distance}'],
-        ['messageNoKiller', 'When the game names no killer — a fall, a mine, a trap', '{victim} {weapon}'],
-        ['selfMessage', 'When somebody kills themselves', '{victim}'],
+        ['message', T('pl.more-chat-messages.kills.field.message', 'When somebody is killed'), '{killer} {victim} {weapon} {distance}'],
+        ['messageNoKiller', T('pl.more-chat-messages.kills.field.nokiller', 'When the kill carries no killer name at all'), '{victim} {weapon}'],
+        ['selfMessage', T('pl.more-chat-messages.kills.field.self', 'When somebody kills themselves'), '{victim}'],
       ],
-      numbers: [['minDistance', 'Say nothing under this many metres', '0 announces every kill.']] },
-    { key: 'joins', icon: 'user', title: 'Players joining',
-      what: 'One line when a player connects. The sector is where the game says they logged in; '
-        + 'the squad is empty for a solo player and while the save cannot be read.',
-      fields: [['message', 'Message', '{name} {steamId} {sector} {squad}']] },
-    { key: 'leaves', icon: 'logout', title: 'Players leaving',
-      what: 'One line when a player disconnects, with the sector they logged out in.',
-      fields: [['message', 'Message', '{name} {steamId} {sector} {squad}']] },
-    { key: 'cargo', icon: 'box', title: 'Cargo drops', bridge: true, seed: 'seededCargo',
-      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. ⚠ This one asks the SSA Bridge, and one ask walks every object in the running game - so halving it doubles that work for the server. Never faster than every 30 seconds, and not asked at all while nobody is online unless the line is kept in the chat history.']],
-      what: 'A drop exists from the moment the game schedules it, so it can be announced while it is '
-        + 'still in the air. This is the only announcement here that needs the SSA Bridge: cargo is '
-        + 'in no log and in no save table, and exists only in the running game.',
-      toggles: [['announceIncoming', 'On the way down'],
-        ['announceLanded', 'Landing'],
-        ['announceGone', 'Gone']],
+      numbers: [['minDistance', T('pl.more-chat-messages.kills.num.mindistance', 'Say nothing under this many metres'), T('pl.more-chat-messages.kills.num.mindistance.hint', '0 announces every kill.')]] },
+    { key: 'joins', icon: 'user', title: T('pl.more-chat-messages.joins.title', 'Players joining'),
+      what: T('pl.more-chat-messages.joins.what', 'One line per player joining, with sector and squad (blank for solo players).'),
+      fields: [['message', T('pl.more-chat-messages.joins.field.message', 'Message'), '{name} {steamId} {sector} {squad}']] },
+    { key: 'leaves', icon: 'logout', title: T('pl.more-chat-messages.leaves.title', 'Players leaving'),
+      what: T('pl.more-chat-messages.leaves.what', 'One line when a player disconnects, with the sector they logged out in.'),
+      fields: [['message', T('pl.more-chat-messages.leaves.field.message', 'Message'), '{name} {steamId} {sector} {squad}']] },
+    { key: 'cargo', icon: 'box', title: T('pl.more-chat-messages.cargo.title', 'Cargo drops'), bridge: true, seed: 'seededCargo',
+      what: T('pl.more-chat-messages.cargo.what', 'Announced while still in the air. The only announcement here that needs the SSA Bridge.'),
+      toggles: [['announceIncoming', T('pl.more-chat-messages.cargo.toggle.incoming', 'On the way down')],
+        ['announceLanded', T('pl.more-chat-messages.cargo.toggle.landed', 'Landing')],
+        ['announceGone', T('pl.more-chat-messages.cargo.toggle.gone', 'Gone')]],
       fields: [
-        ['incomingMessage', 'On the way down', '{sector} {x} {y}'],
-        ['landedMessage', 'Landed', '{sector} {x} {y}'],
-        ['goneMessage', 'Gone', '{sector} {x} {y}'],
+        ['incomingMessage', T('pl.more-chat-messages.cargo.field.incoming', 'On the way down'), '{sector} {x} {y}'],
+        ['landedMessage', T('pl.more-chat-messages.cargo.field.landed', 'Landed'), '{sector} {x} {y}'],
+        ['goneMessage', T('pl.more-chat-messages.cargo.field.gone', 'Gone'), '{sector} {x} {y}'],
       ] },
     // `trophy`, because that is what the panel's own map layer for these events wears. There is no
     // `i-flag` and no `i-flag2` in the sprite, and a sprite id that does not exist draws NOTHING --
     // no error, no broken-image mark, just a card head with a hole where its neighbours have an
     // icon. One vocabulary for one thing, and it is the panel's.
-    { key: 'events', icon: 'trophy', title: 'Game events', bridge: true, seed: 'seededEvents',
-      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. ⚠ This one asks the SSA Bridge, and one ask walks every object in the running game - so halving it doubles that work for the server. Never faster than every 30 seconds, and not asked at all while nobody is online unless the line is kept in the chat history.']],
-      what: 'Deathmatch, capture the flag and drop zone. Announced when sign-ups open, when it '
-        + 'starts and when it ends. Needs the SSA Bridge - the game writes nothing about events to '
-        + 'any of its logs, so there is no other source. Naming the person who signed up needs one '
-        + 'more switch, "Who is in the event", in the bridge\'s World events module; without it the '
-        + 'counts still work.',
+    { key: 'events', icon: 'trophy', title: T('pl.more-chat-messages.events.title', 'Game events'), bridge: true, seed: 'seededEvents',
+      what: T('pl.more-chat-messages.events.what', 'Deathmatch, capture the flag and drop zone. Needs the SSA Bridge. Events already running at manager start stay quiet.'),
       toggles: [
-        ['announceOpen', 'Sign-ups open'],
-        ['announceJoin', 'Each person who signs up'],
-        ['announceCount', 'Sign-up count changes'],
-        ['announceStart', 'The event starts'],
-        ['announceEnd', 'The event ends'],
+        ['announceOpen', T('pl.more-chat-messages.events.toggle.open', 'Sign-ups open')],
+        ['announceJoin', T('pl.more-chat-messages.events.toggle.join', 'Each person who signs up')],
+        ['announceCount', T('pl.more-chat-messages.events.toggle.count', 'Sign-up count changes')],
+        ['announceStart', T('pl.more-chat-messages.events.toggle.start', 'The event starts')],
+        ['announceEnd', T('pl.more-chat-messages.events.toggle.end', 'The event ends')],
       ],
       fields: [
-        ['openMessage', 'Sign-ups open', '{event} {location} {sector} {registered}'],
-        ['joinMessage', 'Someone signed up', '{player} {event} {location} {sector} {registered}'],
-        ['countMessage', 'Sign-up count', '{event} {location} {sector} {registered}'],
-        ['startMessage', 'Started', '{event} {location} {sector} {participants} {teams}'],
-        ['endMessage', 'Ended', '{event} {location} {sector}'],
+        ['openMessage', T('pl.more-chat-messages.events.field.open', 'Sign-ups open'), '{event} {location} {sector} {registered}'],
+        ['joinMessage', T('pl.more-chat-messages.events.field.join', 'Someone signed up'), '{player} {event} {location} {sector} {registered}'],
+        ['countMessage', T('pl.more-chat-messages.events.field.count', 'Sign-up count'), '{event} {location} {sector} {registered}'],
+        ['startMessage', T('pl.more-chat-messages.events.field.start', 'Started'), '{event} {location} {sector} {participants} {teams}'],
+        ['endMessage', T('pl.more-chat-messages.events.field.end', 'Ended'), '{event} {location} {sector}'],
       ] },
-    { key: 'bunkersSecret', icon: 'lock', title: 'Secret bunkers', seed: 'seededSecretBunkers',
-      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. Bunkers come from the server\'s own log, so this costs the game nothing and can be as fast as you like.']],
-      what: 'The key card ones. Announced the moment a player opens one, and again when its window '
-        + 'runs out if you want that. Read from the server\'s own log, so it needs no bridge. '
-        + 'The game gives these no position, so only {sector} is filled in here.',
-      toggles: [['announceClose', 'Closing as well as opening']],
-      fields: [['openMessage', 'Opened', '{sector}'], ['closeMessage', 'Closed', '{sector}']] },
-    { key: 'bunkersAbandoned', icon: 'lock', title: 'Abandoned bunkers', seed: 'seededBunkers',
-      numbers: [['everySeconds', 'Ask every … seconds', '0 uses the shared interval below. Bunkers come from the server\'s own log, so this costs the game nothing and can be as fast as you like.']],
-      what: 'The scheduled ones that open and lock on their own rota. Announced the moment the '
-        + 'game writes the change to its log, so it needs no bridge.',
-      toggles: [['announceClose', 'Locking as well as opening']],
-      fields: [['openMessage', 'Active', '{sector} {x} {y}'], ['closeMessage', 'Locked', '{sector} {x} {y}']] },
-    { key: 'raids', icon: 'shield', title: 'Bases being raided',
-      what: 'The same alert the manager sends a base owner, said out loud.',
-      toggles: [['includeOwner', 'Name the base owner']],
-      fields: [['message', 'Message', '{sector} {element} {squad}'],
-        ['ownerMessage', 'Message when naming the owner', '{owner} {squad} {sector} {element}']] },
+    { key: 'bunkersSecret', icon: 'lock', title: T('pl.more-chat-messages.bunkers.secret.title', 'Secret bunkers'), seed: 'seededSecretBunkers',
+      what: T('pl.more-chat-messages.bunkers.secret.what', 'Key card bunkers: announced when opened, optionally when they close. No bridge; only {sector} is filled.'),
+      toggles: [['announceClose', T('pl.more-chat-messages.bunkers.secret.toggle.close', 'Closing as well as opening')]],
+      fields: [['openMessage', T('pl.more-chat-messages.bunkers.secret.field.open', 'Opened'), '{sector}'],
+        ['closeMessage', T('pl.more-chat-messages.bunkers.secret.field.close', 'Closed'), '{sector}']] },
+    { key: 'bunkersAbandoned', icon: 'lock', title: T('pl.more-chat-messages.bunkers.abandoned.title', 'Abandoned bunkers'), seed: 'seededBunkers',
+      what: T('pl.more-chat-messages.bunkers.abandoned.what', 'The scheduled bunkers, announced when they open or lock. No bridge needed.'),
+      toggles: [['announceClose', T('pl.more-chat-messages.bunkers.abandoned.toggle.close', 'Locking as well as opening')]],
+      fields: [['openMessage', T('pl.more-chat-messages.bunkers.abandoned.field.open', 'Active'), '{sector} {x} {y}'],
+        ['closeMessage', T('pl.more-chat-messages.bunkers.abandoned.field.close', 'Locked'), '{sector} {x} {y}']] },
+    { key: 'raids', icon: 'shield', title: T('pl.more-chat-messages.raids.title', 'Bases being raided'),
+      what: T('pl.more-chat-messages.raids.what', 'The same alert the manager sends a base owner, said out loud.'),
+      toggles: [['includeOwner', T('pl.more-chat-messages.raids.toggle.owner', 'Name the base owner')]],
+      fields: [['message', T('pl.more-chat-messages.raids.field.message', 'Message'), '{sector} {element} {squad}'],
+        ['ownerMessage', T('pl.more-chat-messages.raids.field.owner', 'Message when naming the owner'), '{owner} {squad} {sector} {element}']] },
   ];
 
   // The value the backend stores is the lower-case word; this is only what a reader sees. A channel
   // a future backend adds and this list has never heard of keeps its own spelling rather than
   // vanishing from the dropdown.
   const CHANNEL_LABEL = {
-    local: 'Local — heard nearby',
-    global: 'Global — the whole server',
-    squad: 'Squad',
-    admin: 'Admin — admins only',
-    server: 'Server',
+    local: T('pl.more-chat-messages.channel.local', 'Local — heard nearby'),
+    global: T('pl.more-chat-messages.channel.global', 'Global — the whole server'),
+    squad: T('pl.more-chat-messages.channel.squad', 'Squad'),
+    admin: T('pl.more-chat-messages.channel.admin', 'Admin — admins only'),
+    server: T('pl.more-chat-messages.channel.server', 'Server'),
   };
 
   let state = null;
@@ -269,7 +263,7 @@
     const input = el('input', { type: 'text', class: 'mcm-in mcm-text', value: value == null ? '' : String(value) });
     input.addEventListener('input', () => onSet(input.value));
     const toks = el('div', { class: 'mcm-toks' }, String(holders || '').split(/\s+/).filter(Boolean).map((tok) => {
-      const b = el('button', { type: 'button', class: 'mcm-tok', title: 'Put ' + tok + ' in the message' }, tok);
+      const b = el('button', { type: 'button', class: 'mcm-tok', title: T('pl.more-chat-messages.token.title', 'Put {token} in the message', { token: tok }) }, tok);
       b.addEventListener('click', () => {
         // At the cursor where the field has one, appended where it does not — a number field and a
         // field that has never been focused both report no selection.
@@ -311,14 +305,16 @@
     const box = el('input', { type: 'checkbox' });
     box.checked = sec.enabled === true;
     const swWord = el('span', {}, '');
-    const sw = el('label', { class: 'switch mcm-sw', title: 'Switch this announcement on or off' }, [box, swWord]);
+    const sw = el('label', { class: 'switch mcm-sw', title: T('pl.more-chat-messages.card.switch.title', 'Switch this announcement on or off') }, [box, swWord]);
 
     function paintState() {
       const on = sec.enabled === true;
       root.classList.toggle('on', on);
       badge.className = 'mcm-badge' + (on ? ' on' : '');
-      badge.textContent = on ? 'Announcing' : 'Silent';
-      swWord.textContent = on ? 'On' : 'Off';
+      badge.textContent = on ? T('pl.more-chat-messages.card.state.announcing', 'Announcing')
+        : T('pl.more-chat-messages.card.state.silent', 'Silent');
+      swWord.textContent = on ? T('pl.more-chat-messages.card.switch.on', 'On')
+        : T('pl.more-chat-messages.card.switch.off', 'Off');
       // Dimmed, not hidden and never inert: an owner writing the wording before switching the
       // announcement on is the ordinary way round, and a card that empties itself when it is off
       // cannot be prepared.
@@ -326,43 +322,45 @@
     }
     box.addEventListener('change', () => { sec.enabled = box.checked; paintState(); touch(); });
 
-    // ── where it goes, and how often it looks ────────────────────────────────────────────────────
-    const where = [row('Chat channel',
+    // ── where it goes ────────────────────────────────────────────────────────────────────────────
+    //
+    // ⚠ THE CHANNEL IS A LOOK, NOT AN AUDIENCE. The bridge sends every line to every online player;
+    // the channel only sets the colour and chat tab it shows in. The hint said it decided who sees
+    // the line, which an owner using the admin channel for its yellow found to be untrue.
+    const where = [row(T('pl.more-chat-messages.card.channel', 'Chat channel'),
       select(channels.includes(String(sec.channel)) ? String(sec.channel) : 'global',
         channels.map((c) => [c, CHANNEL_LABEL[c] || c]),
         (v) => { sec.channel = v; touch(); }),
-      'Where the line appears in game. The channel decides who sees it, not who it is about.')];
+      T('pl.more-chat-messages.card.channel.hint', 'How the line looks in game (its colour). Every player sees it either way.'))];
 
     // The other place a line can go, and the reason it is a separate control: the game does not log
     // what a plugin sends, so without this an announcement is visible in game and nowhere else.
-    where.push(row('Keep it in the chat history',
-      choice('Chat history', sec.history === true, (v) => { sec.history = v; touch(); }),
-      'Also puts the line in the admin chat view, the Field Console and your Discord chat channel. '
-      + 'SCUM does not record what a plugin says, so until this is on the announcement lives only in '
-      + 'the game.'));
+    where.push(row(T('pl.more-chat-messages.card.history', 'Keep it in the chat history'),
+      choice(T('pl.more-chat-messages.card.history.switch', 'Chat history'), sec.history === true, (v) => { sec.history = v; touch(); }),
+      T('pl.more-chat-messages.card.history.hint', 'Also shows the line in the admin chat view, Field Console and Discord chat channel.')));
 
     (def.numbers || []).forEach(([k, label, hint]) => {
       where.push(row(label, number(sec[k] == null ? 0 : sec[k], (n) => { sec[k] = n; touch(); }, 0), hint));
     });
 
-    body.appendChild(block('Where it goes', where));
+    body.appendChild(block(T('pl.more-chat-messages.card.block.where', 'Where it goes'), where));
 
     if ((def.toggles || []).length) {
-      body.appendChild(block('What it announces', [
-        el('p', { class: 'mcm-hint' }, 'Each moment is its own line. Switch off the ones your server does not need.'),
+      body.appendChild(block(T('pl.more-chat-messages.card.block.what', 'What it announces'), [
+        el('p', { class: 'mcm-hint' }, T('pl.more-chat-messages.card.block.what.hint', 'Each moment is its own line. Switch off the ones your server does not need.')),
         el('div', { class: 'mcm-chks' }, def.toggles.map(([k, label]) =>
           choice(label, sec[k] === true, (v) => { sec[k] = v; touch(); }))),
       ]));
     }
 
-    body.appendChild(block('What it says', (def.fields || []).map(([k, label, holders]) =>
+    body.appendChild(block(T('pl.more-chat-messages.card.block.says', 'What it says'), (def.fields || []).map(([k, label, holders]) =>
       messageField(label, sec[k], holders, (v) => { sec[k] = v; touch(); }))));
 
     root.appendChild(el('div', { class: 'mcm-head' }, [
       icon(def.icon),
       el('h3', {}, def.title),
       badge,
-      def.bridge ? el('span', { class: 'mcm-tag' }, 'Needs the bridge') : null,
+      def.bridge ? el('span', { class: 'mcm-tag' }, T('pl.more-chat-messages.card.needsbridge', 'Needs the bridge')) : null,
       sw,
     ].filter(Boolean)));
     root.appendChild(el('p', { class: 'mcm-lead' }, def.what));
@@ -373,27 +371,20 @@
     /**
      * What this one is really doing, from `/status`.
      *
-     * The backend has published `intervals` and the four `seeded*` flags since it was written and
-     * nothing read them, so an owner could not tell "this asks every 30 seconds because the shared
-     * interval won" from "this asks every 30 seconds because I typed 30", nor "on and silent
-     * because nothing has happened" from "on and silent because it has no baseline yet".
+     * The four `seeded*` flags say whether a polled announcement has its first reading yet, so an
+     * owner can tell "on and silent because nothing has happened" from "on and silent because it
+     * has no baseline yet".
      */
     function live(s) {
       chips.innerHTML = '';
       if (!s || !sec.enabled) return;
-      const every = s.intervals && s.intervals[def.key];
-      if (every) {
-        const own = Number(sec.everySeconds) > 0;
-        chips.appendChild(el('span', { class: 'mcm-chip' },
-          [el('b', {}, 'Asks every ' + every + ' s'), el('span', {}, own ? ' · its own' : ' · shared')]));
-      }
       if (def.bridge && s.waitingForPlayers === true && !sec.history) {
         chips.appendChild(el('span', { class: 'mcm-chip wait' },
-          'Nobody is online, so the game is not being asked - it starts again when a player joins'));
+          T('pl.more-chat-messages.chip.nobody', 'Nobody online, so nothing is checked. It resumes when a player joins')));
       }
       if (def.seed && s.watching && s.watching[def.seed] === false) {
         chips.appendChild(el('span', { class: 'mcm-chip wait' },
-          'Waiting for its first reading — nothing is announced until it has seen the world twice'));
+          T('pl.more-chat-messages.chip.seeding', 'Waiting for its first readings; nothing is announced until it has two')));
       }
     }
 
@@ -410,10 +401,9 @@
     container.innerHTML = '';
     const loaded = await api('/config');
     if (!loaded || loaded.ok === false) {
-      container.appendChild(el('div', { class: 'mcm' }, section('alert', 'Chat Messages', null, [
-        note('bad', 'The plugin\'s settings could not be read: '
-          + ((loaded && loaded.error) || 'the manager did not answer')
-          + '. Nothing has been changed.'),
+      container.appendChild(el('div', { class: 'mcm' }, section('alert', T('pl.more-chat-messages.tab', 'Chat Messages'), null, [
+        note('bad', T('pl.more-chat-messages.read.failed', 'The plugin\'s settings could not be read: {error}. Nothing has been changed.',
+          { error: (loaded && loaded.error) || T('pl.more-chat-messages.error.noanswer', 'the manager did not answer') })),
       ])));
       return;
     }
@@ -426,79 +416,50 @@
     // ── 1. what it is doing right now ────────────────────────────────────────────────────────────
     const figures = el('div', { class: 'mcm-figs' });
     const live = el('div', { class: 'mcm-live' });
-    page.appendChild(section('pulse', 'Right now', 'What this plugin has said since the manager last started. '
-      + 'Everything below can be written with the server stopped; only these figures wait for a game.',
-    [figures, live]));
+    page.appendChild(section('pulse', T('pl.more-chat-messages.now.title', 'Right now'),
+      T('pl.more-chat-messages.now.lead', 'Since the manager started. Cargo, events and bunkers are checked every 5 s. Settings work with the server stopped.'),
+      [figures, live]));
 
     // ── 2. the announcements ─────────────────────────────────────────────────────────────────────
     let dirty = false;
-    const dirtyWord = el('span', { class: 'mcm-dirty' }, 'Nothing to save');
+    const dirtyWord = el('span', { class: 'mcm-dirty' }, T('pl.more-chat-messages.save.clean', 'Nothing to save'));
     const touch = () => {
       if (dirty) return;
       dirty = true;
       dirtyWord.className = 'mcm-dirty unsaved';
-      dirtyWord.textContent = 'Unsaved changes';
+      dirtyWord.textContent = T('pl.more-chat-messages.save.unsaved', 'Unsaved changes');
     };
 
     const cards = CARDS.map((d) => announcement(d, touch));
     cards.forEach((c) => page.appendChild(c.el));
 
-    // ── 3. the timing that governs the polled four ───────────────────────────────────────────────
-    //
-    // Built ONCE, here, rather than inside the ten-second refresh. It used to be rebuilt with the
-    // counters, so the box an owner was typing a number into was replaced under them twice while
-    // they typed it.
-    //
-    // It reads on `change` and not on `input`, which is why the helper's own handler is empty: this
-    // one is RANGE-CHECKED, and checking on every keystroke rejects the `5` on the way to `50`.
-    const poll = number(Number(state.pollSeconds) || 30, () => {}, 5, 3600);
-    poll.addEventListener('change', () => {
-      const n = Math.round(Number(poll.value));
-      state.pollSeconds = (n >= 5 && n <= 3600) ? n : 30;
-      poll.value = String(state.pollSeconds);
-      touch();
-    });
-    page.appendChild(section('clock', 'Timing',
-      'Only Cargo drops, Game events and the two bunker announcements look at all. Kills, joins, '
-      + 'leaves and raids are said the moment the manager reads them out of the log, whatever this says.',
-    [
-      row('Shared interval', poll,
-        'Seconds. Used by any announcement above whose own interval is 0. Two of them falling due '
-        + 'at the same moment share one ask rather than making two. Below 5 seconds is refused, and '
-        + 'Cargo drops and Game events never ask faster than every 30 seconds whatever is set.'),
-      note('flat', 'Cargo and game events reach the running game through the SSA Bridge, and one ask '
-        + 'walks every object in it — so those two are the ones worth slowing down rather than '
-        + 'speeding up. The two bunker announcements read the manager\'s own parsed log and cost the '
-        + 'game nothing.'),
-    ]));
-
-    // ── 4. what it has actually said ─────────────────────────────────────────────────────────────
+    // ── 3. what it has actually said ─────────────────────────────────────────────────────────────
     let recent = [];
     const table = SSA.table({
       columns: [
-        { key: 'at', label: 'When', sort: true, sortVal: (r) => -(r.at || 0), tdClass: 'mono',
+        { key: 'at', label: T('pl.more-chat-messages.said.col.when', 'When'), sort: true, sortVal: (r) => -(r.at || 0), tdClass: 'mono',
           render: (r) => document.createTextNode(r.at ? new Date(r.at).toLocaleTimeString() : '') },
-        { key: 'kind', label: 'What', sort: true, sortVal: (r) => r.kind || '',
+        { key: 'kind', label: T('pl.more-chat-messages.said.col.what', 'What'), sort: true, sortVal: (r) => r.kind || '',
           render: (r) => SSA.cell.tag(r.kind || '', r.ok ? 'ok' : 'bad') },
-        { key: 'text', label: 'Said', render: (r) => document.createTextNode(r.text || '') },
-        { key: 'why', label: 'Note', tdClass: 'dim', render: (r) => document.createTextNode(r.why || '') },
+        { key: 'text', label: T('pl.more-chat-messages.said.col.said', 'Said'), render: (r) => document.createTextNode(r.text || '') },
+        { key: 'why', label: T('pl.more-chat-messages.said.col.note', 'Note'), tdClass: 'dim', render: (r) => document.createTextNode(r.why || '') },
       ],
       rows: () => recent,
       search: (r) => (r.kind || '') + ' ' + (r.text || '') + ' ' + (r.why || ''),
-      searchPlaceholder: 'Search what was said…',
+      searchPlaceholder: T('pl.more-chat-messages.said.search', 'Search what was said…'),
       pageSize: 15,
       sort: { key: 'at', dir: 'asc' },
-      empty: 'Nothing announced yet. With an announcement switched on this fills up as the server plays.',
+      empty: T('pl.more-chat-messages.said.empty', 'Nothing announced yet. With an announcement switched on this fills up as the server plays.'),
     });
-    page.appendChild(section('list', 'What it has said',
-      'The last sixty lines this plugin sent, newest first, with the ones that reached nobody marked. '
-      + 'It is kept in memory, so it starts empty every time the manager restarts.', [table.el]));
+    page.appendChild(section('list', T('pl.more-chat-messages.said.title', 'What it has said'),
+      T('pl.more-chat-messages.said.lead', 'The last 60 lines sent, newest first; undelivered ones marked. Clears on manager restart.'),
+      [table.el]));
 
     // ── the save bar ─────────────────────────────────────────────────────────────────────────────
     // Where a save says what it really did. Under the button rather than in a toast, because a toast
     // is gone before an owner has read which setting did not land.
     const saveNote = el('div', { class: 'mcm-savenote' });
-    const save = el('button', { type: 'button' }, [icon('check'), el('span', {}, 'Save')]);
+    const save = el('button', { type: 'button' }, [icon('check'), el('span', {}, T('pl.more-chat-messages.save.button', 'Save'))]);
     save.addEventListener('click', async () => {
       save.disabled = true;
       const r = await api('/config', { method: 'POST', body: state });
@@ -510,9 +471,9 @@
       // screen both times. The echo is READ instead — compared against what was sent, never
       // assigned over it.
       if (!r || r.ok === false) {
-        if (SSA.toast) SSA.toast((r && r.error) || 'Could not save — nothing was changed', 'error');
-        saveNote.appendChild(note('bad', 'Nothing was saved: '
-          + ((r && r.error) || 'the manager did not answer') + '. Your changes are still on the screen.'));
+        if (SSA.toast) SSA.toast((r && r.error) || T('pl.more-chat-messages.save.failed.toast', 'Could not save — nothing was changed'), 'error');
+        saveNote.appendChild(note('bad', T('pl.more-chat-messages.save.failed', 'Nothing was saved: {error}. Your changes are still on the screen.',
+          { error: (r && r.error) || T('pl.more-chat-messages.error.noanswer', 'the manager did not answer') })));
         return;
       }
       // ⚠ **A SAVE THAT ANSWERS `ok` AND STORED SOMETHING ELSE IS THE ONE FAILURE NOBODY CAN
@@ -524,16 +485,14 @@
       if (!shown.length) {
         dirty = false;
         dirtyWord.className = 'mcm-dirty';
-        dirtyWord.textContent = 'Saved';
-        if (SSA.toast) SSA.toast('Saved');
+        dirtyWord.textContent = T('pl.more-chat-messages.save.saved', 'Saved');
+        if (SSA.toast) SSA.toast(T('pl.more-chat-messages.save.saved', 'Saved'));
         return;
       }
-      if (SSA.toast) SSA.toast('Saved, but ' + shown.length + ' setting(s) did not land', 'error');
+      if (SSA.toast) SSA.toast(T('pl.more-chat-messages.save.partial.toast', 'Saved, but {n} setting(s) did not land', { n: shown.length }), 'error');
       saveNote.appendChild(note('bad', [
-        el('b', {}, 'These were not stored: '), el('span', {}, shown.join(', ')), el('span', {}, '. '),
-        el('span', {}, 'The manager is running an older copy of this plugin than the screen you are '
-          + 'looking at — the panel serves the new card straight from the library and the backend '
-          + 'behind it is only reloaded when the plugin is. Restart the manager and set them again.'),
+        el('b', {}, T('pl.more-chat-messages.save.partial', 'These were not stored: ')), el('span', {}, shown.join(', ')), el('span', {}, '. '),
+        el('span', {}, T('pl.more-chat-messages.save.partial.why', 'The manager runs an older copy of this plugin. Restart it and set them again.')),
       ]));
     });
     page.appendChild(el('div', { class: 'mcm-save' }, [save, dirtyWord]));
@@ -543,9 +502,9 @@
     // of cannot be saved, and finding that out after a refresh is the worst way to learn it.
     const unsettable = missingFromBackend(loaded.defaults);
     if (unsettable.length) {
-      saveNote.appendChild(note('bad', 'This screen is newer than the plugin the manager is running, so '
-        + unsettable.length + ' setting(s) on it cannot be saved yet: ' + unsettable.slice(0, 6).join(', ')
-        + '. Restart the manager to pick up the new version. Everything else here saves normally.'));
+      saveNote.appendChild(note('bad', T('pl.more-chat-messages.unsettable',
+        'This screen is newer than the running plugin, so {n} setting(s) cannot be saved: {list}. Restart the manager.',
+        { n: unsettable.length, list: unsettable.slice(0, 6).join(', ') })));
     }
 
     // ── the live half ────────────────────────────────────────────────────────────────────────────
@@ -570,51 +529,47 @@
       figures.innerHTML = '';
       live.innerHTML = '';
       if (!s || s.ok === false) {
-        live.appendChild(note('bad', 'These counters have stopped updating: '
-          + ((s && s.error) || 'the manager did not answer')
-          + '. Every setting below is unaffected and still saves.'));
+        live.appendChild(note('bad', T('pl.more-chat-messages.counters.stopped', 'These counters have stopped updating: {error}. Every setting below is unaffected and still saves.',
+          { error: (s && s.error) || T('pl.more-chat-messages.error.noanswer', 'the manager did not answer') })));
         cards.forEach((c) => c.live(null));
         return;
       }
       const on = CARDS.filter((d) => state[d.key] && state[d.key].enabled === true).length;
-      figures.appendChild(figure(on + ' of ' + CARDS.length, 'Announcements on', on ? 'good' : ''));
-      figures.appendChild(figure(s.stats.sent, 'Sent'));
-      figures.appendChild(figure(s.stats.failed, 'Failed', s.stats.failed ? 'bad' : ''));
-      figures.appendChild(figure(s.stats.skipped, 'Skipped', s.stats.skipped ? 'wait' : ''));
+      figures.appendChild(figure(T('pl.more-chat-messages.fig.onof', '{n} of {total}', { n: on, total: CARDS.length }),
+        T('pl.more-chat-messages.fig.on', 'Announcements on'), on ? 'good' : ''));
+      figures.appendChild(figure(s.stats.sent, T('pl.more-chat-messages.fig.sent', 'Sent')));
+      figures.appendChild(figure(s.stats.failed, T('pl.more-chat-messages.fig.failed', 'Failed'), s.stats.failed ? 'bad' : ''));
+      figures.appendChild(figure(s.stats.skipped, T('pl.more-chat-messages.fig.skipped', 'Skipped'), s.stats.skipped ? 'wait' : ''));
 
       if (!on) {
-        live.appendChild(note('flat', 'Nothing is switched on, so your server says nothing new. '
-          + 'Turn an announcement on below and press Save.'));
+        live.appendChild(note('flat', T('pl.more-chat-messages.live.nothingon', 'Nothing is on. Turn an announcement on below and press Save.')));
       }
       // Said out loud, because three zeroes and an empty list read as "this is not working" when
       // the real answer is that there is no game to announce anything about yet. Every setting
       // below can still be written; that is the better moment to write it.
       if (s.serverRunning === false) {
-        live.appendChild(note('wait', 'The server is not running, so there is nothing to announce yet. '
-          + 'Every message, channel and switch below can be set up now and goes live the moment it starts.'));
+        live.appendChild(note('wait', T('pl.more-chat-messages.live.stopped', 'The server is stopped. Set everything up now; it goes live when it starts.')));
       }
       // A switch that is ON and silent with no explanation is the worst of the three states, and
       // this is the one case where the reason is the manager underneath rather than anything the
       // owner set.
       if (state.events && state.events.enabled && state.events.announceJoin
           && s.watching && s.watching.seededEvents && s.watching.eventPlayersAvailable === false) {
-        live.appendChild(note('wait', 'Naming each person who signs up is switched on, but the bridge is '
-          + 'not sending the participant list. Turn on "Who is in the event" in the bridge\'s World '
-          + 'events module. The counts and the start and end lines are unaffected.'));
+        live.appendChild(note('wait', T('pl.more-chat-messages.live.noparticipants', 'No sign-up names: turn on "Who is in the event" in the bridge\'s World events.')));
       }
       // Nothing before 5.14.8 kept the log line a secret bunker writes, so the announcement could
       // not fire however the card was filled in.
       if (s.watching && s.watching.secretBunkersSupported === false) {
-        live.appendChild(note('bad', 'Secret bunkers cannot be announced by this manager: update the '
-          + 'manager, which records a key card opening one. The switch and its messages can be set up '
-          + 'now, and every other announcement here is unaffected.'));
+        live.appendChild(note('bad', T('pl.more-chat-messages.live.nosecretbunkers', 'This manager cannot announce secret bunkers; update it. You can still set this up.')));
       }
       // A REQUEST that failed is not a world with nothing in it. Cargo exists only in the running
       // game, so an owner seeing nothing announced needs to know which of the two it is.
-      if (s.pollError && s.watching && (s.watching.cargo || s.watching.bunkers)) {
-        live.appendChild(note('bad', 'Cargo and bunkers cannot be watched right now: ' + s.pollError
-          + '. They live only in the running game, through the SSA Bridge. Kills, joins, leaves and '
-          + 'raids are unaffected and every setting below can still be changed.'));
+      // ⚠ CARGO AND GAME EVENTS, NOT BUNKERS. Only those two ask the bridge, so only they can set this
+      // error. Keyed on bunkers it blamed the bridge for a section that reads the manager's own log,
+      // and an owner with only game events on was never told why nothing was announced.
+      if (s.pollError && s.watching && (s.watching.cargo || s.watching.events)) {
+        live.appendChild(note('bad', T('pl.more-chat-messages.live.pollerror', 'Cargo drops and game events cannot be watched: {error}. Everything else here still works.',
+          { error: s.pollError })));
       }
 
       cards.forEach((c) => c.live(s));
@@ -639,6 +594,6 @@
   // broken plugin rather than as a typo. `SSA.ready` for the same reason every sibling uses it --
   // the panel's tab bar does not exist yet when a plugin script is evaluated.
   SSA.ready(function () {
-    SSA.registerTab({ id: ID, label: 'Chat Messages', icon: '#i-chat', render: mount });
+    SSA.registerTab({ id: ID, label: T('pl.more-chat-messages.tab', 'Chat Messages'), icon: '#i-chat', render: mount });
   });
 })();

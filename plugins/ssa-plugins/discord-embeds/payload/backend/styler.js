@@ -687,7 +687,7 @@ module.exports = {
       });
 
       if (failed.length) {
-        host.logger.warn(`applyStyle(${kind}): ${failed.length} part(s) of the style could not be applied — ${failed.join('; ')}. Everything else was applied. Check that embed in the Built-in Embeds tab.`);
+        host.logger.warn(`applyStyle(${kind}): ${failed.length} style part(s) not applied: ${failed.join('; ')}. Check the Built-in Embeds tab.`);
       }
       if (content === undefined && components === undefined && extraEmbeds === undefined) return embed;
       return { embed, content, components, extraEmbeds };
@@ -740,8 +740,7 @@ module.exports = {
       if (sent === now) return null;
       return {
         ok: false, stale: true, rev: now,
-        error: 'Someone else saved this while you had it open. Your changes were NOT saved — '
-          + 'reload the page to see theirs, then make your change again.',
+        error: 'Someone else saved this first. Your changes were not saved; reload and try again.',
       };
     }
 
@@ -1051,7 +1050,7 @@ module.exports = {
           ? '❌ Command failed (server / bridge?).'
           : (confirmed
             ? '✅ Done.'
-            : '📨 Sent to the server — but nobody is online, so the game could not confirm it ran. Check in game.');
+            : '📨 Sent, but nobody is online to confirm it ran. Check in game.');
         try { await i.editReply({ content: said }); } catch {}
       } else if (act.type === 'message') {
         // The flag, not the deprecated `ephemeral:` option — every other reply here already uses it,

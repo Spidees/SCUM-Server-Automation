@@ -4,7 +4,7 @@
   "replyChannel": "local",
   "itemSpawnCmd": "#SpawnItem {item} {count} Location {steamid}",
   "vehicleSpawnCmd": "#SpawnVehicle {code} {count} Location {steamid}",
-  "invSpawnCmd": "#SpawnInventoryFullOf {container} {sets} {fill}",
+  "invSpawnCmd": "#SpawnInventoryFullOf {container} {fill}",
   "spawnGapMs": 180,
   "spawnTries": 3,
   "messages": {},
@@ -28,11 +28,11 @@
       "allow": [],
       "deny": [],
       "actions": [],
-      "response": "Welcome, {player}!\nPlayers online: {online}/{maxplayers}\nType /discord for our community link."
+      "response": "Welcome, {player}!\nPlayers online: {online}/{maxplayers}\nType /rules to read the server rules."
     },
     {
       "name": "discord",
-      "enabled": true,
+      "enabled": false,
       "channel": "local",
       "broadcast": false,
       "cooldownHours": 0,
@@ -61,13 +61,29 @@
       "deny": [],
       "actions": [],
       "response": "Server rules:\n1) No cheating\n2) Be respectful\n3) Have fun!"
+    },
+    {
+      "name": "ping",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "requireLinked": false,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Your ping: {ping} ms"
     }
   ],
   "packs": [
     {
       "id": "welcome",
       "name": "Welcome Pack",
-      "enabled": true,
+      "enabled": false,
       "trigger": "welcome",
       "command": "",
       "cooldownHours": 0,
@@ -89,7 +105,7 @@
     {
       "id": "daily",
       "name": "Daily Kit",
-      "enabled": true,
+      "enabled": false,
       "trigger": "command",
       "command": "daily",
       "cooldownHours": 24,

@@ -347,3 +347,13 @@
    read which setting did not land. */
 .mcm-savenote { display: flex; flex-direction: column; gap: 0.6rem; }
 .mcm-savenote:empty { display: none; }
+
+/* ── a thumb, at 320px ────────────────────────────────────────────────────────────────────────
+   The panel's own stylesheet puts a 44px floor under every control inside a plugin tab, and a
+   height is all it can floor: a width floor on a flex item replaces the automatic content
+   minimum, which is the only thing stopping a word being cut in half. A token chip carries a
+   `{word}` that is already one token wide and sits in a wrapping row with nothing to be squeezed
+   by, so the short ones — `{x}` came out 35px — can safely be given the square. */
+@media (max-width: 760px) {
+  .mcm-tok { min-width: 44px; }
+}

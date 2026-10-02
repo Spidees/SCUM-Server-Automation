@@ -75,10 +75,11 @@ const DEFAULTS = {
     channel: 'global',
     history: false,
     message: '{killer} killed {victim} ({weapon}) at {distance} m',
-    // A death SCUM could not attribute to anybody — a fall, a mine, a trap. The game writes its own
-    // fallbacks ("Unknown", "NPC", "-1") into the killer field, and `host.items.actorName()` is what
-    // tells those apart from a real name, so this is a separate line rather than the same one with
-    // an empty killer in it.
+    // A kill whose killer name is EMPTY. Rarer than it reads: a mine or a trap names whoever armed it
+    // (the player's own one arrives as a suicide), and a death the game could not attribute carries
+    // the placeholder `Unknown`, which `killFeed.js` also writes for a missing name — both of those
+    // take `message`, not this line. `host.items.actorName()` resolves a class to a name; it does not
+    // tell a placeholder from a player's name. See the handler below.
     messageNoKiller: '{victim} died',
     selfMessage: '{victim} killed themselves',
     minDistance: 0,
@@ -99,8 +100,6 @@ const DEFAULTS = {
     enabled: false,
     channel: 'global',
     history: false,
-    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
-    everySeconds: 0,
     // Three states, three lines, because they are three different pieces of news to a player: one
     // is a race starting, one is a place to go, and one is the race being over.
     incomingMessage: 'A cargo drop is on its way to {sector}',
@@ -114,11 +113,9 @@ const DEFAULTS = {
     enabled: false,
     channel: 'global',
     history: false,
-    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
-    everySeconds: 0,
     // Registration is open and there is somebody in it. This is the "come and play" line.
     announceOpen: true,
-    openMessage: 'The {event} at {location} is open — {registered} signed up so far. Join in if you want to play.',
+    openMessage: 'The {event} at {location} is open: {registered} signed up. Join in!',
     // One line per person who signs up. OFF by default and it needs a second switch in the bridge:
     // names come from `players`, which is a real ProcessEvent per participant per poll.
     announceJoin: false,
@@ -136,8 +133,6 @@ const DEFAULTS = {
     enabled: false,
     channel: 'global',
     history: false,
-    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
-    everySeconds: 0,
     openMessage: 'A secret bunker has opened in {sector}',
     closeMessage: 'The secret bunker in {sector} has closed',
     announceClose: false,
@@ -146,8 +141,6 @@ const DEFAULTS = {
     enabled: false,
     channel: 'global',
     history: false,
-    // How often THIS one asks. 0 = use the plugin-wide interval at the bottom.
-    everySeconds: 0,
     openMessage: 'The abandoned bunker in {sector} is now active',
     closeMessage: 'The abandoned bunker in {sector} has locked',
     announceClose: true,
@@ -163,14 +156,26 @@ const DEFAULTS = {
     includeOwner: false,
     ownerMessage: "{owner}'s base is under attack in {sector}",
   },
-  // How often the three polled announcements ask the game. Seconds. The bridge answers a world walk,
-  // so this is not free: 30s is a compromise between a crate being announced late and a question
-  // nobody asked being put to the game twice a minute.
-  // The shared interval, used by any section whose own `everySeconds` is 0. Only cargo, game
-  // events and the two bunker sections poll at all; everything else here is announced the
-  // moment the manager reads it out of the log.
-  pollSeconds: 30,
 };
+
+/**
+ * Keys an earlier version declared and this one does not, by section (`''` for the top level).
+ *
+ * ⚠ **THE INTERVALS ARE GONE, AND WHY IS A MEASUREMENT.** Every poll had its own "ask every N
+ * seconds" box and a shared one behind it, with a 30-second floor on cargo and game events because
+ * a read was believed to walk every object in the game. Measured on bridge 2.32.0 with a player
+ * online: one `worldevents events` read costs **18.6 ms** of the bridge's update thread (the
+ * module's own perf meter, 20 reads) and **62 ms** round trip at the median, because the bridge now
+ * answers it out of a shared world index refreshed once a second. So there is nothing for an owner
+ * to trade off any more: everything polled is checked every `TICK_SECONDS`, and a crate or a
+ * sign-up is announced within about five seconds instead of within half a minute.
+ *
+ * An owner's stored values are not an error and are not reported as one; `merge()` simply leaves
+ * them out, so the next save drops them from the file.
+ */
+const RETIRED = { '': ['pollSeconds'], cargo: ['everySeconds'], events: ['everySeconds'],
+  bunkersSecret: ['everySeconds'], bunkersAbandoned: ['everySeconds'] };
+const retired = (section, key) => (RETIRED[section] || []).includes(key);
 
 const CHANNELS = ['local', 'global', 'squad', 'admin', 'server'];
 
@@ -242,12 +247,12 @@ function unknownKeys(sent) {
   if (!sent || typeof sent !== 'object') return out;
   for (const k of Object.keys(sent)) {
     const d = DEFAULTS[k];
-    if (d === undefined) { out.push(k); continue; }
+    if (d === undefined) { if (!retired('', k)) out.push(k); continue; }
     const v = sent[k];
     if (!d || typeof d !== 'object' || Array.isArray(d)) continue;
     if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
     for (const kk of Object.keys(v)) {
-      if (!Object.prototype.hasOwnProperty.call(d, kk)) out.push(k + '.' + kk);
+      if (!Object.prototype.hasOwnProperty.call(d, kk) && !retired(k, kk)) out.push(k + '.' + kk);
     }
   }
   return out;
@@ -357,8 +362,7 @@ async function register(host) {
         } else {
           // Feature-detected: this runs on whatever manager is installed, and an older one has no
           // such door. Said in words rather than failing quietly.
-          log.warn('[more-chat-messages] this manager is too old to put a line in the chat history — '
-            + 'the announcement still went to the game');
+          log.warn('[more-chat-messages] this manager cannot write chat history; the announcement still reached the game.');
         }
       }
       note(kind, text, true, r && r.delivered === 0 ? 'nobody online to hear it' : '');
@@ -555,6 +559,13 @@ async function register(host) {
   let lastSecret = null;
   let lastEvents = null;
   let eventPlayersSeen = false;
+  // Which events have already reported a participant the game had not named yet — once per run,
+  // because the poll repeats every few seconds.
+  const namelessSaid = new Set();
+  // Per event, the participants who signed up before the game had a name for them, by id -- so the
+  // poll where the name arrives still announces them. See `eventPass`.
+  const namelessWaiting = new Map();
+
   // Which events have already had their "sign-ups are open" line this cycle. Cleared for an
   // event the moment it is seen RUNNING, which is the only unambiguous end of a sign-up phase.
   const openSaid = new Set();
@@ -750,6 +761,123 @@ async function register(host) {
     return { tOf, rOf };
   };
 
+  // ── A CRATE HAS A LIFE, AND IT ONLY GOES FORWARD ─────────────────────────────────────────────
+  //
+  // `air` from the moment it is in the list until it lands, `down` from the first reading that
+  // says `landed:true`, then gone. Each line is said at most once per crate, and a reading that
+  // says `landed:false` about a crate already down does not put it back in the air.
+  //
+  // Measured on a dev server with bridge 2.33.0, one reading every two seconds: the crate is in the
+  // list within a second of the game's own "Cargo drop spawned" line, sits 540 s at the event's
+  // centre with `targetSet:false`, falls for 60 s straight down (x and y never move), reads
+  // `landed:true` from then on and is counted down from 1223 s.
+  //
+  // ⚠ **"GONE" NEEDS SEVERAL READINGS, NOT ONE.** That was the owner's report: "it is only starting
+  // to fall and it already says gone, then that it is falling, then landed, then gone". One reply
+  // without the crate ended its life on the spot, and the next reply that carried it again was a
+  // new crate, announced from the start. `GONE_POLLS` complete readings in a row without it, at one
+  // every `TICK_SECONDS`, is about twenty seconds -- nothing next to the twenty minutes a landed
+  // crate stays, and a reply that missed it once or twice says nothing.
+  const GONE_POLLS = 4;
+
+  /**
+   * ⚠ **A CRATE THAT HAS BLOWN UP IS STILL IN THE LIST FOR ABOUT FOUR MINUTES.** Measured: the
+   * self-destruct starts 1200 s after landing (`flare` goes false, `detonatesIn` reads 25), the
+   * crate explodes 26 s later -- from then on the bridge can no longer read where the actor is, so
+   * the row carries the landing point and no `actorX` -- and the row leaves 235 s after that.
+   * Waiting for the row to leave announced "gone" four minutes after everybody heard it go off.
+   *
+   * Landed, flare out and no actor position, for `END_READINGS` readings in a row, is the
+   * explosion. One reading alone is not: a read of the actor's position that failed once is not an
+   * explosion, and a crate that is still there must not be called gone.
+   */
+  const END_READINGS = 2;
+  const blownUp = (row) => !!row && row.landed === true && row.flare === false
+    && !Number.isFinite(Number(row.actorX)) && row.positionKnown !== false;
+
+  /** `air`, `down`, or the previous phase when this reading does not say. Never back from `down`. */
+  const phaseOf = (row, prev) => {
+    if (prev === 'down') return 'down';
+    if (row && row.landed === true) return 'down';
+    if (row && row.landed === false) return 'air';
+    return prev || null;
+  };
+
+  /**
+   * A crate still in the air that matched nothing, and a row of its class that matched nothing,
+   * are the same crate.
+   *
+   * ⚠ **THE POSITION OF A CRATE IN THE AIR IS NOT AN IDENTITY.** A game-scheduled drop falls
+   * straight down, but `cargodrop` re-aims a falling crate anywhere, and the published pair is the
+   * crate itself until `_endLocation` is decided. Matching on distance alone then reads one crate
+   * as two: "gone" for the old position, "on its way" for the new one, then "landed" and "gone"
+   * again. Drops are tens of minutes apart, so a crate in the air that matched nothing and a new
+   * row of its class are that crate. A crate already DOWN does not move and is never paired this
+   * way, so a new drop beside a landed one is still news.
+   */
+  const adoptMoved = (tracked, rows, tOf, rOf) => {
+    const cand = [];
+    for (let i = 0; i < tracked.length; i++) {
+      if (tOf[i] >= 0 || tracked[i].phase === 'down') continue;
+      for (let j = 0; j < rows.length; j++) {
+        if (rOf[j] >= 0 || tracked[i].cls !== rows[j].cls) continue;
+        cand.push([closeness(tracked[i].points, rows[j].points), i, j]);
+      }
+    }
+    cand.sort((a, b) => a[0] - b[0]);
+    for (const [, i, j] of cand) {
+      if (tOf[i] >= 0 || rOf[j] >= 0) continue;
+      tOf[i] = j;
+      rOf[j] = i;
+    }
+  };
+
+  /**
+   * Which location each row of the event list is, as `[key, row]` pairs.
+   *
+   * ⚠ **`class` IS A KIND OF EVENT, NOT A PLACE, AND KEYING ON IT KEPT FOUR OF TWENTY-FIVE.** The
+   * island carries 3 capture-the-flag, 10 deathmatch, 4 drop-zone and 8 team-deathmatch locations,
+   * and every location of one kind shares one class (read off the dev server's bridge 2.32.0). A map
+   * keyed on `class` kept only the LAST row of each kind, so an event opening at any of the other
+   * twenty-one locations was never compared against anything and never announced. Whether an event
+   * was heard about depended on which location the game happened to pick -- which reads, from the
+   * owner's chair, as "it only works on the second round".
+   *
+   * A location is its class plus the marker's `locationName`. That is not quite unique either: the
+   * Cage in C4 carries TWO deathmatch and TWO team-deathmatch locations, one above the other, same
+   * name, same x and y, different z. Such a pair is remembered in `twins` the first time a reply
+   * shows it, and from then on keyed by its height as well, so a poll that could not read one twin's
+   * position cannot hand its state to the other. The bridge sends the twenty-five in the same order
+   * on every reply (checked over five consecutive reads), but an order is not an identity.
+   *
+   * A row with no `locationName` cannot be told apart from its siblings and is left out of this
+   * reading; its last state is carried by `eventPass`. Its announcement also has no `{location}` to
+   * say, so nothing a player would have read is lost.
+   */
+  const twins = new Set();
+  function eventRows(list) {
+    const place = (e) => `${e.class}|${e.locationName}`;
+    const counts = new Map();
+    for (const e of list) {
+      if (e && e.class && e.locationName) counts.set(place(e), (counts.get(place(e)) || 0) + 1);
+    }
+    for (const [k, n] of counts) if (n > 1) twins.add(k);
+    const out = [];
+    const seen = new Set();
+    for (const e of list) {
+      if (!e || !e.class || !e.locationName) continue;
+      let key = place(e);
+      if (twins.has(key)) {
+        if (typeof e.z !== 'number' || !Number.isFinite(e.z)) continue;
+        key += `|${Math.round(e.z / 100)}`;
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push([key, e]);
+    }
+    return out;
+  }
+
   /**
    * One reading of the bridge's competitive-event list, diffed against the previous poll.
    *
@@ -762,20 +890,19 @@ async function register(host) {
    * from the event manager's own "current" list, not from a field that has a default), so that is
    * what this keys on.
    *
-   * ⚠ **`class` IS THE IDENTITY AND `name` IS THE WORDS.** The bridge's own note says anything
-   * keying off an event must key off `class`; `name` is an FText read through the engine's text
-   * converter and is OMITTED, never blank, while it has not resolved. So an event whose name has
-   * not arrived yet is skipped rather than announced -- printing `class` would put
-   * `BP_GameEvent_...` in front of players, which is the one thing every screen in this product
-   * exists to avoid.
+   * ⚠ **A LOCATION IS THE IDENTITY, AND `name` IS THE WORDS.** See `eventRows` for the key. `name`
+   * is an FText read through the engine's text converter and is OMITTED, never blank, while it has
+   * not resolved. So an event whose name has not arrived yet is skipped rather than announced --
+   * printing `class` would put `BP_GameEvent_...` in front of players, which is the one thing every
+   * screen in this product exists to avoid.
    */
-  async function eventPass(list, last) {
+  async function eventPass(list, last, quiet) {
     const s = cfg.events;
     if (!s.enabled || !Array.isArray(list)) return last;
-    const now = new Map();
-    for (const e of list) {
-      if (e && e.class) now.set(String(e.class), e);
-    }
+    // Nobody online: the reading was made only to take a baseline, so one that exists is kept as it
+    // is -- a sign-up nobody could hear about is still news to the first player who logs in.
+    if (quiet && last) return last;
+    const now = new Map(eventRows(list));
     if (!last) return now;                        // baseline: never announce the first reading
 
     const varsOf = async (e, extra) => Object.assign({
@@ -874,12 +1001,45 @@ async function register(host) {
       if (s.announceJoin && Array.isArray(e.players) && wasPlayers) {
         const before = new Set(wasPlayers
           .map((p) => String((p && (p.id || p.name)) || '')));
+        // ⚠ **A NAME THAT ARRIVES A POLL LATE IS STILL THAT PERSON'S JOIN.** A participant the game
+        // has not named yet is keyed by their id, and the next reading carries that id in `before`
+        // -- so without this, the poll where the name finally resolves read them as somebody already
+        // there, and the join the log line below promised was never announced at all.
+        const pend = namelessWaiting.get(id) || new Set();
+        const present = new Set();
         for (const p of e.players) {
           const key = String((p && (p.id || p.name)) || '');
-          if (!key || before.has(key)) continue;
-          if (!p.name) continue;                   // an id with no name is not something to read out
+          if (key) present.add(key);
+          const waiting = pend.has(key);
+          if (!key || (before.has(key) && !waiting)) continue;
+          /*
+           * ⚠ A PARTICIPANT WITH NO NAME IS NOT NOTHING, AND DROPPING THEM IN SILENCE IS THE
+           * DEFECT. The bridge omits `name` when `FGameEventParticipantInfo::Name` is an empty
+           * string, and an empty name cannot be read out to a server — so this line is right to
+           * say nothing IN CHAT. What it must not do is say nothing to the OWNER: reported as
+           * "I signed up and nothing was sent" with every switch on at both ends, which is
+           * indistinguishable from a broken feed, a wrong switch and a plugin that is not running.
+           *
+           * Said once per event per run, at warn: the poll repeats every few seconds and a line per
+           * poll would bury the thing it is trying to report.
+           */
+          if (!p.name) {
+            pend.add(key);
+            if (!namelessSaid.has(id)) {
+              namelessSaid.add(id);
+              // The sign-up count still moves, so "how many are signed up" works; the player is
+              // announced as soon as the game names them. Nothing is wrong with the switches.
+              log.warn(`[more-chat-messages] a sign-up for "${e.name || id}" has no player name yet; `
+                + 'it is announced once it has one.');
+            }
+            continue;
+          }
+          pend.delete(key);
           say('event', s, s.joinMessage, await varsOf(e, { player: p.name }));
         }
+        // Somebody who left before the game named them is nobody to announce later.
+        for (const k of [...pend]) if (!present.has(k)) pend.delete(k);
+        if (pend.size) namelessWaiting.set(id, pend); else namelessWaiting.delete(id);
       }
 
       // ⚠ **EVERY unknown field, not just the one that gated a branch.** Hanging the carry off
@@ -922,61 +1082,32 @@ async function register(host) {
       if (s.announceStart && run && !wasRun) say('event', s, s.startMessage, await varsOf(e));
       else if (s.announceEnd && !run && wasRun) say('event', s, s.endMessage, await varsOf(e));
     }
+    // A location this reply did not name is not a location that went away: the twenty-five are
+    // placed in the level and stay there. Its last known state is kept, so the reading where it is
+    // back compares against the truth rather than meeting it as new -- which is silent.
+    for (const [id, was] of last) if (!now.has(id)) now.set(id, was);
     return now;
   }
 
-  // ── how often each announcement asks, and what asking costs ───────────────────────────────────
+  // ── how often it asks, and what asking costs ──────────────────────────────────────────────────
   //
-  // ⚠ **THE BRIDGE CALL IS NOT CHEAP AND THE PLUGIN CANNOT MAKE IT CHEAPER.** One
-  // `worldEvents()` reads the bridge's shared object index, and when no other reader has refreshed
-  // it within the last second that is one walk of every UObject in the process -- 1,794,563 objects
-  // on this build's own dump. The four buckets (crates, events, bunkers, world events) already SHARE
-  // that one walk, and so does every other module reading the world in the same second, so asking
-  // for fewer of them shortens nothing. On top of it sit five real ProcessEvent calls per event
-  // location, about 125 per reply.
+  // ONE cadence for everything polled, and no setting for it. The bunker lists are the manager's own
+  // parse of the game's log and cost the game nothing. The cargo and game-event list is one bridge
+  // read, measured on bridge 2.32.0 with a player online at 18.6 ms of the bridge's update thread
+  // and 62 ms round trip at the median -- it comes out of a world index the bridge refreshes once a
+  // second for every module, not out of a walk of its own. Every five seconds that is under half a
+  // percent of that thread, and it buys an announcement within about five seconds of the game
+  // changing state.
   //
-  // ⚠ **AND THAT IS A LIMIT OF WHAT THE MOD LOADER OFFERS, NOT OF THE ENGINE.** Unreal keeps a
-  // real by-class index -- `GetObjectsOfClass` over `FUObjectHashTables` -- and it is in every
-  // build. It is simply not reachable from here: it is not a reflected function, and a shipping
-  // monolithic build exports nothing, so calling it would mean finding it by pattern in the
-  // binary. What the loader gives is iteration and nothing else. This line said "Unreal has no
-  // by-class index", which is the difference between "the engine cannot" and "we cannot ask", and
-  // those are not the same sentence.
-  //
-  // The only lever on this side is how often, so it is per section rather than one number for all
-  // of them -- bunkers come from the manager's own parsed log and cost the game nothing, cargo and
-  // events cost that walk. And when two sections fall due in the same tick they share ONE reply,
-  // because two intervals must never mean two walks.
-  const BASE_TICK_MS = 5000;
-  // The shortest interval a section that costs a world walk may ask at, whatever the owner typed.
-  // Bunkers cost the game nothing and keep the 5 s floor; cargo and events walk every object in the
-  // game, and a crate or a sign-up announced within half a minute is on time.
-  const WALK_FLOOR_SECONDS = 30;
-  const dueAt = new Map();
-  /**
-   * A section's own interval, or the plugin-wide one, never under `floor`. Bounded here, so a
-   * hand-edited 0 cannot spin.
-   */
-  const everyOf = (section, floor) => {
-    const min = Math.max(5, Number(floor) || 0);
-    const own = Number(section && section.everySeconds);
-    if (own >= 5 && own <= 3600) return Math.max(own, min);
-    const all = Number(cfg.pollSeconds);
-    return Math.max((all >= 5 && all <= 3600) ? all : DEFAULTS.pollSeconds, min);
-  };
-  /** Is this section switched on AND due? Records the next time as a side effect, so ask once. */
-  const isDue = (key, section, now, floor) => {
-    if (!section || !section.enabled) return false;
-    const at = dueAt.get(key);
-    if (at !== undefined && now < at) return false;
-    dueAt.set(key, now + everyOf(section, floor) * 1000);
-    return true;                                   // an unseen key is due immediately: the baseline
-  };
+  // ⚠ **THE READ STAYS SERIAL.** A tick whose read has not come back yet does not start another:
+  // the bridge answers two heavy requests a frame and a plugin must never be the one that queues.
+  const TICK_SECONDS = 5;
+  let reading = false;
 
   /**
    * Is the server KNOWN to have nobody on it?
    *
-   * A chat line with nobody online reaches nobody, so a world walk to produce one buys nothing.
+   * A chat line with nobody online reaches nobody, so a read to produce one buys nothing.
    * ⚠ **"NOBODY IS ONLINE" AND "THE PLAYER COUNT COULD NOT BE READ" ARE OPPOSITE FACTS.**
    * `host.players.online()` answers `[]` for both, so it cannot decide this; `host.stats.counts()`
    * answers `null` when the save could not be read and a real `{ online: 0 }` when it was. Only the
@@ -990,7 +1121,7 @@ async function register(host) {
       return !!(c && typeof c === 'object' && typeof c.online === 'number' && c.online === 0);
     } catch { return false; }
   };
-  // Whether the last bridge poll that fell due was skipped because nobody was online. For the screen.
+  // Whether the last bridge poll was skipped because nobody was online. For the screen.
   let waitingForPlayers = false;
 
   /**
@@ -998,14 +1129,11 @@ async function register(host) {
    * with no arguments, which is the production path.
    */
   async function poll(nowMs) {
-    // `nowAt`, not `now`: the cargo block below already owns that name for its own map, and two
-    // `const now` in one function is a SyntaxError rather than a subtle bug -- caught by the
-    // syntax check, but worth the word so nobody renames it back.
-    const nowAt = Number(nowMs) || Date.now();
-    const doAbandoned = isDue('bunkersAbandoned', cfg.bunkersAbandoned, nowAt);
-    const doSecret = isDue('bunkersSecret', cfg.bunkersSecret, nowAt);
-    const doCargo = isDue('cargo', cfg.cargo, nowAt, WALK_FLOOR_SECONDS);
-    const doEvents = isDue('events', cfg.events, nowAt, WALK_FLOOR_SECONDS);
+    void nowMs;
+    const doAbandoned = !!cfg.bunkersAbandoned.enabled;
+    const doSecret = !!cfg.bunkersSecret.enabled;
+    const doCargo = !!cfg.cargo.enabled;
+    const doEvents = !!cfg.events.enabled;
 
     // ── bunkers: the manager's own reading, and it needs no bridge ─────────────────────────────
     //
@@ -1016,36 +1144,40 @@ async function register(host) {
     if (doAbandoned) lastBunkers = bunkerPass(cfg.bunkersAbandoned, readList(host.map.bunkers), lastBunkers);
     if (doSecret) lastSecret = bunkerPass(cfg.bunkersSecret, readList(host.map.secretBunkers), lastSecret);
 
-    // ── cargo and the competitive events: only the bridge knows ────────────────────────────────
-    //
-    // One reading feeds both. ⚠ The `return` that used to be here was gated on CARGO alone, so an
-    // owner who wanted only the event announcements would have had a section that was switched on,
-    // configured, and never once asked the bridge anything.
-    // Nothing that needs the bridge is due, so it is not asked. This is the whole point of the
-    // per-section intervals: a fast bunker line does not buy a world walk every five seconds.
+    // Nothing that needs the bridge is on, so it is not asked.
     if (!doCargo && !doEvents) return;
+    if (reading) return;
 
-    // ── nobody online: the game is not asked ───────────────────────────────────────────────────
+    // ── nobody online: the game is asked only for a baseline ───────────────────────────────────
     //
-    // A line sent to an empty server is heard by nobody, so the walk that would produce it is not
+    // A line sent to an empty server is heard by nobody, so the read that would produce one is not
     // made. The ONE reader it still has is the chat history (the admin chat view, the Field Console
     // and the Discord chat channel), which records a line whether or not anybody was in game -- so a
-    // due section with `history` on is still asked for, and everything else waits for a player.
+    // section with `history` on is still asked for.
     //
-    // ⚠ **A SKIP IS NOT A READING.** Nothing below is touched: the last known crates, events and
-    // sign-up phases stay exactly as they were, the same rule a refusal follows, so the first poll
-    // after somebody logs in compares against the world as it was last SEEN rather than against an
-    // empty one -- a crate that was there before is not announced as new, and one that arrived
-    // while nobody was on is announced once.
+    // ⚠ **BUT THE BASELINE IS TAKEN ANYWAY, AND NOT TAKING IT WAS HALF OF "ONLY THE SECOND ROUND".**
+    // A manager starts before anybody joins, so the old skip meant no reading at all until the first
+    // player was in -- and that first reading is the baseline, which announces nothing. An event
+    // whose sign-ups opened as the first players arrived was therefore folded into the baseline
+    // and never announced; only the next one was. So a section with no baseline yet is read even on
+    // an empty server (one read, or a few while the level is still arriving), and only the
+    // comparison waits for a player.
+    //
+    // ⚠ **A SKIP IS NOT A READING.** Once a baseline exists nothing is touched while the server is
+    // empty: the first poll after somebody logs in compares against the world as it was last SEEN,
+    // so a crate that arrived while nobody was on is announced once.
     const keepsHistory = (doCargo && cfg.cargo.history === true) || (doEvents && cfg.events.history === true);
-    if (!keepsHistory && nobodyOnline()) {
+    const quiet = !keepsHistory && nobodyOnline();
+    const needBaseline = (doCargo && lastCargo === null) || (doEvents && lastEvents === null);
+    if (quiet && !needBaseline) {
       waitingForPlayers = true;
       return;
     }
-    waitingForPlayers = false;
+    waitingForPlayers = quiet;
 
     let payload = null;
-    try { payload = await host.bridge.worldEvents(); } catch { payload = null; }
+    reading = true;
+    try { payload = await host.bridge.worldEvents(); } catch { payload = null; } finally { reading = false; }
     // ⚠ A REFUSAL IS NOT AN EMPTY WORLD. The bridge being off, the module being off and an island
     // with no crate on it all look like nothing here, and announcing "gone" for all of them would
     // fire every drop as it vanished on a hiccup. The last known state is left exactly as it is.
@@ -1059,7 +1191,7 @@ async function register(host) {
     // reads exactly like a map that has none. `eventsEmptyReason` is the module's word for it, and
     // an empty list is left uncompared rather than treated as everything having ended.
     if (doEvents && Array.isArray(payload.events) && payload.events.length) {
-      lastEvents = await eventPass(payload.events, lastEvents);
+      lastEvents = await eventPass(payload.events, lastEvents, quiet);
     }
 
     if (!doCargo) { lastPollError = ''; return; }
@@ -1074,74 +1206,86 @@ async function register(host) {
     // gone pass below is only safe on a COMPLETE reading.
     const rows = [];
     let unplaceable = 0;
+    // Which classes had a row this pass could not place. A crate of that class that matched nothing
+    // may be that row, so its absence this poll is not counted.
+    const blind = new Set();
     for (const c of payload.cargo) {
       const points = pointsOf(c);
-      if (!points.length) { unplaceable += 1; continue; }
-      rows.push({ cls: String((c && c.class) || ''), points, row: c });
+      const cls = String((c && c.class) || '');
+      if (!points.length) { unplaceable += 1; blind.add(cls); continue; }
+      rows.push({ cls, points, row: c });
     }
 
     // The first good reading is the baseline: nothing is compared and nothing is announced, or a
-    // manager restart would tell the server about every crate already on the island.
+    // manager restart would tell the server about every crate already on the island. What is
+    // already there is remembered as already said, so its next change is still news.
+    if (quiet && lastCargo !== null) return;
     if (lastCargo === null) {
-      lastCargo = rows.map((r) => ({ cls: r.cls, points: r.points, landed: r.row.landed, row: r.row }));
+      lastCargo = rows.map((r) => {
+        const ph = phaseOf(r.row, null);
+        const said = { incoming: true, landed: ph === 'down', gone: ph === 'down' && blownUp(r.row) };
+        return { cls: r.cls, points: r.points, phase: ph, said, missing: 0, row: r.row };
+      });
       lastCargoUnplaceable = unplaceable;
       return;
     }
 
     const s = cfg.cargo;
     const { tOf, rOf } = pairUp(lastCargo, rows);
+    adoptMoved(lastCargo, rows, tOf, rOf);
     const next = [];
 
     for (let j = 0; j < rows.length; j++) {
       const c = rows[j].row;
       const before = rOf[j] >= 0 ? lastCargo[rOf[j]] : null;
       const points = rememberPoints(rows[j].points, before && before.points);
-      // Absent is not false. `landed` is omitted when the bridge could not read it, and reading
-      // that as "still in the air" announces the landing again every time it flickers.
-      const known = typeof c.landed === 'boolean';
-      const landed = c.landed === true;
-      if (!known) {
-        // ⚠ NOT JUST `continue`. Storing the row as it came leaves `landed: undefined` in the
-        // memory, and the next complete reading compares `undefined !== true` against `true` and
-        // announces the landing again. Silence now is worth nothing if the gap is remembered as
-        // a state — carry the last value that WAS known.
-        next.push({ cls: rows[j].cls, points, landed: before ? before.landed : undefined, row: c });
-        continue;
+      const phase = phaseOf(c, before ? before.phase : null);
+      const said = before ? before.said : { incoming: false, landed: false, gone: false };
+      // A crate whose state nobody could read yet is followed and not announced: telling the
+      // server a drop is on its way when the bridge could not say whether it had already landed is
+      // a guess. `phase` stays unknown, so the first reading that knows decides.
+      if (phase === 'air' && !said.incoming && !said.landed) {
+        said.incoming = true;
+        if (s.announceIncoming) say('cargo', s, s.incomingMessage, await cargoVars(c));
+      } else if (phase === 'down' && !said.landed) {
+        said.landed = true;
+        // Also marks the incoming line as spent: a crate first seen on the ground was never news
+        // on its way down, and must not become it if a later reading says otherwise.
+        said.incoming = true;
+        if (s.announceLanded) say('cargo', s, s.landedMessage, await cargoVars(c));
       }
-      if (!before) {
-        if (landed && s.announceLanded) say('cargo', s, s.landedMessage, await cargoVars(c));
-        else if (!landed && s.announceIncoming) say('cargo', s, s.incomingMessage, await cargoVars(c));
-      } else if (before.landed !== true && landed && s.announceLanded) {
-        say('cargo', s, s.landedMessage, await cargoVars(c));
+      // The crate has blown up and the row has not left yet. See `blownUp`.
+      const ends = phase === 'down' && blownUp(c) ? ((before && before.ends) || 0) + 1 : 0;
+      if (ends >= END_READINGS && !said.gone) {
+        said.gone = true;
+        if (s.announceGone) say('cargo', s, s.goneMessage, await cargoVars(c));
       }
-      next.push({ cls: rows[j].cls, points, landed, row: c });
+      next.push({ cls: rows[j].cls, points, phase, said, ends, missing: 0, row: c });
     }
 
-    // ⚠ ONLY ON A COMPLETE READING. With a row the pass could not place, "nothing matched it" and
-    // "somewhere in this reply without a position" are the same thing from here, and announcing the
-    // difference is what made one drop say "gone" once a minute.
-    if (s.announceGone && unplaceable === 0) {
-      for (let i = 0; i < lastCargo.length; i++) {
-        if (tOf[i] < 0) say('cargo', s, s.goneMessage, await cargoVars(lastCargo[i].row));
-      }
-    }
-    // ...and the crates it could not place keep whatever was last known about them, so the next
-    // complete reading compares against the truth rather than against a gap.
-    if (unplaceable > 0) {
-      for (let i = 0; i < lastCargo.length; i++) if (tOf[i] < 0) next.push(lastCargo[i]);
+    // ⚠ **A CRATE MISSING FROM ONE REPLY IS NOT GONE.** It is gone after `GONE_POLLS` complete
+    // readings in a row without it. A crate this reply might be hiding as a row with no position
+    // is held as it is, neither counted nor dropped.
+    for (let i = 0; i < lastCargo.length; i++) {
+      if (tOf[i] >= 0) continue;
+      const t = lastCargo[i];
+      if (blind.has(t.cls)) { next.push(t); continue; }
+      const missing = (t.missing || 0) + 1;
+      if (missing < GONE_POLLS) { next.push(Object.assign({}, t, { missing })); continue; }
+      // ⚠ A crate already said gone when it blew up is still FOLLOWED until it has really left,
+      // and only then dropped in silence. Dropping it on the first reply without it made the wreck
+      // a new crate the next time it was in the list: "landed", "gone", again, every few seconds.
+      if (s.announceGone && !t.said.gone) say('cargo', s, s.goneMessage, await cargoVars(t.row));
     }
 
     lastCargo = next;
     lastCargoUnplaceable = unplaceable;
   }
 
-  // A short base tick that is almost always a no-op -- it compares four numbers and returns. The
-  // work only happens for a section that is due, so the interval an owner sets is what decides how
-  // often the game is touched, not this.
   // The argument is passed THROUGH rather than swallowed: `host.schedule.every` calls this with
   // none, so production gets `Date.now()`, and a driver holding this callback can run its own
   // clock. An arrow that dropped it made every driven tick land in the same millisecond.
-  host.schedule.every(BASE_TICK_MS, (nowMs) => { poll(nowMs).catch(() => {}); });
+  host.schedule.every(TICK_SECONDS * 1000, (nowMs) => { poll(nowMs).catch(() => {}); });
 
   // ── the screen's own reads ────────────────────────────────────────────────────────────────────
   //
@@ -1163,9 +1307,9 @@ async function register(host) {
     // `ok`, and the toast that names it is gone in seconds — so when an owner reports "3 settings did
     // not land" there is otherwise nothing on disk that says WHICH three, or that it happened at all.
     if (dropped.length) {
-      log.warn(`[more-chat-messages] the save dropped ${dropped.length} setting(s) this build does `
-        + `not declare: ${dropped.join(', ')} — the running backend is older than the screen that `
-        + 'sent them. Restart the manager and set them again.');
+      // The running backend is older than the screen that sent these keys.
+      log.warn(`[more-chat-messages] ${dropped.length} setting(s) not saved: ${dropped.join(', ')}. `
+        + 'Restart the manager and set them again.');
     }
     host.config.set(merge(overlay(host.config.get(), body)));
     cfg = merge(host.config.get());
@@ -1180,14 +1324,8 @@ async function register(host) {
       ok: true,
       stats,
       recent,
-      pollSeconds: everyOf(null),
-      // What each section really asks at, so the screen never has to guess which number won.
-      intervals: {
-        cargo: everyOf(cfg.cargo, WALK_FLOOR_SECONDS),
-        events: everyOf(cfg.events, WALK_FLOOR_SECONDS),
-        bunkersSecret: everyOf(cfg.bunkersSecret),
-        bunkersAbandoned: everyOf(cfg.bunkersAbandoned),
-      },
+      // How often cargo, game events and bunkers are checked. Fixed; see TICK_SECONDS.
+      checkSeconds: TICK_SECONDS,
       // ⚠ **THREE ZEROES AND AN EMPTY LIST ARE TWO OPPOSITE FACTS.** "Nothing has happened yet" and
       // "the server is not running, so nothing CAN happen" look identical on this screen, and a
       // reader who cannot tell them apart concludes the plugin is broken. The screen can only say
@@ -1198,7 +1336,6 @@ async function register(host) {
       pollError: lastPollError,
       // Cargo and events are not asked for while the server is known to be empty -- see `poll`.
       waitingForPlayers,
-      walkFloorSeconds: WALK_FLOOR_SECONDS,
       watching: {
         cargo: cfg.cargo.enabled,
         bunkers: cfg.bunkersSecret.enabled || cfg.bunkersAbandoned.enabled,

@@ -281,9 +281,22 @@ export interface Host {
      * result then reads `{ executor: 'none', dispatched: true, confirmed: false, output: null }`,
      * and nothing anywhere can say whether the command was accepted, or even recognised. Anything
      * that CHARGES a player for the outcome has to check `confirmed !== false`, not just `ok`.
+     *
+     * **And `ok: false` and `confirmed: false` are opposites, so do not report them to a player with
+     * the same sentence.** The first did not run and nothing moved; the second was handed over and
+     * nobody can say. Classify once — refused / unconfirmed / ok — and tell the player what to do
+     * about the middle one.
+     *
+     * **`status` is a third question again: a spawn can be dispatched, confirmed, and have created
+     * nothing.** A `SpawnItem` or `SpawnVehicle` result carries the bridge's reading of the game's
+     * own reply — `'spawned'`, `'refused'` (the game declined; `output` has its words, so do not
+     * charge and do not retry) or `'unknown'` (it said nothing). It is sent for those two commands
+     * only, so treat an absent field the way you treat an absent `confirmed`: it is not a verdict.
+     * Never test `status !== 'spawned'` — that refuses on every server that does not send one.
      */
     command(cmd: string, opts?: { executor?: string; caller?: string; hide?: boolean }): Promise<
-      { ok: true; executor: string; output: string[] | null; dispatched?: boolean; confirmed?: boolean }
+      { ok: true; executor: string; output: string[] | null; dispatched?: boolean; confirmed?: boolean;
+        status?: 'spawned' | 'refused' | 'unknown'; item?: string; spawned?: number; requested?: number }
       | { ok: false; error: string }>;
     /**
      * SSA Bridge health for a pre-flight check before spawning or charging.
@@ -335,6 +348,26 @@ export interface Host {
      * without saying. Logs nothing, unlike `data()`.
      */
     query(moduleId: string, what: string): Promise<BridgeResult>;
+    /**
+     * Did this payload come back a REFUSAL? `{ error, reason }`, or `null` when it is an answer.
+     *
+     * A module whose `data()` always returns something cannot refuse the way the others do — the
+     * bridge only turns a refusal into a failed reply when the payload is EMPTY. So `spawn` and
+     * `despawn` refuse INSIDE a successful one, and `query()` answers `ok: true` because the read
+     * really did succeed:
+     *
+     *     const r = await host.bridge.query('spawn', `spawn:${kind}:…`);
+     *     const no = r.ok && host.bridge.refusalIn(r.data);
+     *     if (no) return say(no.reason || no.error);
+     *
+     * Read `error` — the CODE — and treat `reason` as words for a screen. `class_not_loaded` means
+     * the game has to make one of these first and the next round will work; `not_spawned` means the
+     * engine turned the spot down. Both answer `spawned:false` and both carry a sentence.
+     *
+     * Synchronous, and it makes no call. `null` for an array, a number, `null`, and anything with
+     * no `error` on it.
+     */
+    refusalIn(payload: any): { error: string; reason: string | null } | null;
     /**
      * A one-shot instruction to a module. Failure by return, not by throw.
      *
@@ -442,6 +475,30 @@ export interface Host {
      * which of the three states it is in.
      */
     eventWatches(): Promise<Record<string, any> | null>;
+
+    /**
+     * Is a vote running, about what, the game's own line for it, and the topics this build holds.
+     *
+     * **The yes/no counts are not readable**, and the payload says so in `tallyReadable` rather than
+     * leaving you to wonder where they went. `message` is the game's own notification line and
+     * carries them as text for a screen.
+     */
+    votes(): Promise<Record<string, any> | null>;
+    /**
+     * Tournament mode: whether one is set up, whether it is running, and its scoreboard.
+     *
+     * **The server writes no log line for a tournament at all**, so this is the only way to see one.
+     * `running: false` beside `everStarted: true` is a real state — a tournament started with a
+     * delay has not begun yet.
+     */
+    tournament(): Promise<Record<string, any> | null>;
+    /**
+     * The two loot table files the game can write out, with the measured path of each.
+     *
+     * Read `path` rather than building one: the game's own command descriptions name a directory
+     * that does not exist on any server.
+     */
+    lootFiles(): Promise<Array<Record<string, any>> | null>;
 
     /** Bases, the server-wide flag rules, and the flags the game holds a raid-protection entry for. */
     bases(): Promise<Record<string, any> | null>;
@@ -661,21 +718,41 @@ export interface Host {
     checkPlace(x: number, y: number, z: number): Promise<Record<string, any> | null>;
 
     /**
-     * Change a flag's raid protection at runtime.
+     * MOVE a flag's raid-protection window.
      *
-     * **The units of `delay` and `duration` are undocumented and untested.** Nothing in the game's
-     * own headers says whether they are seconds or minutes, whether `delay` is a countdown before
-     * protection starts or a cooldown before it may start again, or what zero means in either. The
-     * bridge passes both through unchanged and interprets nothing.
+     * Both arguments are **seconds**: `delay` is the countdown before the window opens, `duration`
+     * is how long it then lasts. `duration` also takes the word `forever`, which is ten years.
      *
-     * The failure mode is not a wrong reading: it is a base losing its protection permanently,
-     * because the value is written into the save. There is no read-back beyond `protectedFlags()`,
-     * which answers whether the game holds an entry for the flag and not what that entry says.
+     * Only a window that is armed and has not opened yet. One already running is refused, because
+     * moving it would take protection away from a base that has it. To arm a flag that has no
+     * window, use `grantProtection()`.
      *
-     * These are per-player channel calls, so an offline-protection rule firing as the LAST player
-     * disconnects will find no channel. That is the game's API shape, not a bridge limitation.
+     * There is no undo, and `resetProtection()` is not one. What this decides is whether somebody's
+     * base can be raided tonight.
+     *
+     * Read the result back with `protections()` or `flagProtection()`. Two things to know about
+     * what comes back. A **negative `startSeconds` is ordinary**: it means the window opened before
+     * the server started, which on a settled save is most of them. And a window asked for as
+     * `forever` does not read back as the number of seconds you sent, because the game stores these
+     * as 15-bit floats, so test the `forever` flag the payload carries rather than the seconds.
+     *
+     * A restart rebuilds these rather than restoring them: the start is rebased and the duration
+     * comes back as the server's configured maximum, so a shortened window does not survive one.
      */
-    setProtection(flagId: number, delay: number, duration: number): Promise<BridgeCommandResult>;
+    setProtection(flagId: number, delay: number, duration: number | 'forever'): Promise<BridgeCommandResult>;
+
+    /**
+     * ARM a flag the game is holding no window for, or one whose window has run out.
+     *
+     * The sibling of `setProtection()` and deliberately a separate call: one verb doing both would
+     * hand out protection nobody earned every time a plugin aimed at the wrong flag. Refused where
+     * a window is already running or about to start.
+     *
+     * Same arguments and the same units, `forever` included. An owner logging in clears what this
+     * grants, exactly as it clears any other protection, so a permanent window lasts until somebody
+     * comes back.
+     */
+    grantProtection(flagId: number, delay: number, duration: number | 'forever'): Promise<BridgeCommandResult>;
     /**
      * Teleport a player to exact coordinates WITH a facing.
      *
@@ -808,7 +885,15 @@ export interface Host {
     setZone(name: string, shape: 'circle' | 'rectangle', x: number, y: number,
             width: number, height: number, config?: number): Promise<BridgeCommandResult>;
     /** Remove one zone by name. Refused when no zone by that name is known — a typo is not a no-op. */
-    deleteZone(name: string): Promise<BridgeCommandResult>;
+    /**
+     * Remove one zone by name. **Refused if no zone by that name is known** - a typo is not a no-op.
+     *
+     * The game SAVES it. A zone somebody drew leaves the set; one of the four the GAME ships cannot
+     * leave it and is marked `deleted` instead, so the count does not change. Read `state`.
+     *
+     * **Pass `{ confirm: true }`.** The one-argument form still works and is logged as unconfirmed.
+     */
+    deleteZone(name: string, opts?: { confirm?: boolean }): Promise<BridgeCommandResult & { confirmed: boolean }>;
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════
     // Named wrappers for the rest of the in-game modules
@@ -983,9 +1068,12 @@ export interface Host {
                   amount: number, repair?: boolean): Promise<BridgeCommandResult>;
     /** Hand one element to a new owner. Nothing checks that it is a flag — the game does not say. */
     overtakeElement(elementId: number, x: number, y: number, z: number, newOwnerProfileId: number): Promise<BridgeCommandResult>;
-    /** Give a whole base a new owner profile. */
+    /**
+     * Refused by bridges newer than 2.32.0: the game keeps nothing this sets. A base belongs to its
+     * flag's owner, so use `overtakeElement()` on the base's flag.
+     */
     setBaseOwner(baseId: number, x: number, y: number, z: number, newOwnerProfileId: number): Promise<BridgeCommandResult>;
-    /** Leave a base with NO owner — after which anyone can take it. */
+    /** Refused by bridges newer than 2.32.0, for the same reason as `setBaseOwner()`. */
     clearBaseOwner(baseId: number, x: number, y: number, z: number): Promise<BridgeCommandResult>;
     /** Move EVERY flag from one profile to another. **Bulk and unscoped** — it names no flag. */
     chownFlags(oldProfileId: number, newProfileId: number): Promise<BridgeCommandResult>;
@@ -1328,14 +1416,6 @@ export interface Host {
     setLockHealth(target: string, value: number): Promise<BridgeCommandResult>;
     /** Set every lock's remaining pick attempts, 0..1000. Same "every lock" caveat. */
     setLockTries(target: string, count: number): Promise<BridgeCommandResult>;
-    /**
-     * Take the locks off a door.
-     *
-     * **Two things are not established**: whether it removes one lock or all of them on a door
-     * carrying several, and whether the removal survives a restart. It also needs a player online.
-     */
-    stripLocks(target: string): Promise<BridgeCommandResult>;
-
     // ── medical ──────────────────────────────────────────────────────────────────────────────────
     // A selector is an effect NAME as `medicalCatalogue()` spells it, `'#<id>'` for exactly one
     // instance, or the literal `'all'` (cure only). A NAME hits EVERY instance — four bleeds are four
@@ -1470,10 +1550,14 @@ export interface Host {
     /**
      * Every protection the manager holds, with `_raidProtectionPacked` reported RAW.
      *
-     * The packed word is never decoded — a uint32 with no documented bit layout — and a `set`
-     * records it immediately before and after each write, which is how the unit question in
-     * `setProtection()` can eventually be settled: send a known value to an unowned flag and read
-     * the delta.
+     * The packed word is reported raw and is decoded beside it: `active`, `startSeconds`,
+     * `durationSeconds`, and `forever` where the window was asked for as permanent.
+     *
+     * `active` means the window is **armed**, not that protection is on right now: one armed to
+     * open in an hour is `active` with nothing protected. Compare `startSeconds` against the
+     * manager's own clock, which `protectionManager()` carries as `serverTimeInSyncs`, a sync being
+     * a minute. That makes the comparison good to about a minute, which is worth saying on a screen
+     * rather than printing a figure to the second.
      */
     protections(): Promise<Record<string, any> | null>;
     /** One flag's protection. Needs the raid-protection manager, which the game only spawns when the
@@ -1627,7 +1711,17 @@ export interface Host {
     /** Which squad a profile id is in, asked the way the game asks it. */
     squadOfProfile(profileId: number): Promise<Record<string, any> | null>;
     /** Disband a squad, member by member. Works with the whole squad offline. */
-    disbandSquad(squadId: number): Promise<BridgeCommandResult>;
+    /**
+     * Disband a squad, member by member. Works with the whole squad offline.
+     *
+     * **Permanent.** A squad disbanded this way has no `squad` row and no `squad_member` rows in
+     * the save, across every restart since. Nothing puts them back.
+     *
+     * **Pass `{ confirm: true }`.** The bridge gates the verb behind a confirmation, as its ten
+     * destructive siblings already were. The one-argument form still works, so nothing that ships
+     * today breaks — but it is logged as unconfirmed and the reply carries `confirmed: false`.
+     */
+    disbandSquad(squadId: number, opts?: { confirm?: boolean }): Promise<BridgeCommandResult & { confirmed: boolean }>;
     /**
      * Put a profile into a squad without asking anyone's permission — an owner conscripting somebody,
      * not the player accepting a place, which is `bridge.squad(id, 'join', …)`. Needs the prisoner
@@ -1660,6 +1754,9 @@ export interface Host {
     /** The last skill write with the figures either side of it, and whether the forced replication
      *  refresh was accepted. The evidence that an award landed. */
     lastSkillWrite(): Promise<Record<string, any> | null>;
+    /** The game's own fame table: what each award is worth and what each penalty costs, read live
+     *  off the asset. This is what the game pays, not what anybody has earned. */
+    fameAwards(): Promise<Record<string, any> | null>;
     /** The kill registry, all of it or one player's. Behind its own switch. */
     killRegistry(profileId?: number): Promise<Record<string, any> | null>;
     /** Ask the game to refresh the snapshot — everyone online, paced, or one player. */
@@ -1717,6 +1814,23 @@ export interface Host {
     moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string): Promise<BridgeCommandResult>;
     /** Destroy one item inside a container. No undo. */
     destroyContainerItem(containerId: string, itemId: string): Promise<BridgeCommandResult>;
+
+    // ── placing your own items and containers ────────────────────────────────────────────────────
+    /** Put one of the game's own items or containers at x, y, z (centimetres), optionally holding
+     *  `contents`. It is a real item with a save row. `tag` is your own name for the job (1-40 of
+     *  A-Z a-z 0-9 _ -), used once: a repeated tag is refused. Read the result, entity id included,
+     *  with `stashJob(tag)`. Locks and burying are player acts and are not offered. */
+    placeItem(tag: string, x: number, y: number, z: number, code: string,
+              contents?: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
+    /** Put items into a container the game already holds, named by its entity id. Through a player
+     *  the game only adds while a player stands within about 3 m of the container; otherwise it is refused. */
+    fillContainer(tag: string, entityId: string | number,
+                  contents: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
+    /** One job: `state` placing | filling | done | failed, `entityId`, `elo`/`ehi`, the position, and
+     *  per fill line what went in and which route answered. */
+    stashJob(tag: string): Promise<any>;
+    /** Every job the bridge still remembers, newest last. */
+    stashJobs(): Promise<any>;
 
     // ── teleporting ──────────────────────────────────────────────────────────────────────────────
     // **A player teleport cannot report a collision refusal at all**: the game's player teleport
@@ -2184,6 +2298,61 @@ export interface Host {
      *  the process**, so nothing is handed back. */
     dumpEncounters(): Promise<BridgeCommandResult>;
 
+    /**
+     * Every place on the island, which spawn schedule each one runs on, and how many places share
+     * that schedule.
+     *
+     * SCUM keeps its whole population plan in one cooked asset and the running server re-reads it.
+     * `places[]` is `{ i, x, y, z, halfX, halfY, zone }` — a centre and HALF-extents, in
+     * centimetres — and `assets[]` is `{ asset, chancePercent, checkMinSec, checkMaxSec, usedBy,
+     * held, wasChancePercent, holdLeftSec }`.
+     *
+     * `chancePercent` is a PERCENT (the game authors 0–60) and every interval is real SECONDS.
+     * `usedBy` is how many of the island's places run on that one schedule: it is the cost of every
+     * change, and it is usually far more than one.
+     *
+     * Each asset also carries its `plan` —
+     * `{ count, encounters[], maxBaseAmount, baseAmountAlwaysZero }`, an encounter being
+     * `{ class, weight, baseAmountMin, baseAmountMax, extraPerPlayer, amountCurve }`. **Read
+     * `baseAmountAlwaysZero` before raising a chance.** The chance decides how OFTEN the game
+     * rolls and never how many characters it makes, so a place whose every encounter is authored
+     * to spawn none of them will roll at a hundred percent and stay empty. It is omitted rather
+     * than defaulted when part of the plan could not be read, and a row saying
+     * `spawnsCharacters: false` is a dropship or a cargo drop, which has no character count at all
+     * and is not an empty plan.
+     *
+     * A read. It answers with the bridge's "allow changing" switch off, so a screen can be drawn
+     * before anything has been turned on.
+     */
+    encounterPlaces(): Promise<any>;
+
+    /**
+     * Raise or lower how often the game spawns at one KIND of place, for a bounded time.
+     *
+     * `asset` is the name `encounterPlaces()` reports. `chancePercent` is 0–100 and the two
+     * intervals are real seconds; pass `null` for any of them to leave that one as the game
+     * authored it. Passing null for all three is refused rather than treated as a no-op.
+     *
+     * ⚠ **The schedule is SHARED.** One asset is the schedule for every place of its kind, so
+     * turning one village up turns all of them up. The answer says how many in words; show it.
+     *
+     * ⚠ **The game never places a creature — it authors a place and spawns when a player nears
+     * it.** This needs nobody online to apply, and nothing appears until somebody is there.
+     *
+     * `holdSec` is not optional. The bridge puts the asset back on its own when the hold lapses,
+     * which is the only restore that survives the manager crashing — ask again before it lapses to
+     * keep a change going. `encounterPlaces().maxHoldSec` is the ceiling.
+     */
+    setEncounterZone(asset: string, chancePercent: number | null, checkMinSec: number | null,
+                     checkMaxSec: number | null, holdSec: number): Promise<BridgeCommandResult>;
+
+    /**
+     * Put one kind of place — or every one the bridge has changed — back to the values the game
+     * authored, read back and compared before it says so. Works with the "allow changing" switch
+     * off, because putting something back must not need the switch that allowed it.
+     */
+    restoreEncounterZones(asset?: string): Promise<BridgeCommandResult>;
+
     // ── virtualized items and world containers ───────────────────────────────────────────────────
     //
     // **Read-only, and its most valuable answer is a negative one.** Container CONTENTS cannot be
@@ -2495,7 +2664,7 @@ export interface Host {
 
     // ── watching raid protection ─────────────────────────────────────────────────────────────────
     //
-    // Read-only by design — **to CHANGE a flag's window use `setProtection()` / `resetProtection()`**.
+    // Read-only by design — **to CHANGE a flag's window use `setProtection()`, to arm one that has none use `grantProtection()`**.
     // This family watches, so a rule can react to a window opening or lapsing rather than polling.
     //
     // The load-bearing rule of the whole feature: `[]` means the game is holding NO raid-protection
@@ -2968,13 +3137,25 @@ export interface Host {
      * name, the later registration wins and the earlier one silently stops working. And there is no
      * permission model: any player can type it, so check `ctx.steamId` yourself if it should be
      * restricted.
+     *
+     * `opts.status` is how a player finds out where they stand WITHOUT spending an attempt on it.
+     * The built-in `/help` calls it for every command that has one. Anything other than the three
+     * declared shapes — a throw, a timeout, `ready: false` with neither `until` nor `why` — reads as
+     * "I could not find out" and is said so in its own sentence; it is never reported as ready.
+     * Keep it cheap: one `/help` runs every provider on the server.
      */
-    onCommand(name: string, handler: (ctx: ChatCommandCtx) => void | Promise<void>): () => void;
+    onCommand(
+      name: string,
+      handler: (ctx: ChatCommandCtx) => void | Promise<void>,
+      opts?: { status?: (who: { steamId: string }) => ChatCommandStatus | Promise<ChatCommandStatus> },
+    ): () => void;
     /** Change the in-game command prefix (default `/`) for every plugin, not just yours. */
     setPrefix(prefix: string): void;
     prefix(): string;
     /**
      * `targets` narrows delivery to those SteamIDs; `channel` only decides where it appears.
+     * It sets the line's colour and chat tab, not who gets it: without `targets` every online player
+     * receives it, and its history entry is stored as `global`.
      *
      * `history: true` also puts the line in the chat history — see `record()` below, whose rules it
      * follows exactly, including the refusal.
@@ -3182,6 +3363,27 @@ export interface BridgeFailure {
   code: BridgeFailureCode;
   /** The module's own words on a refusal, written for a human. `null` when it did not say. */
   reason: string | null;
+  /**
+   * The module's own TOKEN for why it said no — branch on this, show `reason`.
+   *
+   * ⚠ **Not the same field as `code`.** `code` classifies the whole call four ways and answers
+   * *could this even be asked*; `reasonCode` is the module explaining its own no, and only ever
+   * appears inside `code: 'refused'`. Switching on the wrong one is the mistake the two names
+   * exist to prevent.
+   *
+   * `mod_protect` sends `unknown_verb`, `no_manager`, `wrong_protection_type`, `already_running`,
+   * `already_armed`, `snapshot_exists`, `switched_off`, `bad_value`; `mod_despawn` sends
+   * `scan_failed`.
+   *
+   * ⚠ **`null` is not a verdict.** It is null on every bridge older than 2.29.1 and on any refusal
+   * a module has not named a token for, so fall through to what you did before rather than reading
+   * the absence as a different reason. `reasonCode === 'unknown_verb'` is how you tell a bridge is
+   * too old for a verb, without matching any prose.
+   *
+   * ⚠ **And not every "no" is a refusal.** A verb that accepts the call and changes nothing answers
+   * `ok: true` with `changed: false` and a `note`; no token will ever appear on it.
+   */
+  reasonCode?: string | null;
   /** The raw wire string, unchanged — for a log, not for a player. */
   error: string;
   /**
@@ -3250,7 +3452,7 @@ export interface BridgeNeeds {
   groups: BridgeNeedGroup[];
 }
 
-export type BridgeResult = ({ ok: true; data: any; code: null; reason: null; error: null })
+export type BridgeResult = ({ ok: true; data: any; code: null; reason: null; reasonCode: null; error: null })
                          | (BridgeFailure & { data: null });
 
 /**
@@ -3302,6 +3504,17 @@ export interface ChatCommandCtx {
   args: string[]; argString: string;
   reply(text: string, opts?: { channel?: ChatChannel }): void;
 }
+/**
+ * Where one player stands with one command, for the built-in `/help`.
+ *
+ * `until` is epoch milliseconds and must be in the FUTURE — one already past contradicts
+ * `ready: false`, so it is read as an unreadable answer rather than as "go ahead". `why` is one
+ * short sentence for a limit with no clock behind it ("you have already claimed this one").
+ */
+export type ChatCommandStatus =
+  | { ready: true }
+  | { ready: false; until: number }
+  | { ready: false; why: string };
 
 export type PluginEvent =
   | 'server:online' | 'server:offline' | 'server:starting' | 'server:loading' | 'server:stopping'
@@ -3388,6 +3601,20 @@ export interface SSAApiError extends Error {
   body?: any;
 }
 
+/**
+ * A place the reader named on the Live Map, in the game's own centimetres.
+ *
+ * There is no `z`, deliberately — see `SSA.pickOnMap`. `ground` is present only when the call
+ * asked for it, and is `null` when it was asked for and nothing could answer, so the three
+ * states are three shapes rather than one number a caller has to interpret.
+ */
+export interface SSAMapPoint {
+  x: number;
+  y: number;
+  /** `sky` = the highest surface in that column, which indoors is the ROOF. */
+  ground?: { z: number; from: 'sky' | 'same' } | null;
+}
+
 export interface SSA {
   ready(fn: (ssa: SSA) => void): void;
   registerTab(opts: TabDef): void;
@@ -3406,7 +3633,24 @@ export interface SSA {
   confirm(msg: string, opts?: { title?: string; okLabel?: string; cancelLabel?: string }): Promise<boolean>;
   menu(title: string, entries: ActionEntry[], opts?: any): void;
   theme: { setTokens(tokens: Record<string, string>, opts?: { selector?: string }): void; injectCss(css: string): void };
+  /**
+   * Merge strings into the panel's dictionary by hand. For your OWN screens, ship locale files
+   * instead: `payload/web/i18n/<lang>.json`, declared as `"web": { …, "i18n": "web/i18n" }`. The
+   * panel fetches the reader's language for you before your script runs, so a tab label registered
+   * at load time is translated too. This call stays for overriding one of the panel's own strings.
+   */
   i18n: { add(lang: string, dict: Record<string, string>): void; override(lang: string, dict: Record<string, string>): void };
+  /**
+   * Translate one string. Keys are flat dotted strings and start `pl.<your plugin id>.` — the panel
+   * keeps ONE dictionary for itself and every plugin, and a nested key never resolves.
+   *
+   * `fallback` is the English a reader sees when nothing translates the key, and it is what makes
+   * locale files additive: with none at all, a screen renders exactly as it did before. Leaving it
+   * out puts the KEY on screen for every untranslated language, and `check-plugins` fails on it.
+   *
+   * `vars` replaces `{name}` for each of its own keys. Use it rather than concatenating a
+   * translated fragment with a number or a name: word order is not the same in nineteen languages.
+   */
   t(key: string, fallback?: string, vars?: Record<string, any>): string;
   lang(): string;
   /**
@@ -3473,7 +3717,9 @@ export interface SSA {
   }): { el: HTMLElement; refresh: () => void; search: HTMLInputElement };
 
   // ── native affordances (open the built-in UI a plugin can't rebuild) ──
-  openPlayer(name: string): void;                              // open a player's detail modal
+  /** Open a player's detail card. Pass `steamId` when you have it: two players can share a name,
+   *  and a card asked for by name alone cannot open for either of them. */
+  openPlayer(name: string, steamId?: string): void;
   openPlayerAdmin(steamIdOrName: string, name?: string): void; // open the admin-actions menu
   showOnMap(x: number, y: number, z?: number): void;           // centre the Live Map on a coordinate
   itemPreview(elOrCode: HTMLElement | string, anchor?: HTMLElement): void; // show the item-preview popover
@@ -3483,6 +3729,31 @@ export interface SSA {
   pickItem(opts?: { domain?: 'items' | 'vehicles'; category?: string; title?: string; onPick?: (it: any) => void; onCancel?: () => void }): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
   pickVehicle(opts?: any): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
   pickPlayer(opts?: { title?: string }): Promise<{ steamId: string; name: string } | null>;
+
+  /**
+   * Ask the reader for a place on the Live Map. The mirror of `showOnMap`, which could only ever
+   * send somebody somewhere.
+   *
+   * `note` is the sentence the map shows while it waits, already translated by you: only the
+   * plugin knows what it is asking for, so the panel renders it as text and translates nothing.
+   *
+   * Resolves `{ x, y }` in centimetres, or `null` when the reader cancels. CANCELLING IS AN
+   * ANSWER: the banner's Cancel, Escape, a second `pickOnMap`, the reader switching tabs, an
+   * account that may not open the map, and a manager too old to have the picker all resolve
+   * `null`, so a screen can never wait on a promise that does not settle. Feature-detect with
+   * `canPickOnMap()`.
+   *
+   * NO `z`. A map is a picture with two axes, and every height the panel could hand back is
+   * wrong in its own way — the nearest marker's z can be kilometres away, and a trace with no
+   * reference height starts in the sky and stops on the first ROOF. `{ ground: true }` asks for
+   * that trace anyway and puts it in its own box: `{ z, from: "sky" }` when it was read, `null`
+   * when nothing could answer, and the key is absent entirely when it was never asked for.
+   *
+   * ⚠ Going to the map and back is a TAB SWITCH, so your tab is re-rendered. The promise settles
+   * after that re-render: keep the point in your plugin's own state and read it in `render()`,
+   * never in a node you captured before the call.
+   */
+  pickOnMap(opts?: { note?: string; ground?: boolean; onPick?: (p: SSAMapPoint) => void; onCancel?: () => void }): Promise<SSAMapPoint | null>;
 
   // ── data helpers (same endpoints the panel uses) ──
   onlinePlayers(): Promise<any[]>;
@@ -3494,6 +3765,7 @@ export interface SSA {
   canShowOnMap(): boolean;
   canItemPreview(): boolean;
   canPickItem(): boolean;
+  canPickOnMap(): boolean;
 }
 
 // ── Public Field Console frontend: window.FC (payload/fc/plugin.js) ───────────

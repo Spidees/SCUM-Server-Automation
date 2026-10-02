@@ -37,6 +37,13 @@
 // a base's owner. `bases()` reports id, name, position and element counts and no ownership at all,
 // and `buildElements()` only knows what the bridge watched being built since it started. Ownership of
 // a flag exists live nowhere, so the rectangle is the database's answer or it is nobody's.
+//
+// The game's own VERDICT per trap is live, though, and this plugin does not read it yet: the codex says
+// ownership of a trap is conferred only by arming it inside a flag area, and `items traps` publishes
+// that as `ownerProfileId`, absent exactly on a trap armed outside one (on a live server, one player's
+// mines inside their own flag all named them, and their mine far from any flag named nobody and fired
+// under a motionless body). Which flag confers it (own, squad's, anybody's) was not measured, which is
+// why the rule here stays the plugin's own own-or-squad test.
 
 // ── the mine/trap catalog (mirrors the manager's live-map TRAP_CLASSES, keyed by the stable `type`) ──
 // `type` matches host.map.world().traps[].type (the class with the _ES suffix stripped, C4 folded).
@@ -72,8 +79,8 @@ const DEFAULTS = {
   requireOnline: true,               // only act while the placer is online (needed to teleport them)
   exemptSteamIds: [],
   channel: 'local',                  // in-game chat channel the warn/penalty message shows in for the offender
-  message: 'Placing a mine outside your flag is not allowed. Enjoy your own trap.',
-  warnMessage: 'Warning: arming a mine outside your flag is not allowed. Next one takes you with it.',
+  message: 'Arming a mine outside your own or your squad\'s flag area is not allowed. Enjoy your own trap.',
+  warnMessage: 'Warning: arm mines only inside your own or your squad\'s flag area. The next one takes you with it.',
 };
 // Channels a targeted DM can be delivered to for one player.
 const CHANNELS = ['local', 'global', 'squad', 'admin', 'server'];
@@ -82,17 +89,40 @@ const CHANNELS = ['local', 'global', 'squad', 'admin', 'server'];
 // `warningsBeforeAction`. Always returns a clean, validated config.
 function normalizeConfig(raw) {
   const c = Object.assign({}, DEFAULTS, raw || {});
-  if (!Array.isArray(c.watchedTypes) && Array.isArray(raw && raw.classes)) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  // ⚠ WHICH LIST THE OWNER WROTE IS A QUESTION ABOUT `raw`, NEVER ABOUT `c`. The merge above has
+  // already put the shipped eight under `c.watchedTypes`, so asking `c` cannot tell a config that
+  // named NO types from one that named none at all — and it cost two things at once.
+  //
+  // The types picker ships a "Clear" button, so `[]` is an owner who chose to watch NOTHING. Handed
+  // the eight back, the plugin went on teleporting players onto their own mines for every type
+  // while that owner's own screen read "Watched 0": a punishment they switched off, running on a
+  // live server, with the panel and the plugin giving two different answers and nothing reporting
+  // it. Key presence, never truthiness — the same rule as every other list here.
+  //
+  // And it made the `classes` migration DEAD CODE for exactly the configs it exists for: DEFAULTS
+  // always supplies an array, so `!Array.isArray(c.watchedTypes)` was false whenever `watchedTypes`
+  // was absent, which is what an old `classes`-only config looks like. Upgrading silently replaced
+  // the owner's chosen subset with all eight.
+  if (Array.isArray(r.watchedTypes)) {
+    c.watchedTypes = r.watchedTypes;
+  } else if (Array.isArray(r.classes)) {
     const picked = new Set();
-    for (const pref of raw.classes) {
+    for (const pref of r.classes) {
       const p = String(pref || '');
       for (const t of TRAP_CATALOG) if (t.type === p || t.type.indexOf(p) === 0 || t.code.indexOf(p) === 0) picked.add(t.type);
     }
     c.watchedTypes = picked.size ? [...picked] : DEFAULT_TYPES.slice();
+  } else {
+    c.watchedTypes = DEFAULT_TYPES.slice();
   }
   if (raw && raw.warnFirst != null && raw.warningsBeforeAction == null) c.warningsBeforeAction = raw.warnFirst ? 1 : 0;
-  c.watchedTypes = (Array.isArray(c.watchedTypes) ? c.watchedTypes : DEFAULT_TYPES).map(String).filter((t) => KNOWN_TYPES.has(t));
-  if (!c.watchedTypes.length) c.watchedTypes = DEFAULT_TYPES.slice();
+  // A list that NAMED types and lost all of them to the filter is a config this build cannot read —
+  // a type renamed under an owner — which is not the same as an empty one and is the only case the
+  // old fallback was really for. An empty list stays empty.
+  const named = c.watchedTypes.length;
+  c.watchedTypes = c.watchedTypes.map(String).filter((t) => KNOWN_TYPES.has(t));
+  if (named && !c.watchedTypes.length) c.watchedTypes = DEFAULT_TYPES.slice();
   // `Number(x) || 6` turns a deliberate 0 into 6, because 0 is falsy — so an owner asking for the
   // fastest scan silently got the slowest default instead of the 2s floor this line already means
   // to give them. Validate explicitly, the same way the joinDelaySeconds bug elsewhere was fixed.
@@ -229,10 +259,11 @@ module.exports = {
     const liveSaid = { traps: 0, squads: 0 };
     // What an owner has to do about each way a live read can come back empty. `refused` is the
     // module's own sentence and is used verbatim; the rest have no sentence on the wire, so the
-    // switch is named here — by the label the panel actually shows, not by the config key.
+    // switch is named here — by the label the panel actually shows, not by the config key. The label
+    // travels as its own field and the panel builds the route in front of it out of its own nav keys.
     const SWITCH = {
-      traps: "Read live inventories (Settings → Bridge → Inventories)",
-      squads: "Read live squads, and allow the changes below (Settings → Bridge → Squads)",
+      traps: "Read live inventories",
+      squads: "Read live squads, and allow the changes below",
     };
     function noteLive(key, q) {
       const code = (q && q.code) || 'bridge_off';
@@ -241,14 +272,14 @@ module.exports = {
       else if (code === 'module_off') text = `the in-game module is switched off — turn on '${SWITCH[key]}'`;
       else if (code === 'no_module') text = 'this server runs an older SSA Bridge that does not have this module';
       else text = 'the SSA Bridge did not answer';
-      liveNote[key] = { code, text, at: Date.now() };
+      liveNote[key] = { code, text, at: Date.now(), switch: code === 'module_off' ? SWITCH[key] : undefined };
       // `bridge_off` is the ordinary state on a server without the bridge running and deserves
       // silence; the other three are one switch or one update away and deserve saying — once an
       // hour, because this sits inside a scan that runs every few seconds.
       if (code === 'bridge_off' || !text) return;
       if (Date.now() - liveSaid[key] < 3600000) return;
       liveSaid[key] = Date.now();
-      host.logger.warn(`the live ${key === 'traps' ? 'armed-state' : 'squad'} check could not run: ${text}. Mine Protection carries on with the last save, which is what it did before this check existed.`);
+      host.logger.warn(`the live ${key === 'traps' ? 'armed-state' : 'squad'} check could not run: ${text}. Mine Protection uses the last save meanwhile.`);
     }
     const clearLive = (key) => { liveNote[key] = null; };
     const canQuery = () => !!(host.bridge && typeof host.bridge.query === 'function');
@@ -426,7 +457,8 @@ module.exports = {
     function noteUnknownArea(placer, mine) {
       if (Date.now() - lastUnknownWarn < 3600000) return;
       lastUnknownWarn = Date.now();
-      host.logger.warn(`could not tell whether ${placer.name || placer.steamId}'s ${displayName(mine)} is inside their own flag — the game database did not answer. Nothing was done about it, and nothing will be while that lasts. Mines are re-checked every scan, so this recovers on its own once the database is readable.`);
+      // Nothing is done while the database cannot answer; every scan re-checks, so it recovers alone.
+      host.logger.warn(`could not check whether ${placer.name || placer.steamId}'s ${displayName(mine)} is inside their flag: game database unreadable. Skipped until it answers.`);
     }
 
     async function poll() {
@@ -465,8 +497,8 @@ module.exports = {
         // unreadable, or that player is not resolvable in it yet — and it must never be read as
         // "outside their flag", because the next line teleports them onto an armed mine.
         //
-        // The mine itself comes from the world snapshot and this comes from SCUM.db, so one being
-        // available says nothing about the other. Treated as false, a database hiccup killed a player
+        // The mine comes from the memoized world scan and this answer from a separate SCUM.db query,
+        // so one being available says nothing about the other. Treated as false, a database hiccup killed a player
         // for a mine legally placed inside their own base, and nothing anywhere recorded why.
         //
         // Skip and retry, exactly as for a placer we cannot resolve: the mine stays unhandled, and if
@@ -562,9 +594,9 @@ module.exports = {
       res.json({ items, defaults: DEFAULT_TYPES });
     });
 
-    // Live overview: EVERY currently-placed watched mine/trap (armed or not) with who armed it, where,
+    // Overview: EVERY watched mine/trap in the last SAVE (armed or not) with who armed it, where,
     // whether it's inside a flag, and its enforcement state — powers the admin overview table. Showing
-    // un-armed ones too means a freshly-placed mine appears immediately (not only once it's armed).
+    // un-armed ones too means a placed mine appears at the next save, not only once it is armed.
     host.routes.get('/mines', (req, res) => {
       const c = cfg();
       const traps = watchedTraps(c);

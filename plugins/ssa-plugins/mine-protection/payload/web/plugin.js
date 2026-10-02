@@ -4,13 +4,18 @@
  * placed/armed right now), escalation rules, per-message text, an exemption player-picker, and a live
  * feed of recent actions. Talks only to its own backend under /api/plugin-host/mine-protection. */
 (function () {
+  // Where the bridge's switches live, built from the PANEL's own keys (the nav entry and the tab
+  // that render themselves from them), so the route is right in every language and after a rename.
+  function bridgeWhere() {
+    return SSA.t('nav.plugins', 'Plugins') + ' → ' + SSA.t('plugins.viewInGame', 'SSA Bridge');
+  }
   var DEF = {
     enabled: true, pollSeconds: 6, marginMeters: 0,
     watchedTypes: ['ImprovisedMine', 'Mine_01', 'Mine_02', 'ImprovisedClaymore', 'Claymore', 'PressureCookerBomb', 'PipeBomb', 'PromTrap'],
     action: 'teleport_to_mine', warningsBeforeAction: 1, requireOnline: true,
     exemptSteamIds: [], channel: 'local',
-    message: 'Placing a mine outside your flag is not allowed. Enjoy your own trap.',
-    warnMessage: 'Warning: arming a mine outside your flag is not allowed. Next one takes you with it.',
+    message: 'Arming a mine outside your own or your squad\'s flag area is not allowed. Enjoy your own trap.',
+    warnMessage: 'Warning: arm mines only inside your own or your squad\'s flag area. The next one takes you with it.',
   };
 
   // ── backend calls ───────────────────────────────────────────────────────────
@@ -53,8 +58,10 @@
   function textInput(get, set) { var i = h('input', { type: 'text', oninput: function () { set(i.value); } }); i.value = get() || ''; return i; }
   function ago(ms) {
     var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-    if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s / 60) + 'm ago';
-    if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago';
+    if (s < 60) return SSA.t('pl.mine-protection.ago.seconds', '{n}s ago', { n: s });
+    if (s < 3600) return SSA.t('pl.mine-protection.ago.minutes', '{n}m ago', { n: Math.floor(s / 60) });
+    if (s < 86400) return SSA.t('pl.mine-protection.ago.hours', '{n}h ago', { n: Math.floor(s / 3600) });
+    return SSA.t('pl.mine-protection.ago.days', '{n}d ago', { n: Math.floor(s / 86400) });
   }
   // Icons, tables and clickable cells come from the manager's native SDK (SSA.icon/table/cell) so
   // the plugin's UI is pixel-identical to the panel. This thin alias keeps the local icon() calls.
@@ -70,7 +77,7 @@
 
     el.innerHTML = '';
     el.appendChild(h('div', { class: 'mp-head' }, [
-      h('p', { class: 'mp-intro' }, 'Automatically punish players who arm a mine or trap outside their own or their squad’s flag area.'),
+      h('p', { class: 'mp-intro' }, SSA.t('pl.mine-protection.intro', 'Punish players who arm a mine or trap outside their own or squad’s flag area.')),
     ]));
     var statusBar = h('div', { class: 'mp-status' });
     el.appendChild(statusBar);
@@ -79,7 +86,7 @@
     // difference between that and a plugin that is working perfectly.
     var liveBar = h('div', { class: 'mp-live' });
     el.appendChild(liveBar);
-    var body = h('div', { class: 'mp-body' }, [h('p', { class: 'mp-loading' }, 'Loading…')]);
+    var body = h('div', { class: 'mp-body' }, [h('p', { class: 'mp-loading' }, SSA.t('pl.mine-protection.loading', 'Loading…'))]);
     el.appendChild(body);
 
     // Where a failure goes. Without a slot, a throwing client only moves the silence: the promise
@@ -87,9 +94,9 @@
     // than as broken.
     function loadFailed(err) {
       body.innerHTML = '';
-      var retry = h('button', { type: 'button', class: 'secondary', onclick: function () { body.innerHTML = ''; body.appendChild(h('p', { class: 'mp-loading' }, 'Loading…')); load(); } }, 'Try again');
+      var retry = h('button', { type: 'button', class: 'secondary', onclick: function () { body.innerHTML = ''; body.appendChild(h('p', { class: 'mp-loading' }, SSA.t('pl.mine-protection.loading', 'Loading…'))); load(); } }, SSA.t('pl.mine-protection.btn.tryAgain', 'Try again'));
       body.appendChild(h('div', { class: 'mp-err' }, [
-        h('strong', {}, 'This tab could not load its settings. '),
+        h('strong', {}, SSA.t('pl.mine-protection.err.loadFailed', 'This tab could not load its settings. ')),
         h('span', {}, why(err)),
         h('div', { class: 'mp-err-act' }, [retry]),
       ]));
@@ -162,27 +169,27 @@
     function renderStatusBar() {
       statusBar.innerHTML = '';
       var on = config.enabled;
-      statusBar.appendChild(h('div', { class: 'mp-badge ' + (on ? 'ok' : 'off') }, [h('span', { class: 'mp-dot' }), h('span', { class: 'mp-badge-l' }, on ? 'Active' : 'Disabled')]));
+      statusBar.appendChild(h('div', { class: 'mp-badge ' + (on ? 'ok' : 'off') }, [h('span', { class: 'mp-dot' }), h('span', { class: 'mp-badge-l' }, on ? SSA.t('pl.mine-protection.status.active', 'Active') : SSA.t('pl.mine-protection.status.disabled', 'Disabled'))]));
       var srv = status && status.serverRunning;
-      statusBar.appendChild(h('div', { class: 'mp-badge ' + (srv ? 'ok' : 'warn') }, [h('span', { class: 'mp-dot' }), h('span', { class: 'mp-badge-l' }, srv ? 'Server online' : 'Server offline')]));
-      statusBar.appendChild(badge('', 'Watched', (config.watchedTypes || []).length));
-      statusBar.appendChild(badge('', 'Tracked mines', status ? status.knownMines : '–'));
-      statusBar.appendChild(badge('', 'Flagged players', status ? status.warnedPlayers : '–'));
+      statusBar.appendChild(h('div', { class: 'mp-badge ' + (srv ? 'ok' : 'warn') }, [h('span', { class: 'mp-dot' }), h('span', { class: 'mp-badge-l' }, srv ? SSA.t('pl.mine-protection.status.serverOnline', 'Server online') : SSA.t('pl.mine-protection.status.serverOffline', 'Server offline'))]));
+      statusBar.appendChild(badge('', SSA.t('pl.mine-protection.badge.watched', 'Watched'), (config.watchedTypes || []).length));
+      statusBar.appendChild(badge('', SSA.t('pl.mine-protection.badge.trackedMines', 'Tracked mines'), status ? status.knownMines : '–'));
+      statusBar.appendChild(badge('', SSA.t('pl.mine-protection.badge.flaggedPlayers', 'Flagged players'), status ? status.warnedPlayers : '–'));
       renderLiveBar();
     }
     // One line per cross-check that could not run, with the module's own words where it gave any
     // and the name of the switch to turn on where it did not. Nothing is drawn while both are
     // answering — a banner that is always there is a banner nobody reads.
     var LIVE_WHAT = {
-      traps: 'Whether a mine is really still armed is being read from the last save',
-      squads: 'Who is in a squad is being read from the last save',
+      traps: SSA.t('pl.mine-protection.live.traps', 'Whether a mine is really still armed is being read from the last save'),
+      squads: SSA.t('pl.mine-protection.live.squads', 'Who is in a squad is being read from the last save'),
     };
     function renderLiveBar() {
       liveBar.innerHTML = '';
       if (pollErr) {
         liveBar.appendChild(h('div', { class: 'mp-live-n mp-live-err' }, [
-          h('strong', {}, 'The live figures below have stopped updating. '),
-          document.createTextNode(pollErr + ' What you can see is the last answer that arrived; the settings on this page are unaffected.'),
+          h('strong', {}, SSA.t('pl.mine-protection.live.stalledTitle', 'The live figures below have stopped updating. ')),
+          document.createTextNode(SSA.t('pl.mine-protection.live.stalledDetail', '{err} Showing the last answer received; settings here are unaffected.', { err: pollErr })),
         ]));
       }
       // The server being off is not a fault and not a reason to stop. Two lists on this page are a
@@ -191,9 +198,8 @@
       // which, rather than leaving an empty table at the top of the page to be read as "broken".
       if (status && status.serverRunning === false) {
         liveBar.appendChild(h('div', { class: 'mp-live-n mp-live-off' }, [
-          h('strong', {}, 'The server is not running. '),
-          document.createTextNode('Everything on this page can be set up now and takes effect the moment it starts. '
-            + 'Only the two live lists — the mines placed in the world, and the counts on each card below — need a running server.'),
+          h('strong', {}, SSA.t('pl.mine-protection.live.serverOffTitle', 'The server is not running. ')),
+          document.createTextNode(SSA.t('pl.mine-protection.live.serverOffDetail', 'Set everything up now. Only the placed-mine list and card counts need the server running.')),
         ]));
       }
       var live = (status && status.live) || {};
@@ -201,7 +207,10 @@
         var n = live[k];
         if (!n || !n.text) return;
         liveBar.appendChild(h('div', { class: 'mp-live-n' }, [
-          h('strong', {}, LIVE_WHAT[k] + ': '), document.createTextNode(n.text + '.'),
+          h('strong', {}, LIVE_WHAT[k] + ': '),
+          document.createTextNode((n.code === 'module_off' && n.switch)
+            ? SSA.t('pl.mine-protection.live.turnOn', 'turn on "{switch}" in {where}.', { switch: n.switch, where: bridgeWhere() })
+            : n.text + '.'),
         ]));
       });
     }
@@ -215,8 +224,8 @@
       catalog.forEach(function (t) {
         var sel = watched.has(t.type);
         var counts = [];
-        if (t.placed) counts.push(t.placed + ' placed');
-        if (t.armed) counts.push(t.armed + ' armed');
+        if (t.placed) counts.push(SSA.t('pl.mine-protection.picker.placed', '{n} placed', { n: t.placed }));
+        if (t.armed) counts.push(SSA.t('pl.mine-protection.picker.armed', '{n} armed', { n: t.armed }));
         var media = t.image
           ? h('img', { class: 'mp-pi-img', src: t.image, alt: '', loading: 'lazy' })
           : h('span', { class: 'mp-pi-ph' }, icon('box'));
@@ -224,7 +233,7 @@
           h('span', { class: 'mp-pi-check' }, sel ? icon('check') : null),
           media,
           h('span', { class: 'mp-pi-name' }, t.name || t.type),
-          h('span', { class: 'mp-pi-meta' }, counts.length ? counts.join(' · ') : (t.explosive ? 'explosive' : 'trap')),
+          h('span', { class: 'mp-pi-meta' }, counts.length ? counts.join(' · ') : (t.explosive ? SSA.t('pl.mine-protection.picker.explosive', 'explosive') : SSA.t('pl.mine-protection.picker.trap', 'trap'))),
         ]);
         cardEl.addEventListener('click', function () {
           if (watched.has(t.type)) watched.delete(t.type); else watched.add(t.type);
@@ -241,11 +250,11 @@
       if (!exemptWrap) return;
       exemptWrap.innerHTML = '';
       var ids = config.exemptSteamIds || [];
-      if (!ids.length) exemptWrap.appendChild(h('span', { class: 'mp-empty' }, 'No exemptions — everyone is enforced.'));
+      if (!ids.length) exemptWrap.appendChild(h('span', { class: 'mp-empty' }, SSA.t('pl.mine-protection.exempt.none', 'No exemptions — everyone is enforced.')));
       ids.forEach(function (sid) {
         exemptWrap.appendChild(h('span', { class: 'mp-chip' }, [
           h('code', {}, sid),
-          h('button', { type: 'button', class: 'mp-chip-x', title: 'Remove', onclick: function () { config.exemptSteamIds = ids.filter(function (x) { return x !== sid; }); renderExempt(); } }, '✕'),
+          h('button', { type: 'button', class: 'mp-chip-x', title: SSA.t('pl.mine-protection.exempt.remove', 'Remove'), onclick: function () { config.exemptSteamIds = ids.filter(function (x) { return x !== sid; }); renderExempt(); } }, '✕'),
         ]));
       });
     }
@@ -257,7 +266,7 @@
     }
     function pickOnline() {
       // native SDK player picker (online list + manual SteamID)
-      SSA.pickPlayer({ title: 'Exempt a player' }).then(function (p) { if (p && p.steamId) addExempt(p.steamId); });
+      SSA.pickPlayer({ title: SSA.t('pl.mine-protection.exempt.pickTitle', 'Exempt a player') }).then(function (p) { if (p && p.steamId) addExempt(p.steamId); });
     }
 
     // ── placed-mines overview table (live) ──
@@ -267,20 +276,20 @@
     // an offence that the plugin was deliberately declining to act on. Each unknown gets its own
     // label and says what the plugin does about it — which is nothing, on purpose.
     function mineStatus(m) {
-      return m.armed == null ? SSA.cell.tag('Armed state unknown', 'muted')
-        : !m.armed ? SSA.cell.tag('Not armed', 'muted')
-          : m.exempt ? SSA.cell.tag('Exempt', 'muted')
-            : m.inArea === true ? SSA.cell.tag('Inside flag', 'ok')
-              : m.inArea == null ? SSA.cell.tag('Flag unknown', 'muted')
-                : !m.handled ? SSA.cell.tag('Pending', 'warn')
-                  : SSA.cell.tag('Enforced', 'bad');
+      return m.armed == null ? SSA.cell.tag(SSA.t('pl.mine-protection.mine.armedUnknown', 'Armed state unknown'), 'muted')
+        : !m.armed ? SSA.cell.tag(SSA.t('pl.mine-protection.mine.notArmed', 'Not armed'), 'muted')
+          : m.exempt ? SSA.cell.tag(SSA.t('pl.mine-protection.mine.exempt', 'Exempt'), 'muted')
+            : m.inArea === true ? SSA.cell.tag(SSA.t('pl.mine-protection.mine.insideFlag', 'Inside flag'), 'ok')
+              : m.inArea == null ? SSA.cell.tag(SSA.t('pl.mine-protection.mine.flagUnknown', 'Flag unknown'), 'muted')
+                : !m.handled ? SSA.cell.tag(SSA.t('pl.mine-protection.mine.pending', 'Pending'), 'warn')
+                  : SSA.cell.tag(SSA.t('pl.mine-protection.mine.enforced', 'Enforced'), 'bad');
     }
     function mineStatusRank(m) { return m.armed == null ? 6 : !m.armed ? 5 : m.exempt ? 4 : m.inArea === true ? 3 : m.inArea == null ? 2 : !m.handled ? 0 : 1; }
     function mineCode(r) { return r.code || (r.type ? r.type + '_ES' : null); }
     function buildMinesTable() {
       return SSA.table({
         rows: function () { return mines; },
-        searchPlaceholder: 'Search mines, players…',
+        searchPlaceholder: SSA.t('pl.mine-protection.mines.search', 'Search mines, players…'),
         search: function (r) { return [r.id, r.name, r.type, r.placerName, r.placerSteamId].join(' '); },
         // Not "Game DB not readable", which reads as a fault. A stopped server is the ordinary case
         // for an owner setting this up, and the sentence has to say that the rest of the page is
@@ -288,34 +297,34 @@
         // "this plugin does not work yet".
         empty: function () {
           return (status && status.serverRunning === false)
-            ? 'This list is a photograph of the running world, so it fills in once the server starts. Everything else on this page can be configured now.'
-            : 'No watched mines placed on the server right now.';
+            ? SSA.t('pl.mine-protection.mines.emptyServerOff', 'This list fills in once the server starts. Everything else can be set now.')
+            : SSA.t('pl.mine-protection.mines.empty', 'No watched mines in the server\'s last save.');
         },
         sort: { key: 'status', dir: 'asc' }, pageSize: 12, onRefresh: refreshMines,
         columns: [
           { key: 'id', label: '#', sort: true, sortVal: function (r) { return Number(r.id); }, tdClass: 'mono dim', render: function (r) { return document.createTextNode(String(r.id)); } },
-          { key: 'type', label: 'Type', sort: true, sortVal: function (r) { return (r.name || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(mineCode(r), r.name || r.type); } },
-          { key: 'placer', label: 'Placer', sort: true, sortVal: function (r) { return (r.placerName || r.placerSteamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.placerName, r.placerSteamId); } },
-          { key: 'loc', label: 'Location', render: function (r) { return SSA.cell.location(r.x, r.y, r.z); } },
-          { key: 'status', label: 'Status', sort: true, sortVal: mineStatusRank, render: mineStatus },
+          { key: 'type', label: SSA.t('pl.mine-protection.col.type', 'Type'), sort: true, sortVal: function (r) { return (r.name || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(mineCode(r), r.name || r.type); } },
+          { key: 'placer', label: SSA.t('pl.mine-protection.col.placer', 'Placer'), sort: true, sortVal: function (r) { return (r.placerName || r.placerSteamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.placerName, r.placerSteamId); } },
+          { key: 'loc', label: SSA.t('pl.mine-protection.col.location', 'Location'), render: function (r) { return SSA.cell.location(r.x, r.y, r.z); } },
+          { key: 'status', label: SSA.t('pl.mine-protection.col.status', 'Status'), sort: true, sortVal: mineStatusRank, render: mineStatus },
           // The count only ever goes up, and until now the only way to clear it wiped EVERY player's
           // record. Forgiving one person meant forgiving all of them, so in practice nobody was
           // forgiven and a player stayed one mine away from the real punishment over something from
           // months ago.
-          { key: 'offences', label: 'Offences', sort: true, sortVal: function (r) { return r.offences || 0; }, tdClass: 'mono', render: function (r) {
+          { key: 'offences', label: SSA.t('pl.mine-protection.col.offences', 'Offences'), sort: true, sortVal: function (r) { return r.offences || 0; }, tdClass: 'mono', render: function (r) {
             var n = r.offences || 0;
             var txt = document.createTextNode(String(n));
             if (!n || !r.placerSteamId) return txt;
             var wrap = h('span', { class: 'mp-off' }, [txt]);
             wrap.appendChild(h('button', {
               class: 'secondary mp-off-x',
-              title: 'Forget this player’s offences — they get their warnings back',
+              title: SSA.t('pl.mine-protection.offences.forgiveTitle', 'Forget this player’s offences — they get their warnings back'),
               onclick: function () {
                 api('/reset-offenses', { method: 'POST', body: { steamId: r.placerSteamId } })
-                  .then(function () { toast('Offences cleared for ' + (r.placerName || r.placerSteamId)); refreshStatusLoop(); })
-                  .catch(function (err) { toast('Nothing was cleared — ' + why(err), 'error'); });
+                  .then(function () { toast(SSA.t('pl.mine-protection.toast.offencesCleared', 'Offences cleared for {player}', { player: r.placerName || r.placerSteamId })); refreshStatusLoop(); })
+                  .catch(function (err) { toast(SSA.t('pl.mine-protection.toast.notCleared', 'Nothing was cleared — {err}', { err: why(err) }), 'error'); });
               },
-            }, 'Forgive'));
+            }, SSA.t('pl.mine-protection.btn.forgive', 'Forgive')));
             return wrap;
           } },
         ],
@@ -329,20 +338,20 @@
       // Both of these are destructive, so a refusal must never look like a success. Clearing the
       // local list on a failed POST is the worse half: the history would come back on the next
       // refresh, and the admin would already have moved on believing it was gone.
-      var reset = h('button', { class: 'secondary', onclick: function () { api('/reset-offenses', { method: 'POST' }).then(function () { toast('Warnings reset'); refreshStatusLoop(); }).catch(function (err) { toast('Warnings were NOT reset — ' + why(err), 'error'); }); } }, 'Reset warnings');
-      var clear = h('button', { class: 'secondary', onclick: function () { api('/clear-history', { method: 'POST' }).then(function () { status = status || {}; status.recent = []; renderRecent(); }).catch(function (err) { toast('The history was NOT cleared — ' + why(err), 'error'); }); } }, 'Clear history');
+      var reset = h('button', { class: 'secondary', onclick: function () { api('/reset-offenses', { method: 'POST' }).then(function () { toast(SSA.t('pl.mine-protection.toast.warningsReset', 'Warnings reset')); refreshStatusLoop(); }).catch(function (err) { toast(SSA.t('pl.mine-protection.toast.warningsNotReset', 'Warnings were NOT reset — {err}', { err: why(err) }), 'error'); }); } }, SSA.t('pl.mine-protection.btn.resetWarnings', 'Reset warnings'));
+      var clear = h('button', { class: 'secondary', onclick: function () { api('/clear-history', { method: 'POST' }).then(function () { status = status || {}; status.recent = []; renderRecent(); }).catch(function (err) { toast(SSA.t('pl.mine-protection.toast.historyNotCleared', 'The history was NOT cleared — {err}', { err: why(err) }), 'error'); }); } }, SSA.t('pl.mine-protection.btn.clearHistory', 'Clear history'));
       return SSA.table({
         rows: function () { return (status && status.recent) || []; },
-        searchPlaceholder: 'Search recent actions…',
+        searchPlaceholder: SSA.t('pl.mine-protection.recent.search', 'Search recent actions…'),
         search: function (r) { return [r.player, r.steamId, r.mine, r.type, r.action].join(' '); },
-        empty: 'Nothing yet — actions will appear here live.',
+        empty: SSA.t('pl.mine-protection.recent.empty', 'Nothing yet — actions will appear here live.'),
         sort: { key: 'at', dir: 'desc' }, pageSize: 12, toolbar: [reset, clear],
         columns: [
-          { key: 'at', label: 'When', sort: true, sortVal: function (r) { return r.at || 0; }, tdClass: 'dim', render: function (r) { return document.createTextNode(ago(r.at)); } },
-          { key: 'action', label: 'Action', sort: true, sortVal: function (r) { return r.action; }, render: function (r) { var w = r.action === 'warn'; return SSA.cell.tag(w ? 'Warned' : 'Teleported', w ? 'warn' : 'bad'); } },
-          { key: 'player', label: 'Player', sort: true, sortVal: function (r) { return (r.player || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.player, r.steamId); } },
-          { key: 'mine', label: 'Mine', sort: true, sortVal: function (r) { return (r.mine || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(r.type ? r.type + '_ES' : null, r.mine || r.type || 'mine'); } },
-          { key: 'loc', label: 'Location', render: function (r) { return r.loc ? SSA.cell.location(r.loc.x, r.loc.y, r.loc.z) : document.createTextNode(''); } },
+          { key: 'at', label: SSA.t('pl.mine-protection.col.when', 'When'), sort: true, sortVal: function (r) { return r.at || 0; }, tdClass: 'dim', render: function (r) { return document.createTextNode(ago(r.at)); } },
+          { key: 'action', label: SSA.t('pl.mine-protection.col.action', 'Action'), sort: true, sortVal: function (r) { return r.action; }, render: function (r) { var w = r.action === 'warn'; return SSA.cell.tag(w ? SSA.t('pl.mine-protection.recent.warned', 'Warned') : SSA.t('pl.mine-protection.recent.teleported', 'Teleported'), w ? 'warn' : 'bad'); } },
+          { key: 'player', label: SSA.t('pl.mine-protection.col.player', 'Player'), sort: true, sortVal: function (r) { return (r.player || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.player, r.steamId); } },
+          { key: 'mine', label: SSA.t('pl.mine-protection.col.mine', 'Mine'), sort: true, sortVal: function (r) { return (r.mine || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(r.type ? r.type + '_ES' : null, r.mine || r.type || SSA.t('pl.mine-protection.recent.mineFallback', 'mine')); } },
+          { key: 'loc', label: SSA.t('pl.mine-protection.col.location', 'Location'), render: function (r) { return r.loc ? SSA.cell.location(r.loc.x, r.loc.y, r.loc.z) : document.createTextNode(''); } },
         ],
       });
     }
@@ -355,88 +364,94 @@
 
       // 0) placed-mines overview (native SDK table: search / sort / pagination + refresh icon in its toolbar)
       minesTbl = buildMinesTable();
-      body.appendChild(card('Placed mines (live)', 'Every watched mine on the server right now — click the mine for a preview, a player to open them, a location to show it on the map.', [minesTbl.el]));
+      body.appendChild(card(SSA.t('pl.mine-protection.card.placedMines.title', 'Placed mines'), SSA.t('pl.mine-protection.card.placedMines.sub', 'Watched mines at last save. Click a mine, player or location to open it.'), [minesTbl.el]));
 
       // 1) watched types (picker)
       pickerGrid = h('div', { class: 'mp-pick-grid' });
       var quick = h('div', { class: 'mp-pick-quick' }, [
-        h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = catalog.filter(function (t) { return t.explosive; }).map(function (t) { return t.type; }); renderPicker(); renderStatusBar(); } }, 'Explosives only'),
-        h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = catalog.map(function (t) { return t.type; }); renderPicker(); renderStatusBar(); } }, 'Select all'),
-        h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = []; renderPicker(); renderStatusBar(); } }, 'Clear'),
+        h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = catalog.filter(function (t) { return t.explosive; }).map(function (t) { return t.type; }); renderPicker(); renderStatusBar(); } }, SSA.t('pl.mine-protection.btn.explosivesOnly', 'Explosives only')),
+        h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = catalog.map(function (t) { return t.type; }); renderPicker(); renderStatusBar(); } }, SSA.t('pl.mine-protection.btn.selectAll', 'Select all')),
+        h('button', { type: 'button', class: 'secondary', onclick: function () { config.watchedTypes = []; renderPicker(); renderStatusBar(); } }, SSA.t('pl.mine-protection.btn.clear', 'Clear')),
       ]);
       // The subtitle used to promise counts unconditionally, and with the server off there are none —
       // so the card advertised a feature that was missing rather than one that was waiting.
       var pickSub = (status && status.serverRunning === false)
-        ? 'Pick which armed devices are enforced. This is the whole rule — it needs no server. Each card also shows how many are placed and armed once one is running.'
-        : 'Pick which armed devices are enforced. Counts show what’s placed on the server right now.';
-      body.appendChild(card('Watched mines & traps', pickSub, [quick, pickerGrid]));
+        ? SSA.t('pl.mine-protection.card.watched.subServerOff', 'Pick which armed devices are enforced. No server needed; counts appear once it runs.')
+        : SSA.t('pl.mine-protection.card.watched.sub', 'Pick which armed devices are enforced. Counts show what the server\'s last save holds.');
+      body.appendChild(card(SSA.t('pl.mine-protection.card.watched.title', 'Watched mines & traps'), pickSub, [quick, pickerGrid]));
       renderPicker();
 
       // 2) action & rules
       var actSel = h('select', { onchange: function () { config.action = actSel.value; } }, [
-        h('option', { value: 'teleport_to_mine' }, 'Teleport onto their mine (kill)'),
-        h('option', { value: 'warn' }, 'Warn only (never teleport)'),
+        h('option', { value: 'teleport_to_mine' }, SSA.t('pl.mine-protection.action.teleport', 'Teleport onto their mine (kill)')),
+        h('option', { value: 'warn' }, SSA.t('pl.mine-protection.action.warn', 'Warn only (never teleport)')),
       ]);
       actSel.value = config.action;
-      body.appendChild(card('Action & rules', null, [
+      body.appendChild(card(SSA.t('pl.mine-protection.card.rules.title', 'Action & rules'), null, [
         h('div', { class: 'mp-grid' }, [
-          field('When a violation is found', actSel),
-          field('Warnings before action', numInput(function () { return config.warningsBeforeAction; }, function (v) { config.warningsBeforeAction = Math.max(0, Math.min(10, v | 0)); }, { min: 0, max: 10 }), '0 = act on the first offence'),
-          field('Extra margin around flag (m)', numInput(function () { return config.marginMeters; }, function (v) { config.marginMeters = Math.max(0, v || 0); }, { min: 0, step: 1 }), 'Tolerance beyond the exact flag rectangle'),
-          field('Scan interval (s)', numInput(function () { return config.pollSeconds; }, function (v) { config.pollSeconds = Math.max(2, Math.min(120, v | 0)); }, { min: 2, max: 120 }), 'Applies immediately on save'),
+          field(SSA.t('pl.mine-protection.f.whenViolation', 'When a violation is found'), actSel),
+          field(SSA.t('pl.mine-protection.f.warningsBefore', 'Warnings before action'), numInput(function () { return config.warningsBeforeAction; }, function (v) { config.warningsBeforeAction = Math.max(0, Math.min(10, v | 0)); }, { min: 0, max: 10 }), SSA.t('pl.mine-protection.f.warningsBefore.hint', '0 = act on the first offence')),
+          field(SSA.t('pl.mine-protection.f.margin', 'Extra margin around flag (m)'), numInput(function () { return config.marginMeters; }, function (v) { config.marginMeters = Math.max(0, v || 0); }, { min: 0, step: 1 }), SSA.t('pl.mine-protection.f.margin.hint', 'Tolerance beyond the exact flag rectangle')),
+          field(SSA.t('pl.mine-protection.f.scanInterval', 'Scan interval (s)'), numInput(function () { return config.pollSeconds; }, function (v) { config.pollSeconds = Math.max(2, Math.min(120, v | 0)); }, { min: 2, max: 120 }), SSA.t('pl.mine-protection.f.scanInterval.hint', 'Applies immediately on save')),
         ]),
         h('div', { class: 'mp-checks' }, [
-          checkbox('Only act while the placer is online', function () { return config.requireOnline; }, function (v) { config.requireOnline = v; }),
+          checkbox(SSA.t('pl.mine-protection.chk.requireOnline', 'Only act while the placer is online'), function () { return config.requireOnline; }, function (v) { config.requireOnline = v; }),
         ]),
       ]));
 
       // 3) messages
       var chanSel = h('select', { onchange: function () { config.channel = chanSel.value; } }, [
-        ['local', 'Local'], ['global', 'Global'], ['squad', 'Squad'], ['admin', 'Admin'], ['server', 'Server'],
+        ['local', SSA.t('pl.mine-protection.channel.local', 'Local')], ['global', SSA.t('pl.mine-protection.channel.global', 'Global')],
+        ['squad', SSA.t('pl.mine-protection.channel.squad', 'Squad')], ['admin', SSA.t('pl.mine-protection.channel.admin', 'Admin')],
+        ['server', SSA.t('pl.mine-protection.channel.server', 'Server')],
       ].map(function (o) { return h('option', { value: o[0], selected: (config.channel || 'local') === o[0] || undefined }, o[1]); }));
-      body.appendChild(card('In-game messages', 'Sent to the offender via the SSA Bridge — any language.', [
+      body.appendChild(card(SSA.t('pl.mine-protection.card.messages.title', 'In-game messages'), SSA.t('pl.mine-protection.card.messages.sub', 'Sent to the offender via the SSA Bridge — any language.'), [
         h('div', { class: 'mp-grid' }, [
-          field('Chat channel', chanSel, 'Which chat tab the message shows in for the offender'),
+          field(SSA.t('pl.mine-protection.f.channel', 'Chat channel'), chanSel, SSA.t('pl.mine-protection.f.channel.hint', 'Which chat tab the message shows in for the offender')),
         ]),
         h('div', { class: 'mp-stack' }, [
-          field('Warning message', textInput(function () { return config.warnMessage; }, function (v) { config.warnMessage = v; })),
-          field('Penalty message', textInput(function () { return config.message; }, function (v) { config.message = v; })),
+          field(SSA.t('pl.mine-protection.f.warnMessage', 'Warning message'), textInput(function () { return config.warnMessage; }, function (v) { config.warnMessage = v; })),
+          field(SSA.t('pl.mine-protection.f.penaltyMessage', 'Penalty message'), textInput(function () { return config.message; }, function (v) { config.message = v; })),
         ]),
       ]));
 
       // 4) exemptions
       exemptWrap = h('div', { class: 'mp-chips' });
-      var manualIn = h('input', { type: 'text', class: 'mp-ex-in', placeholder: 'Steam ID (17 digits)' });
-      var addBtn = h('button', { type: 'button', class: 'secondary', onclick: function () { addExempt(manualIn.value); manualIn.value = ''; } }, 'Add');
+      var manualIn = h('input', { type: 'text', class: 'mp-ex-in', placeholder: SSA.t('pl.mine-protection.exempt.placeholder', 'Steam ID (17 digits)') });
+      var addBtn = h('button', { type: 'button', class: 'secondary', onclick: function () { addExempt(manualIn.value); manualIn.value = ''; } }, SSA.t('pl.mine-protection.btn.add', 'Add'));
       manualIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addExempt(manualIn.value); manualIn.value = ''; } });
-      body.appendChild(card('Exemptions', 'These players are never punished.', [
+      body.appendChild(card(SSA.t('pl.mine-protection.card.exempt.title', 'Exemptions'), SSA.t('pl.mine-protection.card.exempt.sub', 'These players are never punished.'), [
         exemptWrap,
-        h('div', { class: 'mp-ex-add' }, [manualIn, addBtn, h('button', { type: 'button', class: 'secondary', onclick: pickOnline }, 'Pick online player…')]),
+        h('div', { class: 'mp-ex-add' }, [manualIn, addBtn, h('button', { type: 'button', class: 'secondary', onclick: pickOnline }, SSA.t('pl.mine-protection.btn.pickOnline', 'Pick online player…'))]),
       ]));
       renderExempt();
 
       // 5) recent actions (native SDK table; Reset warnings / Clear history live in its toolbar)
       recentTbl = buildRecentTable();
-      body.appendChild(card('Recent actions', null, [recentTbl.el]));
+      body.appendChild(card(SSA.t('pl.mine-protection.card.recent.title', 'Recent actions'), null, [recentTbl.el]));
 
       // save bar
       var msg = h('span', { class: 'mp-savemsg' });
       var saveBtn = h('button', { type: 'button', class: '', onclick: function () {
-        msg.textContent = 'Saving…'; saveBtn.disabled = true;
+        msg.textContent = SSA.t('pl.mine-protection.save.saving', 'Saving…'); saveBtn.disabled = true;
         api('/config', { method: 'POST', body: config }).then(function (r) {
           saveBtn.disabled = false;
-          if (r && r.ok) { config = Object.assign({}, DEF, r.config || config); msg.textContent = 'Saved ✓'; toast('Configuration saved'); renderStatusBar(); setTimeout(function () { msg.textContent = ''; }, 2500); }
+          if (r && r.ok) { config = Object.assign({}, DEF, r.config || config); msg.textContent = SSA.t('pl.mine-protection.save.saved', 'Saved ✓'); toast(SSA.t('pl.mine-protection.toast.saved', 'Configuration saved')); renderStatusBar(); setTimeout(function () { msg.textContent = ''; }, 2500); }
           // A route that answered 200 without `ok` is a refusal too, and it may have said why.
-          else { var w = (r && r.reason) || (r && r.error) || 'the manager did not say why'; msg.textContent = 'NOT saved — ' + w; toast('NOT saved — ' + w, 'error'); }
+          else {
+            var w = (r && r.reason) || (r && r.error) || SSA.t('pl.mine-protection.save.noReason', 'the manager did not say why');
+            var wsay = SSA.t('pl.mine-protection.save.notSaved', 'NOT saved — {err}', { err: w });
+            msg.textContent = wsay; toast(wsay, 'error');
+          }
         }).catch(function (err) {
           // The sentence STAYS beside the button until the next attempt. A save that did not happen
           // is not a transient notice — the owner's edits are still sitting unsaved in front of
           // them, and a toast is gone in four seconds.
           saveBtn.disabled = false;
-          msg.textContent = 'NOT saved — ' + why(err);
-          toast('NOT saved — ' + why(err), 'error');
+          msg.textContent = SSA.t('pl.mine-protection.save.notSaved', 'NOT saved — {err}', { err: why(err) });
+          toast(SSA.t('pl.mine-protection.save.notSaved', 'NOT saved — {err}', { err: why(err) }), 'error');
         });
-      } }, 'Save configuration');
+      } }, SSA.t('pl.mine-protection.btn.save', 'Save configuration'));
       body.appendChild(h('div', { class: 'mp-actions' }, [saveBtn, msg]));
     }
 
@@ -448,6 +463,6 @@
   }
 
   SSA.ready(function () {
-    SSA.registerTab({ id: 'mine-protection', label: 'Mine Protection', icon: '#i-shield', premium: true, render: editor });
+    SSA.registerTab({ id: 'mine-protection', label: SSA.t('pl.mine-protection.tab.label', 'Mine Protection'), icon: '#i-shield', premium: true, render: editor });
   });
 }());
