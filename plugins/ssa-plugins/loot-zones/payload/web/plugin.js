@@ -445,7 +445,10 @@
       }
       state.sets = r[1];
       state.status = r[2];
-      if (!(quiet && unsaved)) render();
+      // A poll redraws only when the page would come out DIFFERENT. It used to redraw the whole tab
+      // every fifteen seconds whatever the answer was, which shut an open dropdown and repainted
+      // every card under the reader on a page where nothing had moved.
+      if (!(quiet && unsaved)) render(quiet ? { ifChanged: true } : undefined);
     }).catch(function () {
       broken = true;
       render();
@@ -4660,11 +4663,28 @@
    * panel is empty" was, and a guard against the one cause found is not a guard against the next
    * one, so the whole of it is wrapped.
    */
-  function render() {
+  /**
+   * `opts.ifChanged`: draw into a detached box first and compare it with what the last real draw
+   * produced. Equal means nothing on the page would change, so the page is left exactly as it is —
+   * same nodes, same open dropdown, same hover. Only `saveBar` is written by `draw()` from outside
+   * the box, so it is put back after the trial draw.
+   */
+  var lastDrawn = null;
+  function render(opts) {
+    if (opts && opts.ifChanged && root && lastDrawn !== null) {
+      var live = root, bar = saveBar, probe = document.createElement('div');
+      var same = false;
+      root = probe;
+      try { draw(); same = probe.innerHTML === lastDrawn; } catch (ignored) { same = false; }
+      root = live;
+      saveBar = bar;
+      if (same) return;
+    }
     // ⚠ BEFORE `draw()`, which empties the root — see `beforeRedraw` for what is being kept and
     // why a reconciler is not what is used here.
     var keep = beforeRedraw();
-    try { draw(); } catch (e) {
+    lastDrawn = null;
+    try { draw(); lastDrawn = root ? root.innerHTML : null; } catch (e) {
       try {
         root.innerHTML = '';
         root.appendChild(h('div', { class: 'lz-note bad' },
@@ -5042,8 +5062,13 @@
             api('/reconcile', { method: 'POST', body: {} }).then(function (r) {
               if (r && r.skipped) SSA.toast(T('pl.loot-zones.act.noZoneList', 'The game has not sent its zone list yet'));
               else if (r && r.error) SSA.toast(T('pl.loot-zones.act.checkFailed', 'The check did not finish: {why}', { why: r.error }));
-              else {
-                var n = ((r && r.strayZones) || []).length + ((r && r.strayFolders) || []).length;
+              // A leftover FOUND is not a leftover REMOVED. Counting what was found told an owner the
+              // map was clean while the rectangle was still on it.
+              else if (r && (r.stubborn || []).length) {
+                SSA.toast(T('pl.loot-zones.act.stuck', '{n} leftover zone(s) could not be removed: {why}',
+                  { n: r.stubborn.length, why: r.why || '' }));
+              } else {
+                var n = ((r && r.removed) || (r && r.strayZones) || []).length + ((r && r.strayFolders) || []).length;
                 SSA.toast(n ? T('pl.loot-zones.act.cleared', 'Cleared {n} leftover(s)', { n: n })
                   : T('pl.loot-zones.act.agrees', 'The game agrees with this page'));
               }

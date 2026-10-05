@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Die Prüfung wurde nicht fertig: {why}",
   "pl.loot-zones.act.cleared": "{n} Überrest(e) beseitigt",
   "pl.loot-zones.act.agrees": "Das Spiel stimmt mit dieser Seite überein",
+  "pl.loot-zones.act.stuck": "{n} übrige Zone(n) konnten nicht entfernt werden: {why}",
   "pl.loot-zones.fail.check": "Nicht geprüft",
   "pl.loot-zones.act.note": "Mit Bridge 2.22.2+ lädt ein Wechsel den Loot sofort (siehe „{control}“); mit älteren erst beim nächsten Start.",
   "pl.loot-zones.discard.title": "Jede Zone, Nachricht und Wache auf die Einstellungen zurücksetzen, die der Server hält",

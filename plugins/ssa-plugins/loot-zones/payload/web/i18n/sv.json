@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Kontrollen blev inte klar: {why}",
   "pl.loot-zones.act.cleared": "Rensade {n} rest(er)",
   "pl.loot-zones.act.agrees": "Spelet håller med den här sidan",
+  "pl.loot-zones.act.stuck": "{n} kvarvarande zon(er) kunde inte tas bort: {why}",
   "pl.loot-zones.fail.check": "Kontrollerades inte",
   "pl.loot-zones.act.note": "Med Bridge 2.22.2+ laddar en växling om looten direkt (se ”{control}”); med äldre vid nästa start.",
   "pl.loot-zones.discard.title": "Lägg varje zon, meddelande och vakt tillbaka till de inställningar servern håller",

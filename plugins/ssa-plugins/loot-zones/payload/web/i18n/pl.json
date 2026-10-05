@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Sprawdzanie nie dobiegło końca: {why}",
   "pl.loot-zones.act.cleared": "Posprzątane pozostałości: {n}",
   "pl.loot-zones.act.agrees": "Gra zgadza się z tą stroną",
+  "pl.loot-zones.act.stuck": "Nie udało się usunąć {n} pozostałych stref: {why}",
   "pl.loot-zones.fail.check": "Nie sprawdzono",
   "pl.loot-zones.act.note": "Z Bridge 2.22.2+ przełączenie od razu przeładuje loot (zob. „{control}”); ze starszym przy następnym starcie.",
   "pl.loot-zones.discard.title": "Przywróć każdą strefę, wiadomość i wartownika do ustawień, które ma serwer",

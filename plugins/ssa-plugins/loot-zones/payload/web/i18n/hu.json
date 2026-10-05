@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Az ellenőrzés nem fejeződött be: {why}",
   "pl.loot-zones.act.cleared": "{n} maradvány kitakarítva",
   "pl.loot-zones.act.agrees": "A játék egyetért ezzel az oldallal",
+  "pl.loot-zones.act.stuck": "{n} megmaradt zónát nem sikerült eltávolítani: {why}",
   "pl.loot-zones.fail.check": "Nincs ellenőrizve",
   "pl.loot-zones.act.note": "Bridge 2.22.2+ mellett a váltás azonnal újratölti a lootot (lásd: „{control}”); régebbivel a következő indításkor.",
   "pl.loot-zones.discard.title": "Minden zóna, üzenet és őr visszaállítása arra a beállításra, amit a szerver tart",

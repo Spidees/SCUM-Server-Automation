@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Il controllo non è arrivato in fondo: {why}",
   "pl.loot-zones.act.cleared": "Ripuliti {n} residuo/i",
   "pl.loot-zones.act.agrees": "Il gioco è d'accordo con questa pagina",
+  "pl.loot-zones.act.stuck": "Impossibile rimuovere {n} zona/e rimasta/e: {why}",
   "pl.loot-zones.fail.check": "Non controllato",
   "pl.loot-zones.act.note": "Con Bridge 2.22.2+ il cambio ricarica subito il loot (vedi «{control}»); con uno più vecchio, al prossimo avvio.",
   "pl.loot-zones.discard.title": "Rimetti tutte le zone, i messaggi e le guardie alle impostazioni che ha il server",

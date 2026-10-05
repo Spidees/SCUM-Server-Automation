@@ -1224,6 +1224,16 @@ module.exports = {
        * seen not to have it any more — because it was deleted, or because the game says it is gone.
        */
       drawn: 'drawnZoneNames',
+      /**
+       * ⚠ **A REMOVAL THAT DID NOT LAND IS OWED, AND THE DEBT IS KEPT HERE.** A switch made as the
+       * server goes down can find neither route open — the bridge is gone and the game has not let
+       * go of its save yet — and the old rectangle then stayed on the map for the whole next session,
+       * because the sweep that would have taken it ran once per manager process and had already run.
+       * Set whenever a removal or a sweep could not finish, cleared only by a sweep that read a
+       * real zone list and removed everything of ours that was not wanted. In the store, so a
+       * manager restart does not forget what it still owes.
+       */
+      sweepDue: 'zoneSweepDue',
     };
 
     /**
@@ -1511,19 +1521,49 @@ module.exports = {
      * still comes back unknown. That is a real answer and the caller says so rather than retrying
      * for ever inside one call.
      */
+    /**
+     * ⚠ **WITH THE SERVER STOPPED THERE IS NOBODY TO ASK, AND ASKING COST THE ONLY SECONDS THERE
+     * WERE.** Between the game letting go of its save and the next start a restart leaves about five
+     * seconds, and every bridge call made in them fails — after a timeout, and after a 1.5 s wait
+     * for a reply the refused refresh was never going to send. Driven on the dev server: a rotation
+     * spent six seconds asking the bridge before it reached the save, and the next server had
+     * already started. So once the server is known to be down (`server:offline`, or the manager
+     * about to start one) the game is not asked until it is up again.
+     */
+    const SERVER_DOWN_WHY = 'the server is stopped, so the game cannot be asked; the save is the route until it starts';
+    let downSince = null;
+    const serverDown = () => downSince != null;
+
     async function zoneSet(opts) {
+      if (serverDown()) return { known: false, why: SERVER_DOWN_WHY };
       const first = await readZones();
       if (first && first.known === true) return first;
       if (opts && opts.noAsk) return first;
       const asked = await bx('refreshZones');
-      // The reply lands a frame or two later, on the game's own thread.
-      await new Promise((r) => setTimeout(r, 1500));
-      const second = await readZones();
-      if (second && second.known === true) return second;
-      // The refresh's own refusal is the better sentence when there is one: it is the call that
-      // needs a player, so it is the call that says so.
-      if (asked && asked.ok === false && (asked.reason || asked.code)) {
-        return Object.assign({ known: false }, second || {}, { why: asked.reason || asked.code });
+      // A refresh that was not even accepted sends no reply to wait for: say why at once. The
+      // refresh's own refusal is the better sentence when there is one: it is the call that needs
+      // a player, so it is the call that says so.
+      if (!asked || asked.ok !== true) {
+        if (asked && asked.ok === false && (asked.reason || asked.code)) {
+          return Object.assign({ known: false }, first || {}, { why: asked.reason || asked.code });
+        }
+        // No answer at all (a bridge without the verb, or one that did not reply): one more look,
+        // without the wait, for a set that arrived by itself in the meantime.
+        if (!asked) {
+          const again = await readZones();
+          return (again && again.known === true) ? again : (again || first);
+        }
+        return first;
+      }
+      // The reply lands a frame or two later, on the game's own thread — and on a busy server or one
+      // that has just started, later than that. One look at 1.5 s turned a slow answer into "the
+      // game has not sent its zone list", which is what "Check against the game" then told an owner
+      // standing in the game. A refresh that was ACCEPTED is worth waiting a little longer for.
+      let second = null;
+      for (let i = 0; i < 3; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        second = await readZones();
+        if (second && second.known === true) return second;
       }
       return second;
     }
@@ -1923,6 +1963,150 @@ module.exports = {
     }
 
     /**
+     * The custom zones the SAVE holds, as `zonesWritable()` reported them — or NULL when that report
+     * carries no list, which is every manager before 5.42.0.
+     *
+     * ⚠ **NULL IS NOT AN EMPTY SAVE, AND READING IT AS ONE IS THE DEFECT THIS REPLACES.** Both
+     * functions below used to filter against `pre.zones || pre.regions || []`, and the writer had
+     * never returned either — so the list was always empty. A delete then filtered down to nothing
+     * and answered SUCCESS without writing a byte, and the switch forgot a rectangle that was still
+     * in the save: after a rotation at a server restart, the old zone came back with the server and
+     * nothing here knew it was ours. "There is nothing to delete" and "I was not told what is
+     * there" are opposite facts that both spell an empty list.
+     */
+    function saveRegionsOf(pre) {
+      if (!pre || pre.ok !== true) return null;
+      const rows = Array.isArray(pre.regions) ? pre.regions : (Array.isArray(pre.zones) ? pre.zones : null);
+      if (!rows) return null;
+      return rows.map((z) => ({
+        name: String(z && z.name),
+        x: Number(z && z.x), y: Number(z && z.y),
+        sizeX: Number(z && z.sizeX), sizeY: Number(z && z.sizeY),
+        configIndex: Number(z && z.configIndex),
+      }));
+    }
+    /** The configurations the save holds, in the game's order — or NULL when not reported. */
+    const saveConfigsOf = (pre) => ((pre && Array.isArray(pre.configs)) ? pre.configs : null);
+
+    // The writer's own refusals, by the shape of the sentence it throws. Each one names exactly one
+    // zone or configuration, and each has exactly one honest answer: the request is corrected for
+    // that name and sent again. Anything else is a real refusal and is handed back as it came.
+    const SAVE_MISSING = /no zone called "([^"]+)"/;
+    const SAVE_TAKEN = /already has a zone called "([^"]+)"/;
+    const SAVE_SAME = /the update for zone "([^"]+)" changes nothing/;
+    const SAVE_NO_CONFIG = /there is no configuration called "([^"]+)"/;
+
+    /**
+     * Write regions into the save, correcting the request for what the save really holds.
+     *
+     * Used when the save's own list is not known (an older manager) and as a backstop when it is.
+     * The writer refuses the WHOLE transaction over one name it cannot act on, which is right for
+     * it and means a request has to be exact. So a refusal that names a zone is answered by moving
+     * that one zone: a delete of a name that is not there is already done, a create of a name that
+     * is there is an update, and an update that changes nothing is already right. Bounded, because
+     * every pass removes or moves one name and a request has finitely many.
+     *
+     * `makeConfig` is offered once, for a refusal that names a configuration this plugin owns.
+     */
+    async function writeSaveRegions(plan, makeConfig) {
+      const m = host.map || {};
+      const create = (plan.create || []).slice();
+      const update = (plan.update || []).slice();
+      const del = uniq(plan.delete || []);
+      const gone = []; const same = [];
+      let configs = null;
+      const limit = (create.length + update.length + del.length) * 2 + 3;
+      for (let i = 0; i < limit; i++) {
+        if (!create.length && !update.length && !del.length) {
+          return { ok: true, erased: [], gone, same, created: [], updated: [], nothing: true };
+        }
+        const req = { regions: { create, update, delete: del.map((name) => ({ name })) } };
+        if (configs) req.configs = configs;
+        const res = await m.writeZones(req).catch((e) => ({ ok: false, reason: e && e.message }));
+        if (res && res.ok === true) {
+          // The writer hands back its backup's MANIFEST, not a path: printed as it came, the log read
+          // "backup [object Object]". The file's path is the part an owner can use.
+          const bk = (res.backup && typeof res.backup === 'object') ? (res.backup.backup || null) : (res.backup || null);
+          return {
+            ok: true, backup: bk, erased: del.slice(), gone, same,
+            created: create.map((s) => s.name), updated: update.map((s) => s.name),
+          };
+        }
+        const why = String((res && (res.reason || res.code)) || '');
+        let hit = SAVE_MISSING.exec(why);
+        if (hit) {
+          const d = del.indexOf(hit[1]);
+          if (d >= 0) { del.splice(d, 1); gone.push(hit[1]); continue; }
+          const u = update.findIndex((s) => s.name === hit[1]);
+          if (u >= 0) { create.push(update.splice(u, 1)[0]); continue; }
+        }
+        hit = SAVE_TAKEN.exec(why);
+        if (hit) {
+          const c = create.findIndex((s) => s.name === hit[1]);
+          if (c >= 0) { update.push(create.splice(c, 1)[0]); continue; }
+        }
+        hit = SAVE_SAME.exec(why);
+        if (hit) {
+          const u = update.findIndex((s) => s.name === hit[1]);
+          if (u >= 0) { same.push(update.splice(u, 1)[0].name); continue; }
+        }
+        hit = SAVE_NO_CONFIG.exec(why);
+        if (hit && !configs && typeof makeConfig === 'function') {
+          const made = makeConfig(hit[1]);
+          if (made) { configs = { create: [made] }; continue; }
+        }
+        return { ok: false, why: why || 'the zone write gave no answer' };
+      }
+      return { ok: false, why: 'the save kept refusing the zone write' };
+    }
+
+    /**
+     * Which configuration a rectangle written into the SAVE points at, by NAME.
+     *
+     * ⚠ **THE WRITER TAKES A NAME OR AN ID, NEVER AN INDEX, AND THIS USED TO SEND AN INDEX.** The
+     * bridge addresses a configuration by its position in the game's array; the save writer by its
+     * name or its id, and it refuses a zone that names neither. So every rectangle this route ever
+     * offered was refused — and before that, in this plugin's own mode, the index was looked up by
+     * asking the BRIDGE, which is not there when the save is the only route. The rectangle was then
+     * drawn only once a player came online, and the switch-off beside it had no such second chance.
+     *
+     * In the plugin's own mode the name is ours to know, and the configuration is described in full
+     * so the writer can make it when the save has none. In the game's mode the owner chose a position,
+     * which is translated through the save's own list where the manager reports one.
+     */
+    function saveConfigFor(entry, pre) {
+      const c = cfg();
+      if (c.zone.configMode === 'own') {
+        const noZombies = zombiesOutFor(entry);
+        const name = safeZoneName(String(c.zone.ownConfigName || 'Loot Zones')) + (noZombies ? NO_ZOMBIES_SUFFIX : '');
+        const col = c.zone.colour || {};
+        const part = (v, d) => {
+          let n = nz(v, d);
+          if (n > 1) n = n / 255;
+          return Math.max(0, Math.min(1, n));
+        };
+        const settings = [];
+        if (c.zone.visibleOnMap) settings.push('visibleOnMap');
+        if (c.zone.notifyOnEntry) settings.push('notifyOnEntry');
+        return {
+          configName: name,
+          make: (asked) => (asked === name ? {
+            name,
+            color: [part(col.r, 1), part(col.g, 0.64), part(col.b, 0.1)],
+            settings: settings.length ? settings : ['none'],
+            events: { availabilityGrid: noZombies ? 'block' : 'allow' },
+          } : null),
+        };
+      }
+      const list = saveConfigsOf(pre);
+      const at = Math.max(0, nz(c.zone.configIndex, 0));
+      const row = list ? list.find((r) => Number(r && r.index) === at) : null;
+      if (row && row.name) return { configName: String(row.name) };
+      return { why: 'the zone uses a configuration chosen by its position in the game, and this manager '
+        + 'does not report the save\'s configurations. It is drawn once the server is up.' };
+    }
+
+    /**
      * Draw the rectangles by writing them into the SAVE, with the game stopped.
      *
      * The route that exists because the bridge cannot do this when nobody is on. Everything that
@@ -1934,7 +2118,7 @@ module.exports = {
      * So nothing here decides anything. It asks whether a write is possible, and if the answer is no
      * it hands that answer's own sentence back to be shown.
      */
-    async function drawIntoSave(entry, rects, live) {
+    async function drawIntoSave(entry, rects) {
       if (!prefixUsable()) return { ok: false, why: NO_PREFIX };
       const m = host.map || {};
       if (typeof m.writeZones !== 'function' || typeof m.zonesWritable !== 'function') {
@@ -1944,56 +2128,75 @@ module.exports = {
       if (!pre || pre.ok !== true) {
         return { ok: false, why: (pre && (pre.reason || pre.code)) || 'the save cannot be written just now' };
       }
-      const idx = await configIndexFor(live, entry);
-      if (idx.index == null) return { ok: false, why: idx.why };
+      const conf = saveConfigFor(entry, pre);
+      if (!conf.configName) return { ok: false, why: conf.why };
 
       // Named exactly as the bridge route names them, so one zone is one zone whichever route drew
       // it and `reconcile()` recognises its own work either way.
-      const known = new Set(((pre.zones || pre.regions || []).map((z) => String(z && z.name))));
-      const create = []; const update = [];
+      const have = saveRegionsOf(pre);
+      const byName = new Map((have || []).map((z) => [z.name, z]));
+      const create = []; const update = []; const already = [];
       for (let i = 0; i < rects.length; i++) {
         const r = rects[i];
         const spec = {
           name: zoneNameAt(entry, i, rects.length),
-          x: r.x, y: r.y, shape: shapeOf(r), width: halfOf(r).w, height: halfOf(r).h, config: idx.index,
+          x: r.x, y: r.y, shape: shapeOf(r), width: halfOf(r).w, height: halfOf(r).h, configName: conf.configName,
         };
-        (known.has(spec.name) ? update : create).push(spec);
+        const z = byName.get(spec.name);
+        if (!z) { create.push(spec); continue; }
+        // Already in the save at this place and size: an update would be refused as changing
+        // nothing, and every refusal costs a backup. The configuration is left to the writer to
+        // judge, because the list carries its position and this spec carries its name.
+        const near = (a, b) => Math.abs(Number(a) - Number(b)) < 1;
+        if (near(z.x, spec.x) && near(z.y, spec.y) && near(z.sizeX, spec.width) && near(z.sizeY, spec.height)) {
+          already.push(spec.name);
+        } else {
+          update.push(spec);
+        }
       }
-      const res = await m.writeZones({ regions: { create, update } }).catch((e) => ({ ok: false, reason: e && e.message }));
-      if (!res || res.ok !== true) {
-        return { ok: false, why: (res && (res.reason || res.code)) || 'the zone write gave no answer' };
-      }
+      const res = await writeSaveRegions({ create, update }, conf.make);
+      if (!res.ok) return { ok: false, why: res.why };
       // The other route, and the same record. Which of the two drew a zone has never decided which
       // can remove it, so it must not decide which can NAME it either.
-      noteDrawn(entry, create.concat(update).map((s) => s.name));
-      log.info(`"${entry.name || entry.set}" — ${create.length + update.length} rectangle(s) `
+      const names = res.created.concat(res.updated, res.same, already);
+      noteDrawn(entry, names);
+      log.info(`"${entry.name || entry.set}" — ${names.length} rectangle(s) `
         + `written into the save${res.backup ? `, backup ${res.backup}` : ''}. Players see them when the server starts.`);
       return { ok: true, backup: res.backup };
     }
 
     /**
-     * Remove NAMED rectangles from the SAVE. Same route, same guard, and a no-op if it cannot run.
+     * Remove NAMED rectangles from the SAVE. Same route, same guard.
      *
      * ⚠ **A DELETE OF A NAME THAT IS NOT THERE REFUSES THE WHOLE WRITE.** `zoneWriter.js` looks each
      * one up and throws rather than repairing — which is right, and it means a list built out of
      * anything but the save's own zones takes every other delete down with it. So it is filtered
-     * here, against the reading `zonesWritable()` hands back, and a list that filters down to
-     * nothing is a success with nothing to do rather than a write.
+     * against the save's own list where the manager reports one, and where it does not, the writer's
+     * own refusal names the missing zone and the rest are sent again (`writeSaveRegions`).
+     *
+     * `erased` is what really came out and `gone` is what the save did not have; only those two may
+     * leave the ledger. A list that could not be checked is never reported as erased.
      */
     async function eraseFromSave(names) {
       const m = host.map || {};
       if (typeof m.writeZones !== 'function' || typeof m.zonesWritable !== 'function') return { ok: false };
       const want = uniq(names);
-      if (!want.length) return { ok: true, erased: [] };
+      if (!want.length) return { ok: true, erased: [], gone: [] };
       const pre = await m.zonesWritable().catch(() => null);
       if (!pre || pre.ok !== true) {
         return { ok: false, why: (pre && (pre.reason || pre.code)) || 'the save cannot be written just now' };
       }
-      const have = new Set(((pre.zones || pre.regions || []).map((z) => String(z && z.name))));
-      const list = want.filter((n) => have.has(n));
-      if (!list.length) return { ok: true, erased: [], gone: want };
-      const res = await m.writeZones({ regions: { delete: list.map((name) => ({ name })) } }).catch(() => null);
-      return { ok: !!(res && res.ok === true), why: res && (res.reason || res.code), erased: list };
+      const have = saveRegionsOf(pre);
+      let list = want; let gone = [];
+      if (have) {
+        const names2 = new Set(have.map((z) => z.name));
+        list = want.filter((n) => names2.has(n));
+        gone = want.filter((n) => !names2.has(n));
+        if (!list.length) return { ok: true, erased: [], gone };
+      }
+      const res = await writeSaveRegions({ delete: list });
+      if (!res.ok) return { ok: false, why: res.why, erased: [], gone };
+      return { ok: true, why: null, erased: res.erased, gone: gone.concat(res.gone), backup: res.backup };
     }
 
     /**
@@ -7146,6 +7349,17 @@ module.exports = {
       }
     }
 
+    /**
+     * A switch's own announcement. With the server stopped it is sent without being waited for: the
+     * in-game route cannot land anyway, and the seconds a switch has to write the save in are not
+     * spent waiting for it to fail. A Discord route on the same message still goes out.
+     */
+    async function announce(which, tokens) {
+      const sent = deliver(which, tokens);
+      if (serverDown()) { sent.catch(() => {}); return null; }
+      return sent;
+    }
+
     async function deliver(which, tokens, steamId) {
       const c = cfg();
       const m = (c.messages || {})[which];
@@ -7312,6 +7526,8 @@ module.exports = {
         }
       }
       if (!byBridge && !bySave && !nothingThere) {
+        // Owed, and remembered as owed: the next sweep that can read a list takes it.
+        host.store.set(K.sweepDue, true);
         // Neither could. Said out loud, WITH THE REFUSAL'S OWN WORDS: a rectangle nobody removed is
         // one an owner meets tomorrow, and reporting a clean switch over it is how it stays there.
         // The sentence used to name neither the zone's names nor why, so an owner reading the log
@@ -7322,7 +7538,7 @@ module.exports = {
           + `${said ? `: ${said}` : '.'} Run "Check `
           + 'against the game" with the server up.');
       }
-      if (!opts.quiet) await deliver('deactivate', { zone: entry.name || entry.set, set: entry.set });
+      if (!opts.quiet) await announce('deactivate', { zone: entry.name || entry.set, set: entry.set });
       // Removing the files is a loot change too, and the game will not see it until it restarts —
       // so what is pending here is the NORMAL loot coming back, which is the opposite sentence.
       host.store.set(K.lootWrittenAt, Date.now());
@@ -7378,9 +7594,11 @@ module.exports = {
         }
       }
 
-      const guards = await patrolGuards(entry, r.rects)
-        .catch((e) => ({ removed: 0, spawned: 0, posts: 0, held: 0, refusals: [String(e && e.message)] }));
-      await deliver('activate', { zone: entry.name || entry.set, set: entry.set });
+      // Nothing can be posted in a world that is not running; the patrol does it once the server is up.
+      const guards = serverDown() ? { removed: 0, spawned: 0, posts: 0, held: 0, refusals: [] }
+        : await patrolGuards(entry, r.rects)
+          .catch((e) => ({ removed: 0, spawned: 0, posts: 0, held: 0, refusals: [String(e && e.message)] }));
+      await announce('activate', { zone: entry.name || entry.set, set: entry.set });
       // The moment this plugin put loot on disk, and WHICH WAY. Compared against the server's own
       // start to tell "live" from "waiting" — the question the reload would have answered — and the
       // direction decides the sentence, because "richer loot is coming" and "normal loot is coming
@@ -7445,18 +7663,23 @@ module.exports = {
         // so a zone nobody has touched costs nothing here however often this runs.
         const offMap = await areaRefusal(e, r);
         if (offMap) { a.drawnWhy = offMap; continue; }
+        // THIS pass's bridge refusal, never the stored one: `a.drawnWhy` already holds the last pass's
+        // pair of reasons, and pairing that again on every retry grew the sentence by one "The bridge
+        // could not draw it:" per minute — measured on the dev server, nine deep in nine minutes.
+        let bridgeWhy = null;
         if (live && live.known === true) {
           const rows = await drawZone(e, r.rects, live);
           a.drawn = rows.length > 0 && rows.every((d) => d.ok);
           a.drawnBy = a.drawn ? 'bridge' : null;
           a.drawnWhy = a.drawn ? null : (rows.find((d) => !d.ok) || {}).why || 'the game refused the zone write';
+          bridgeWhy = a.drawnWhy;
         }
         if (!a.drawn) {
           // ⚠ THE REASON THIS BRANCH ALREADY HAS, kept before the save can overwrite it. This is
           // reached with the zone list KNOWN — it was read and the WRITE was refused — so
           // `live.why` is empty and printing the generic one told an owner standing in the game
           // that nobody was on the server. `activate()` gets this right by using its own local.
-          const bridgeWhy = a.drawnWhy || (live && live.why) || NOT_KNOWN;
+          bridgeWhy = bridgeWhy || (live && live.why) || NOT_KNOWN;
           const saved = await drawIntoSave(e, r.rects, live);
           if (saved.ok) {
             a.drawn = true; a.drawnBy = 'save';
@@ -7661,9 +7884,35 @@ module.exports = {
      */
     async function sweepZones() {
       const live = await zoneSet();
-      if (!live || live.known !== true) {
-        log.info('the game has not told the bridge its zone list yet — leaving everything alone until it does');
-        return { skipped: true, why: (live && live.why) || NOT_KNOWN, strayZones: [] };
+      /**
+       * ⚠ **WITH THE SERVER STOPPED THE SAVE IS THE GAME'S ZONE LIST, AND THIS USED TO GIVE UP.**
+       * The bridge can only hand over the game's list while the game runs and somebody is on it, so
+       * a sweep asked with the server down — which is exactly when a rotation at a server restart
+       * happens — skipped, every time, and left the rectangle it existed for in the save. The save
+       * writer refuses while this install's server is running, so the two readings never compete:
+       * when the bridge cannot answer and the save can be written, the save is the authority.
+       */
+      let names = null; let via = 'bridge';
+      if (live && live.known === true) {
+        names = (live.zones || []).map((z) => String(z && z.name)).filter(Boolean);
+      } else {
+        const m = host.map || {};
+        const pre = (typeof m.zonesWritable === 'function' && typeof m.writeZones === 'function')
+          ? await m.zonesWritable().catch(() => null) : null;
+        if (pre && pre.ok === true) {
+          via = 'save';
+          const have = saveRegionsOf(pre);
+          // An older manager writes the save but does not say what is in it. Then only the names
+          // this plugin WROTE DOWN can be chased — never a name guessed from the prefix, because
+          // without the list there is nothing to match a prefix against.
+          if (!have) return sweepLedgerIntoSave(live);
+          names = have.map((z) => z.name);
+        } else {
+          log.info('the game has not told the bridge its zone list yet, and the save cannot be written '
+            + '— leaving everything alone until one of them can answer');
+          host.store.set(K.sweepDue, true);
+          return { skipped: true, why: (live && live.why) || NOT_KNOWN, strayZones: [] };
+        }
       }
       sweptOnce = true;
       const believed = getActive();
@@ -7678,46 +7927,79 @@ module.exports = {
       const byPrefix = prefixUsable();
       if (!byPrefix) log.warn(`only the zones this plugin wrote down are being checked: ${NO_PREFIX}`);
       const ledgerNames = new Set(allDrawnNames());
-      const liveNamesNow = (live.zones || []).map((z) => String(z && z.name)).filter(Boolean);
-      const strayZones = liveNamesNow.filter((n) => !keep.has(n)
+      const strayZones = names.filter((n) => !keep.has(n)
         && (ledgerNames.has(n) || (byPrefix && n.startsWith(prefix))));
 
       // A name the ledger holds that the game does not have any more is GONE — somebody deleted it
       // on the game's own screen, a restore put the set back, a save was replaced. Kept, it would
       // have every sweep from here to the end of time chasing a rectangle nothing has.
-      const have = new Set(liveNamesNow);
+      const have = new Set(names);
       const vanished = Array.from(ledgerNames).filter((n) => !have.has(n));
       if (vanished.length) forgetDrawnAnywhere(vanished);
 
       const stubborn = [];
       const removed = [];
-      for (const n of strayZones) {
-        // `{ confirm: true }` because we mean it: the wrapper sends the bridge's CONFIRM token
-        // either way and only WARNS without this, and a warning on every leftover is noise that
-        // teaches an owner to stop reading the log.
-        const gone = await bx('deleteZone', n, { confirm: true });
-        if (gone && gone.ok === true) {
-          removed.push(n);
-          log.warn(`removed "${n}", a zone of ours the game still held that nothing here had switched on`);
-        } else {
-          stubborn.push(n);
+      let lastWhy = null;
+      if (via === 'bridge') {
+        for (const n of strayZones) {
+          // `{ confirm: true }` because we mean it: the wrapper sends the bridge's CONFIRM token
+          // either way and only WARNS without this, and a warning on every leftover is noise that
+          // teaches an owner to stop reading the log.
+          const gone = await bx('deleteZone', n, { confirm: true });
+          if (gone && gone.ok === true) {
+            removed.push(n);
+            log.warn(`removed "${n}", a zone of ours the game still held that nothing here had switched on`);
+          } else {
+            stubborn.push(n);
+            lastWhy = (gone && (gone.reason || gone.error)) || NO_BRIDGE_ANSWER;
+          }
         }
+      } else {
+        stubborn.push(...strayZones);
       }
       // The bridge could not, so the save is asked — which is the route that works with the server
       // down, and a leftover is most likely to be found by somebody who has just stopped one.
-      if (stubborn.length && host.map && typeof host.map.writeZones === 'function') {
-        const r = await host.map.writeZones({ regions: { delete: stubborn.map((n) => ({ name: n })) } })
-          .catch(() => null);
+      if (stubborn.length) {
+        const r = await eraseFromSave(stubborn).catch(() => ({ ok: false }));
         if (r && r.ok === true) {
-          removed.push(...stubborn);
-          log.warn(`removed ${stubborn.length} leftover zone(s) from the save: ${stubborn.join(', ')}`);
+          removed.push(...(r.erased || []).concat(r.gone || []));
+          stubborn.length = 0;
+          if ((r.erased || []).length) log.warn(`removed ${r.erased.length} leftover zone(s) from the save: ${r.erased.join(', ')}`);
         } else {
+          lastWhy = (r && r.why) || lastWhy || 'the bridge refused and the save could not be written';
           log.warn(`${stubborn.length} zone(s) of ours are still on the map and neither route `
-            + `could remove them (${stubborn.join(', ')}): ${(r && (r.reason || r.code)) || 'the bridge refused and the save could not be written'}`);
+            + `could remove them (${stubborn.join(', ')}): ${lastWhy}`);
         }
       }
       if (removed.length) forgetDrawnAnywhere(removed);
-      return { strayZones, removed, stubborn };
+      // Settled only by a sweep that read a real list and left nothing of ours behind.
+      host.store.set(K.sweepDue, stubborn.length > 0);
+      return { strayZones, removed, stubborn, why: stubborn.length ? lastWhy : null, via };
+    }
+
+    /**
+     * The sweep with the server stopped on a manager that does not report the save's zones: the
+     * names this plugin wrote down and does not want any more are deleted, and the writer's own
+     * refusal says which of them were never there. Nothing is found by prefix, because there is no
+     * list to look for one in — that half waits for the server and the bridge, so the debt stays.
+     */
+    async function sweepLedgerIntoSave(live) {
+      const believed = getActive();
+      const keep = new Set();
+      for (const a of believed) for (const n of drawnNames(a).concat(derivedNames(a))) keep.add(n);
+      const owed = allDrawnNames().filter((n) => !keep.has(n));
+      host.store.set(K.sweepDue, true);
+      if (!owed.length) return { skipped: true, why: (live && live.why) || NOT_KNOWN, strayZones: [] };
+      const r = await eraseFromSave(owed).catch(() => ({ ok: false }));
+      if (r && r.ok === true) {
+        const out = (r.erased || []).concat(r.gone || []);
+        forgetDrawnAnywhere(out);
+        if ((r.erased || []).length) log.warn(`removed ${r.erased.length} leftover zone(s) from the save: ${r.erased.join(', ')}`);
+        return { strayZones: owed, removed: out, stubborn: [], via: 'save' };
+      }
+      const why = (r && r.why) || 'the save could not be written';
+      log.warn(`${owed.length} zone(s) of ours are still in the save and could not be removed (${owed.join(', ')}): ${why}`);
+      return { strayZones: owed, removed: [], stubborn: owed, why, via: 'save' };
     }
 
     /**
@@ -7751,6 +8033,65 @@ module.exports = {
     let timer = null;
     let bootDone = false;
 
+    /**
+     * ⚠ **THE WINDOW BETWEEN "THE SERVER IS STOPPING" AND "THE NEXT ONE STARTS" IS THE ONLY TIME THE
+     * SAVE CAN BE WRITTEN, AND IT CAN BE SHORTER THAN ONE SLOW TICK.**
+     *
+     * The rotation runs the moment the game logs that it is going down, which is a few seconds
+     * BEFORE its process lets go of the save — so the switch finds the bridge gone and the save
+     * still locked, and neither the old rectangle's removal nor the new one's drawing can land. A
+     * scheduled restart then starts the next server well inside a minute, and the old rectangle was
+     * on the map for that whole session. So what the switch could not do is chased every few
+     * seconds until the save opens, the work is done, or the next server comes up — after which
+     * the bridge is the route and the slow tick owns it.
+     *
+     * Held and cleared, like every other timer here: a plugin switched off must not go on writing
+     * into a save on its own afterwards.
+     */
+    const OWED_EVERY_MS = 5000;
+    const OWED_TRIES = 24;
+    let owedTimer = null;
+    let owedTries = 0;
+    function owedWork() {
+      return host.store.get(K.sweepDue, false) === true || getActive().some((a) => a.drawn !== true);
+    }
+    // A generation, so a chase stopped while one of its passes is still running does not re-arm
+    // itself when that pass finishes.
+    let owedGen = 0;
+    function stopChasingOwed() {
+      owedGen++;
+      if (owedTimer) clearTimeout(owedTimer);
+      owedTimer = null;
+    }
+    /**
+     * One pass over what the save still owes — the sweep, then any rectangle not drawn — and ONE at
+     * a time: the chase below and the manager's before-start call can both reach for it, and two
+     * passes side by side send the same delete twice and refuse each other's writes.
+     */
+    let owedChain = Promise.resolve();
+    function settleOwed() {
+      owedChain = owedChain.then(async () => {
+        if (!cfg().enabled) return;
+        await reconcile().catch((e) => log.warn(`reconcile: ${e && e.message}`));
+        await retryDraw().catch(() => {});
+      });
+      return owedChain;
+    }
+    function chaseOwed() {
+      if (owedTimer || !owedWork()) return;
+      owedTries = 0;
+      const gen = owedGen;
+      const step = () => {
+        owedTimer = setTimeout(async () => {
+          owedTimer = null;
+          if (!cfg().enabled || gen !== owedGen) return;
+          await settleOwed();
+          if (gen === owedGen && owedWork() && ++owedTries < OWED_TRIES && !owedTimer) step();
+        }, OWED_EVERY_MS);
+      };
+      step();
+    }
+
     async function tick() {
       const c = cfg();
       if (!c.enabled) return;
@@ -7771,7 +8112,13 @@ module.exports = {
        * After the first real sweep this costs nothing: `sweptOnce` is in memory, so a manager
        * restart asks again, which is right — that is a new process with a store it has not checked.
        */
-      if (bootDone && !sweptOnce) await reconcile().catch((e) => log.warn(`reconcile: ${e && e.message}`));
+      //
+      // ⚠ AND AGAIN WHENEVER A REMOVAL IS OWED. Once per process was not enough: a switch made as
+      // the server went down could reach neither route, and the rectangle it could not remove stayed
+      // for the whole next session because the one sweep this process owed had already run.
+      if (bootDone && (!sweptOnce || host.store.get(K.sweepDue, false) === true)) {
+        await reconcile().catch((e) => log.warn(`reconcile: ${e && e.message}`));
+      }
       if (c.rotation === 'time') {
         await applyWanted(wantedByTime(), {}).catch((e) => log.warn(`${e && e.message}`));
       }
@@ -7937,6 +8284,7 @@ module.exports = {
         clearInterval(timer);
         clearInterval(patrolTimer);
         clearTimeout(bootTimer);
+        stopChasingOwed();
         for (const t of joinTimers) clearTimeout(t);
         joinTimers.clear();
         // The island goes back to what the game authored when this plugin is unloaded — switched
@@ -7964,6 +8312,63 @@ module.exports = {
      * every searchable container on the whole map, and a server crash-looping every two minutes must
      * not do that on every loop; a scheduled restart is hours apart and never meets it.
      */
+    /**
+     * ── ONE ROTATION PER STOP, AND IT FINISHES BEFORE THE NEXT SERVER STARTS ──────────────────────
+     *
+     * ⚠ **A RESTART LEAVES THE SAVE FREE FOR ABOUT FIVE SECONDS, AND THE ROTATION NEEDS MORE.** The
+     * manager stops the server, waits five seconds and starts the next one. Removing the old rectangle
+     * from the save and writing the new one is two zone-writer calls, and on the dev server's 99 MB
+     * save one call measured a 1.9 s check and a 2.4–4.6 s write with its verified backup. Driven
+     * through the manager's own restart, twice, the next server had started before the first write:
+     * every write was refused and the old rectangle came back with the server, next to the loot of
+     * the new zone.
+     *
+     * So on a manager that offers it (`host.server.beforeStart`, 5.42), the manager WAITS for this
+     * rotation, and for anything the save still owes, before it launches the game. An older manager
+     * has no such wait: the rotation still runs, as fast as it can, and whatever misses the window is
+     * taken off the map through the bridge once the server is up and the game hands over its zones.
+     *
+     * One rotation per stop, whichever of the two calls arrives first — the monitoring's
+     * `server:offline` or the manager's start. Two calls in one stop would move the turn twice.
+     */
+    let stopRotation = null;
+    // The server has been seen running by this manager process, so a start that follows is the end
+    // of a session rather than a manager that booted onto a stopped server.
+    let seenUp = false;
+    try { if (host.server && typeof host.server.isRunning === 'function' && host.server.isRunning() === true) seenUp = true; } catch { /* unknown */ }
+    function markDown() { if (downSince == null) downSince = Date.now(); }
+    function markUp() { downSince = null; stopRotation = null; seenUp = true; }
+    function rotateForStop() {
+      if (stopRotation) return stopRotation;
+      const c = cfg();
+      if (!c.enabled || c.rotation !== 'restart') return Promise.resolve(null);
+      stopRotation = Promise.resolve()
+        // NOT forced past the switch floor. The server is down, so no reload runs and no container
+        // is reset by this switch. What the floor is still for is a server crash-looping every two
+        // minutes walking through every zone an owner has.
+        .then(() => applyWanted(wantedByRestart(), {}))
+        .then((r) => {
+          if (r && r.ok === false) log.info(`the server stopped and the zone stayed as it was: ${r.why}`);
+          else log.info('the server stopped — the next session\'s loot zone is in place');
+          return r;
+        })
+        .catch((e) => { log.warn(`${e && e.message}`); return null; });
+      return stopRotation;
+    }
+
+    if (host.server && typeof host.server.beforeStart === 'function') {
+      host.server.beforeStart(async () => {
+        // The manager calls this only with the server confirmed stopped, so the save is free.
+        markDown();
+        if (!cfg().enabled) return;
+        if (cfg().rotation === 'restart' && (stopRotation || seenUp)) await rotateForStop();
+        stopChasingOwed();
+        // Whatever the save still owes — a leftover rectangle, a zone not drawn yet — now, while it
+        // can still be written. The game reads the save as it starts.
+        if (owedWork()) await settleOwed();
+      });
+    }
+
     if (host.events && typeof host.events.on === 'function') {
       /**
        * The server has stopped — which is when the loot for the NEXT session is decided.
@@ -7979,19 +8384,17 @@ module.exports = {
        * game reads either.
        */
       host.events.on('server:offline', () => {
+        markDown();
         const c = cfg();
         if (!c.enabled || c.rotation !== 'restart') return;
-        Promise.resolve()
-          // NOT forced past the switch floor. The server is down, so no reload runs and no container
-          // is reset by this switch. What the floor is still for is a server crash-looping every two
-          // minutes walking through every zone an owner has.
-          .then(() => applyWanted(wantedByRestart(), {}))
-          .then((r) => {
-            if (r && r.ok === false) log.info(`the server stopped and the zone stayed as it was: ${r.why}`);
-            else log.info('the server stopped — the next session\'s loot zone is in place');
-          })
-          .catch((e) => log.warn(`${e && e.message}`));
+        rotateForStop().then(() => chaseOwed()).catch((e) => log.warn(`${e && e.message}`));
       });
+      // Still up, and about to go down: the stop that follows is a real end of a session.
+      host.events.on('server:stopping', () => { seenUp = true; });
+      // The next server has been launched: from here the save is the game's again, so nothing goes
+      // on knocking at it every five seconds while the server loads — on the dev server that was a
+      // two-minute run of refusals, each one a process scan.
+      host.events.on('server:starting', () => { markUp(); stopChasingOwed(); });
 
       /**
        * The server is up. NOT a rotation — that already happened as it went down.
@@ -8006,6 +8409,11 @@ module.exports = {
         // and a manager started over an already-running server never sees this event, which is why
         // its absence is reported as not knowing rather than filled in.
         serverUpAt = Date.now();
+        markUp();
+        // A new server session is a new zone list, loaded out of the save — whatever this plugin could
+        // not take out of it while the server was down is on the map again. One sweep, once the
+        // bridge can read the list, settles it.
+        host.store.set(K.sweepDue, true);
         /**
          * ⚠ **AND THE CLASSES THE ENGINE ROUTE NEEDS ARE GONE, so the once-per-session bootstrap
          * has to be allowed to run again.** A blueprint class is resident because something made
@@ -8014,6 +8422,8 @@ module.exports = {
          * describes leaves every named point waiting for a class nothing is going to load.
          */
         bootstrapped.clear();
+        // The next server is up: the save is the game's again and the bridge is the route.
+        stopChasingOwed();
         if (!cfg().enabled) return;
         Promise.resolve()
           .then(() => readBridgeVersion())

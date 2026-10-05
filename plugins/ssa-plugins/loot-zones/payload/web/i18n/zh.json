@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "核对没有完成：{why}",
   "pl.loot-zones.act.cleared": "清理了 {n} 处残留",
   "pl.loot-zones.act.agrees": "游戏和本页是一致的",
+  "pl.loot-zones.act.stuck": "无法移除 {n} 个残留区域：{why}",
   "pl.loot-zones.fail.check": "未核对",
   "pl.loot-zones.act.note": "Bridge 2.22.2+ 切换时会立即重新加载战利品（见「{control}」）；较旧版本则在下次启动时。",
   "pl.loot-zones.discard.title": "把每个区域、消息和守卫都恢复成服务器正在持有的设置",

@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "A conferência não terminou: {why}",
   "pl.loot-zones.act.cleared": "Foram limpas {n} sobra(s)",
   "pl.loot-zones.act.agrees": "O jogo concorda com esta página",
+  "pl.loot-zones.act.stuck": "Não foi possível remover {n} zona(s) restante(s): {why}",
   "pl.loot-zones.fail.check": "Não foi conferido",
   "pl.loot-zones.act.note": "Com Bridge 2.22.2+, trocar recarrega o loot na hora (veja \"{control}\"); com um mais antigo, no próximo início.",
   "pl.loot-zones.discard.title": "Deixar todas as zonas, mensagens e guardas nas configurações que o servidor está guardando",

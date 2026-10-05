@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "확인이 끝나지 않았습니다: {why}",
   "pl.loot-zones.act.cleared": "남은 항목 {n}개를 정리했습니다",
   "pl.loot-zones.act.agrees": "게임이 이 페이지와 일치합니다",
+  "pl.loot-zones.act.stuck": "남은 구역 {n}개를 제거하지 못했습니다: {why}",
   "pl.loot-zones.fail.check": "확인하지 못함",
   "pl.loot-zones.act.note": "Bridge 2.22.2+는 전환 시 전리품을 다시 불러옵니다(\"{control}\" 참조). 이전 브리지는 다음 시작 때 적용됩니다.",
   "pl.loot-zones.discard.title": "모든 존, 메시지, 경비병을 서버가 현재 가진 설정으로 되돌립니다",

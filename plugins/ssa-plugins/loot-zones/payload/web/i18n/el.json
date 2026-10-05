@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Ο έλεγχος δεν ολοκληρώθηκε: {why}",
   "pl.loot-zones.act.cleared": "Καθαρίστηκαν {n} υπολείμματα",
   "pl.loot-zones.act.agrees": "Το παιχνίδι συμφωνεί με αυτή τη σελίδα",
+  "pl.loot-zones.act.stuck": "Δεν ήταν δυνατή η αφαίρεση {n} ζωνών που απέμειναν: {why}",
   "pl.loot-zones.fail.check": "Δεν ελέγχθηκε",
   "pl.loot-zones.act.note": "Με Bridge 2.22.2+ η αλλαγή φορτώνει το loot αμέσως (δες «{control}»)· με παλαιότερο, στην επόμενη εκκίνηση.",
   "pl.loot-zones.discard.title": "Επαναφορά κάθε ζώνης, μηνύματος και φρουρού στις ρυθμίσεις που κρατά ο διακομιστής",

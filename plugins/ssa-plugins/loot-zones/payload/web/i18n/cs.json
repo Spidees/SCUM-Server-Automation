@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Kontrola nedoběhla: {why}",
   "pl.loot-zones.act.cleared": "Uklizeno {n} zbytků",
   "pl.loot-zones.act.agrees": "Hra s touhle stránkou souhlasí",
+  "pl.loot-zones.act.stuck": "{n} zbylých zón se nepodařilo odstranit: {why}",
   "pl.loot-zones.fail.check": "Nezkontrolováno",
   "pl.loot-zones.act.note": "S Bridge 2.22.2+ přepnutí načte loot hned (viz „{control}“); se starším až při příštím startu.",
   "pl.loot-zones.discard.title": "Vrátit každou zónu, zprávu i strážného na nastavení, které drží server",

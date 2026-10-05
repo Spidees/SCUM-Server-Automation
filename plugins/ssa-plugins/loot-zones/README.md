@@ -80,7 +80,8 @@ told in your own words. Inside a zone you can also **keep sentries and zombies o
 
 - The **SSA Bridge** plugin. **2.22.2+** to reload loot without a restart, and **2.27.0+** for the
   route that places an ordinary guard directly.
-- Manager **5.16.2+**.
+- Manager **5.16.2+**. **5.42.0+** to finish a switch at a server restart before the next server
+  starts.
 - The **Bridge** box at the top of the tab lists every bridge switch your own settings use, shows
   its live state and turns on the ones it is allowed to. The rest you switch on yourself: **Custom
   zones** for the rectangle, **Live player data** for knowing who is near, **Remove from the world**
@@ -139,6 +140,11 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
   gone, the zone takes back the guards it placed, and only those; one that wanders more than 20 m out
   of the zone is taken back too. For a permanent garrison set *Guards stay* to **Once placed, they
   stay**, and *If one walks out of the zone* to **Let it walk**.
+- **One zone per server restart is decided as the server stops.** The old rectangle is taken out
+  of the save and the new one written in, and from manager 5.42.0 the restart waits for that before
+  the next server starts. An older manager does not wait: the switch usually lands in the few seconds
+  a restart leaves, and when it does not, the old rectangle is taken off the map once the server is up
+  and the game has handed over its zone list.
 - **Removing a live zone from the list does not switch it off.** Its loot folder stays on the server
   and its rectangle stays on the map: switch it off first, or press *Check against the game*.
 - **A guard placed directly is not registered with the game.** It has no entity id and no save row,

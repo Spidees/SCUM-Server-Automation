@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "การตรวจสอบไม่เสร็จ: {why}",
   "pl.loot-zones.act.cleared": "ล้างของค้าง {n} รายการแล้ว",
   "pl.loot-zones.act.agrees": "เกมตรงกับหน้านี้",
+  "pl.loot-zones.act.stuck": "ไม่สามารถลบโซนที่ค้างอยู่ {n} โซนได้: {why}",
   "pl.loot-zones.fail.check": "ตรวจสอบไม่สำเร็จ",
   "pl.loot-zones.act.note": "Bridge 2.22.2+ โหลดของใหม่เมื่อสลับ (ดู \"{control}\") bridge รุ่นเก่าจะโหลดตอนเริ่มครั้งถัดไป",
   "pl.loot-zones.discard.title": "คืนทุกโซน ข้อความ และยาม กลับเป็นการตั้งค่าที่เซิร์ฟเวอร์ถืออยู่",

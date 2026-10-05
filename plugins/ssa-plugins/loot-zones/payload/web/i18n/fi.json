@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Tarkistus ei mennyt loppuun: {why}",
   "pl.loot-zones.act.cleared": "{n} jäännettä siivottu",
   "pl.loot-zones.act.agrees": "Peli on samaa mieltä tämän sivun kanssa",
+  "pl.loot-zones.act.stuck": "{n} jäljelle jäänyttä aluetta ei voitu poistaa: {why}",
   "pl.loot-zones.fail.check": "Ei tarkistettu",
   "pl.loot-zones.act.note": "Bridge 2.22.2+:lla vaihto lataa lootin heti (ks. ”{control}”); vanhemmalla seuraavassa käynnistyksessä.",
   "pl.loot-zones.discard.title": "Palauta jokainen vyöhyke, viesti ja vartija niihin asetuksiin, joita palvelin pitää",

@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Denetim tamamlanmadı: {why}",
   "pl.loot-zones.act.cleared": "{n} kalıntı temizlendi",
   "pl.loot-zones.act.agrees": "Oyun bu sayfayla aynı fikirde",
+  "pl.loot-zones.act.stuck": "Kalan {n} bölge kaldırılamadı: {why}",
   "pl.loot-zones.fail.check": "Denetlenmedi",
   "pl.loot-zones.act.note": "Bridge 2.22.2+ ile geçiş ganimeti hemen yeniden yükler (bkz. \"{control}\"); eskisiyle sonraki başlatmada.",
   "pl.loot-zones.discard.title": "Her bölgeyi, mesajı ve muhafızı sunucunun tuttuğu ayarlara geri döndür",

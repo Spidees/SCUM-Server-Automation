@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Provjera nije došla do kraja: {why}",
   "pl.loot-zones.act.cleared": "Počišćenih ostataka: {n}",
   "pl.loot-zones.act.agrees": "Igra se slaže s ovom stranicom",
+  "pl.loot-zones.act.stuck": "{n} preostalih zona nije moguće ukloniti: {why}",
   "pl.loot-zones.fail.check": "Nije provjereno",
   "pl.loot-zones.act.note": "S Bridge 2.22.2+ prebacivanje odmah učita plijen (vidi „{control}”); sa starijim pri sljedećem pokretanju.",
   "pl.loot-zones.discard.title": "Vrati svaku zonu, poruku i stražara na postavke koje server drži",

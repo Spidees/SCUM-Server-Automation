@@ -176,7 +176,16 @@ export interface Host {
      */
     zonesWritable(opts?: { allowUserVersion?: number }): Promise<{
       ok: boolean; code?: string; reason?: string; userVersion?: number;
-      writes?: string[]; refuses?: string[]; [k: string]: unknown;
+      writes?: string[]; refuses?: string[];
+      /**
+       * The zones the save holds (manager 5.42.0+). Absent on an older manager, which means
+       * "not reported", never "the save is empty". Filter a delete against it: a delete of a
+       * name that is not there refuses the whole write.
+       */
+      regions?: Array<{ id: number; name: string; x: number; y: number; sizeX: number; sizeY: number; configIndex: number }>;
+      /** The configurations, in the game's order; `index` is the position `configIndex` refers to (5.42.0+). */
+      configs?: Array<{ id: number; name: string; index: number }>;
+      [k: string]: unknown;
     }>;
 
     /**
@@ -265,6 +274,14 @@ export interface Host {
     start(reason?: string): Promise<boolean>;
     stop(reason?: string): Promise<boolean>;
     restart(reason?: string): Promise<boolean>;
+    /**
+     * Manager 5.42.0+. Work the manager waits for right before EVERY server start (manual, restart,
+     * scheduled, crash recovery, update), with the server stopped, so the save can be written with
+     * `host.map.writeZones()`. A restart otherwise leaves the save free for about five seconds.
+     * All plugins run in parallel and the wait is capped at 60 s; a throw is logged and never stops
+     * the start. Returns a function that unregisters. Feature-detect it on older managers.
+     */
+    beforeStart?(fn: (info: { reason: string | null }) => void | Promise<void>): () => void;
     /**
      * Run an in-game admin command through the SSA Bridge (Premium). Fails by RETURNING `{ ok:
      * false, error }` — a try/catch around it catches nothing.
@@ -1323,6 +1340,15 @@ export interface Host {
     removeItemFrom(steamId: string, count: number, selector: string): Promise<BridgeCommandResult>;
     /** The last give/drop/remove in full, including WHICH no it was when one failed. */
     lastGive(): Promise<Record<string, any> | null>;
+    /** Put a garment (by entity id) on a player. It must be near them. A garment already in that slot
+     *  is not replaced: the call refuses naming it. Bridge 2.35.0. */
+    equipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
+    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full. */
+    unequipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
+    /** Put the new garment on, letting the game take the named worn one off. Nothing is destroyed. */
+    swapClothes(steamId: string, oldEntityId: string | number, newEntityId: string | number): Promise<BridgeCommandResult>;
+    /** Sling an item over a player's left or right shoulder. A taken shoulder is refused. */
+    putOnShoulder(steamId: string, side: 'left' | 'right', entityId: string | number): Promise<BridgeCommandResult>;
 
     // ── live item actors ─────────────────────────────────────────────────────────────────────────
     // A selector here is `'eid:<n>'`, `'held:<steamid>:<Class>'` or `'floor:<x>,<y>,<r>:<Class>'`.
@@ -1826,6 +1852,10 @@ export interface Host {
      *  the game only adds while a player stands within about 3 m of the container; otherwise it is refused. */
     fillContainer(tag: string, entityId: string | number,
                   contents: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
+    /** Put new items into what an online player wears, backpack first. Each job line carries `into`,
+     *  `outcome` and the new items' `entityIds`. Only that player has to be online. Bridge 2.35.0. */
+    fillPlayer(tag: string, steamId: string,
+               contents: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
     /** One job: `state` placing | filling | done | failed, `entityId`, `elo`/`ehi`, the position, and
      *  per fill line what went in and which route answered. */
     stashJob(tag: string): Promise<any>;

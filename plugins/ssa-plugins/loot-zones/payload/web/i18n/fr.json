@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "La vérification n'est pas allée au bout : {why}",
   "pl.loot-zones.act.cleared": "{n} reliquat(s) nettoyé(s)",
   "pl.loot-zones.act.agrees": "Le jeu est d'accord avec cette page",
+  "pl.loot-zones.act.stuck": "{n} zone(s) restante(s) n’ont pas pu être retirées : {why}",
   "pl.loot-zones.fail.check": "Non vérifié",
   "pl.loot-zones.act.note": "Avec Bridge 2.22.2+, basculer recharge le loot aussitôt (voir « {control} ») ; sinon au prochain démarrage.",
   "pl.loot-zones.discard.title": "Remettre chaque zone, message et garde aux réglages que le serveur détient",

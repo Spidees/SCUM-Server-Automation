@@ -508,6 +508,7 @@
   "pl.loot-zones.act.checkFailed": "Сверка не завершилась: {why}",
   "pl.loot-zones.act.cleared": "Убрано остатков: {n}",
   "pl.loot-zones.act.agrees": "Игра согласна с этой страницей",
+  "pl.loot-zones.act.stuck": "Не удалось убрать оставшиеся зоны ({n}): {why}",
   "pl.loot-zones.fail.check": "Не сверено",
   "pl.loot-zones.act.note": "С Bridge 2.22.2+ переключение сразу перезагружает лут (см. «{control}»); со старым — при следующем запуске.",
   "pl.loot-zones.discard.title": "Вернуть каждую зону, сообщение и охранника к настройкам, которые держит сервер",
