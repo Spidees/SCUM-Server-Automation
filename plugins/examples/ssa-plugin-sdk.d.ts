@@ -1880,6 +1880,20 @@ export interface Host {
     /** Free every respawn option. */
     clearRespawnTimers(steamId: string): Promise<any>;
 
+    // ── competitive events, creatures, tyres ──────────────────────────────────────────────────
+    /** Register an online player into an event (class plus a point near it). */
+    joinEvent(cls: string, x: number, y: number, z: number, steamId: string, team?: number): Promise<any>;
+    /** Remove a player from an event. The game then holds a re-join cooldown. */
+    kickFromEvent(cls: string, x: number, y: number, z: number, steamId: string): Promise<any>;
+    /** Take a player out of whatever event they are in. */
+    leaveEvent(steamId: string): Promise<any>;
+    /** How long before a player may join an event again; 0 = now. */
+    setEventCooldown(steamId: string, seconds: number): Promise<any>;
+    /** Send a creature walking to a point; its own AI may turn back after. */
+    moveCreature(id: string, x: number, y: number, z: number): Promise<any>;
+    /** Inflate or flatten one tyre while the vehicle stays loaded. Not saved. */
+    vehicleTyre(target: string, how: 'inflate' | 'deflate', wheel: number): Promise<any>;
+
     // ── teleporting ──────────────────────────────────────────────────────────────────────────────
     // **A player teleport cannot report a collision refusal at all**: the game's player teleport
     // starts a handshake and returns nothing. So `dropCm` (1..10000) is a PRECAUTION, not a retry —
