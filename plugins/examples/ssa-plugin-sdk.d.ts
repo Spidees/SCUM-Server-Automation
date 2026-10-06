@@ -1862,6 +1862,24 @@ export interface Host {
     /** Every job the bridge still remembers, newest last. */
     stashJobs(): Promise<any>;
 
+    // ── vehicles far from players (module `wake`) ─────────────────────────────────────────────
+    /** Build vehicles up to `cm` (1000..200000) from any player for `seconds`; put back by itself. Needs somebody online. */
+    farVehicles(cm: number, seconds: number): Promise<any>;
+    /** Put the game's own vehicle distance back now. */
+    farVehiclesRestore(): Promise<any>;
+    /** The vehicle distance in force and whether it is held wider. */
+    farVehicleReach(): Promise<any>;
+    /** What is loaded around a point: vehicles and items with entity ids, and players. */
+    loadedNear(x: number, y: number, z: number, radiusCm: number): Promise<any>;
+
+    // ── respawn locks (module `respawn`) ──────────────────────────────────────────────────────
+    /** Seconds left on each respawn option for an online player (-1 = not locked). */
+    respawnTimers(steamId: string): Promise<any>;
+    /** Lock one option (random|sector|shelter|squad|all) for `seconds`. Live only: not saved. */
+    setRespawnTimer(steamId: string, option: 'random' | 'sector' | 'shelter' | 'squad' | 'all', seconds: number): Promise<any>;
+    /** Free every respawn option. */
+    clearRespawnTimers(steamId: string): Promise<any>;
+
     // ── teleporting ──────────────────────────────────────────────────────────────────────────────
     // **A player teleport cannot report a collision refusal at all**: the game's player teleport
     // starts a handshake and returns nothing. So `dropCm` (1..10000) is a PRECAUTION, not a retry —
