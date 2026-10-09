@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "แอดมินปิดเสียงไว้",
   "pl.better-squads.card.muted.sub": "ผู้เล่นที่ถูกปิดเสียงจะไม่ได้รับข้อความเหล่านี้ แต่เพื่อนร่วมหมู่รบยังได้รับ พวกเขายกเลิกเองไม่ได้",
   "pl.better-squads.test.sent": "ส่งถึงสมาชิกหมู่รบ {n} คนแล้ว",
+  "pl.better-squads.test.sent.one": "ส่งถึงสมาชิกหมู่รบ {n} คนแล้ว",
   "pl.better-squads.test.notinsquad": "ผู้เล่นคนนั้นไม่ได้อยู่ในหมู่รบ",
   "pl.better-squads.test.nobodyonline": "ไม่มีใครในหมู่รบนั้นออนไลน์",
   "pl.better-squads.test.failedwhy": "ทดสอบไม่สำเร็จ — {why}",

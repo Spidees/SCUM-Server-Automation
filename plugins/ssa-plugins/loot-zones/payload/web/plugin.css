@@ -412,6 +412,7 @@
   --hov-fg: var(--on-amber);
   background: var(--amber); border-color: var(--amber); color: var(--on-amber);
 }
+.lz-day.on:hover { background: var(--hov-bg); color: var(--hov-fg); }
 
 /* One time window: its days, then from/to, then remove. Wraps to one per line on a phone. */
 .lz-win {
@@ -426,6 +427,11 @@
 
 /* ── the rest ──────────────────────────────────────────────────────────────────────────────────── */
 .lz-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
+/* A button never shrinks below its own words, and is capped at the column: the ROW wraps instead, and
+   only a label wider than the whole column breaks. "Punkt hinzufügen" broke in two on a phone while
+   the row had room to wrap, and a plain nowrap pushed the longer labels past the screen. */
+.lz-actions > button, .lz-sub-head > .cdd { flex-shrink: 0; max-width: 100%; }
+.lz-zhead > .lz-link { flex: 1 0 auto; min-width: 44px; max-width: 100%; }
 /* The sentence beside a button that is about to refuse. It belongs on the screen rather than in a
    tooltip — a reason nobody hovers over is a reason nobody reads, which is how "the button does
    nothing" gets reported instead of the thing the button is waiting for. */
@@ -483,7 +489,8 @@ small.lz-warn { color: var(--standby); }
    sheet's colour for a disabled arrow and a row number — quieter than the caption beside it, which
    would make the one control that reveals an explanation the hardest thing on the row to see. The
    smaller size is what keeps it from competing with a label. */
-.lz-why > summary { font-size: .82rem; color: var(--muted); padding: .15rem 0; }
+.lz-why > summary { font-size: .82rem; color: var(--muted); padding: .15rem 0; --hov-bg: transparent; --hov-fg: var(--amber-hi); }
+.lz-why > summary:hover, .lz-more > summary:hover { background: var(--hov-bg); color: var(--hov-fg); }
 .lz-why[open] > summary { color: var(--text); }
 .lz-why .lz-lead { margin: .3rem 0; }
 .lz-why > small, .lz-why .lz-when > small { display: block; margin: .3rem 0; }
@@ -534,7 +541,7 @@ small.lz-warn { color: var(--standby); }
    contrast rules judge stays the pair every other box on this tab has. */
 .lz-in[disabled] { opacity: 0.55; cursor: not-allowed; }
 .lz-group { margin: 1rem 0 0; font-size: .78rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.lz-more > summary { cursor: pointer; color: var(--muted); font-size: .9rem; padding: .3rem 0; }
+.lz-more > summary { cursor: pointer; color: var(--muted); font-size: .9rem; padding: .3rem 0; --hov-bg: transparent; --hov-fg: var(--amber-hi); }
 .lz-more[open] > summary { color: var(--text); }
 .lz-need { display: flex; gap: .5rem; align-items: flex-start; padding: .25rem 0; }
 .lz-need svg { flex: 0 0 auto; margin-top: .15rem; color: var(--standby); }
@@ -627,3 +634,20 @@ small.lz-warn { color: var(--standby); }
      phone and stays 1.05rem everywhere else. */
   .lz-pick { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
 }
+
+/* On a phone a wrapping row of buttons stretches to the column instead of
+   falling into a staircase of boxes, one per line, each at its own width. */
+@media (max-width: 480px) {
+  .lz-bulk > button, .lz-routes > button, .lz-routes > a { flex: 1 1 auto; }
+  .lz-actions > button { flex: 1 0 auto; padding-left: 0.6rem; padding-right: 0.6rem; }
+  /* Four boxes deep — a card, a zone, a guard, a point — and each kept its desktop indent, so the
+     innermost row was 154px wide on a 310px phone and "Punkt hinzufügen" could not fit on one line.
+     The rules and the surfaces still tell the levels apart; the indent is what a phone cannot pay. */
+  .lz-zone { padding: 0.65rem 0.55rem; }
+  .lz-sub { padding: 0.5rem 0.45rem; }
+  .lz-pt { padding: 0.45rem 0.4rem; }
+  .lz-ovr { padding-left: 0.4rem; }
+}
+
+/* A note opens its line with a capital, including a reason the bridge wrote in lower case. */
+.lz-note::first-letter { text-transform: uppercase; }

@@ -3691,7 +3691,7 @@ export interface SSA {
   el(tag: string, props?: Record<string, any>, kids?: any): HTMLElement;
   mount(target: string | HTMLElement, content: string | HTMLElement): HTMLElement | null;
   toast(msg: string, kind?: 'ok' | 'err' | 'error' | 'info'): void;
-  modal(opts: { title?: string; body: string | HTMLElement; actions?: Array<{ label: string; primary?: boolean; run?: () => boolean | void }>; wide?: boolean; dismissable?: boolean }): { close: () => void; el: HTMLElement; body: HTMLElement };
+  modal(opts: { title?: string; body: string | HTMLElement; actions?: Array<{ label: string; primary?: boolean; run?: () => boolean | void }>; wide?: boolean; dismissable?: boolean; /** Called once however the dialog closes: a button, ✕, the backdrop or Escape. */ onClose?: () => void }): { close: () => void; el: HTMLElement; body: HTMLElement };
   confirm(msg: string, opts?: { title?: string; okLabel?: string; cancelLabel?: string }): Promise<boolean>;
   menu(title: string, entries: ActionEntry[], opts?: any): void;
   theme: { setTokens(tokens: Record<string, string>, opts?: { selector?: string }): void; injectCss(css: string): void };

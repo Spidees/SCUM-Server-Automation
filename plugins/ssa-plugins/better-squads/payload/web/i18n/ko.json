@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "관리자가 음소거함",
   "pl.better-squads.card.muted.sub": "음소거된 플레이어는 이 메시지를 받지 않지만 스쿼드원은 계속 받습니다. 스스로 해제할 수 없습니다.",
   "pl.better-squads.test.sent": "스쿼드 멤버 {n}명에게 보냄",
+  "pl.better-squads.test.sent.one": "스쿼드 멤버 {n}명에게 보냄",
   "pl.better-squads.test.notinsquad": "해당 플레이어는 스쿼드에 속해 있지 않습니다",
   "pl.better-squads.test.nobodyonline": "해당 스쿼드에 온라인인 사람이 없습니다",
   "pl.better-squads.test.failedwhy": "테스트 실패 — {why}",

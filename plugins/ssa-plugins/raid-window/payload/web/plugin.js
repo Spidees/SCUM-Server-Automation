@@ -44,6 +44,13 @@
   var api = SSA.apiClient();
   function why(err) { return SSA.apiError(err); }
 
+  /** The row's label is the control's NAME too: a dropdown reading only its value ("Airfield")
+   *  says nothing about what it chooses to a screen reader. */
+  function nameCtl(ctl, label) {
+    if (typeof label !== 'string' || !label || !ctl || !ctl.tagName) return;
+    var f = /^(SELECT|INPUT|TEXTAREA)$/.test(ctl.tagName) ? ctl : (ctl.querySelector ? ctl.querySelector('select') : null);
+    if (f && !f.getAttribute('aria-label') && !f.id) f.setAttribute('aria-label', label);
+  }
   function h(tag, props, kids) {
     var e = document.createElement(tag);
     if (props) Object.keys(props).forEach(function (k) {
@@ -56,6 +63,8 @@
     (Array.isArray(kids) ? kids : (kids != null ? [kids] : [])).forEach(function (c) {
       if (c != null && c !== false) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
     });
+    // An icon button is named by aria-label; its title is the localised name, so it is that too.
+    if (tag === 'button' && e.title && !e.hasAttribute('aria-label') && !e.textContent.trim()) e.setAttribute('aria-label', e.title);
     return e;
   }
   function icon(n) { return SSA.icon ? SSA.icon(n) : h('span', {}); }
@@ -212,6 +221,7 @@
     }
     /** One settings row. The explanation opens on "?", in place, so nothing typed is redrawn away. */
     function row(label, control, hint, extra) {
+      nameCtl(control, label);
       var text = hint ? h('p', { class: 'rw-hint', hidden: true }, hint) : null;
       var q = null;
       if (hint) {

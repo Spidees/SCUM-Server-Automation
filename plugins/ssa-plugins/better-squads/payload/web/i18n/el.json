@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "Σε σίγαση από διαχειριστή",
   "pl.better-squads.card.muted.sub": "Ο παίκτης σε σίγαση δεν παίρνει αυτά τα μηνύματα· το squad του ναι. Δεν μπορεί να το αναιρέσει.",
   "pl.better-squads.test.sent": "Στάλθηκε σε {n} μέλη της ομάδας",
+  "pl.better-squads.test.sent.one": "Στάλθηκε σε {n} μέλος της ομάδας",
   "pl.better-squads.test.notinsquad": "Αυτός ο παίκτης δεν είναι σε ομάδα",
   "pl.better-squads.test.nobodyonline": "Κανείς από αυτή την ομάδα δεν είναι συνδεδεμένος",
   "pl.better-squads.test.failedwhy": "Η δοκιμή απέτυχε — {why}",

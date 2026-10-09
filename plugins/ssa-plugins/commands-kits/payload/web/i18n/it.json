@@ -376,6 +376,7 @@
   "pl.commands-kits.dc.current": "(attuale)",
   "pl.commands-kits.dc.unknown": "sconosciuto",
   "pl.commands-kits.dc.offers": "Offre {n} kit: {list}. Attiva «{switch}» su un kit per aggiungerlo.",
+  "pl.commands-kits.dc.offers.one": "Offre {n} kit: {list}. Attiva «{switch}» su un kit per aggiungerlo.",
   "pl.commands-kits.dc.offersNone": "⚠ Nessun kit ha ancora «{switch}» attivo. Attivalo per un kit nella scheda {where}.",
   "pl.commands-kits.set.general": "Generale",
   "pl.commands-kits.set.prefix": "Prefisso dei comandi",

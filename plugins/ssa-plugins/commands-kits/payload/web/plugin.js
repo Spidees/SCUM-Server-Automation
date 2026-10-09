@@ -20,6 +20,14 @@
    * template, a kit name, a `{token}` and every spawn command are the owner's own data, saved and
    * sent to the game exactly as written; only the words this panel puts on the screen are keyed. */
   var T = SSA.t;
+  // The words for "Offers 2 kits: …" — the same for its singular and its plural form.
+  function offersVars(kits) {
+    return {
+      n: kits.length,
+      list: kits.map(function (p) { return p.name || p.command || T('pl.commands-kits.unnamed', 'unnamed'); }).join(', '),
+      switch: T('pl.commands-kits.kit.discord', 'Claim from Discord'),
+    };
+  }
 
   // Filled from /meta (with sane fallbacks so the UI works even if the call fails).
   var META = {
@@ -221,6 +229,8 @@
       else if (props[k] != null && props[k] !== false) e.setAttribute(k, props[k] === true ? '' : props[k]);
     });
     (Array.isArray(kids) ? kids : (kids != null ? [kids] : [])).forEach(function (c) { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    // An icon button is named by aria-label; its title is the localised name, so it is that too.
+    if (tag === 'button' && e.title && !e.hasAttribute('aria-label') && !e.textContent.trim()) e.setAttribute('aria-label', e.title);
     return e;
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -1049,7 +1059,7 @@
       var head = [
         h('button', { class: 'secondary', onclick: function () { state.commands.forEach(function (c) { expanded.add(c); }); render(); } }, T('pl.commands-kits.expandAll', 'Expand all')),
         h('button', { class: 'secondary', onclick: function () { state.commands.forEach(function (c) { expanded.delete(c); }); render(); } }, T('pl.commands-kits.collapseAll', 'Collapse all')),
-        h('button', { class: 'secondary', onclick: function () { var c = { name: '', enabled: true, channel: 'local', broadcast: false, response: '', cooldownHours: 0, group: '', requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [] }; state.commands.push(c); expanded.add(c); markDirty(); render(); } }, [icon('chat'), T('pl.commands-kits.cmd.add', 'Add command')]),
+        h('button', { class: 'secondary', onclick: function () { var c = { name: '', enabled: true, channel: 'local', broadcast: false, response: '', cooldownHours: 0, group: '', requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], actions: [] }; state.commands.push(c); expanded.add(c); markDirty(); render(); } }, T('pl.commands-kits.cmd.add', 'Add command')),
       ];
       // Once the list gets long, add a live search so admins can find a command fast.
       if (state.commands.length > 6) head.unshift(listSearch(function () { return cmdFilter; }, function (v) { cmdFilter = v; }, listRef, T('pl.commands-kits.cmd.search', 'Search commands…'))); else cmdFilter = '';
@@ -1124,7 +1134,7 @@
         h('span', { class: 'ck-times' }, '×'), numf(entry.sets, function (v) { entry.sets = v; }),
         h('span', { class: 'ck-times' }, T('pl.commands-kits.inv.of', 'of')), fImg, h('span', { class: 'ck-picked' }, entry.fill ? (entry.fillName || entry.fill) : T('pl.commands-kits.inv.fill.none', '(fill item)')),
         h('button', { class: 'secondary', onclick: function () { pick('fill', 'fillName', 'fillImage'); } }, entry.fill ? T('pl.commands-kits.change', 'Change') : T('pl.commands-kits.inv.fill', 'Fill')),
-        h('button', { class: 'ck-del', onclick: function () { arr.splice(i, 1); markDirty(); render(); } }, [icon('close')]),
+        h('button', { class: 'ck-del', title: T('pl.commands-kits.remove', 'Remove'), onclick: function () { arr.splice(i, 1); markDirty(); render(); } }, [icon('close')]),
       ]);
     }
     function invGroup(pack) {
@@ -1406,7 +1416,7 @@
         // ONE id, and a kit's id is the key its claims, its cooldown and each player's place in its
         // variant rotation live under — so the two kits shared all three and neither screen showed
         // anything wrong. Same fix as the copy button beside it, and for the same reason.
-        h('button', { class: 'secondary', onclick: function () { var p = { id: newId('pack'), name: T('pl.commands-kits.kit.newName', 'New Pack'), enabled: true, trigger: 'command', command: '', cooldownHours: 0, maxClaims: 0, group: '', requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], items: [], vehicles: [], inventories: [], actions: [], message: '', replyChannel: 'local' }; state.packs.push(p); expanded.add(p); markDirty(); render(); } }, [icon('box'), T('pl.commands-kits.kit.add', 'Add pack')]),
+        h('button', { class: 'secondary', onclick: function () { var p = { id: newId('pack'), name: T('pl.commands-kits.kit.newName', 'New Pack'), enabled: true, trigger: 'command', command: '', cooldownHours: 0, maxClaims: 0, group: '', requireLinked: false, cost: { currency: 'free', amount: 0 }, allow: [], deny: [], items: [], vehicles: [], inventories: [], actions: [], message: '', replyChannel: 'local' }; state.packs.push(p); expanded.add(p); markDirty(); render(); } }, T('pl.commands-kits.kit.add', 'Add pack')),
       ];
       if (state.packs.length > 6) head.unshift(listSearch(function () { return packFilter; }, function (v) { packFilter = v; }, listRef, T('pl.commands-kits.kit.search', 'Search kits…'))); else packFilter = '';
       wrap.appendChild(ckSection(navLabels().packs, T('pl.commands-kits.kit.sectionSub', 'Reward bundles — items, vehicles and full containers — claimable on join or via a command, with cost, cooldown, claim limit and groups.'), [list], head));
@@ -1628,8 +1638,9 @@
         // sentences name the switch and the screen it is on, and both names are read off the very
         // keys those controls render from, so neither can be pointing somewhere that is not there.
         h('p', { class: claimable.length ? 'ck-card-sub' : 'ck-warn' }, claimable.length
-          ? T('pl.commands-kits.dc.offers', 'Offers {n} kit(s): {list}. Turn "{switch}" on a kit to add it.',
-            { n: claimable.length, list: claimable.map(function (p) { return p.name || p.command || T('pl.commands-kits.unnamed', 'unnamed'); }).join(', '), switch: T('pl.commands-kits.kit.discord', 'Claim from Discord') })
+          ? (claimable.length === 1
+            ? T('pl.commands-kits.dc.offers.one', 'Offers {n} kit: {list}. Turn "{switch}" on a kit to add it.', offersVars(claimable))
+            : T('pl.commands-kits.dc.offers', 'Offers {n} kits: {list}. Turn "{switch}" on a kit to add it.', offersVars(claimable)))
           : T('pl.commands-kits.dc.offersNone', '⚠ No kit has "{switch}" on. Turn it on for one in the {where} tab.',
             { switch: T('pl.commands-kits.kit.discord', 'Claim from Discord'), where: navLabels().packs })),
         h('div', { class: 'ck-actions' }, [postBtn, postStatus]),

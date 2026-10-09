@@ -172,6 +172,28 @@
   };
   var icon = function (n) { return SSA.icon ? SSA.icon(n) : h('span', {}, ''); };
 
+  /**
+   * "(12 min ago)" is the only text on this tab that changes while nothing happens. Written into
+   * the card as plain text, it made every poll that crossed a minute draw a DIFFERENT page, so
+   * `render({ ifChanged })` threw the whole tab away and drew it again: open dropdowns shut and every
+   * card repainted, once a minute, on a page where nothing had moved. So it becomes a `.lz-ago`
+   * span, which `render()` leaves out of the comparison and updates in place.
+   */
+  var AGO_MARK = '\uE000';
+  function withAgo(text, shown) {
+    var s = String(text);
+    if (shown == null || s.indexOf(AGO_MARK) < 0) return s;
+    var out = [];
+    s.split(AGO_MARK).forEach(function (part, i) {
+      if (i) out.push(h('span', { class: 'lz-ago' }, String(shown)));
+      if (part) out.push(part);
+    });
+    return out;
+  }
+  function withoutAgo(html) {
+    return String(html).replace(/(<span class="lz-ago">)[^<]*(<\/span>)/g, '$1$2');
+  }
+
   var state = { cfg: null, sets: null, status: null, clock: null, bridge: null, activity: null };
   // Which explanations and which "More options" folds a viewer has opened. Per visit, never saved.
   var openHints = {};
@@ -518,7 +540,8 @@
         }
         var n = (r.applied || []).reduce(function (k, a) { return k + (a.keys || []).length; }, 0);
         SSA.toast(n
-          ? T('pl.loot-zones.bridge.switched', 'Switched on {n} setting(s) in the bridge', { n: n })
+          ? (n === 1 ? T('pl.loot-zones.bridge.switched.one', 'Switched on {n} setting in the bridge', { n: n })
+            : T('pl.loot-zones.bridge.switched', 'Switched on {n} settings in the bridge', { n: n }))
           : T('pl.loot-zones.bridge.nothingNeeded', 'Nothing needed changing'));
         refreshBridge().then(render);
       });
@@ -617,12 +640,14 @@
       col.a = Math.round(Math.max(0, Math.min(100, Number(op.value)))) / 100;
       onChange();
     });
-    return h('div', { class: 'lz-routes' }, [pick, h('small', {}, T('pl.loot-zones.colour.opacity', 'Opacity')),
+    return h('div', { class: 'lz-routes' }, [pick, h('small', { 'data-fragment': '' }, T('pl.loot-zones.colour.opacity', 'Opacity')),
       h('span', { class: 'lz-unitbox' }, [op, h('small', { class: 'lz-unit' }, '%')])]);
   }
 
-  function sel(v, opts, on) {
-    var s = h('select', { class: 'lz-in' }, opts.map(function (o) {
+  /** `name` is for a dropdown that stands outside a labelled row: its options are its VALUE, and
+   *  "Airfield" alone does not say what it chooses. */
+  function sel(v, opts, on, name) {
+    var s = h('select', name ? { class: 'lz-in', 'aria-label': name } : { class: 'lz-in' }, opts.map(function (o) {
       var e = h('option', { value: o[0] }, o[1]);
       if (String(o[0]) === String(v)) e.selected = true;
       return e;
@@ -660,13 +685,23 @@
    * control it pushes the next row's control out of line with this one, and a column of controls
    * that does not line up is most of what "everything runs together" looks like.
    */
-  function row(label, control, hint) {
+  // `fragment`: the label finishes the row above it ("but let it get this far out first"), so it opens
+  // in lower case on purpose and says so to the render check.
+  /** The row's label is the control's NAME too: a dropdown reading only its value ("Airfield")
+   *  says nothing about what it chooses to a screen reader. */
+  function nameCtl(ctl, label) {
+    if (typeof label !== 'string' || !label || !ctl || !ctl.tagName) return;
+    var f = /^(SELECT|INPUT|TEXTAREA)$/.test(ctl.tagName) ? ctl : (ctl.querySelector ? ctl.querySelector('select') : null);
+    if (f && !f.getAttribute('aria-label') && !f.id) f.setAttribute('aria-label', label);
+  }
+  function row(label, control, hint, fragment) {
+    nameCtl(control, label);
     // The explanation is one click away rather than always open: a page where every control carries a
     // paragraph is a page nobody can find a control on. The label plus the zone it belongs to is the
     // key, so it stays open across the redraws a change causes and does NOT open the same paragraph
     // on every other zone, which is what keying on the label alone did.
     var key = hintScope + '|' + label;
-    var tag = h('label', {}, [label]);
+    var tag = h('label', fragment ? { 'data-fragment': '' } : {}, [label]);
     var node = h('div', { class: 'lz-row' }, [tag, h('div', { class: 'lz-ctl' }, [control])]);
     if (!hint) return node;
     /**
@@ -832,7 +867,7 @@
      * focus in the first place, which also means its own `change` does not fire and fight this.
      */
     var box = area(m.text, function (v) { m.text = v; markDirty(); });
-    var tokenChips = h('div', { class: 'lz-chips' }, [h('small', {}, T('pl.loot-zones.msg.putIn', 'Put in:'))].concat(
+    var tokenChips = h('div', { class: 'lz-chips' }, [h('small', { 'data-fragment': '' }, T('pl.loot-zones.msg.putIn', 'Put in:'))].concat(
       def.tokens.map(function (tok) {
         // ⚠ The token itself is NOT translated: it is written into the message template and the
         // backend substitutes it by name, so a translated brace would reach players as itself.
@@ -897,8 +932,11 @@
                 }
                 var bad = (r && r.failed) || [];
                 SSA.toast(bad.length
-                  ? T('pl.loot-zones.test.partly', 'Sent, but {n} route(s) did not arrive: {list}.{saved}',
-                    { n: bad.length, list: bad.join('; '), saved: saved })
+                  ? (bad.length === 1
+                    ? T('pl.loot-zones.test.partly.one', 'Sent, but {n} route did not arrive: {list}.{saved}',
+                      { n: bad.length, list: bad.join('; '), saved: saved })
+                    : T('pl.loot-zones.test.partly', 'Sent, but {n} routes did not arrive: {list}.{saved}',
+                      { n: bad.length, list: bad.join('; '), saved: saved }))
                   : T('pl.loot-zones.test.sent', 'Sent.{saved}', { saved: saved }));
               })
               .catch(failed(T('pl.loot-zones.fail.send', 'Not sent')));
@@ -1306,7 +1344,7 @@
         guardNum('X', coordIn(a.x, function (v) { areaWrite(z).x = v; markDirty(); })),
         guardNum('Y', coordIn(a.y, function (v) { areaWrite(z).y = v; markDirty(); })),
       ]),
-      h('small', {}, T('pl.loot-zones.area.centre.cap',
+      h('small', { 'data-fragment': '' }, T('pl.loot-zones.area.centre.cap',
         'Centimetres — the same numbers the game, the map and the admin console use.')),
     ]), T('pl.loot-zones.area.centre.hint',
       'The zone\'s middle, not a corner. An empty box means no centre, never zero.')));
@@ -1423,7 +1461,7 @@
       },
     }, [icon('check-shield'), T('pl.loot-zones.area.check', 'Check this area')]));
     rows.push(h('div', { class: 'lz-actions' }, buttons.concat([
-      h('small', {}, T('pl.loot-zones.area.check.cap',
+      h('small', { 'data-fragment': '' }, T('pl.loot-zones.area.check.cap',
         'Checking asks the game where this lands. Nothing is drawn and nothing is saved.')),
     ])));
     areaVerdict(areaSaid[areaKey(z)]).forEach(function (n) { rows.push(n); });
@@ -1560,7 +1598,7 @@
         ['on', T('pl.loot-zones.bulk.show.on', 'In rotation')],
         ['off', T('pl.loot-zones.bulk.show.off', 'Out of rotation')],
         ['live', T('pl.loot-zones.bulk.show.live', 'Live now')],
-      ], function (v) { zoneShow = v; render(); }),
+      ], function (v) { zoneShow = v; render(); }, T('pl.loot-zones.bulk.show.label', 'Show')),
       h('span', { class: 'lz-bulk-n' }, shown.length === zones.length
         ? T('pl.loot-zones.bulk.count', '{n} of {total}', { n: shown.length, total: zones.length })
         : T('pl.loot-zones.bulk.countFiltered', '{n} of {total} shown', { n: shown.length, total: zones.length })),
@@ -1631,8 +1669,7 @@
             var liveIds = {};
             (st.active || []).forEach(function (a) { liveIds[String(a.id)] = true; });
             var stillOn = picked.filter(function (z) { return liveIds[String(z.id)]; });
-            SSA.confirm(T('pl.loot-zones.bulk.removeConfirm',
-              'Remove {n} zone(s) from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', {
+            var rmVars = {
               n: picked.length,
               names: names(),
               live: stillOn.length
@@ -1640,7 +1677,12 @@
                   '\n\n⚠ {n} are live and stay on the server. Press "{button}" under {card} afterwards.', { n: stillOn.length, button: labReconcile(), card: cardActions() })
                 : '',
               save: labSave(), discard: labDiscard(),
-            })).then(function (yes) {
+            };
+            SSA.confirm(picked.length === 1
+              ? T('pl.loot-zones.bulk.removeConfirm.one',
+                'Remove {n} zone from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)
+              : T('pl.loot-zones.bulk.removeConfirm',
+                'Remove {n} zones from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)).then(function (yes) {
               if (!yes) return;
               c.zones = zones.filter(function (z) { return !zonePick[z.id]; });
               zonePick = {};
@@ -1693,7 +1735,7 @@
       // around it are.
       sel(z.set, [['', T('pl.loot-zones.zone.pickSet', '— pick a loot set —')]].concat(sets.map(function (s) {
         return [s.name, s.ok ? s.name : T('pl.loot-zones.zone.setUnusable', '{name}  (unusable)', { name: s.name })];
-      })), function (v) { z.set = v; markDirty(); }),
+      })), function (v) { z.set = v; markDirty(); }, T('pl.loot-zones.zone.setLabel', 'Loot set')),
       live ? h('span', { class: 'lz-badge on' }, live.drawn === false
         ? T('pl.loot-zones.badge.liveNotDrawn', 'live, not drawn') : T('pl.loot-zones.badge.live', 'live')) : null,
       h('button', {
@@ -1821,6 +1863,11 @@
       var ago = Math.max(0, Math.round((Date.now() - pat.at) / 1000));
       var agoText = ago < 90 ? T('pl.loot-zones.ago.seconds', '{n}s', { n: ago })
         : T('pl.loot-zones.ago.minutes', '{n} min', { n: Math.round(ago / 60) });
+      // The elapsed time is the one part of this card that moves while nothing happens. It goes
+      // into the sentence as a marker and comes out as its own span (`withAgo`), so a poll can
+      // update that span in place instead of redrawing the whole tab once a minute.
+      var agoNow = agoText;
+      agoText = AGO_MARK;
       if (pat.awake === false) {
         meta.push(T('pl.loot-zones.patrol.asleep', 'Waiting for players: nobody within {m} m{detail}.', {
           m: metres(pat.wakeDistance),
@@ -1838,25 +1885,39 @@
             : T('pl.loot-zones.did.stowedMany', '{n} sentries put away', { n: pat.stowed }));
         }
         if (pat.removed) did.push(T('pl.loot-zones.did.removed', '{n} removed', { n: pat.removed }));
-        if (pat.puppets) did.push(T('pl.loot-zones.did.puppets', '{n} zombie(s) removed', { n: pat.puppets }));
-        if (pat.spawned) did.push(T('pl.loot-zones.did.spawned', '{n} guard(s) sent', { n: pat.spawned }));
+        if (pat.puppets) did.push(pat.puppets === 1 ? T('pl.loot-zones.did.puppets.one', '{n} zombie removed', { n: pat.puppets })
+          : T('pl.loot-zones.did.puppets', '{n} zombies removed', { n: pat.puppets }));
+        if (pat.spawned) did.push(pat.spawned === 1 ? T('pl.loot-zones.did.spawned.one', '{n} guard sent', { n: pat.spawned })
+          : T('pl.loot-zones.did.spawned', '{n} guards sent', { n: pat.spawned }));
         if (pat.inZone != null) {
           did.push(pat.maxGuards
-            ? T('pl.loot-zones.did.standingOf', '{n} of at most {max} guard(s) standing', { n: pat.inZone, max: pat.maxGuards })
-            : T('pl.loot-zones.did.standing', '{n} guard(s) standing', { n: pat.inZone }));
+            ? (pat.inZone === 1
+              ? T('pl.loot-zones.did.standingOf.one', '{n} of at most {max} guards standing', { n: pat.inZone, max: pat.maxGuards })
+              : T('pl.loot-zones.did.standingOf', '{n} of at most {max} guards standing', { n: pat.inZone, max: pat.maxGuards }))
+            : (pat.inZone === 1
+              ? T('pl.loot-zones.did.standing.one', '{n} guard standing', { n: pat.inZone })
+              : T('pl.loot-zones.did.standing', '{n} guards standing', { n: pat.inZone })));
         } else if (pat.posts) {
-          did.push(T('pl.loot-zones.did.held', '{n} of {posts} guard spot(s) held', { n: pat.held, posts: pat.posts }));
+          did.push(pat.held === 1
+            ? T('pl.loot-zones.did.held.one', '{n} of {posts} guard spots held', { n: pat.held, posts: pat.posts })
+            : T('pl.loot-zones.did.held', '{n} of {posts} guard spots held', { n: pat.held, posts: pat.posts }));
         }
         // ⚠ A POST LEFT EMPTY ON PURPOSE IS NOT A POST THAT FAILED, and without this it renders as
         // "held 4 of 12" with nothing saying the other eight are outside their guard's hours. Its
         // own key, because this is a window that is CLOSED — not a window nobody could read.
         if (pat.outsideWindow) {
-          did.push(T('pl.loot-zones.did.outsideWindow',
-            '{n} place(s) left for now: their guard is outside its game hours', { n: pat.outsideWindow }));
+          did.push(pat.outsideWindow === 1
+            ? T('pl.loot-zones.did.outsideWindow.one',
+              '{n} place left for now: its guard is outside its game hours', { n: pat.outsideWindow })
+            : T('pl.loot-zones.did.outsideWindow',
+              '{n} places left for now: their guard is outside its game hours', { n: pat.outsideWindow }));
         }
-        if (pat.killed) did.push(T('pl.loot-zones.did.killed', '{n} killed, back after the respawn time', { n: pat.killed }));
-        if (pat.underground) did.push(T('pl.loot-zones.did.underground', '{n} player(s) under the ground', { n: pat.underground }));
-        if (pat.underSpots) did.push(T('pl.loot-zones.did.underSpots', '{n} underground spot(s) learned', { n: pat.underSpots }));
+        if (pat.killed) did.push(pat.killed === 1 ? T('pl.loot-zones.did.killed.one', '{n} killed, back after the respawn time', { n: pat.killed })
+          : T('pl.loot-zones.did.killed', '{n} killed, back after the respawn time', { n: pat.killed }));
+        if (pat.underground) did.push(pat.underground === 1 ? T('pl.loot-zones.did.underground.one', '{n} player under the ground', { n: pat.underground })
+          : T('pl.loot-zones.did.underground', '{n} players under the ground', { n: pat.underground }));
+        if (pat.underSpots) did.push(pat.underSpots === 1 ? T('pl.loot-zones.did.underSpots.one', '{n} underground spot learned', { n: pat.underSpots })
+          : T('pl.loot-zones.did.underSpots', '{n} underground spots learned', { n: pat.underSpots }));
         meta.push(T('pl.loot-zones.patrol.active', 'Active, a player is {where}{did} ({ago} ago).', {
           where: pat.nearest ? T('pl.loot-zones.patrol.away', '{m} m away', { m: metres(pat.nearest) })
             : T('pl.loot-zones.patrol.inside', 'inside'),
@@ -1958,7 +2019,7 @@
 
     return h('div', { class: 'lz-zone' + (live ? ' on' : '') }, [
       head,
-      h('div', { class: 'lz-zmeta' }, meta.join(' ')),
+      h('div', { class: 'lz-zmeta' }, withAgo(meta.join(' '), agoNow)),
       zoneNotes.length ? h('div', { class: 'lz-live' }, zoneNotes) : null,
       (function () { var ls = guarding ? lifeStatus(pat) : []; return ls.length ? h('div', { class: 'lz-live' }, ls) : null; })(),
       when,
@@ -2509,7 +2570,7 @@
 
   /** A small labelled number, for the three that sit side by side on a guard's row. */
   function guardNum(label, control, caption) {
-    return h('div', { class: 'lz-ctl' }, [h('small', {}, label), control, caption ? h('small', {}, caption) : null]);
+    return h('div', { class: 'lz-ctl' }, [h('small', {}, label), control, caption ? h('small', { 'data-fragment': '' }, caption) : null]);
   }
 
   // ── a guard's own settings, over the zone's ────────────────────────────────────────────────────
@@ -2790,7 +2851,7 @@
         }, [icon('refresh'), T('pl.loot-zones.ovr.followAll', 'Follow the zone for all {n}', { n: mine.length })]),
       ]));
     }
-    all.push(h('small', {}, T('pl.loot-zones.ovr.foot',
+    all.push(h('small', { 'data-fragment': '' }, T('pl.loot-zones.ovr.foot',
       'Unset values follow the zone; "{maxGuards}", "{cooldown}" and the place limit are zone-wide.',
       { maxGuards: labMaxGuards(), cooldown: labCooldown() })));
     var total = keys.length + gt.rows.length;
@@ -3141,7 +3202,7 @@
               });
           },
         }, [icon('eye'), T('pl.loot-zones.at.check', 'Check this spot')]),
-        h('small', {}, T('pl.loot-zones.at.check.cap',
+        h('small', { 'data-fragment': '' }, T('pl.loot-zones.at.check.cap',
           'Asks the game what is there. Nothing is sent or saved.')),
       ]),
       spotVerdict(said),
@@ -3227,7 +3288,7 @@
     if (looksLikeBoss(t)) {
       kids.push(h('small', { class: 'lz-warn' }, T('pl.loot-zones.at.boss.gone',
         '⚠ A boss at your own point is lost on restart; the zone replaces it.')));
-      kids.push(h('small', {}, T('pl.loot-zones.at.boss.class',
+      kids.push(h('small', { 'data-fragment': '' }, T('pl.loot-zones.at.boss.class',
         'Placed from the blueprint class you pick; only that kind has behaviour.')));
     }
 
@@ -3321,7 +3382,7 @@
       }, [icon('map'), T('pl.loot-zones.at.pickMap', 'Pick it on the map')]));
     }
     kids.push(h('div', { class: 'lz-actions' }, buttons));
-    kids.push(h('small', {}, T('pl.loot-zones.at.coords.hint',
+    kids.push(h('small', { 'data-fragment': '' }, T('pl.loot-zones.at.coords.hint',
       'Centimetres, as in game, map and console. In tunnels, stand there and press "{button}".',
       { button: T('pl.loot-zones.at.fromPlayer', 'Take a player\'s position') })));
 
@@ -3383,7 +3444,7 @@
       list.forEach(function (pl) {
         kids.push(h('div', { class: 'lz-routes' }, [
           h('b', {}, String(pl.name || '')),
-          h('small', {}, T('pl.loot-zones.at.players.at', 'at {x}, {y}, {z}',
+          h('small', { 'data-fragment': '' }, T('pl.loot-zones.at.players.at', 'at {x}, {y}, {z}',
             { x: Math.round(Number(pl.x) || 0), y: Math.round(Number(pl.y) || 0), z: Math.round(Number(pl.z) || 0) })),
           // The route's own words about this one player, where it has any. Never re-worded here.
           pl.note ? h('small', {}, String(pl.note)) : null,
@@ -3509,7 +3570,7 @@
             ], function (v) {
               if (v === (t.route === 'persistent' ? 'persistent' : 'spawn')) return;
               alt.apply(); markDirty();
-            });
+            }, T('pl.loot-zones.guard.routeLabel', 'How it spawns'));
           })(),
           h('button', {
             class: 'lz-del', type: 'button', title: T('pl.loot-zones.guard.removeTitle', 'Remove {name}', { name: prettyGuard(t) }),
@@ -3582,7 +3643,7 @@
           var f = firstOneOf(t);
           if (!f) return null;
           if (f.auto) {
-            return h('small', {}, T('pl.loot-zones.guard.firstAuto',
+            return h('small', { 'data-fragment': '' }, T('pl.loot-zones.guard.firstAuto',
               'The first one is sent with the game\'s {verb} command; the rest are placed directly.', { verb: f.verb }));
           }
           if (f.atPlayer) {
@@ -3621,7 +3682,7 @@
               ? T('pl.loot-zones.guard.needsMissing', 'Needs {card} → {label}, which this bridge does not have: update the bridge.',
                 { card: sw.card, label: sw.label })
               : T('pl.loot-zones.guard.needs', 'Needs {card} → {label}.', { card: sw.card, label: sw.label })))
-          : h('small', {}, T('pl.loot-zones.guard.needsNone',
+          : h('small', { 'data-fragment': '' }, T('pl.loot-zones.guard.needsNone',
             'Needs no bridge spawn switch: it uses the game\'s admin command.')),
         /**
          * ⚠ **A ROUTE THE PLUGIN CHOSE HAS TO BE ONE THE OWNER CAN SEE.** On a bridge that can
@@ -3631,7 +3692,7 @@
          * It is not a free swap and this says what it costs in the same breath as what it buys.
          */
         routeMoved(t)
-          ? h('small', {}, T('pl.loot-zones.guard.moved.why',
+          ? h('small', { 'data-fragment': '' }, T('pl.loot-zones.guard.moved.why',
             '⚠ Bridge-placed so it stays with nobody near. Lost on restart; the zone replaces it.'))
           : null,
         ]),
@@ -3641,7 +3702,7 @@
     });
 
     var kindSel = sel(addKind, ADD_KINDS.map(function (k) { return [k, addKindLabel(k)]; }),
-      function (v) { addKind = v; render(); });
+      function (v) { addKind = v; render(); }, T('pl.loot-zones.add.kindLabel', 'What to add'));
     // ⚠ THE ROUTE IS DECIDED BY THIS BOX AND BY NOTHING ELSE, so it says what it decides BEFORE the
     // pick rather than only on the row afterwards. Somebody reaching for a Razor has to see, at that
     // moment, what that will really do.
@@ -3667,7 +3728,7 @@
      */
     var adder = addKind === 'random'
       ? [sel(randomPick, Object.keys(RANDOM_KINDS).map(function (k) { return [k, randomLabel(k)]; }),
-        function (v) { randomPick = v; render(); }),
+        function (v) { randomPick = v; render(); }, T('pl.loot-zones.add.randomLabel', 'Which random spawn')),
       h('button', {
         class: 'secondary', type: 'button',
         onclick: function () { addRandom(randomPick); },
@@ -3837,7 +3898,7 @@
         h('div', { class: 'lz-ctl' }, [
           numIn(grace, function (v) { ownLifeWrite(sm).sleepGraceSeconds = Math.max(0, v); markDirty(); },
             0, 3600, T('pl.loot-zones.unit.seconds', 'seconds')),
-          h('small', {}, T('pl.loot-zones.life.grace.cap', 'once the last player has left the zone')),
+          h('small', { 'data-fragment': '' }, T('pl.loot-zones.life.grace.cap', 'once the last player has left the zone')),
         ]),
         T('pl.loot-zones.life.grace.hint',
           'A delay against guards coming and going at the edge. 0 removes them at once.')));
@@ -3853,10 +3914,10 @@
         h('div', { class: 'lz-ctl' }, [
           numIn(slack, function (v) { ownLifeWrite(sm).leashSlackCm = Math.max(0, v); markDirty(); },
             0, 1000, T('pl.loot-zones.unit.metres', 'm'), M),
-          h('small', {}, T('pl.loot-zones.life.slack.cap', 'past the edge of the rectangle')),
+          h('small', { 'data-fragment': '' }, T('pl.loot-zones.life.slack.cap', 'past the edge of the rectangle')),
         ]),
         T('pl.loot-zones.life.slack.hint',
-          'A guard fighting just past the line is working. 0 removes it on crossing.')));
+          'A guard fighting just past the line is working. 0 removes it on crossing.'), true));
     }
     return out;
   }
@@ -3897,7 +3958,7 @@
       markDirty();
     }
     var noSpot = guardsOn && !sentriesOut && !(Number(sm.ownPosts) > 0) && !(state.status && state.status.npcLimit === 0);
-    var caption = function (t) { return h('small', {}, t); };
+    var caption = function (t) { return h('small', { 'data-fragment': '' }, t); };
     var field = function (control, t) { return h('div', { class: 'lz-ctl' }, [control, t ? caption(t) : null]); };
     return [
       guardSummary(sm, pat, set, scope),
@@ -3965,9 +4026,9 @@
        */
       guardsOn ? row(T('pl.loot-zones.set.gameHours', 'Only at these game hours'), field(h('div', { class: 'lz-routes' }, [
         toggle(!!(gt.enabled), function (v) { gt.enabled = v; markDirty(); }),
-        h('small', {}, T('pl.loot-zones.gt.from', 'From')),
+        h('small', { 'data-fragment': '' }, T('pl.loot-zones.gt.from', 'From')),
         numIn(gt.fromHour == null ? 0 : gt.fromHour, function (v) { gt.fromHour = Math.max(0, Math.min(24, v)); markDirty(); }, 0, 24, T('pl.loot-zones.unit.gameHours', 'game hours')),
-        h('small', {}, T('pl.loot-zones.gt.until', 'until')),
+        h('small', { 'data-fragment': '' }, T('pl.loot-zones.gt.until', 'until')),
         numIn(gt.toHour == null ? 24 : gt.toHour, function (v) { gt.toHour = Math.max(0, Math.min(24, v)); markDirty(); }, 0, 24, T('pl.loot-zones.unit.gameHours', 'game hours')),
       ]), caps(gt.enabled
         ? T('pl.loot-zones.set.gameHours.cap', '{from} to {to} on the game clock', { from: hhmm(gt.fromHour), to: hhmm(gt.toHour) })
@@ -3990,9 +4051,9 @@
         row(T('pl.loot-zones.set.patrolEvery', 'Look every'), numIn(sm.nearbyPatrolSeconds == null ? 5 : sm.nearbyPatrolSeconds, function (v) { sm.nearbyPatrolSeconds = v; markDirty(); }, 3, 60, T('pl.loot-zones.unit.seconds', 'seconds')),
           T('pl.loot-zones.set.patrolEvery.hint', 'How often the zone is checked while a player is near.')),
         row(T('pl.loot-zones.set.searchBox', 'Search height and reach'), h('div', { class: 'lz-routes' }, [
-          h('small', {}, T('pl.loot-zones.set.searchBox.height', 'Height')),
+          h('small', { 'data-fragment': '' }, T('pl.loot-zones.set.searchBox.height', 'Height')),
           numIn(sm.centreZ, function (v) { sm.centreZ = v; markDirty(); }, null, null, T('pl.loot-zones.unit.metres', 'm'), M),
-          h('small', {}, T('pl.loot-zones.set.searchBox.reach', 'Up and down')),
+          h('small', { 'data-fragment': '' }, T('pl.loot-zones.set.searchBox.reach', 'Up and down')),
           numIn(sm.reachZ, function (v) { sm.reachZ = v; markDirty(); }, 0, null, T('pl.loot-zones.unit.metres', 'm'), M),
         ]), T('pl.loot-zones.set.searchBox.hint', 'Where the zone looks for sentries and zombies. Defaults cover the whole map.')),
         row(T('pl.loot-zones.set.globalRespawn', 'Also slow SCUM\'s own sentry respawn'), toggle(!!gr.enabled, function (v) { gr.enabled = v; markDirty(); }),
@@ -4255,7 +4316,7 @@
    */
   function activityControls(a, scope, inert) {
     var mode = (a.mode === 'busier' || a.mode === 'quieter') ? a.mode : 'leave';
-    var field = function (control, t) { return h('div', { class: 'lz-ctl' }, [control, t ? h('small', {}, t) : null]); };
+    var field = function (control, t) { return h('div', { class: 'lz-ctl' }, [control, t ? h('small', { 'data-fragment': '' }, t) : null]); };
     return [
       // ⚠ The VALUES are the backend's own words and are never translated; only the captions are.
       row(labActivityMode(), sel(mode, [
@@ -4675,10 +4736,20 @@
       var live = root, bar = saveBar, probe = document.createElement('div');
       var same = false;
       root = probe;
-      try { draw(); same = probe.innerHTML === lastDrawn; } catch (ignored) { same = false; }
+      // Compared WITHOUT the elapsed-time spans, which are then brought up to date in place — see
+      // `withAgo`. Equal counts are implied by equal markup, so the two lists pair one to one.
+      try { draw(); same = withoutAgo(probe.innerHTML) === withoutAgo(lastDrawn); } catch (ignored) { same = false; }
       root = live;
       saveBar = bar;
-      if (same) return;
+      if (same) {
+        var fresh = probe.querySelectorAll('.lz-ago');
+        var shown = live.querySelectorAll('.lz-ago');
+        for (var ai = 0; ai < fresh.length && ai < shown.length; ai++) {
+          if (shown[ai].textContent !== fresh[ai].textContent) shown[ai].textContent = fresh[ai].textContent;
+        }
+        lastDrawn = probe.innerHTML;
+        return;
+      }
     }
     // ⚠ BEFORE `draw()`, which empties the root — see `beforeRedraw` for what is being kept and
     // why a reconciler is not what is used here.
@@ -4812,7 +4883,7 @@
         : T('pl.loot-zones.live.rotationOffRestart', 'Rotation off: no zone per restart. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })));
     }
     if (st.nextSwitchInMs > 0) {
-      live.push(note('', T('pl.loot-zones.live.held', 'Next switch waits {n} more minute(s): each switch resets containers across the whole map.',
+      live.push(note('', T('pl.loot-zones.live.held', 'Next switch waits {n} more min: each switch resets containers across the whole map.',
       { n: Math.ceil(st.nextSwitchInMs / 60000) })));
     }
     root.appendChild(h('div', { class: 'lz-live' }, live));
@@ -5065,11 +5136,13 @@
               // A leftover FOUND is not a leftover REMOVED. Counting what was found told an owner the
               // map was clean while the rectangle was still on it.
               else if (r && (r.stubborn || []).length) {
-                SSA.toast(T('pl.loot-zones.act.stuck', '{n} leftover zone(s) could not be removed: {why}',
-                  { n: r.stubborn.length, why: r.why || '' }));
+                SSA.toast(r.stubborn.length === 1
+                  ? T('pl.loot-zones.act.stuck.one', '{n} leftover zone could not be removed: {why}', { n: 1, why: r.why || '' })
+                  : T('pl.loot-zones.act.stuck', '{n} leftover zones could not be removed: {why}', { n: r.stubborn.length, why: r.why || '' }));
               } else {
                 var n = ((r && r.removed) || (r && r.strayZones) || []).length + ((r && r.strayFolders) || []).length;
-                SSA.toast(n ? T('pl.loot-zones.act.cleared', 'Cleared {n} leftover(s)', { n: n })
+                SSA.toast(n ? (n === 1 ? T('pl.loot-zones.act.cleared.one', 'Cleared {n} leftover', { n: n })
+                  : T('pl.loot-zones.act.cleared', 'Cleared {n} leftovers', { n: n }))
                   : T('pl.loot-zones.act.agrees', 'The game agrees with this page'));
               }
               refresh();

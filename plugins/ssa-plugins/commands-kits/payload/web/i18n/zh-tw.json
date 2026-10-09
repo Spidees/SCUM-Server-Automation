@@ -376,6 +376,7 @@
   "pl.commands-kits.dc.current": "（目前）",
   "pl.commands-kits.dc.unknown": "未知",
   "pl.commands-kits.dc.offers": "提供 {n} 份禮包：{list}。在某份禮包上打開「{switch}」就能把它加進來。",
+  "pl.commands-kits.dc.offers.one": "提供 {n} 份禮包：{list}。在某份禮包上打開「{switch}」就能把它加進來。",
   "pl.commands-kits.dc.offersNone": "⚠ 還沒有套件開啟「{switch}」。請在 {where} 分頁為某個套件開啟。",
   "pl.commands-kits.set.general": "一般",
   "pl.commands-kits.set.prefix": "指令前綴",

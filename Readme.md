@@ -67,7 +67,11 @@ The filename tells you which kind of build it is:
 
 **It is free, and it does not need the manager.** Every module, every command and every read works on its own: unpack it into your server's `SCUM/Binaries/Win64/` and it runs. UE4SS is in the archive, so there is nothing else to fetch. A licence changes exactly one thing: whether joining players see a single chat line naming the bridge.
 
-> **What's in this repository.** The public home for the SSA **plugins**, developer **examples**, the manager **release** and the **bridge**. The manager's own source is closed; everything you need to *run* a server is here plus [scumsa.com](https://scumsa.com).
+### 🎮 The SCUMSA Launcher, for players
+
+[**`launcher/`**](launcher) holds the **SCUMSA Launcher** installer: every SCUM server with your real ping, one press to join, and the client mods a server needs installed for you. Run the installer once; the launcher updates itself from [scumsa.com](https://scumsa.com).
+
+> **What's in this repository.** The public home for the SSA **plugins**, developer **examples**, the manager **release**, the **bridge** and the **launcher**. The manager's own source is closed; everything you need to *run* a server, or to *play* on one, is here plus [scumsa.com](https://scumsa.com).
 
 ---
 
@@ -104,7 +108,7 @@ The complete **Plugin SDK**, with every method, all events and the UE4SS guide, 
 
 ## 📄 License
 
-The plugins and the manager release are **© SCUM Server Automation, all rights reserved** (see [`LICENSE`](LICENSE)); the source is public for transparency, not for reuse. The developer examples in [`plugins/examples/`](plugins/examples) are **MIT-licensed**: copy them freely as a starting point for your own plugins.
+The plugins and the manager release are **© 2026 Martin Zámečník, all rights reserved** (see [`LICENSE`](LICENSE)); the source is public for transparency, not for reuse. The developer examples in [`plugins/examples/`](plugins/examples) are **MIT-licensed**: copy them freely as a starting point for your own plugins.
 
 ---
 

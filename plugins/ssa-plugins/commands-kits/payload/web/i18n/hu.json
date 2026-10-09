@@ -376,6 +376,7 @@
   "pl.commands-kits.dc.current": "(jelenlegi)",
   "pl.commands-kits.dc.unknown": "ismeretlen",
   "pl.commands-kits.dc.offers": "{n} készletet kínál: {list}. Kapcsold be a „{switch}” kapcsolót egy készleten, hogy bekerüljön.",
+  "pl.commands-kits.dc.offers.one": "{n} készletet kínál: {list}. Kapcsold be a „{switch}” kapcsolót egy készleten, hogy bekerüljön.",
   "pl.commands-kits.dc.offersNone": "⚠ Még egy csomagnál sincs bekapcsolva: „{switch}”. Kapcsold be egynél a(z) {where} lapon.",
   "pl.commands-kits.set.general": "Általános",
   "pl.commands-kits.set.prefix": "Parancs-előtag",

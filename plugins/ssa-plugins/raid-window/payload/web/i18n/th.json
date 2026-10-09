@@ -129,7 +129,7 @@
   "pl.raid-window.card.settings": "การตั้งค่า",
   "pl.raid-window.stopped": "หยุดเลื่อนฐานนั้นแล้ว",
   "pl.raid-window.notDone": "ทำไม่ได้",
-  "pl.raid-window.bridgeSaid": "bridge แจ้งว่า: {text}",
+  "pl.raid-window.bridgeSaid": "Bridge แจ้งว่า: {text}",
   "pl.raid-window.before.offline.notArmed": "ก่อนการเลื่อนครั้งแรก การคุ้มครองตอนออฟไลน์ยังไม่ทำงาน: มีฝ่ายป้องกันออนไลน์อยู่",
   "pl.raid-window.before.offline.running": "ก่อนการเลื่อนครั้งแรก การคุ้มครองตอนออฟไลน์ของฐานเปิดอยู่แล้ว",
   "pl.raid-window.before.offline.startsIn": "ก่อนการเลื่อนครั้งแรก การคุ้มครองตอนออฟไลน์ของฐานมีกำหนดเริ่มในอีก {t}",

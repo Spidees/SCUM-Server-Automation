@@ -142,7 +142,7 @@
 .mcm-body { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
 /* Dimmed, never inert: writing the wording before switching the announcement on is the ordinary
    way round, and a card that empties itself when it is off cannot be prepared. */
-.mcm-body.mcm-dim { opacity: 0.6; }
+.mcm-body.mcm-dim { filter: grayscale(0.85); }
 
 .mcm-block {
   background: var(--panel-2);
@@ -356,4 +356,10 @@
    by, so the short ones — `{x}` came out 35px — can safely be given the square. */
 @media (max-width: 760px) {
   .mcm-tok { min-width: 44px; }
+}
+
+/* On a phone a wrapping row of buttons stretches to the column instead of
+   falling into a staircase of boxes, one per line, each at its own width. */
+@media (max-width: 480px) {
+  .mcm-chks > * { flex: 1 1 auto; }
 }

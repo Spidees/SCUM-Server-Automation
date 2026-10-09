@@ -49,9 +49,11 @@
 .mp-pick-quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
 .mp-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px}
 .mp-pi{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px 10px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:10px;color:var(--text,#f1f3f5);cursor:pointer;font:inherit;text-align:center;transition:border-color .12s,background .12s,transform .06s}
-.mp-pi:hover{border-color:var(--muted,#5a606b)}
+.mp-pi { --hov-bg:var(--bg,#0b0c0e);--hov-fg:var(--text,#f1f3f5);--hov-line:var(--muted,#8b9099) }
+.mp-pi:hover { background:var(--hov-bg);border-color:var(--hov-line);color:var(--hov-fg) }
 .mp-pi:active{transform:scale(.98)}
-.mp-pi.on{border-color:var(--accent,var(--amber,#ff6a1a));background:color-mix(in srgb,var(--accent,#ff6a1a) 12%,var(--bg,#0b0c0e))}
+.mp-pi.on { border-color:var(--accent,var(--amber,#ff6a1a));background:color-mix(in srgb,var(--accent,#ff6a1a) 12%,var(--bg,#0b0c0e));--hov-bg:color-mix(in srgb,var(--accent,#ff6a1a) 20%,var(--bg,#0b0c0e));--hov-fg:var(--text,#f1f3f5);--hov-line:var(--accent,var(--amber,#ff6a1a)) }
+.mp-pi.on:hover { background: var(--hov-bg); border-color: var(--hov-line); color: var(--hov-fg); }
 .mp-pi-img{width:44px;height:44px;object-fit:contain;image-rendering:auto}
 .mp-pi-ph{width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted,#8b9099)}
 .mp-pi-ph .ico{width:26px;height:26px}
@@ -66,7 +68,8 @@
 .mp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.25rem .3rem .25rem .65rem;font-size:.8rem}
 .mp-chip code{font-size:.78rem;color:var(--text,#f1f3f5)}
 .mp-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font-size:.75rem;width:18px;height:18px;border-radius:50%;line-height:1}
-.mp-chip-x:hover{background:rgba(237,66,69,.16);color:#ed4245}
+.mp-chip-x { --hov-bg:rgba(237,66,69,.16);--hov-fg:#ff8a8c;--hov-line:transparent }
+.mp-chip-x:hover { background:var(--hov-bg);color:var(--hov-fg) }
 .mp-ex-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .mp-ex-in{flex:1;min-width:180px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.84rem;padding:.42rem .6rem}
 .mp-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:0}
@@ -99,3 +102,9 @@
 .mp-off-x { font-size: .72rem; padding: .1rem .45rem; opacity: .35; transition: opacity .12s; }
 tr:hover .mp-off-x, .mp-off-x:focus-visible { opacity: 1; }
 @media (hover: none) { .mp-off-x { opacity: 1; } }
+
+/* On a phone a wrapping row of buttons stretches to the column instead of
+   falling into a staircase of boxes, one per line, each at its own width. */
+@media (max-width: 480px) {
+  .mp-pick-quick > * { flex: 1 1 auto; }
+}

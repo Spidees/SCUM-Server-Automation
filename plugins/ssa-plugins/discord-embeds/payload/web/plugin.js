@@ -29,6 +29,12 @@
   // written beside the key: a language nobody has translated yet renders exactly what it renders
   // today. Each of the two IIFEs in this file binds its own `T` — they share no scope.
   var T = SSA.t;
+  // A count picks its form: the singular is its own key, so English reads "1 message" and every
+  // language gets its own plural forms from its locale file.
+  function msgCount(n) {
+    return n === 1 ? T('pl.discord-embeds.hist.count.one', '{n} message', { n: n })
+      : T('pl.discord-embeds.hist.count', '{n} messages', { n: n });
+  }
   // One sentence for a failure, the route's own words first. Used by every catch in this file.
   function why(err) { return SSA.apiError(err); }
   // Shared by all three tabs (they live in two separate IIFEs), so the module identifies itself the
@@ -50,6 +56,8 @@
       else if (props[k] != null && props[k] !== false) e.setAttribute(k, props[k] === true ? '' : props[k]);
     });
     (Array.isArray(kids) ? kids : (kids != null ? [kids] : [])).forEach(function (c) { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    // An icon button is named by aria-label; its title is the localised name, so it is that too.
+    if (tag === 'button' && e.title && !e.hasAttribute('aria-label') && !e.textContent.trim()) e.setAttribute('aria-label', e.title);
     return e;
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -1386,7 +1394,7 @@
         // last week. Scrolling for it is not a way to find anything. Matches the title and the
         // channel, which is how somebody actually remembers a message.
         var hq = h('input', { class: 'es-search', type: 'search', placeholder: T('pl.discord-embeds.hist.search', 'Search sent messages…') });
-        var hCount = h('span', { class: 'ee-empty' }, T('pl.discord-embeds.hist.count', '{n} message(s)', { n: list.length }));
+        var hCount = h('span', { class: 'ee-empty' }, msgCount(list.length));
         histBox.appendChild(h('div', { class: 'ee-actions' }, [
           hCount,
           hq,
@@ -1404,8 +1412,10 @@
             row.style.display = hit ? '' : 'none';
             if (hit) shown++;
           });
-          hCount.textContent = n ? T('pl.discord-embeds.hist.countFiltered', '{shown} of {total} message(s)', { shown: shown, total: list.length })
-            : T('pl.discord-embeds.hist.count', '{n} message(s)', { n: list.length });
+          hCount.textContent = n ? (list.length === 1
+              ? T('pl.discord-embeds.hist.countFiltered.one', '{shown} of {n} message', { shown: shown, n: list.length })
+              : T('pl.discord-embeds.hist.countFiltered', '{shown} of {n} messages', { shown: shown, n: list.length }))
+            : msgCount(list.length);
         });
         var box = h('div', {});
         list.forEach(function (entry) {
@@ -1723,6 +1733,8 @@
       else if (props[k] != null && props[k] !== false) e.setAttribute(k, props[k] === true ? '' : props[k]);
     });
     (Array.isArray(kids) ? kids : (kids != null ? [kids] : [])).forEach(function (c) { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    // An icon button is named by aria-label; its title is the localised name, so it is that too.
+    if (tag === 'button' && e.title && !e.hasAttribute('aria-label') && !e.textContent.trim()) e.setAttribute('aria-label', e.title);
     return e;
   }
 

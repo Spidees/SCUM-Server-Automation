@@ -21,7 +21,8 @@
 .vr-opt{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}
 .vr-opt.vr-opt-free{grid-template-columns:1fr auto}
 .vr-btn{font:inherit;cursor:pointer;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
-.vr-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
+.vr-btn.primary { border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02;--hov-bg:var(--amber-hi,#ff9a3c);--hov-fg:#1a0d02;--hov-line:var(--amber-hi,#ff9a3c) }
+.vr-btn.primary:hover { background:var(--hov-bg);color:var(--hov-fg) }
 .vr-btn.add{border-style:dashed;width:100%;margin-top:8px}
 .vr-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0}
 .vr-checks{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
@@ -120,6 +121,7 @@
   --hov-bg: color-mix(in srgb, var(--accent, #ff6a1a) 26%, transparent);
   --hov-fg: var(--text, #e8edf2);
 }
+.tw-day.on:hover { background: var(--hov-bg); color: var(--hov-fg); }
 .tw-times { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted, #9aa3ad); }
 .tw-t { width: auto; max-width: 100%; min-width: 0; font-size: .8rem; padding: 4px 6px; }
 .tw-del {

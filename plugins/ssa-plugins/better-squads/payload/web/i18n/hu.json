@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "Admin által némítva",
   "pl.better-squads.card.muted.sub": "A némított játékos egyik üzenetet sem kapja; a squadja igen. Nem vonhatja vissza.",
   "pl.better-squads.test.sent": "Elküldve {n} osztagtagnak",
+  "pl.better-squads.test.sent.one": "Elküldve {n} osztagtagnak",
   "pl.better-squads.test.notinsquad": "Ez a játékos nem tagja osztagnak",
   "pl.better-squads.test.nobodyonline": "Abból az osztagból senki nincs online",
   "pl.better-squads.test.failedwhy": "A teszt sikertelen — {why}",

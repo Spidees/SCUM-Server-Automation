@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "Silenziati da un admin",
   "pl.better-squads.card.muted.sub": "Un giocatore silenziato non riceve questi messaggi; la squadra sì. Non può annullarlo.",
   "pl.better-squads.test.sent": "Inviato a {n} membri della squadra",
+  "pl.better-squads.test.sent.one": "Inviato a {n} membro della squadra",
   "pl.better-squads.test.notinsquad": "Quel giocatore non è in una squadra",
   "pl.better-squads.test.nobodyonline": "Nessuno di quella squadra è online",
   "pl.better-squads.test.failedwhy": "Test fallito — {why}",

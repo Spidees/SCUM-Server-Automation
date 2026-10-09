@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "Bir adminin susturdukları",
   "pl.better-squads.card.muted.sub": "Susturulan oyuncu bu mesajları almaz; squad arkadaşları alır. Bunu geri alamaz.",
   "pl.better-squads.test.sent": "{n} ekip üyesine gönderildi",
+  "pl.better-squads.test.sent.one": "{n} ekip üyesine gönderildi",
   "pl.better-squads.test.notinsquad": "Bu oyuncu bir ekipte değil",
   "pl.better-squads.test.nobodyonline": "O ekipten kimse çevrimiçi değil",
   "pl.better-squads.test.failedwhy": "Test başarısız — {why}",

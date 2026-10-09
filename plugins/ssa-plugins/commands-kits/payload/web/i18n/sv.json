@@ -376,6 +376,7 @@
   "pl.commands-kits.dc.current": "(nuvarande)",
   "pl.commands-kits.dc.unknown": "okänd",
   "pl.commands-kits.dc.offers": "Erbjuder {n} kit: {list}. Slå på ”{switch}” på ett kit för att lägga till det.",
+  "pl.commands-kits.dc.offers.one": "Erbjuder {n} kit: {list}. Slå på ”{switch}” på ett kit för att lägga till det.",
   "pl.commands-kits.dc.offersNone": "⚠ Inget kit har ”{switch}” på än. Slå på det för ett kit på fliken {where}.",
   "pl.commands-kits.set.general": "Allmänt",
   "pl.commands-kits.set.prefix": "Kommandoprefix",

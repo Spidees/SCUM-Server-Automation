@@ -376,6 +376,7 @@
   "pl.commands-kits.dc.current": "(ปัจจุบัน)",
   "pl.commands-kits.dc.unknown": "ไม่ทราบ",
   "pl.commands-kits.dc.offers": "มี {n} ชุด: {list} เปิด \"{switch}\" ที่ชุดเพื่อเพิ่มเข้ามา",
+  "pl.commands-kits.dc.offers.one": "มี {n} ชุด: {list} เปิด \"{switch}\" ที่ชุดเพื่อเพิ่มเข้ามา",
   "pl.commands-kits.dc.offersNone": "⚠ ไม่มีชุดใดเปิด \"{switch}\" ไว้ เปิดให้อย่างน้อยหนึ่งชุดในแท็บ {where}",
   "pl.commands-kits.set.general": "ทั่วไป",
   "pl.commands-kits.set.prefix": "คำนำหน้าคำสั่ง",

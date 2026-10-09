@@ -68,7 +68,8 @@
 
 /* token palette */
 .ck-tok{background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:9px;padding:2px 12px}
-.ck-tok>summary{cursor:pointer;font-size:.78rem;color:var(--muted,#8b9099);padding:8px 0;list-style:none;user-select:none}
+.ck-tok>summary { cursor:pointer;font-size:.78rem;color:var(--muted,#8b9099);padding:8px 0;list-style:none;user-select:none;--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a3c) }
+.ck-tok>summary:hover, .ck-adv>summary:hover { background:var(--hov-bg);color:var(--hov-fg) }
 .ck-tok>summary::-webkit-details-marker{display:none}
 .ck-tok-pal{display:flex;flex-direction:column;gap:8px;padding:4px 0 12px}
 .ck-tok-grp{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
@@ -177,7 +178,7 @@
 
 /* advanced */
 .ck-adv{padding:14px}
-.ck-adv>summary{cursor:pointer;font-size:.85rem;color:var(--muted,#8b9099);user-select:none}
+.ck-adv>summary { cursor:pointer;font-size:.85rem;color:var(--muted,#8b9099);user-select:none;--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a3c) }
 .ck-adv .ck-f{margin-top:12px}
 
 /* claims table uses the manager's NATIVE .data-table / .table-wrap / .gl-player / mono / dim classes. */
@@ -220,7 +221,7 @@
 /* token palette: leading bulb + a hover-hint tip on the right */
 .ck-tok>summary{display:flex;align-items:center;gap:7px}
 .ck-tok>summary .ico{width:14px;height:14px;color:var(--muted,#8b9099)}
-.ck-tok-tip{margin-left:auto;color:var(--muted,#8b9099);font-size:.7rem;opacity:.8}
+.ck-tok-tip{margin-left:auto;color:var(--muted,#8b9099);font-size:.7rem}
 
 /* live delivery queue (Activity view) */
 .ck-queue{display:flex;flex-direction:column;gap:6px}
@@ -277,6 +278,7 @@
   --hov-bg: color-mix(in srgb, var(--accent, #ff6a1a) 26%, transparent);
   --hov-fg: var(--text, #e8edf2);
 }
+.tw-day.on:hover { background: var(--hov-bg); color: var(--hov-fg); }
 .tw-times { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted, #9aa3ad); }
 .tw-t { width: auto; max-width: 100%; min-width: 0; font-size: .8rem; padding: 4px 6px; }
 .tw-del {
@@ -335,9 +337,11 @@
      whose meanings are all unreachable. The caption swaps for the same reason. */
   .ck-tok-grp { flex-direction: column; align-items: stretch; }
   .ck-tok-lbl { min-width: 0; }
-  .ck-tokwrap { width: 100%; }
-  .ck-tokdesc { display: inline; flex: 1 1 auto; min-width: 0; font-size: .72rem; color: var(--muted, #8b9099);
-    white-space: normal; overflow-wrap: anywhere; }
+  /* The sentence keeps its words whole: beside a long token it drops under the chip rather than
+     being squeezed until "Constitution" breaks across two lines. */
+  .ck-tokwrap { width: 100%; flex-wrap: wrap; }
+  .ck-tokdesc { display: inline; flex: 1 1 10rem; min-width: 0; font-size: .72rem; color: var(--muted, #8b9099);
+    white-space: normal; overflow-wrap: break-word; }
   .ck-tok-tip-wide { display: none; }
   .ck-tok-tip-narrow { display: inline; }
 }
@@ -417,3 +421,12 @@
   background: color-mix(in srgb, var(--accent, #ff6a1a) 14%, transparent);
   color: var(--accent, #ff6a1a);
 }
+
+/* On a phone a wrapping row of buttons stretches to the column instead of
+   falling into a staircase of boxes, one per line, each at its own width. */
+@media (max-width: 480px) {
+  .ck-nav > * { flex: 1 1 auto; }
+}
+
+/* The token tip is a sentence and opens with a capital in every language. */
+.ck-tok-tip::first-letter { text-transform: uppercase; }

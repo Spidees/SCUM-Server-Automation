@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "被管理员静音",
   "pl.better-squads.card.muted.sub": "被静音的玩家收不到这些消息；队友照常收到。他无法自行解除。",
   "pl.better-squads.test.sent": "已发送给 {n} 位小队成员",
+  "pl.better-squads.test.sent.one": "已发送给 {n} 位小队成员",
   "pl.better-squads.test.notinsquad": "该玩家未加入小队",
   "pl.better-squads.test.nobodyonline": "该小队没有人在线",
   "pl.better-squads.test.failedwhy": "测试失败——{why}",

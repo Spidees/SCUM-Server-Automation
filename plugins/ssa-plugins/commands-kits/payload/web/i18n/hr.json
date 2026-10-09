@@ -376,6 +376,8 @@
   "pl.commands-kits.dc.current": "(trenutni)",
   "pl.commands-kits.dc.unknown": "nepoznato",
   "pl.commands-kits.dc.offers": "Nudi {n} kompleta: {list}. Uključi „{switch}” na kompletu da ga dodaš.",
+  "pl.commands-kits.dc.offers.one": "Nudi {n} komplet: {list}. Uključi „{switch}” na kompletu da ga dodaš.",
+  "pl.commands-kits.dc.offers.few": "Nudi {n} kompleta: {list}. Uključi „{switch}” na kompletu da ga dodaš.",
   "pl.commands-kits.dc.offersNone": "⚠ Još nijedan komplet nema uključeno „{switch}”. Uključite ga na kartici {where}.",
   "pl.commands-kits.set.general": "Općenito",
   "pl.commands-kits.set.prefix": "Prefiks naredbi",

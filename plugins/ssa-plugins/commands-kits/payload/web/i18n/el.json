@@ -376,6 +376,7 @@
   "pl.commands-kits.dc.current": "(τρέχον)",
   "pl.commands-kits.dc.unknown": "άγνωστο",
   "pl.commands-kits.dc.offers": "Προσφέρει {n} κιτ: {list}. Ενεργοποιήστε το «{switch}» σε ένα κιτ για να προστεθεί.",
+  "pl.commands-kits.dc.offers.one": "Προσφέρει {n} κιτ: {list}. Ενεργοποιήστε το «{switch}» σε ένα κιτ για να προστεθεί.",
   "pl.commands-kits.dc.offersNone": "⚠ Κανένα kit δεν έχει ακόμα το «{switch}» ενεργό. Ενεργοποιήστε το σε ένα kit στην καρτέλα {where}.",
   "pl.commands-kits.set.general": "Γενικά",
   "pl.commands-kits.set.prefix": "Πρόθεμα εντολών",

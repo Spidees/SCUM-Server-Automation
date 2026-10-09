@@ -6,7 +6,9 @@
 .ee-sec{border:1px solid var(--line,#24272e);border-radius:8px;background:var(--panel,#15171b);margin-bottom:12px;overflow:hidden}
 .ee-sec>summary{cursor:pointer;padding:10px 14px;font-family:var(--ui,inherit);font-weight:600;font-size:.82rem;letter-spacing:.02em;text-transform:uppercase;color:var(--text,#f1f3f5);list-style:none;display:flex;align-items:center;justify-content:space-between}
 .ee-sec>summary::-webkit-details-marker{display:none}
-.ee-sec>summary::after{content:"▾";color:var(--muted,#8b9099);transition:.2s}
+.ee-sec>summary::after { content:"▾";color:var(--muted,#8b9099);transition:.2s }
+.ee-sec>summary { --hov-bg:var(--hover-bg,rgba(255,255,255,.05));--hov-fg:var(--amber-hi,#ff9a3c) }
+.ee-sec>summary:hover { background:var(--hov-bg);color:var(--hov-fg) }
 .ee-sec[open]>summary::after{transform:rotate(180deg)}
 .ee-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
 .ee-f{display:flex;flex-direction:column;gap:4px}
@@ -17,7 +19,8 @@
 .ee-chk{display:flex;align-items:center;gap:7px;font-size:.82rem;color:var(--text,#f1f3f5)}
 /* .ee-item is defined once, in the "repeatable items" block below. */
 .ee-btn{font:inherit;cursor:pointer;padding:.45rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
-.ee-btn.primary{border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02}
+.ee-btn.primary { border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02;--hov-bg:var(--amber-hi,#ff9a3c);--hov-fg:#1a0d02;--hov-line:var(--amber-hi,#ff9a3c) }
+.ee-btn.primary:hover { background:var(--hov-bg);color:var(--hov-fg) }
 .ee-btn.add{border-style:dashed;width:100%}
 .ee-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 
@@ -236,7 +239,8 @@
 .ce-act-note { font-size: .78rem; color: var(--warn, #e0a63a); margin: -4px 0 10px; padding-left: 158px; }
 @media (max-width: 640px) { .ce-act-note { padding-left: 0; } .ce-act-id { min-width: 0; } }
 .es-btn { font: inherit; cursor: pointer; padding: .5rem 1rem; border-radius: 6px; border: 1px solid var(--line-2, #343943); background: var(--panel-2, #1c1f25); color: var(--text, #f1f3f5); font-size: .84rem; }
-.es-btn.primary { border: 0; background: var(--accent, var(--amber, #ff6a1a)); color: #1a0d02; font-weight: 600; }
+.es-btn.primary { border: 0; background: var(--accent, var(--amber, #ff6a1a)); color: #1a0d02; font-weight: 600; --hov-bg: var(--amber-hi, #ff9a3c); --hov-fg: #1a0d02; --hov-line: var(--amber-hi, #ff9a3c); }
+.es-btn.primary:hover { background: var(--hov-bg); color: var(--hov-fg); }
 
 /* ── module head, identical on all three tabs ────────────────────────────────── */
 .ee-head { padding: 12px 0 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line-2, rgba(255,255,255,.06)); }
@@ -285,7 +289,7 @@
 .ee-pagerbox { margin-top: 6px; }
 .ee-pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding-top: 6px; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
 .ee-pageinfo { font-size: .72rem; color: var(--muted, #8e8f82); font-variant-numeric: tabular-nums; }
-.ee-btn.xs[disabled] { opacity: .4; cursor: default; }
+.ee-btn.xs[disabled] { opacity: var(--disabled-op, .7); cursor: default; }
 
 /* ── embed picker (Manager embeds tab) ───────────────────────────────────────
    Every embed the manager sends is editable, so the list is long enough to need filtering. */

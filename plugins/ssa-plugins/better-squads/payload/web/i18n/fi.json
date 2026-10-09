@@ -162,6 +162,7 @@
   "pl.better-squads.card.muted": "Ylläpitäjän mykistämät",
   "pl.better-squads.card.muted.sub": "Mykistetty pelaaja ei saa näitä viestejä; squad saa. Hän ei voi perua sitä.",
   "pl.better-squads.test.sent": "Lähetetty {n} ryhmän jäsenelle",
+  "pl.better-squads.test.sent.one": "Lähetetty {n} ryhmän jäsenelle",
   "pl.better-squads.test.notinsquad": "Tämä pelaaja ei ole ryhmässä",
   "pl.better-squads.test.nobodyonline": "Kukaan tuosta ryhmästä ei ole paikalla",
   "pl.better-squads.test.failedwhy": "Testi epäonnistui — {why}",

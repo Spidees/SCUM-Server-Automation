@@ -197,7 +197,15 @@
    * The hint belongs under the LABEL, which is where the panel's own settings screens put it — a
    * hint under the control pushes the next row's control out of line with this one.
    */
+  /** The row's label is the control's NAME too: a dropdown reading only its value ("Airfield")
+   *  says nothing about what it chooses to a screen reader. */
+  function nameCtl(ctl, label) {
+    if (typeof label !== 'string' || !label || !ctl || !ctl.tagName) return;
+    var f = /^(SELECT|INPUT|TEXTAREA)$/.test(ctl.tagName) ? ctl : (ctl.querySelector ? ctl.querySelector('select') : null);
+    if (f && !f.getAttribute('aria-label') && !f.id) f.setAttribute('aria-label', label);
+  }
   function row(label, control, hint) {
+    nameCtl(control, label);
     return el('div', { class: 'mcm-row' }, [
       el('label', {}, label),
       hint ? el('p', { class: 'mcm-hint' }, hint) : null,
@@ -489,7 +497,7 @@
         if (SSA.toast) SSA.toast(T('pl.more-chat-messages.save.saved', 'Saved'));
         return;
       }
-      if (SSA.toast) SSA.toast(T('pl.more-chat-messages.save.partial.toast', 'Saved, but {n} setting(s) did not land', { n: shown.length }), 'error');
+      if (SSA.toast) SSA.toast((shown.length === 1 ? T('pl.more-chat-messages.save.partial.toast.one', 'Saved, but {n} setting did not land', { n: shown.length }) : T('pl.more-chat-messages.save.partial.toast', 'Saved, but {n} settings did not land', { n: shown.length })), 'error');
       saveNote.appendChild(note('bad', [
         el('b', {}, T('pl.more-chat-messages.save.partial', 'These were not stored: ')), el('span', {}, shown.join(', ')), el('span', {}, '. '),
         el('span', {}, T('pl.more-chat-messages.save.partial.why', 'The manager runs an older copy of this plugin. Restart it and set them again.')),
@@ -502,9 +510,13 @@
     // of cannot be saved, and finding that out after a refresh is the worst way to learn it.
     const unsettable = missingFromBackend(loaded.defaults);
     if (unsettable.length) {
-      saveNote.appendChild(note('bad', T('pl.more-chat-messages.unsettable',
-        'This screen is newer than the running plugin, so {n} setting(s) cannot be saved: {list}. Restart the manager.',
-        { n: unsettable.length, list: unsettable.slice(0, 6).join(', ') })));
+      saveNote.appendChild(note('bad', (unsettable.length === 1
+        ? T('pl.more-chat-messages.unsettable.one',
+          'This screen is newer than the running plugin, so {n} setting cannot be saved: {list}. Restart the manager.',
+          { n: unsettable.length, list: unsettable.slice(0, 6).join(', ') })
+        : T('pl.more-chat-messages.unsettable',
+          'This screen is newer than the running plugin, so {n} settings cannot be saved: {list}. Restart the manager.',
+          { n: unsettable.length, list: unsettable.slice(0, 6).join(', ') }))));
     }
 
     // ── the live half ────────────────────────────────────────────────────────────────────────────

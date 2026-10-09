@@ -63,6 +63,10 @@
 .bs-empty{color:var(--muted,#8b9099);font-size:.8rem}
 
 .bs-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+/* A button does not shrink below its own words unless they are wider than the column, so the row
+   wraps instead; on a phone the buttons stretch to the column so a wrapped row is not a staircase. */
+.bs-actions>button{flex-shrink:0;max-width:100%}
+@media (max-width:480px){.bs-actions>button{flex:1 0 auto;padding-left:.6rem;padding-right:.6rem}}
 /* Carries a whole sentence when a save is refused, so it needs room to wrap onto its own line rather
    than pushing the button off a narrow screen. Stays next to its button until the next attempt — a
    toast is gone in four seconds and the owner's edits are still sitting there unsaved. */

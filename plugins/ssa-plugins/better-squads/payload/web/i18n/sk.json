@@ -162,6 +162,8 @@
   "pl.better-squads.card.muted": "Umlčané adminom",
   "pl.better-squads.card.muted.sub": "Umlčaný hráč nedostane žiadnu z týchto správ; spoluhráči áno. Sám to zrušiť nemôže.",
   "pl.better-squads.test.sent": "Odoslané {n} členom squadu",
+  "pl.better-squads.test.sent.one": "Odoslané {n} členovi squadu",
+  "pl.better-squads.test.sent.few": "Odoslané {n} členom squadu",
   "pl.better-squads.test.notinsquad": "Tento hráč nie je v squade",
   "pl.better-squads.test.nobodyonline": "Z toho squadu nie je nikto online",
   "pl.better-squads.test.failedwhy": "Test zlyhal — {why}",

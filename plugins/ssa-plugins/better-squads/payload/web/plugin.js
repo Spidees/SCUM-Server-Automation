@@ -161,6 +161,8 @@
       else if (props[k] != null && props[k] !== false) e.setAttribute(k, props[k] === true ? '' : props[k]);
     });
     (Array.isArray(kids) ? kids : (kids != null ? [kids] : [])).forEach(function (c) { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    // An icon button is named by aria-label; its title is the localised name, so it is that too.
+    if (tag === 'button' && e.title && !e.hasAttribute('aria-label') && !e.textContent.trim()) e.setAttribute('aria-label', e.title);
     return e;
   }
   var icon = function (id, cls) { return SSA.icon(id, cls); };
@@ -614,7 +616,7 @@
         SSA.pickPlayer().then(function (p) {
           if (!p) return;
           api('/test', { method: 'POST', body: { steamId: String(p.steamId || p.SteamID || '') } }).then(function (r) {
-            if (r && r.ok) toast(T('pl.better-squads.test.sent', 'Sent to {n} squad member(s)', { n: r.delivered }), 'ok');
+            if (r && r.ok) toast((r.delivered === 1 ? T('pl.better-squads.test.sent.one', 'Sent to {n} squad member', { n: r.delivered }) : T('pl.better-squads.test.sent', 'Sent to {n} squad members', { n: r.delivered })), 'ok');
             else if (r && r.error === 'not_in_squad') toast(T('pl.better-squads.test.notinsquad', 'That player is not in a squad'), 'err');
             else if (r && r.error === 'nobody_online') toast(T('pl.better-squads.test.nobodyonline', 'Nobody from that squad is online'), 'err');
             else if (r && r.error) toast(T('pl.better-squads.test.failedwhy', 'Test failed — {why}', { why: r.error }), 'err');
