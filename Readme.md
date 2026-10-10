@@ -4,15 +4,15 @@
 
 # SCUM Server Automation
 
-**The all-in-one manager for SCUM dedicated servers.**
+**The all-in-one manager for SCUM dedicated servers, and the tools around it.**
 
-Automated hosting · a full Discord bot · a web admin panel · a live map · leaderboards · an in-game economy · player management · and a real plugin platform.
+Hosting · admin panel · live map · Discord bot · Field Console · SSA Bridge · plugins · and the SCUMSA Launcher for players.
 
-[**🌐 scumsa.com**](https://scumsa.com) &nbsp;·&nbsp; [**📖 Documentation**](https://scumsa.com/docs) &nbsp;·&nbsp; [**⬇ Download**](#-download) &nbsp;·&nbsp; [**🧩 Plugins**](#-plugins) &nbsp;·&nbsp; [**🛠 Build a plugin**](#-build-your-own)
+[**🌐 scumsa.com**](https://scumsa.com) &nbsp;·&nbsp; [**📖 Documentation**](https://scumsa.com/docs) &nbsp;·&nbsp; [**⬇ Download**](#-download) &nbsp;·&nbsp; [**🎮 Launcher**](#-the-scumsa-launcher-for-players) &nbsp;·&nbsp; [**🧩 Plugins**](#-plugins) &nbsp;·&nbsp; [**🛠 Build a plugin**](#-build-your-own)
 
 <br>
 
-<img src="images/admin_live_map.webp" width="900" alt="Live Map: players, vehicles, bases and chests, with in-game spawn and teleport from the panel">
+<img src="images/admin_live_map.webp" width="900" alt="The live map in the admin panel: players, vehicles, bases, traps and events on the island, with a list of who is online">
 
 </div>
 
@@ -20,16 +20,19 @@ Automated hosting · a full Discord bot · a web admin panel · a live map · le
 
 ## What is it?
 
-**SCUM Server Automation (SSA)** runs your SCUM dedicated server end to end so you don't have to babysit it. It installs and updates the server, keeps it alive with scheduled restarts and backups, and gives you a web panel and a Discord bot to run everything, plus a plugin platform so the community can extend it.
+**SCUM Server Automation (SSA)** runs your SCUM dedicated server end to end so you don't have to babysit it. It installs and updates the server and keeps it alive with scheduled restarts and backups. You run everything from a web panel and a Discord bot, and plugins extend it.
 
 - **Hands-off hosting:** automated install, game updates, scheduled restarts and backups, crash detection and auto-recovery.
-- **Web admin panel:** a dashboard for server control, players, configuration and live logs, with a **Live Map** of players, vehicles, bases and chests (and in-game spawn and teleport straight from the map).
-- **Discord bot:** status embeds, log feeds (kills, economy, raids, logins…), leaderboards, player linking and admin commands.
-- **Players & economy:** stats, skills, leaderboards (weekly and all-time), squads, and the in-game trader economy at a glance.
-- **Public Field Console:** a public stats site for your players.
+- **Web admin panel:** server vitals, players with risk checks, squads, the in-game chat, a log viewer and every game setting explained. Each admin gets their own permissions, and it works on a phone.
+- **Live map:** players, vehicles, bases, traps and events on the real island. Teleport, heal, give items or spawn things straight from the map, act on everything inside a circle, and lay out custom zones.
+- **Discord bot:** server status, restart warnings, log feeds (kills, raids, economy, logins…), leaderboards, account linking and admin commands.
+- **Public Field Console:** a public page for your players with server status, leaderboards, squads, their own stats and skills, their bases and vehicles on a map, bunkers, events and chat.
+- **Economy:** trader funds and stock at every outpost, trader prices and restock rules in one place.
+- **In-game control:** the free **SSA Bridge** runs inside the game. It gives the panel, the map, Discord and plugins live readings and actions.
+- **Server browser:** your server's live player count on [scumsa.com](https://scumsa.com/servers/), with your own description and votes.
 - **Plugin platform:** add whole new features with manager plugins and in-game UE4SS mods (see below).
 
-Everything is at **[scumsa.com](https://scumsa.com)**.
+The manager is free to run. **Premium** adds a paid layer on top: the live map, in-game control, the game database with pictures, plugins and more. See [Premium](https://scumsa.com/docs/owners/premium).
 
 ---
 
@@ -37,16 +40,24 @@ Everything is at **[scumsa.com](https://scumsa.com)**.
 
 <table>
 <tr>
-<td width="50%"><img src="images/admin_dashboard.webp" alt="Admin dashboard"><br><b>Dashboard:</b> server control, status and quick actions.</td>
-<td width="50%"><img src="images/admin_players.webp" alt="Players"><br><b>Players:</b> stats, skills, squads and admin actions.</td>
+<td width="50%"><img src="images/admin_dashboard.webp" alt="Admin panel dashboard with server vitals, the next restart, backups and the live world state"><br><b>Dashboard:</b> server vitals, the next restart, backups and the live world at a glance.</td>
+<td width="50%"><img src="images/admin_players.webp" alt="Players screen with risk score, VPN and VAC checks, country and playtime"><br><b>Players:</b> every player with risk score, VPN and VAC checks, country and playtime.</td>
 </tr>
 <tr>
-<td width="50%"><img src="images/admin_plugins.webp" alt="Plugins"><br><b>Plugins:</b> install, enable and configure, right in the panel.</td>
-<td width="50%"><img src="images/field_console_leaderboards.webp" alt="Public Field Console"><br><b>Public Field Console:</b> a public stats site your players can browse.</td>
+<td width="50%"><img src="images/admin_live_map_actions.webp" alt="Admin actions menu opened on the live map: rescue, teleport, give items, spawn"><br><b>In-game actions:</b> teleport, heal, give items or spawn things straight from the map.</td>
+<td width="50%"><img src="images/admin_bridge_modules.webp" alt="SSA Bridge modules in the admin panel, grouped by area, each with its own switch"><br><b>SSA Bridge modules:</b> switch each in-game module on and tune it from the panel.</td>
+</tr>
+<tr>
+<td width="50%"><img src="images/field_console_overview.webp" alt="Field Console overview with server status, player count history, next restart and weather"><br><b>Field Console:</b> your public server page with status, player count, weather and the next restart.</td>
+<td width="50%"><img src="images/field_console_leaderboards.webp" alt="Field Console leaderboards with a top three podium for kills"><br><b>Leaderboards:</b> combat, survival, crafting and squad rankings, all-time and weekly.</td>
+</tr>
+<tr>
+<td width="50%"><img src="images/discord_bot.webp" alt="Discord bot messages: restart warnings, server online and offline, and account linking with buttons"><br><b>Discord bot:</b> restart warnings, server status and account linking, all posted for you.</td>
+<td width="50%"><img src="images/scumsa_database_item.webp" alt="Item page from the game database showing the M16A4 with stats, attachments and repair"><br><b>Game database:</b> stats, attachments and repair for every item, read from the game files.</td>
 </tr>
 </table>
 
-More screenshots and a live demo on [**scumsa.com**](https://scumsa.com).
+More screenshots on [**scumsa.com/features.php**](https://scumsa.com/features.php) and [**scumsa.com/field-console.php**](https://scumsa.com/field-console.php).
 
 ---
 
@@ -65,19 +76,44 @@ The filename tells you which kind of build it is:
 
 [**`ssa_bridge/`**](ssa_bridge) holds the **SSA Bridge** as a standalone download: the in-game mod that lets anything talk to a running SCUM server. Spawns, teleports, admin commands, and reads of the live world that no log file and no save can give you. A file named `unstable_…` is a test build.
 
-**It is free, and it does not need the manager.** Every module, every command and every read works on its own: unpack it into your server's `SCUM/Binaries/Win64/` and it runs. UE4SS is in the archive, so there is nothing else to fetch. A licence changes exactly one thing: whether joining players see a single chat line naming the bridge.
+**It is free, and it does not need the manager.** Every module, command and read works on its own. Unpack it into your server's `SCUM/Binaries/Win64/` and it runs. UE4SS is in the archive, so there is nothing else to fetch. A licence changes exactly one thing: whether joining players see a single chat line naming the bridge.
 
-**Building your own tool?** [`ssa_bridge/sdk/`](ssa_bridge/sdk) has typings for the whole interface and a small client for Node and for Python, so a bot, a website or a tool on another machine can talk to the bridge without the manager.
+**Building your own tool?** [`ssa_bridge/sdk/`](ssa_bridge/sdk) has typings for the whole interface and a small client for Node and for Python. Your bot, website or tool can then talk to the bridge without the manager.
 
 ### 📡 The SSA Reporter, for the server browser
 
-[**`ssa_reporter/`**](ssa_reporter) holds the **SSA Reporter**: a small in-game mod that tells [scumsa.com](https://scumsa.com) your server's name, player count, game time and version once a minute. Your listing in the server browser is then live and yours to claim, even when the official master list is stale or wrong. Unpack it into your server's `SCUM/Binaries/Win64/`, paste the token from your scumsa account page into its config, restart. It sends nothing from the save and no player names. Run the bridge or the Reporter, not both: the bridge has the same report built in.
+[**`ssa_reporter/`**](ssa_reporter) holds the **SSA Reporter**: a small in-game mod that tells [scumsa.com](https://scumsa.com) your server's name, player count, version, game time and uptime once a minute. Your listing in the server browser is then live and yours to claim, even when the official master list is stale or wrong. Unpack it into your server's `SCUM/Binaries/Win64/`, paste the token from your scumsa account page into its config, restart. It sends nothing from the save and no player names. Run the bridge or the Reporter, not both: the bridge has the same report built in.
 
 ### 🎮 The SCUMSA Launcher, for players
 
-[**`launcher/`**](launcher) holds the **SCUMSA Launcher** installer: every SCUM server with your real ping, one press to join, and the client mods a server needs installed for you. Run the installer once; the launcher updates itself from [scumsa.com](https://scumsa.com).
+[**`launcher/`**](launcher) holds the **SCUMSA Launcher** installer, free for every SCUM player:
+
+- **Every SCUM server** with your real ping over the game's own connection. Filter by mode, region, country, mods and free slots.
+- **One press to join.** Your favourites, recent servers and characters come from your own game.
+- **The right mods for each server.** Join a server that lists mods and the launcher installs exactly those. Join a normal server and they come out again. Mods only load without BattlEye, so a modded game cannot join protected servers; the launcher asks you first.
+
+Run the installer once; the launcher updates itself. More on the [launcher page](https://scumsa.com/launcher.php) and in the [launcher guide](https://scumsa.com/docs/players/launcher).
+
+<table>
+<tr>
+<td width="50%"><img src="images/launcher_servers.webp" alt="SCUMSA Launcher server list with ping, players, mode and the region filter open"><br><b>Server list:</b> every server with ping, players and mode, filtered by region or country.</td>
+<td width="50%"><img src="images/launcher_server_details.webp" alt="SCUMSA Launcher server details with address, location, players, description, votes and a Join button"><br><b>Server details:</b> the owner's own description, votes and one press to join.</td>
+</tr>
+</table>
 
 > **What's in this repository.** The public home for the SSA **plugins**, developer **examples**, the manager **release**, the **bridge**, the **Reporter** and the **launcher**. The manager's own source is closed; everything you need to *run* a server, or to *play* on one, is here plus [scumsa.com](https://scumsa.com).
+
+---
+
+## 🌐 scumsa.com
+
+The website is the home of all of it, and a few things live only there:
+
+- **[Server browser](https://scumsa.com/servers/):** every SCUM server, with a live player count for servers that report it. Claim your server to add a description, tags, languages and links, and let players vote for it. Owners get a vote API to reward voters in game.
+- **[Game database](https://scumsa.com/database/):** items, vehicles, creatures, recipes, traders and more, with pictures, read from the game files.
+- **[Map](https://scumsa.com/map/):** the island with every named place, the sector grid and search.
+- **[Mods](https://scumsa.com/mods):** the client mod library the launcher installs from.
+- **[Plugins](https://scumsa.com/plugins.php)** and **[documentation](https://scumsa.com/docs)** for owners, players and developers.
 
 ---
 
@@ -104,7 +140,7 @@ Browse and get them in-app, or on the [Plugins page at scumsa.com](https://scums
 
 Anyone can write plugins against a small, documented API, with no access to the manager's source needed. Start from the runnable examples in [**`plugins/examples/`**](plugins/examples):
 
-- [**`hello-plugin`**](plugins/examples/hello-plugin): a complete manager plugin that demonstrates every feature end to end: config, events, HTTP routes, the game and manager databases, item and vehicle images, in-game chat and `/commands`, the SSA Bridge, Discord, scheduling, an admin workspace tab and a public Field Console tab.
+- [**`hello-plugin`**](plugins/examples/hello-plugin): a complete manager plugin that shows every feature end to end. It covers config, events, HTTP routes, the game and manager databases, item and vehicle images, in-game chat and `/commands`. It also covers the SSA Bridge, Discord, scheduling, an admin tab and a public Field Console tab.
 - [**`ue4ss-mod-example`**](plugins/examples/ue4ss-mod-example): a small, safe UE4SS (Lua) mod skeleton for in-game work.
 - [**`ssa-plugin-sdk.d.ts`**](plugins/examples/ssa-plugin-sdk.d.ts): TypeScript typings for the whole `host` / `SSA` / `FC` surface (editor autocomplete).
 
@@ -123,6 +159,11 @@ The plugins and the manager release are **© 2026 Martin Zámečník, all rights
 - **Website & downloads:** [scumsa.com](https://scumsa.com)
 - **Documentation:** [scumsa.com/docs](https://scumsa.com/docs)
 - **Plugins:** [scumsa.com/plugins.php](https://scumsa.com/plugins.php)
+- **SCUMSA Launcher:** [scumsa.com/launcher.php](https://scumsa.com/launcher.php)
+- **SSA Bridge:** [scumsa.com/bridge.php](https://scumsa.com/bridge.php)
+- **SSA Reporter:** [scumsa.com/reporter.php](https://scumsa.com/reporter.php)
+- **Server browser:** [scumsa.com/servers](https://scumsa.com/servers/)
+- **Game database:** [scumsa.com/database](https://scumsa.com/database/)
 
 <div align="center">
 
