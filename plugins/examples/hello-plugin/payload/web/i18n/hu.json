@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Bejelentés a játékban",
+  "pl.hello-plugin.announceAsk": "Elküldöd az üdvözlést mindenkinek a játékban?",
+  "pl.hello-plugin.empty": "Ezen a szerveren még senki sem játszott.",
+  "pl.hello-plugin.greet": "Üdvözlés",
+  "pl.hello-plugin.greeting": "Üdvözlés",
+  "pl.hello-plugin.lookup": "Tárgy keresése",
+  "pl.hello-plugin.name": "Név",
+  "pl.hello-plugin.noPremium": "A Premium ki van kapcsolva, így a játékbeli eszközök nem válaszolnak.",
+  "pl.hello-plugin.online": "Most online: {n}",
+  "pl.hello-plugin.pick": "Hely kiválasztása",
+  "pl.hello-plugin.pickNote": "Koppints a térképen oda, ahová nézni szeretnél.",
+  "pl.hello-plugin.players": "Játékosok",
+  "pl.hello-plugin.save": "Mentés",
+  "pl.hello-plugin.saved": "Mentve.",
+  "pl.hello-plugin.sent": "Elküldve.",
+  "pl.hello-plugin.steam": "Steam-azonosító",
+  "pl.hello-plugin.stopped": "A játék adatbázisa nem olvasható, amíg a szerver le van állítva. Itt minden más működik.",
+  "pl.hello-plugin.tab": "Szia",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Jelentkezz be, hogy lásd a saját üdvözlésed.",
+  "pl.hello-plugin.wave": "Visszaintegetés"
+}

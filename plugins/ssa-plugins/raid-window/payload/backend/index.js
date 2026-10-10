@@ -27,10 +27,12 @@
 //     be allowed to end while it is still going on.
 //
 //   · The manager's own owner/raid alerts (`raid:alert`, built from the game's base-destruction log)
-//     may only ever EXTEND a window this plugin already opened on that first evidence. They carry an
-//     owner and no base id, and an owner can have several bases, so letting them START a window would
-//     push protection on bases nobody has touched. They are a second pair of eyes for the case that
-//     matters — the bridge going quiet mid-raid — and never a second way in.
+//     may only ever EXTEND a window this plugin already opened on that first evidence, and only a
+//     base ATTACK counts — not a stolen car, a picked lock or a protection status change. They carry
+//     no base id, so the base is found by where the damage landed, or failing that by the owner of
+//     the base's FLAG; letting them START a window would push protection on bases nobody has
+//     touched. They are a second pair of eyes for the case that matters — the bridge going quiet
+//     mid-raid — and never a second way in.
 //
 // ── AND HOW IT ENDS, WHICH IS THE HALF THAT CAN GO SILENTLY WRONG ────────────────────────────────
 //
@@ -283,7 +285,12 @@ function normalizeConfig(raw) {
  * wrote and wrong for a SAVE: an owner who typed 10 into a box whose floor is 60 was answered "Saved",
  * the screen kept showing 10, and the plugin ran on 3600. A save is refused instead, naming the box.
  */
-function invalidFields(body) {
+/**
+ * The same, as `{ key, rule, lo, hi, unit, max }` per box, so the tab can say it in the reader's
+ * language with its own label. `rule` is range | bool | duration | ids; `lo`/`hi` are in the unit
+ * the tab shows (`unit` is seconds | minutes | hours, or null for a plain count).
+ */
+function invalidDetails(body) {
   const out = [];
   if (!body || typeof body !== 'object') return out;
   for (const k of Object.keys(body)) {
@@ -291,15 +298,19 @@ function invalidFields(body) {
     if (CLAMP[k]) {
       const [lo, hi] = CLAMP[k];
       const n = (v === null || v === '' || typeof v === 'boolean') ? NaN : Number(v);
-      if (!(Number.isFinite(n) && n >= lo && n <= hi)) out.push(`“${LABELS[k]}” must be ${shownRange(k, lo, hi)}`);
+      if (!(Number.isFinite(n) && n >= lo && n <= hi)) {
+        const u = SHOWN_IN[k];
+        const f = (x) => (u ? Math.round((x / u[1]) * 100) / 100 : x);
+        out.push({ key: k, rule: 'range', lo: f(lo), hi: f(hi), unit: u ? u[0] : null, text: `“${LABELS[k]}” must be ${shownRange(k, lo, hi)}` });
+      }
     } else if (BOOLS.indexOf(k) >= 0) {
-      if (typeof v !== 'boolean') out.push(`“${LABELS[k]}” must be on or off`);
+      if (typeof v !== 'boolean') out.push({ key: k, rule: 'bool', text: `“${LABELS[k]}” must be on or off` });
     } else if (k === 'durationSeconds') {
       if (v === null || v === '') continue;
       const n = typeof v === 'boolean' ? NaN : Number(v);
-      if (!(Number.isFinite(n) && n > 0 && n <= MAX_WINDOW)) out.push(`“${LABELS[k]}” must be empty, or up to ${MAX_WINDOW / 3600} hours`);
+      if (!(Number.isFinite(n) && n > 0 && n <= MAX_WINDOW)) out.push({ key: k, rule: 'duration', max: MAX_WINDOW / 3600, text: `“${LABELS[k]}” must be empty, or up to ${MAX_WINDOW / 3600} hours` });
     } else if (k === 'exemptBaseIds' || k === 'exemptFlagIds') {
-      if (!Array.isArray(v) || v.some((x) => oneId(x) == null)) out.push(`“${LABELS[k]}” must be a list of id numbers, separated by commas`);
+      if (!Array.isArray(v) || v.some((x) => oneId(x) == null)) out.push({ key: k, rule: 'ids', text: `“${LABELS[k]}” must be a list of id numbers, separated by commas` });
     }
   }
   return out;
@@ -420,8 +431,13 @@ module.exports = {
     // source that could not answer, this is a pass that had no reason to ask.
     let idle = null;
 
-    // The bridge's own names for the two modules, the words on its cards in Settings → Bridge.
+    // The bridge's own names for the two modules, the words on its cards under Plugins → SSA Bridge.
     const MODULE_NAME = { raid: 'Raid detection', protect: 'Raid protection control' };
+    /**
+     * A source that could not answer, as a CODE the tab translates. `text` is the English fallback
+     * for an older tab, and for `refused` it is the bridge's own words, which are shown as they are.
+     * `module` is the bridge card's own name, which ships in English on the bridge itself.
+     */
     function noteFailure(key, q, what) {
       const code = (q && q.code) || 'bridge_off';
       const shown = MODULE_NAME[what] || what;
@@ -430,7 +446,7 @@ module.exports = {
       else if (code === 'module_off') text = `the bridge's ${shown} module is switched off. The Bridge box on this tab turns it on`;
       else if (code === 'no_module') text = `this server runs an older SSA Bridge with no ${shown} module. Update the bridge`;
       else text = 'the SSA Bridge did not answer';
-      notes[key] = { code, text, at: now0() };
+      notes[key] = { code, text, module: shown, at: now0() };
       if (code === 'bridge_off' || !text) return;
       warnQuietly('note:' + key, `${text}. No new raid evidence can arrive while that is true — nothing is being ended on that account.`);
     }
@@ -438,7 +454,32 @@ module.exports = {
 
     const canQuery = () => !!(host.bridge && typeof host.bridge.query === 'function');
     const canCommand = () => !!(host.bridge && typeof host.bridge.command === 'function');
-    const dbReadable = () => { try { return host.db.scum.available() === true; } catch (e) { return false; } };
+    /**
+     * ⚠ **"THE SAVE IS THERE" IS NOT "THE SAVE CAN BE READ".** `host.db.scum.available()` is a file
+     * existence test, and the manager lets go of its handle before every stop, restart and zone
+     * write while the file stays on disk. In that window every read answers `null`/`[]`, which this
+     * plugin used to read as "this base has no flag" and "nobody is online". So readability is
+     * PROBED with a query that cannot come back empty from a readable save.
+     *
+     *   absent     — no save at all yet (the server has never run, or the path is wrong)
+     *   unreadable — the save is there and a read did not answer (stopping, starting, restarting)
+     *   readable   — a read answered
+     */
+    function saveState() {
+      let there = false;
+      try { there = host.db.scum.available() === true; } catch (e) { there = false; }
+      if (!there) return 'absent';
+      let r = null;
+      try { r = host.db.scum.get('SELECT 1 AS one'); } catch (e) { r = null; }
+      return (r && Number(r.one) === 1) ? 'readable' : 'unreadable';
+    }
+    const dbReadable = () => saveState() === 'readable';
+
+    // Who connected through the bridge's own join hook. The online list read from the save lags
+    // by the save interval, so without this "starts again as soon as somebody connects" would wait
+    // for the next autosave.
+    const liveHere = new Set();
+    const sidOf = (p) => String((p && (p.steamId || p.steamid || p.SteamID || p.steam_id)) || '');
 
     /**
      * Is there a reason not to do any work at all right now? `null` when there is none.
@@ -449,6 +490,7 @@ module.exports = {
      */
     function idleReason() {
       if (!(host.players && typeof host.players.online === 'function')) return null;
+      if (liveHere.size) return null;
       if (!dbReadable()) return null;
       let list;
       try { list = host.players.online(); } catch (e) { return null; }
@@ -477,8 +519,9 @@ module.exports = {
       // answers `[]` for a handle that is missing and for a query that threw, exactly as it does for
       // a base with no flag — and those are opposite facts: one is "leave this base alone", the
       // other is "I could not find out". Without this the screen would tell an owner their base has
-      // no flag every time the server was mid-restart.
-      if (host.db.scum.available() !== true) return null;
+      // no flag every time the server was mid-restart. `available()` alone is not that question:
+      // it stays true while the manager has let go of the save, so readability is probed.
+      if (!dbReadable()) return null;
       let rows;
       try {
         rows = host.db.scum.all(
@@ -564,8 +607,11 @@ module.exports = {
       return out;
     }
 
+    // `code` and `params` are what the tab translates; `why` is the English fallback for an older tab.
     const tooLong = (seconds, where) => ({
       seconds: null, source: null,
+      code: 'too_long',
+      params: { hours: Math.round(seconds / 3600), max: MAX_WINDOW / 3600, from: where === 'the save' ? 'save' : 'game' },
       why: `${where} says this base's protection lasts ${Math.round(seconds / 3600)} hours, which is longer than the ${MAX_WINDOW / 3600} hours the SSA Bridge will ever send. Writing a shorter length back would take protection away, so it is not pushed. To push it anyway, set a fixed protection length under More options`,
     });
 
@@ -592,7 +638,11 @@ module.exports = {
       const why = (saved === 0)
         ? 'the save holds no protection length for this base right now (the game writes 0 while an owner is online), and the running game did not offer one either'
         : 'neither the save nor the running game could say how long this base\'s protection lasts';
-      return { seconds: null, source: null, why: `${why}. To push it anyway, set a fixed protection length under More options` };
+      return {
+        seconds: null, source: null,
+        code: saved === 0 ? 'no_length_now' : 'no_length', params: {},
+        why: `${why}. To push it anyway, set a fixed protection length under More options`,
+      };
     }
 
     // ── reading the raid feed ───────────────────────────────────────────────────────────────────
@@ -728,35 +778,46 @@ module.exports = {
      * this is only ever asked on a refusal. `null` when it could not be read, which is a real answer
      * and is why the sentence below is built in two halves.
      */
-    let maxValueSeen = { at: 0, value: null };
+    const MAXVALUE_LABEL = 'Refuse Delay or Duration above';   // the bridge schema's own label, if the card cannot be read
+    let maxValueSeen = { at: 0, value: null, label: MAXVALUE_LABEL, moduleName: MODULE_NAME.protect };
     const MAXVALUE_TTL_MS = 300000;
     async function protectMaxValue() {
-      if (maxValueSeen.at && Date.now() - maxValueSeen.at < MAXVALUE_TTL_MS) return maxValueSeen.value;
-      let v = null;
+      if (maxValueSeen.at && Date.now() - maxValueSeen.at < MAXVALUE_TTL_MS) return maxValueSeen;
+      let v = null, label = MAXVALUE_LABEL, moduleName = MODULE_NAME.protect;
       try {
         const list = (host.bridge && typeof host.bridge.modules === 'function')
           ? await host.bridge.modules() : null;
         const m = (Array.isArray(list) ? list : []).find((x) => x && String(x.id) === 'protect');
         const raw = m && m.config ? Number(m.config.maxValue) : NaN;
         if (Number.isFinite(raw) && raw > 0) v = raw;
+        // The setting's name and the card's name are read off the module itself, so the sentence
+        // names the control the owner really sees.
+        const field = m && Array.isArray(m.schema) ? m.schema.find((f) => f && f.key === 'maxValue') : null;
+        if (field && typeof field.label === 'string' && field.label) label = field.label;
+        if (m && typeof m.name === 'string' && m.name) moduleName = m.name;
       } catch (e) { v = null; }
-      maxValueSeen = { at: Date.now(), value: v };
-      return v;
+      maxValueSeen = { at: Date.now(), value: v, label, moduleName };
+      return maxValueSeen;
     }
 
-    /** The bridge's range refusal, with the name of the setting that decides it. */
+    /**
+     * The bridge's refusal, and — for a range refusal — the setting that decides it.
+     *
+     * Returns `{ text, code, params }`. `text` is the bridge's own sentence, shown as it is. The
+     * route to the setting is NOT written here: the tab builds it from the panel's own words, so it
+     * is right in every language and survives a renamed tab. `code` is `range` or `bridge`.
+     */
     async function explainRefusal(text, r) {
       const said = String(text || '');
       // A bridge that already names the setting says it once; saying it again reads as two limits.
-      if (/Refuse Delay or Duration above/.test(said)) return said;
+      if (/Refuse Delay or Duration above/.test(said)) return { text: said, code: 'bridge', params: {} };
       const isRange = refusedAs(r, 'bad_value',
         /(delay|duration) must be a (?:plain decimal )?number between 0 and \d+/i);
-      if (!isRange) return said;
-      const limit = await protectMaxValue();
-      // Two halves, because "I could not read the card" and "the card says 90000" are different
-      // facts and only one of them may put a number in front of an owner.
-      const named = limit === null ? '' : ` (${limit})`;
-      return `${said}. That limit is the “Refuse Delay or Duration above” setting${named} on the bridge's Raid protection control card, under Plugins → SSA Bridge. Raise it there, or set a shorter fixed protection length under More options`;
+      if (!isRange) return { text: said, code: 'bridge', params: {} };
+      const m = await protectMaxValue();
+      // `limit: null` is "I could not read the card", which is a different fact from a number and
+      // must not put one in front of an owner.
+      return { text: said, code: 'range', params: { limit: m.value, setting: m.label, module: m.moduleName } };
     }
 
     /**
@@ -777,7 +838,7 @@ module.exports = {
       f.lastTryAt = now0();
       const dur = await durationFor(flagId, c, cache);
       if (dur.seconds == null) {
-        f.lastVerdict = { ok: false, state: 'no_duration', text: dur.why, at: now0() };
+        f.lastVerdict = { ok: false, state: 'no_duration', code: dur.code || null, params: dur.params || {}, text: dur.why, at: now0() };
         return false;
       }
 
@@ -812,26 +873,30 @@ module.exports = {
         record.pushes = (record.pushes || 0) + 1;
       }
 
-      let state, text;
+      // `text` is the bridge's own words or nothing: the tab says what each state means in its own
+      // translated words, and shows the bridge's note beside it. An English sentence invented here
+      // would reach every language untranslated.
+      let state, text, code = null, params = {};
       if (!r.ok) {
         state = 'refused';
-        text = await explainRefusal(r.reason || r.error || 'the bridge did not say why', r);
+        const ex = await explainRefusal(r.reason || r.error || '', r);
+        text = ex.text || null; code = ex.code; params = ex.params;
       } else if (r.changed === true) {
         state = 'moved';
-        text = r.note || 'the flag’s stored protection state moved';
+        text = r.note || null;
       } else if (r.changed === false) {
         state = 'unchanged';
-        text = r.note || 'the call was accepted and the flag’s stored state did not move';
+        text = r.note || null;
       } else {
         state = 'unconfirmed';
-        text = r.note || 'the call was accepted and the flag’s state could not be read back';
+        text = r.note || null;
       }
-      f.lastVerdict = { ok: r.ok === true, state, text, at };
+      f.lastVerdict = { ok: r.ok === true, state, code, params, text, at };
 
       remember({
         base: record.base, baseName: baseName(record.base), flag: Number(flagId),
         delaySeconds: delay, durationSeconds: dur.seconds, durationSource: dur.source,
-        state, text,
+        state, code, params, text,
         evidence: {
           hits: record.hits, destroyed: record.destroyed, damage: record.damage,
           elements: record.elements, lastHitAgoSeconds: Math.round((at - record.lastHitAt) / 1000),
@@ -850,8 +915,10 @@ module.exports = {
     async function readMode() {
       const t = now0();
       if (modeInfo && MODE_BY_CLASS[modeInfo.managerClass] && t - modeInfo.at < MODE_TTL_MS && t >= modeInfo.at) return modeInfo;
+      // `code` is what the tab translates, `cause` the note that explains an unreadable mode, and
+      // `text` the English fallback for an older tab.
       if (!canQuery()) {
-        modeInfo = { kind: 'unknown', managerClass: null, at: t, text: 'the SSA Bridge did not answer, so the plugin cannot tell which raid protection this server runs. Nothing is pushed until it can' };
+        modeInfo = { kind: 'unknown', code: 'unreadable', cause: { code: 'bridge_off', module: MODULE_NAME.protect }, managerClass: null, at: t, text: 'the SSA Bridge did not answer, so the plugin cannot tell which raid protection this server runs. Nothing is pushed until it can' };
         return modeInfo;
       }
       const q = await host.bridge.query('protect', 'manager');
@@ -859,19 +926,20 @@ module.exports = {
         clearNote('protect');
         const cls = (q.data && typeof q.data.managerClass === 'string') ? q.data.managerClass : null;
         const kind = (cls && MODE_BY_CLASS[cls]) || 'unknown';
-        let text = null;
-        if (kind === 'global') text = 'this server runs global raid protection, which protects bases by the clock rather than by who is online. There is nothing for this plugin to push';
-        else if (kind === 'unknown') text = `the server runs a raid-protection manager this plugin does not know (${cls || 'it could not be named'}), so nothing is pushed`;
-        modeInfo = { kind, managerClass: cls, at: t, text };
+        let text = null, code = null;
+        if (kind === 'global') { code = 'global'; text = 'this server runs global raid protection, which protects bases by the clock rather than by who is online. There is nothing for this plugin to push'; }
+        else if (kind === 'unknown') { code = 'unknown_class'; text = `the server runs a raid-protection manager this plugin does not know (${cls || 'it could not be named'}), so nothing is pushed`; }
+        modeInfo = { kind, code, cause: null, managerClass: cls, at: t, text };
         return modeInfo;
       }
       if (refusedAs(q, 'no_manager', /no raid-protection manager/i)) {
-        modeInfo = { kind: 'none', managerClass: null, at: t, text: 'the game has no raid-protection manager right now: either the server runs no raid protection, or it is still starting. Nothing is pushed' };
+        modeInfo = { kind: 'none', code: 'none', cause: null, managerClass: null, at: t, text: 'the game has no raid-protection manager right now: either the server runs no raid protection, or it is still starting. Nothing is pushed' };
         return modeInfo;
       }
       noteFailure('protect', q, 'protect');
       const said = notes.protect && notes.protect.text ? notes.protect.text : 'the SSA Bridge did not answer';
-      modeInfo = { kind: 'unknown', managerClass: null, at: t, text: `${said}, so the plugin cannot tell which raid protection this server runs. Nothing is pushed until it can` };
+      const cause = notes.protect ? { code: notes.protect.code, module: notes.protect.module, text: notes.protect.text } : { code: 'bridge_off', module: MODULE_NAME.protect };
+      modeInfo = { kind: 'unknown', code: 'unreadable', cause, managerClass: null, at: t, text: `${said}, so the plugin cannot tell which raid protection this server runs. Nothing is pushed until it can` };
       return modeInfo;
     }
 
@@ -942,28 +1010,33 @@ module.exports = {
        * there waits for ever. **`changed === false` is the test**, and converting these two the
        * same way as the three above is the mistake this comment exists to prevent.
        */
-      let state, text;
+      let state, text, code = null, params = {};
       if (!r.ok) {
         const reason = String(r.reason || r.error || '');
         if (refusedAs(r, 'unknown_verb', /unknown verb 'postpone'/)) {
           state = 'refused';
+          code = 'bridge_too_old';
           text = 'this server runs an SSA Bridge that cannot postpone offline protection yet. Update the SSA Bridge';
         } else if (refusedAs(r, 'already_running', /already running/i)) {
           state = 'running';
-          text = reason;
+          text = reason || null;
         } else if (r.code === 'refused') {
           state = 'refused';
-          text = await explainRefusal(reason || 'the bridge did not say why', r);
+          const ex = await explainRefusal(reason, r);
+          text = ex.text || null; code = ex.code; params = ex.params;
           // The server was restarted into another mode since the mode was last read: ask again next pass.
           if (refusedAs(r, 'wrong_protection_type', /for offline raid protection only/i)) modeInfo = null;
         } else {
           state = 'refused';
           noteFailure('protect', r, 'protect');
+          // Not the bridge's words: the bridge could not be asked. The tab says so from the code.
+          code = 'note';
+          params = { note: notes.protect ? notes.protect.code : 'bridge_off', module: MODULE_NAME.protect };
           text = (notes.protect && notes.protect.text) || 'the SSA Bridge did not answer';
         }
       } else if (r.changed === true) {
         state = 'moved';
-        text = r.note || 'the flag\'s offline protection now starts later';
+        text = r.note || null;
       } else if (r.changed === false) {
         /**
          * ⚠ **A SUCCESS, AND THE LAST ENGLISH TEST IN THIS FILE — DELIBERATELY.**
@@ -981,10 +1054,10 @@ module.exports = {
          * `say_unchanged` paths, which is a bridge change nobody has asked for.
          */
         state = /already starts in/i.test(String(r.note || '')) ? 'later' : 'unchanged';
-        text = r.note || 'nothing needed changing';
+        text = r.note || null;
       } else {
         state = 'unconfirmed';
-        text = r.note || 'the bridge accepted the push and did not say whether the start moved';
+        text = r.note || null;
       }
 
       if (r.ok === true) f.pushedForHitAt = record.lastHitAt;
@@ -995,7 +1068,7 @@ module.exports = {
       }
 
       const prev = f.lastVerdict ? f.lastVerdict.state : null;
-      f.lastVerdict = { ok: r.ok === true, state, text, at, mode: 'offline' };
+      f.lastVerdict = { ok: r.ok === true, state, code, params, text, at, mode: 'offline' };
 
       // A push that moved, or anything that went wrong, is always listed. "Nothing needed doing" is
       // listed when it is NEW, so a defender sitting online for an evening is one line, not thirty.
@@ -1003,7 +1076,7 @@ module.exports = {
         remember({
           base: record.base, baseName: baseName(record.base), flag: Number(flagId), mode: 'offline',
           delaySeconds: delay, durationSeconds: null, durationSource: null,
-          state, text,
+          state, code, params, text,
           evidence: {
             hits: record.hits, destroyed: record.destroyed, damage: record.damage,
             elements: record.elements, lastHitAgoSeconds: Math.round((at - record.lastHitAt) / 1000),
@@ -1084,7 +1157,7 @@ module.exports = {
           r.closedAt = now;
           dirty = true;
           host.logger.info(`base ${r.base} has taken no further damage for ${c.holdSeconds}s — its protection window is no longer being pushed`);
-          remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'closed', text: `no damage for ${Math.round(c.holdSeconds / 60)} minutes, so the raid is over. Protection starts when the last push said it would` });
+          remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'closed', code: 'quiet', params: { minutes: Math.round(c.holdSeconds / 60) }, text: `no damage for ${Math.round(c.holdSeconds / 60)} minutes, so the raid is over. Protection starts when the last push said it would` });
         }
       }
 
@@ -1096,7 +1169,10 @@ module.exports = {
       if (!idle && canCommand() && anyToPush) {
         mode = await readMode();
         const pushable = mode.kind === 'offline' || mode.kind === 'flagSpecific';
-        notes.mode = pushable ? null : { code: mode.kind, text: mode.text || 'the raid protection this server runs could not be read', at: now0() };
+        notes.mode = pushable ? null : {
+          code: mode.code || mode.kind, kind: mode.kind, cls: mode.managerClass || null, cause: mode.cause || null,
+          text: mode.text || 'the raid protection this server runs could not be read', at: now0(),
+        };
         if (!pushable) {
           warnQuietly('mode:' + mode.kind, `${mode.text || 'the raid protection mode could not be read'}.`);
           mode = null;
@@ -1111,7 +1187,7 @@ module.exports = {
             if (!r.capped) {
               r.capped = true;
               dirty = true;
-              remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'capped', text: `this raid has been pushed ${r.pushes} time(s), the most “Most pushes for one raid” allows. Nothing more is pushed until it ends` });
+              remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'capped', code: 'capped', params: { pushes: r.pushes }, text:`this raid has been pushed ${r.pushes} time(s), the most “Most pushes for one raid” allows. Nothing more is pushed until it ends` });
             }
             continue;
           }
@@ -1125,7 +1201,8 @@ module.exports = {
               // ago, shown now, says "these are this base's flags" about a database nobody can read.
               r.knownFlags = null;
               r.flagsAt = 0;
-              noteFailure('db', { code: 'refused', reason: 'the game database could not be read, so the plugin cannot find this base\'s flag yet' }, 'database');
+              notes.db = { code: 'save_unreadable', text: 'the game database could not be read, so the plugin cannot find this base\'s flag yet', at: now0() };
+              warnQuietly('note:db', 'the game database could not be read, so the plugin cannot find a raided base\'s flag yet. Nothing is being ended on that account.');
               continue;
             }
             clearNote('db');
@@ -1195,31 +1272,94 @@ module.exports = {
       poll().catch((e) => host.logger.warn('pass failed: ' + e.message)).then(() => { busy = false; }, () => { busy = false; });
     });
 
-    // The manager's own owner/raid alerts. They may only ever EXTEND a window this plugin already
-    // opened — they name an owner and not a base, and an owner can have several bases, so starting a
-    // window from one would push protection on bases nobody has touched.
-    host.events.on('raid:alert', (e) => {
-      // Nothing open means nothing an alert may touch, so the database is not asked.
-      if (!Object.keys(raids).some((k) => isOpen(raids[k]))) return;
-      const c = cfg();
-      if (!c.enabled || !c.useOwnerAlerts) return;
+    // Somebody connecting ends the "nobody is online" idle at once, rather than at the next autosave.
+    try {
+      if (host.players && typeof host.players.onJoin === 'function') {
+        host.players.onJoin((p) => { const s = sidOf(p); if (s) liveHere.add(s); lastRun = 0; });
+      }
+      if (host.players && typeof host.players.onLeave === 'function') {
+        host.players.onLeave((p) => { const s = sidOf(p); if (s) liveHere.delete(s); });
+      }
+    } catch (e) { /* an older manager has no join hook; the saved list still decides */ }
+
+    /**
+     * Is this alert a base being DAMAGED? Only that may keep a raid going.
+     *
+     * `raid:alert` also carries stolen cars, opened chests, picked locks and every protection status
+     * change, and letting those count kept a raid "going" because somebody's car was taken. Since
+     * the manager sends `subType`, an attack is `type: 'raid', subType: 'attack'`. An older manager
+     * sends no `subType`, and there the attack is the one `raid` alert that names an `object` — the
+     * protection status alerts name none.
+     */
+    function isAttackAlert(e) {
+      if (!e || e.type !== 'raid') return false;
+      if (e.subType === 'attack') return true;
+      if (e.subType != null) return false;
+      const o = e.object;
+      if (!o || typeof o !== 'object') return false;
+      return o.kind == null || o.kind === 'structure';
+    }
+
+    const ALERT_NEAR_CM = 5000;     // the manager's own window for "the base this destruction belongs to"
+    /**
+     * Which bases an attack alert is about.
+     *
+     * By WHERE it happened first: the alert carries the position of the destroyed part, and the
+     * nearest surviving element of a base within 50 m is that base's (the manager measured no two
+     * bases' elements inside that window). Only when there is no position, or nothing near it, the
+     * OWNER is used — and the owner of a base is the owner of its FLAG element, never
+     * `base.owner_user_profile_id`, which is the founder and names the wrong player on many bases.
+     * `null` means the save could not be read.
+     */
+    function basesForAlert(e) {
+      if (!dbReadable()) return null;
+      const loc = e && e.location;
+      const x = loc ? Number(loc.x) : NaN, y = loc ? Number(loc.y) : NaN, z = loc ? Number(loc.z) : NaN;
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+        let near = null;
+        try {
+          near = host.db.scum.get(
+            'SELECT base_id AS baseId, ((location_x - ?) * (location_x - ?) + (location_y - ?) * (location_y - ?)'
+            + ' + (location_z - ?) * (location_z - ?)) AS d2 FROM base_element'
+            + ' WHERE location_x BETWEEN ? AND ? AND location_y BETWEEN ? AND ? ORDER BY d2 ASC LIMIT 1',
+            x, x, y, y, z, z, x - ALERT_NEAR_CM, x + ALERT_NEAR_CM, y - ALERT_NEAR_CM, y + ALERT_NEAR_CM);
+        } catch (err) { near = null; }
+        const id = near ? Number(near.baseId) : NaN;
+        if (Number.isFinite(id) && id > 0 && Math.sqrt(Number(near.d2)) <= ALERT_NEAR_CM) return [id];
+      }
       const sid = e && e.ownerSteamId ? String(e.ownerSteamId) : null;
-      if (!sid) return;
+      if (!sid) return [];
       let owned;
       try {
         owned = host.db.scum.all(
-          'SELECT b.id AS id FROM base b JOIN user_profile up ON up.id = b.owner_user_profile_id WHERE up.user_id = ?',
-          sid);
-      } catch (err) { return; }
-      if (!Array.isArray(owned) || !owned.length) return;
-      const now = now0();
-      let touched = 0;
-      for (const row of owned) {
-        const r = raids[Number(row.id)];
-        if (!r || r.closedAt) continue;           // never opens one, only keeps one alive
-        if (now > r.lastHitAt) { r.lastHitAt = now; touched++; }
-      }
-      if (touched) persistRaids();
+          'SELECT DISTINCT be.base_id AS id FROM base_element be'
+          + ' JOIN user_profile up ON up.id = be.owner_profile_id'
+          + ' WHERE up.user_id = ? AND be.asset LIKE ?',
+          sid, FLAG_ASSET_LIKE);
+      } catch (err) { return null; }
+      return Array.isArray(owned) ? idList(owned.map((r) => r && r.id)) : null;
+    }
+
+    // The manager's own base attack alerts. They may only ever EXTEND a window this plugin already
+    // opened on the bridge's evidence — never start one.
+    host.events.on('raid:alert', (e) => {
+      try {
+        if (!isAttackAlert(e)) return;
+        // Nothing open means nothing an alert may touch, so the database is not asked.
+        if (!Object.keys(raids).some((k) => isOpen(raids[k]))) return;
+        const c = cfg();
+        if (!c.enabled || !c.useOwnerAlerts) return;
+        const bases = basesForAlert(e);
+        if (!Array.isArray(bases) || !bases.length) return;
+        const now = now0();
+        let touched = 0;
+        for (const id of bases) {
+          const r = raids[id];
+          if (!r || !isOpen(r)) continue;           // never opens one, only keeps one alive
+          if (now > r.lastHitAt) { r.lastHitAt = now; touched++; }
+        }
+        if (touched) persistRaids();
+      } catch (err) { /* an event handler never rejects */ }
     });
 
     // ── admin-panel endpoints ───────────────────────────────────────────────────────────────────
@@ -1231,8 +1371,12 @@ module.exports = {
     host.routes.post('/config', (req, res) => {
       try {
         const body = (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) ? req.body : {};
-        const wrong = invalidFields(body);
-        if (wrong.length) return res.json({ ok: false, reason: `nothing was saved: ${wrong.join('; ')}` });
+        const wrong = invalidDetails(body);
+        if (wrong.length) {
+          // `invalid` is what the tab words in the reader's language; `reason` is the English fallback.
+          return res.json({ ok: false, invalid: wrong.map((d) => { const o = Object.assign({}, d); delete o.text; return o; }),
+            reason: `nothing was saved: ${wrong.map((d) => d.text).join('; ')}` });
+        }
         // A key this build does not know is NAMED rather than dropped in silence.
         const ignored = Object.keys(body).filter((k) => !Object.prototype.hasOwnProperty.call(DEFAULTS, k));
         const known = {};
@@ -1247,6 +1391,7 @@ module.exports = {
     host.routes.get('/status', (req, res) => {
       const c = cfg();
       const now = now0();
+      const save = saveState();
       const open = [], recent = [];
       for (const key of Object.keys(raids)) {
         const r = raids[key];
@@ -1282,12 +1427,15 @@ module.exports = {
         idle,
         // Which raid protection the server runs, as the last pass that had something to push read it.
         // `null` until then: the mode is asked only when there is a raid, not on every tab refresh.
-        mode: modeInfo ? { kind: modeInfo.kind, managerClass: modeInfo.managerClass, at: modeInfo.at, text: modeInfo.text } : null,
+        mode: modeInfo ? { kind: modeInfo.kind, code: modeInfo.code || null, cause: modeInfo.cause || null, managerClass: modeInfo.managerClass, at: modeInfo.at, text: modeInfo.text } : null,
         // ONE key for one fact, and it is named the way every sibling plugin names it.
         // `serverRunning` here means "the game database is readable right now", which is the
         // meaningful signal for this plugin and is not the same as a process check: a server
         // mid-restart is up and its save is not there to read.
-        serverRunning: dbReadable(),
+        serverRunning: save === 'readable',
+        // absent | unreadable | readable — so the tab can tell "no save yet" from "the save is
+        // there and cannot be read right now", which is every stop, start and restart.
+        save,
       });
     });
 
@@ -1317,11 +1465,11 @@ module.exports = {
     host.routes.post('/close', (req, res) => {
       const base = Number((req.body || {}).base);
       const r = raids[base];
-      if (!r || r.closedAt) return res.json({ ok: false, reason: 'that base has no open raid window here' });
+      if (!r || r.closedAt) return res.json({ ok: false, code: 'not_open', reason: 'that base has no open raid window here' });
       r.closedAt = now0();
       r.closedByAdmin = true;
       persistRaids();
-      remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'closed', text: 'stopped by an admin. Nothing was written to the game' });
+      remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'closed', code: 'admin', params: {}, text: 'stopped by an admin. Nothing was written to the game' });
       persistHistory();
       res.json({ ok: true });
     });

@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Оголосити в грі",
+  "pl.hello-plugin.announceAsk": "Надіслати привітання всім у грі?",
+  "pl.hello-plugin.empty": "На цьому сервері ще ніхто не грав.",
+  "pl.hello-plugin.greet": "Привітати",
+  "pl.hello-plugin.greeting": "Привітання",
+  "pl.hello-plugin.lookup": "Знайти предмет",
+  "pl.hello-plugin.name": "Ім'я",
+  "pl.hello-plugin.noPremium": "Premium вимкнено, тому ігрові інструменти не відповідатимуть.",
+  "pl.hello-plugin.online": "Зараз у мережі: {n}",
+  "pl.hello-plugin.pick": "Вибрати місце",
+  "pl.hello-plugin.pickNote": "Торкніться мапи там, куди хочете подивитися.",
+  "pl.hello-plugin.players": "Гравці",
+  "pl.hello-plugin.save": "Зберегти",
+  "pl.hello-plugin.saved": "Збережено.",
+  "pl.hello-plugin.sent": "Надіслано.",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "Базу даних гри неможливо прочитати, поки сервер зупинено. Усе інше тут працює.",
+  "pl.hello-plugin.tab": "Привіт",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Увійдіть, щоб побачити своє привітання.",
+  "pl.hello-plugin.wave": "Помахати у відповідь"
+}

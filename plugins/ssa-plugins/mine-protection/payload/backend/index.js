@@ -128,7 +128,10 @@ function normalizeConfig(raw) {
   // to give them. Validate explicitly, the same way the joinDelaySeconds bug elsewhere was fixed.
   c.pollSeconds = Math.max(2, Math.min(120, Number.isFinite(Number(c.pollSeconds)) ? Number(c.pollSeconds) : 6));
   c.marginMeters = Math.max(0, Number(c.marginMeters) || 0);
-  c.warningsBeforeAction = Math.max(0, Math.min(10, parseInt(c.warningsBeforeAction, 10) || 0));
+  // An unreadable value falls back to the DEFAULT, never to 0: `parseInt('x') || 0` read garbage as
+  // "act at once", which is the harshest setting there is.
+  const warnN = parseInt(c.warningsBeforeAction, 10);
+  c.warningsBeforeAction = Math.max(0, Math.min(10, Number.isFinite(warnN) ? warnN : DEFAULTS.warningsBeforeAction));
   c.action = c.action === 'warn' ? 'warn' : 'teleport_to_mine';
   c.enabled = c.enabled !== false;
   c.requireOnline = c.requireOnline !== false;
@@ -175,12 +178,14 @@ module.exports = {
     const reloadConfig = () => { configNow = normalizeConfig(host.store.get('config', {})); configReadAt = Date.now(); return configNow; };
     const cfg = () => (Date.now() - configReadAt >= CONFIG_REREAD_MS ? reloadConfig() : configNow);
 
-    // The plugin leans on two shared manager facilities; without them it refuses to run rather than
+    // The plugin leans on two shared manager facilities; without them it ENFORCES nothing rather than
     // guess (and risk punishing legal mines): the flag-area test and the canonical world scan.
-    if (!host.map || typeof host.map.isInOwnerArea !== 'function' || typeof host.map.world !== 'function') {
-      host.logger.error('Mine Protection needs a newer manager (host.map.world + isInOwnerArea) — not started.');
-      return;
-    }
+    //
+    // ⚠ Only the scan stands down. This used to `return` here, before a single route was mounted, so
+    // on such a manager the whole tab 404'd and the owner's screen said "sign in again" instead of
+    // why nothing happens. The routes are mounted regardless and `/status` says `idle`.
+    const mapOk = !!(host.map && typeof host.map.isInOwnerArea === 'function' && typeof host.map.world === 'function');
+    if (!mapOk) host.logger.error('Mine Protection needs a newer manager (host.map.world + isInOwnerArea) — it enforces nothing until then.');
 
     // ── persisted state ──
     const handled = new Set((host.store.get('handled', []) || []).map(String));  // mine ids already acted on / cleared
@@ -215,18 +220,34 @@ module.exports = {
       try { const p = host.db.scum.get('SELECT user_id AS steamId, name FROM user_profile WHERE id = ?', Number(profileId)); return p && p.steamId ? { steamId: String(p.steamId), name: p.name || null } : null; }
       catch (e) { return null; }
     }
+    // Who the bridge has seen join and not yet leave. The saved online list trails a real join by up
+    // to a save, so "the save lists nobody" alone is not "nobody is here" — a player the bridge
+    // announced a moment ago is HERE. A leave that never arrives only keeps them counted until the
+    // save says otherwise, and a warning or teleport to somebody who is not there is not delivered,
+    // so the mine simply stays unhandled.
+    const liveHere = new Set();
+    const sidOf = (p) => String((p && (p.steamId || p.steamid || p.SteamID || p.steam_id)) || '');
+    // Online = the saved list PLUS the bridge's join announcements. Reading only the save was why a
+    // returning offender — "dealt with the moment they reconnect" — waited for the next save instead.
     const onlineSet = () => {
-      try { return new Set((host.players.online() || []).map((p) => String(p.steamId || p.steamid || p.SteamID || p.steam_id || '')).filter(Boolean)); }
-      catch (e) { return new Set(); }
+      let out;
+      try { out = new Set((host.players.online() || []).map(sidOf).filter(Boolean)); }
+      catch (e) { out = new Set(); }
+      for (const s of liveHere) out.add(s);
+      return out;
     };
     const typeMeta = (type) => TRAP_CATALOG.find((t) => t.type === type) || null;
-    const displayName = (t) => t.name || (typeMeta(t.type) && host.items.name(typeMeta(t.type).code)) || String(t.type || t.code || 'mine');
+    // The catalogue's item code for a placed trap: the one name/icon lookup that resolves (C4 folds
+    // several classes into `C4`, and `C4_ES` is not an item — `C4_Pack_ES` is).
+    const codeOf = (t) => (t && typeMeta(t.type) ? typeMeta(t.type).code : (t && t.code) || null);
+    const displayName = (t) => t.name || host.items.name(codeOf(t) || String(t.type || 'mine'));
 
     // The manager's canonical world scan is the single source of truth for "is the game DB readable
     // right now". getMapData() returns null ONLY when the SCUM.db handle is unavailable (server
     // stopped / mid-restart / file missing) — NOT tied to a possibly-stale process check. So we gate on
     // this directly instead of host.server.isRunning() (which was wrongly reporting "offline").
     function worldTraps() {
+      if (!mapOk) return null;
       const world = host.map.world();
       return (world && Array.isArray(world.traps)) ? world.traps : null;   // null = DB not readable now
     }
@@ -439,7 +460,7 @@ module.exports = {
 
       offenses[steamId] = count + 1; persistOffenses();
       const action = warnOnly ? 'warn' : 'teleport';
-      pushRecent({ at: Date.now(), player: placer.name || null, steamId, mine: name, type: mine.type, action, loc: { x: Math.round(mine.x), y: Math.round(mine.y), z: Math.round(mine.z) } });
+      pushRecent({ at: Date.now(), player: placer.name || null, steamId, mine: name, type: mine.type, code: codeOf(mine), action, loc: { x: Math.round(mine.x), y: Math.round(mine.y), z: Math.round(mine.z) } });
       host.logger.info(`${action === 'warn' ? 'warned' : 'punished'} ${placer.name || steamId} (${steamId}) for arming a ${name} outside their flag`);
       return true;
     }
@@ -529,12 +550,8 @@ module.exports = {
     // ── scheduling: a light 1 s heartbeat runs the scan when it's due, so a changed interval takes
     //    effect live (no manager restart) and a fresh join can force an immediate re-scan. ──
     let lastRun = 0, busy = false;
-    // Who the bridge has seen join and not yet leave. The saved online list trails a real join by up
-    // to a save, so "the save lists nobody" alone is not "nobody is here" — a player the bridge
-    // announced a moment ago keeps the scan running. A leave that never arrives only keeps scanning,
-    // which is what this did before the check existed.
-    const liveHere = new Set();
-    const sidOf = (p) => String((p && (p.steamId || p.steamid || p.SteamID || p.steam_id)) || '');
+    // `liveHere` (declared with the helpers above) keeps the scan running for a player the bridge
+    // announced a moment ago, before the save lists them.
     // Nobody in the world means nobody can be warned (a warning counts only once delivered) or moved
     // (the teleport runs through the placer), so a scan then walks the whole world to change
     // nothing. Skipped — except before the first scan, which only learns what is already placed.
@@ -552,7 +569,7 @@ module.exports = {
       busy = true;
       try { await poll(); } catch (e) { host.logger.warn('poll error: ' + e.message); } finally { busy = false; }
     }
-    host.schedule.every(1000, () => { tick(); });
+    if (mapOk) host.schedule.every(1000, () => { tick(); });
 
     // Punish the moment an offender reconnects (offline mines waiting on `requireOnline`) — the bridge
     // join hook fires with no log-tail lag; nudge the next heartbeat to scan right away.
@@ -585,7 +602,8 @@ module.exports = {
       } catch (e) { /* counts optional */ }
       const items = TRAP_CATALOG.map((t) => ({
         type: t.type,
-        name: (host.items.name(t.code) || t.type.replace(/_/g, ' ')),
+        name: host.items.name(t.code),
+        code: t.code,
         image: host.items.image(t.code) || null,
         explosive: t.explosive,
         placed: (counts[t.type] && counts[t.type].placed) || 0,
@@ -620,7 +638,7 @@ module.exports = {
         // one of them is a trap sitting there disarmed.
         const armed = (m.armed === true || m.armed === false) ? m.armed : null;
         return {
-          id: m.id, type: m.type, code: m.code || null, name: displayName(m), armed,
+          id: m.id, type: m.type, code: codeOf(m), name: displayName(m), armed,
           x: Math.round(m.x), y: Math.round(m.y), z: Math.round(m.z),
           placerName: placer ? placer.name : null, placerSteamId: sid || null,
           inArea: (inArea === true || inArea === false) ? inArea : null,
@@ -650,6 +668,9 @@ module.exports = {
         // answered — an owner should see "the game is being asked" or the reason it is not, and never
         // a plugin that quietly fell back to the save without saying.
         live: { traps: liveNote.traps, squads: liveNote.squads },
+        // Why nothing is being enforced, when that is the case for a reason the owner cannot fix in
+        // this tab: `manager_too_old` = the manager lacks the world scan / flag test. null otherwise.
+        idle: mapOk ? null : 'manager_too_old',
       });
     });
 

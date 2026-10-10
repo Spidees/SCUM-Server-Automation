@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Gönderilen",
   "pl.better-squads.card.activity": "Etkinlik",
   "pl.better-squads.card.activity.sub": "Son teslim edilen mesajlar. Okuyucuya özel mesajlarda ilk gönderilen kopya gösterilir.",
-  "pl.better-squads.live.turnOn": "{where} içinde \"{switch}\" seçeneğini açın"
+  "pl.better-squads.group.words": "Diğer satırların içindeki kelimeler",
+  "pl.better-squads.text.mutednone": "\"Hiçbir şey susturulmadı\" için kelime",
+  "pl.better-squads.text.squadnoname": "Adı olmayan bir manga için kelime",
+  "pl.better-squads.text.unknownobject": "Baskın: adı olmayan bir nesne için kelime",
+  "pl.better-squads.text.testline": "Bu sayfadan gönderilen test mesajı",
+  "pl.better-squads.live.turnOnBoth": "{where} içinde {module} kartında \"{enable}\" ve \"{switch}\" seçeneklerini açın",
+  "pl.better-squads.live.nomodule": "bu sunucu, bu modülü içermeyen daha eski bir SSA Bridge çalıştırıyor",
+  "pl.better-squads.live.noanswer": "SSA Bridge yanıt vermedi",
+  "pl.better-squads.test.squadunknown": "Manga listesi şu anda okunamıyor. Bir dakika sonra tekrar deneyin.",
+  "pl.better-squads.test.allmuted": "O manganın çevrimiçi tüm üyeleri bir yönetici tarafından susturulmuş",
+  "pl.better-squads.test.reachednobody": "Test gönderildi ama kimseye ulaşmadı"
 }

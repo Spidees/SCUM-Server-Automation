@@ -204,15 +204,28 @@
           document.createTextNode(SSA.t('pl.mine-protection.live.serverOffDetail', 'Set everything up now. Only the placed-mine list and card counts need the server running.')),
         ]));
       }
+      // A manager too old for the world scan: the plugin enforces nothing, and says why.
+      if (status && status.idle === 'manager_too_old') {
+        liveBar.appendChild(h('div', { class: 'mp-live-n mp-live-err' }, [
+          h('strong', {}, SSA.t('pl.mine-protection.live.idleTitle', 'Nothing is being enforced. ')),
+          document.createTextNode(SSA.t('pl.mine-protection.live.idleOld', 'This manager is too old for this plugin. Update the manager.')),
+        ]));
+      }
       var live = (status && status.live) || {};
       Object.keys(LIVE_WHAT).forEach(function (k) {
         var n = live[k];
-        if (!n || !n.text) return;
+        if (!n || !n.code) return;
+        // Keyed by the CODE, so the sentence is in the reader's language. Only a module's own
+        // refusal (`refused`) is quoted as it came, because that sentence is the module's.
+        var say = n.code === 'module_off' && n.switch
+          ? SSA.t('pl.mine-protection.live.turnOn', 'turn on "{switch}" in {where}.', { switch: n.switch, where: bridgeWhere() })
+          : n.code === 'no_module' ? SSA.t('pl.mine-protection.live.noModule', 'this server runs an older SSA Bridge without this module.')
+            : n.code === 'bridge_off' ? SSA.t('pl.mine-protection.live.bridgeOff', 'the SSA Bridge did not answer.')
+              : (n.text ? n.text + '.' : null);
+        if (!say) return;
         liveBar.appendChild(h('div', { class: 'mp-live-n' }, [
           h('strong', {}, LIVE_WHAT[k] + ': '),
-          document.createTextNode((n.code === 'module_off' && n.switch)
-            ? SSA.t('pl.mine-protection.live.turnOn', 'turn on "{switch}" in {where}.', { switch: n.switch, where: bridgeWhere() })
-            : n.text + '.'),
+          document.createTextNode(say),
         ]));
       });
     }
@@ -287,7 +300,14 @@
                   : SSA.cell.tag(SSA.t('pl.mine-protection.mine.enforced', 'Enforced'), 'bad');
     }
     function mineStatusRank(m) { return m.armed == null ? 6 : !m.armed ? 5 : m.exempt ? 4 : m.inArea === true ? 3 : m.inArea == null ? 2 : !m.handled ? 0 : 1; }
-    function mineCode(r) { return r.code || (r.type ? r.type + '_ES' : null); }
+    // The catalogue's own item code first (C4 is `C4_Pack_ES`, and `C4_ES` is no item); a row from an
+    // older backend carries none, so the picker catalogue answers for its type.
+    function mineCode(r) {
+      if (r && r.code) return r.code;
+      var t = r && r.type;
+      for (var i = 0; i < catalog.length; i++) if (catalog[i].type === t && catalog[i].code) return catalog[i].code;
+      return t ? t + '_ES' : null;
+    }
     function buildMinesTable() {
       return SSA.table({
         rows: function () { return mines; },
@@ -352,7 +372,7 @@
           { key: 'at', label: SSA.t('pl.mine-protection.col.when', 'When'), sort: true, sortVal: function (r) { return r.at || 0; }, tdClass: 'dim', render: function (r) { return document.createTextNode(ago(r.at)); } },
           { key: 'action', label: SSA.t('pl.mine-protection.col.action', 'Action'), sort: true, sortVal: function (r) { return r.action; }, render: function (r) { var w = r.action === 'warn'; return SSA.cell.tag(w ? SSA.t('pl.mine-protection.recent.warned', 'Warned') : SSA.t('pl.mine-protection.recent.teleported', 'Teleported'), w ? 'warn' : 'bad'); } },
           { key: 'player', label: SSA.t('pl.mine-protection.col.player', 'Player'), sort: true, sortVal: function (r) { return (r.player || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.player, r.steamId); } },
-          { key: 'mine', label: SSA.t('pl.mine-protection.col.mine', 'Mine'), sort: true, sortVal: function (r) { return (r.mine || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(r.type ? r.type + '_ES' : null, r.mine || r.type || SSA.t('pl.mine-protection.recent.mineFallback', 'mine')); } },
+          { key: 'mine', label: SSA.t('pl.mine-protection.col.mine', 'Mine'), sort: true, sortVal: function (r) { return (r.mine || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(r.code || r.type ? mineCode(r) : null, r.mine || r.type || SSA.t('pl.mine-protection.recent.mineFallback', 'mine')); } },
           { key: 'loc', label: SSA.t('pl.mine-protection.col.location', 'Location'), render: function (r) { return r.loc ? SSA.cell.location(r.loc.x, r.loc.y, r.loc.z) : document.createTextNode(''); } },
         ],
       });

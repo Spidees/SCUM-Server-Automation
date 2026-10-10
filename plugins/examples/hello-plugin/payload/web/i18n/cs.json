@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Oznámit ve hře",
+  "pl.hello-plugin.announceAsk": "Poslat pozdrav všem ve hře?",
+  "pl.hello-plugin.empty": "Na tomto serveru zatím nikdo nehrál.",
+  "pl.hello-plugin.greet": "Pozdravit",
+  "pl.hello-plugin.greeting": "Pozdrav",
+  "pl.hello-plugin.lookup": "Vyhledat předmět",
+  "pl.hello-plugin.name": "Jméno",
+  "pl.hello-plugin.noPremium": "Premium je vypnuté, takže herní nástroje neodpoví.",
+  "pl.hello-plugin.online": "Teď online: {n}",
+  "pl.hello-plugin.pick": "Vybrat místo",
+  "pl.hello-plugin.pickNote": "Klepněte na mapě tam, kam se chcete podívat.",
+  "pl.hello-plugin.players": "Hráči",
+  "pl.hello-plugin.save": "Uložit",
+  "pl.hello-plugin.saved": "Uloženo.",
+  "pl.hello-plugin.sent": "Odesláno.",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "Herní databázi nelze číst, když je server zastavený. Vše ostatní tady funguje.",
+  "pl.hello-plugin.tab": "Ahoj",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Přihlaste se a uvidíte svůj vlastní pozdrav.",
+  "pl.hello-plugin.wave": "Zamávat"
+}

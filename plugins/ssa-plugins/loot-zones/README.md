@@ -80,14 +80,15 @@ told in your own words. Inside a zone you can also **keep sentries and zombies o
 
 - The **SSA Bridge** plugin. **2.22.2+** to reload loot without a restart, and **2.27.0+** for the
   route that places an ordinary guard directly.
-- Manager **5.16.2+**. **5.42.0+** to finish a switch at a server restart before the next server
-  starts.
+- Manager **5.16.2+**. **5.20.0+** to make a zone busier or quieter, and **5.42.0+** to finish a
+  switch at a server restart before the next server starts.
 - The **Bridge** box at the top of the tab lists every bridge switch your own settings use, shows
   its live state and turns on the ones it is allowed to. The rest you switch on yourself: **Custom
   zones** for the rectangle, **Live player data** for knowing who is near, **Remove from the world**
   for keeping sentries and zombies out, **Precise spawning** and **Placement check** for guards,
-  **Live world** for telling a guard from a body, and **Server notifications** or **In-game actions**
-  for the messages that are not chat. The box names each one by the caption on the bridge's own card.
+  **Live world** for telling a guard from a body, **Allow changing how busy a kind of place is** on
+  **Encounters and spawn waves** for a busier or quieter zone, and **Server notifications** or
+  **In-game actions** for the messages that are not chat. The box names each one by the caption on the bridge's own card.
 
 ## Configuration
 
@@ -157,7 +158,7 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
 - **Every class is loaded by the bridge when the zone first needs it**, bosses included: a Razor or a
   Brenner is placed at its post with nobody having met one first. Loading pauses the server for
   about a fifth of a second, once per kind. It needs **Load a class the game has not made yet**
-  on the bridge's Spawning card, which is on unless you turned it off. A Dropship, a Sentry and a
+  on the bridge's **Precise spawning** card, which is on unless you turned it off. A Dropship, a Sentry and a
   drone are still placed only once the game has made one.
 - **Only places the zone chose ever move.** A point you named stays exactly where you typed it, and
   a random guard or one placed without an id is not moved by *Move a standing guard after*, because
@@ -183,7 +184,8 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
   speed. A schedule that crosses midnight belongs to the day it starts. A guard window decides when
   a guard is *sent* — one that closes never removes a guard already standing — and if the game's
   clock cannot be read the window is not applied at all, which the zone says every round.
-- **The zone name prefix can never be empty**: it is how the plugin tells its zones from yours.
+- **The zone name prefix can never be empty**: it is how the plugin tells its zones from yours, so
+  a save with an empty one is refused.
 - **Two zones with the same full name are one zone to the game**, so a repeated name orphans a
   rectangle on the map.
 - *Also slow SCUM's own sentry respawn* applies to every guarded place on the island, not just the
@@ -196,9 +198,8 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
   rectangle needs and names the setting when it is over.
 - **Underground places exist only while a player is near them**, so a point down there answers
   *unknown* until somebody is, and the zone keeps asking.
-- *Try it in game* sends the message to everyone, exactly as it is **saved**, and says so when
-  nothing went out.
-
+- *Try it in game* sends the message to everyone, exactly as it is **saved**, with a sample name
+  in `{player}`, and says so when nothing went out.
 ---
 
 *Part of [SCUM Server Automation](https://scumsa.com) — the all-in-one SCUM dedicated server manager. Get the manager, browse every plugin and read the docs at [scumsa.com](https://scumsa.com).*

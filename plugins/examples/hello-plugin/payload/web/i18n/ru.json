@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Объявить в игре",
+  "pl.hello-plugin.announceAsk": "Отправить приветствие всем в игре?",
+  "pl.hello-plugin.empty": "На этом сервере ещё никто не играл.",
+  "pl.hello-plugin.greet": "Поприветствовать",
+  "pl.hello-plugin.greeting": "Приветствие",
+  "pl.hello-plugin.lookup": "Найти предмет",
+  "pl.hello-plugin.name": "Имя",
+  "pl.hello-plugin.noPremium": "Premium выключен, поэтому игровые инструменты не ответят.",
+  "pl.hello-plugin.online": "Сейчас в сети: {n}",
+  "pl.hello-plugin.pick": "Выбрать место",
+  "pl.hello-plugin.pickNote": "Нажмите на карте туда, куда хотите посмотреть.",
+  "pl.hello-plugin.players": "Игроки",
+  "pl.hello-plugin.save": "Сохранить",
+  "pl.hello-plugin.saved": "Сохранено.",
+  "pl.hello-plugin.sent": "Отправлено.",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "Базу данных игры нельзя прочитать, пока сервер остановлен. Всё остальное здесь работает.",
+  "pl.hello-plugin.tab": "Привет",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Войдите, чтобы увидеть своё приветствие.",
+  "pl.hello-plugin.wave": "Помахать в ответ"
+}

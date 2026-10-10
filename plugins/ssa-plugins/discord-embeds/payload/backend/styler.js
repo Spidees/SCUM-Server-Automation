@@ -77,9 +77,8 @@ module.exports = {
      * is not one. `items.actorName()` is the rule that tells the two apart, and it is the same rule
      * the built-in feed uses, so both name the same kill the same way.
      *
-     * Guarded rather than called outright: the manifest says `minManagerVersion` 4.0.7 and this
-     * arrived in 5.2, so on an older host there is simply no method and the raw value is what it
-     * always was. A player name comes back untouched either way.
+     * Guarded rather than called outright: a host without the method (anything older than 5.3.0, or
+     * a mock) simply keeps the raw value it always had. A player name comes back untouched either way.
      */
     const actorName = (n) => {
       const s = (n == null || n === '') ? '' : String(n);
@@ -414,11 +413,15 @@ module.exports = {
       return out;
     }
 
+    // The token group for an embed's OWN tokens. An id rather than the words "This embed", which the
+    // picker drew as a chip in English in every language; the panel names it.
+    const EMBED_GROUP = '@embed';
     /** Kinds as the UI needs them, sourced from the manager. */
     function kindsFromManager(list) {
-      const GROUP_LABEL = { feeds: 'Feeds', live: 'Live embeds', notifications: 'Notifications', dm: 'Player DM alerts', intel: 'Player Intel' };
+      // The group is sent as its ID and the panel names it in the reader's language
+      // (`pl.discord-embeds.group.<id>`); an English label here was drawn untranslated.
       return list.map((k) => {
-        const own = (k.tokens || []).map((tk) => ({ t: tk.t, label: tk.label || tk.t, sample: tk.value, group: 'This embed' }));
+        const own = (k.tokens || []).map((tk) => ({ t: tk.t, label: tk.label || tk.t, sample: tk.value, group: EMBED_GROUP }));
         const seen = {}; own.forEach((tk) => { seen[tk.t] = 1; });
         // The manager's registry already carries the whole {stat_*} set, so there is nothing to
         // prepend here — a local copy would only shadow it with the same names.
@@ -431,7 +434,6 @@ module.exports = {
           key: k.key,
           label: k.label,
           group: k.group,
-          groupLabel: GROUP_LABEL[k.group] || k.group,
           live: !!k.live,                       // shape came from an embed the manager really sent
           seenAt: k.at || null,
           tokens: own.concat(extra),
@@ -472,7 +474,7 @@ module.exports = {
           }
         }
         // This embed's own event tokens (grouped) + the full global data set, so anything is insertable.
-        const evtToks = (tokens || []).map((tk) => Object.assign({}, tk, { group: tk.group || 'This embed' }));
+        const evtToks = (tokens || []).map((tk) => Object.assign({}, tk, { group: tk.group || EMBED_GROUP }));
         const seen = {}; evtToks.forEach((tk) => { seen[tk.t] = 1; });
         // The per-player stat set ({stat_*}) comes from the manager's registry along with
         // everything else, so every kind gets it without a list here.
@@ -739,7 +741,7 @@ module.exports = {
       const now = revOf(what);
       if (sent === now) return null;
       return {
-        ok: false, stale: true, rev: now,
+        ok: false, stale: true, rev: now, code: 'stale',
         error: 'Someone else saved this first. Your changes were not saved; reload and try again.',
       };
     }
@@ -849,17 +851,20 @@ module.exports = {
     async function refreshCustom(ce, force) {
       // Each silent exit names itself. "Nothing happened" was the same answer for six different
       // reasons, and the panel printed the cheerful one for all of them.
-      if (!ce || !ce.model) return { ok: false, why: 'that embed has nothing in it yet' };
-      if (!ce.channelId) return { ok: false, why: 'no channel is set for this embed' };
-      if (ce.enabled === false) return { ok: false, why: 'this embed is switched off' };
-      if (!editor) return { ok: false, why: 'the editor half of the plugin is not loaded' };
+      // A `code` for the panel to translate; `why` stays as the English for an older panel.
+      if (!ce || !ce.model) return { ok: false, code: 'embed_empty', why: 'that embed has nothing in it yet' };
+      if (!ce.channelId) return { ok: false, code: 'no_channel', why: 'no channel is set for this embed' };
+      if (ce.enabled === false) return { ok: false, code: 'embed_off', why: 'this embed is switched off' };
+      if (!editor) return { ok: false, code: 'no_editor', why: 'the editor half of the plugin is not loaded' };
       const interval = Math.max(15, ce.intervalSec || 60) * 1000;
       if (!force && lastPost[ce.id] && (Date.now() - lastPost[ce.id]) < interval) return { ok: true, skipped: true };
       lastPost[ce.id] = Date.now();
       try {
         const m = fitLimits(resolveModel(ce.model, tokenMapForTemplate(ce.model)));
         const e = editor.apiEmbed(m);
-        if (!e) return;
+        // An answer, never `undefined`: `/custom/post` read anything that was not `ok: false` as
+        // posted, so a model the editor could not turn into an embed said "Posted" for nothing.
+        if (!e) return { ok: false, code: 'not_built', why: 'the embed could not be built from what is in it' };
         const embed = host.discord.js.EmbedBuilder.from(e);
         const payload = { embeds: [embed] };
 
@@ -896,7 +901,7 @@ module.exports = {
         // Say which of the several silent exits happened. The panel used to print
         // "Posted ✓ — keeps updating" for a missing channel, a disabled embed, a bot that cannot see
         // the channel, and a missing editor service alike.
-        if (!ch || !ch.send) { return { ok: false, why: 'the bot cannot see that channel' }; }
+        if (!ch || !ch.send) { return { ok: false, code: 'channel_not_found', why: 'the bot cannot see that channel' }; }
         if (ids[ce.id]) {
           // An edit that WORKED has to say so. Returning nothing here made the panel report every
           // successful refresh of an existing message as a failure — which is every refresh after
@@ -909,7 +914,7 @@ module.exports = {
         return { ok: true };
       } catch (err) {
         host.logger.warn(`custom embed "${ce.id}" failed: ${err.message}`);
-        return { ok: false, why: err.message };
+        return { ok: false, code: 'post_failed', detail: String(err.message || ''), why: err.message };
       }
     }
     host.schedule.every(15000, () => { for (const ce of loadCustom()) refreshCustom(ce, false); });
@@ -1025,10 +1030,16 @@ module.exports = {
         const gate = actionGate(i, act, key || act.value || 'action');
         if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
         actionBusy.add(gate.slot);
-        await i.reply({ content: '⏳ Running…', ...EPHEMERAL });
         let ok = false;
         let confirmed = true;
+        let answered = false;
         try {
+          // Inside the try, so the `finally` below frees the slot whatever happens. A reply that
+          // threw out here (an expired interaction, a Discord hiccup) used to leave the slot in
+          // `actionBusy` for the life of the process: that button answered "already running" to
+          // that player for ever.
+          await i.reply({ content: '⏳ Running…', ...EPHEMERAL });
+          answered = true;
           const r = await host.server.command(resolveTpl(act.value || '', m));
           ok = !(r && r.ok === false);
           // Manager 5.x forwards the bridge's own `confirmed` flag, and it is the difference between
@@ -1041,6 +1052,8 @@ module.exports = {
           if (r && r.confirmed === false) confirmed = false;
         } catch { ok = false; }
         finally { actionBusy.delete(gate.slot); }
+        // The interaction could not be answered at all, so nothing ran and nobody can be told.
+        if (!answered) return;
         // The cooldown starts when the command SUCCEEDED. A failed bridge call should not lock
         // someone out for a minute over something that never happened. An UNCONFIRMED one DOES start
         // it: it may well have run, and the whole reason the lock exists is that a second click on a
@@ -1062,10 +1075,21 @@ module.exports = {
         // A "message" action only answers the person who clicked and needs no protection.
         const gate = actionGate(i, act, key || act.value || 'announce');
         if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
-        const ch = await host.discord.channel(act.channelId || i.channelId);
-        if (ch && ch.send) await ch.send(resolveTpl(act.value || '', m) || '…');
-        actionLast.set(gate.slot, Date.now());
-        await i.reply({ content: '✅ Sent.', ...EPHEMERAL });
+        // Only a post that really went out answers "Sent" and starts the cooldown. A channel the bot
+        // cannot see, or a send Discord refused, used to answer "✅ Sent." anyway and lock the player
+        // out for the cooldown over a message nobody ever saw.
+        let sent = false;
+        actionBusy.add(gate.slot);
+        try {
+          const ch = await host.discord.channel(act.channelId || i.channelId);
+          if (ch && typeof ch.send === 'function') {
+            const msg = await ch.send(resolveTpl(act.value || '', m) || '…');
+            sent = !!msg;
+          }
+        } catch (e) { sent = false; }
+        finally { actionBusy.delete(gate.slot); }
+        if (sent) actionLast.set(gate.slot, Date.now());
+        await i.reply({ content: sent ? '✅ Sent.' : '❌ Could not post that message. Tell an admin.', ...EPHEMERAL });
       }
     }
     host.discord.onInteraction(async (i) => {
@@ -1130,15 +1154,18 @@ module.exports = {
     host.routes.post('/custom/post', async (req, res) => {
       const id = (req.body || {}).id;
       const ce = loadCustom().find((x) => x.id === id);
-      if (!ce) return res.status(404).json({ error: 'not_found' });
+      if (!ce) return res.status(404).json({ error: 'embed_not_found', reason: 'that embed no longer exists' });
       // Report what actually happened. `{ok:true}` regardless meant the panel said
       // "Posted ✓ — keeps updating" for an embed with no channel, one that is switched off, or one
       // the bot cannot post to — and the owner went looking in Discord for a message that was never
       // sent and never would be.
-      if (!ce.channelId) return res.json({ ok: false, error: 'no channel is set for this embed' });
-      if (ce.enabled === false) return res.json({ ok: false, error: 'this embed is switched off' });
+      if (!ce.channelId) return res.json({ ok: false, code: 'no_channel', error: 'no channel is set for this embed' });
+      if (ce.enabled === false) return res.json({ ok: false, code: 'embed_off', error: 'this embed is switched off' });
       const out = await refreshCustom(ce, true);
-      if (out && out.ok === false) return res.json({ ok: false, error: out.why || 'it could not be posted' });
+      // Anything but a plain success is a failure, `undefined` included.
+      if (!out || out.ok !== true) {
+        return res.json({ ok: false, code: (out && out.code) || 'post_failed', detail: (out && out.detail) || '', error: (out && out.why) || 'it could not be posted' });
+      }
       res.json({ ok: true });
     });
 

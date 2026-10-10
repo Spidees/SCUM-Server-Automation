@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Oyunda duyur",
+  "pl.hello-plugin.announceAsk": "Selamlama oyundaki herkese gönderilsin mi?",
+  "pl.hello-plugin.empty": "Bu sunucuda henüz kimse oynamadı.",
+  "pl.hello-plugin.greet": "Selamla",
+  "pl.hello-plugin.greeting": "Selamlama",
+  "pl.hello-plugin.lookup": "Eşya ara",
+  "pl.hello-plugin.name": "Ad",
+  "pl.hello-plugin.noPremium": "Premium kapalı, bu yüzden oyun içi araçlar yanıt vermeyecek.",
+  "pl.hello-plugin.online": "Şu an çevrimiçi: {n}",
+  "pl.hello-plugin.pick": "Bir yer seç",
+  "pl.hello-plugin.pickNote": "Haritada bakmak istediğin yere dokun.",
+  "pl.hello-plugin.players": "Oyuncular",
+  "pl.hello-plugin.save": "Kaydet",
+  "pl.hello-plugin.saved": "Kaydedildi.",
+  "pl.hello-plugin.sent": "Gönderildi.",
+  "pl.hello-plugin.steam": "Steam kimliği",
+  "pl.hello-plugin.stopped": "Sunucu durdurulmuşken oyun veritabanı okunamaz. Buradaki diğer her şey çalışır.",
+  "pl.hello-plugin.tab": "Merhaba",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Kendi selamlamanı görmek için giriş yap.",
+  "pl.hello-plugin.wave": "El salla"
+}

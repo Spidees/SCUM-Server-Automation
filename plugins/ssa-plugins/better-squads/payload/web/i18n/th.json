@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "ส่งถึง",
   "pl.better-squads.card.activity": "กิจกรรม",
   "pl.better-squads.card.activity.sub": "ข้อความล่าสุดที่ส่งถึงแล้ว ข้อความแบบรายผู้อ่านจะแสดงสำเนาแรกที่ส่ง",
-  "pl.better-squads.live.turnOn": "เปิด \"{switch}\" ใน {where}"
+  "pl.better-squads.group.words": "คำที่อยู่ในบรรทัดอื่น",
+  "pl.better-squads.text.mutednone": "คำสำหรับ \"ไม่ได้ปิดเสียงอะไร\"",
+  "pl.better-squads.text.squadnoname": "คำสำหรับหมู่รบที่ไม่มีชื่อ",
+  "pl.better-squads.text.unknownobject": "การบุก: คำสำหรับวัตถุที่ไม่มีชื่อ",
+  "pl.better-squads.text.testline": "ข้อความทดสอบจากหน้านี้",
+  "pl.better-squads.live.turnOnBoth": "เปิด \"{enable}\" และ \"{switch}\" บนการ์ด {module} ใน {where}",
+  "pl.better-squads.live.nomodule": "เซิร์ฟเวอร์นี้ใช้ SSA Bridge รุ่นเก่าที่ไม่มีโมดูลนี้",
+  "pl.better-squads.live.noanswer": "SSA Bridge ไม่ตอบกลับ",
+  "pl.better-squads.test.squadunknown": "ตอนนี้อ่านรายชื่อหมู่รบไม่ได้ ลองใหม่อีกครั้งในหนึ่งนาที",
+  "pl.better-squads.test.allmuted": "สมาชิกที่ออนไลน์ทุกคนในหมู่รบนั้นถูกแอดมินปิดเสียง",
+  "pl.better-squads.test.reachednobody": "ส่งการทดสอบแล้ว แต่ไม่ถึงใครเลย"
 }

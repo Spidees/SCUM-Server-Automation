@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "ยังไม่ได้บันทึก — {err}",
   "pl.mine-protection.btn.save": "บันทึกการตั้งค่า",
   "pl.mine-protection.tab.label": "ป้องกันกับระเบิด",
-  "pl.mine-protection.live.turnOn": "เปิด \"{switch}\" ใน {where}"
+  "pl.mine-protection.live.turnOn": "เปิด \"{switch}\" ใน {where}",
+  "pl.mine-protection.live.idleTitle": "ยังไม่มีการบังคับใช้ใดๆ ",
+  "pl.mine-protection.live.idleOld": "ตัวจัดการนี้เก่าเกินไปสำหรับปลั๊กอินนี้ โปรดอัปเดตตัวจัดการ",
+  "pl.mine-protection.live.noModule": "เซิร์ฟเวอร์นี้ใช้ SSA Bridge รุ่นเก่าที่ไม่มีโมดูลนี้",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge ไม่ตอบสนอง"
 }

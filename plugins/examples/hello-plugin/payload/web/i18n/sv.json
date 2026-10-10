@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Meddela i spelet",
+  "pl.hello-plugin.announceAsk": "Skicka hälsningen till alla i spelet?",
+  "pl.hello-plugin.empty": "Ingen har spelat på den här servern än.",
+  "pl.hello-plugin.greet": "Hälsa",
+  "pl.hello-plugin.greeting": "Hälsning",
+  "pl.hello-plugin.lookup": "Slå upp ett föremål",
+  "pl.hello-plugin.name": "Namn",
+  "pl.hello-plugin.noPremium": "Premium är avstängt, så verktygen i spelet svarar inte.",
+  "pl.hello-plugin.online": "Online nu: {n}",
+  "pl.hello-plugin.pick": "Välj en plats",
+  "pl.hello-plugin.pickNote": "Tryck på kartan där du vill titta.",
+  "pl.hello-plugin.players": "Spelare",
+  "pl.hello-plugin.save": "Spara",
+  "pl.hello-plugin.saved": "Sparat.",
+  "pl.hello-plugin.sent": "Skickat.",
+  "pl.hello-plugin.steam": "Steam-ID",
+  "pl.hello-plugin.stopped": "Spelets databas kan inte läsas när servern är stoppad. Allt annat här fungerar.",
+  "pl.hello-plugin.tab": "Hej",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Logga in för att se din egen hälsning.",
+  "pl.hello-plugin.wave": "Vinka tillbaka"
+}

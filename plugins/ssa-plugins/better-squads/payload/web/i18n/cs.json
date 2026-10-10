@@ -179,5 +179,15 @@
   "pl.better-squads.col.sentto": "Komu",
   "pl.better-squads.card.activity": "Aktivita",
   "pl.better-squads.card.activity.sub": "Poslední doručené zprávy. U zpráv pro každého zvlášť se ukazuje první odeslaná kopie.",
-  "pl.better-squads.live.turnOn": "zapněte „{switch}“ v {where}"
+  "pl.better-squads.group.words": "Slova uvnitř jiných řádků",
+  "pl.better-squads.text.mutednone": "Slovo pro „nic ztlumeno“",
+  "pl.better-squads.text.squadnoname": "Slovo pro squad bez jména",
+  "pl.better-squads.text.unknownobject": "Nájezd: slovo pro nepojmenovaný objekt",
+  "pl.better-squads.text.testline": "Testovací zpráva z této stránky",
+  "pl.better-squads.live.turnOnBoth": "zapněte „{enable}“ a „{switch}“ na kartě {module} v {where}",
+  "pl.better-squads.live.nomodule": "tento server běží na starším SSA Bridge, který tento modul nemá",
+  "pl.better-squads.live.noanswer": "SSA Bridge neodpověděl",
+  "pl.better-squads.test.squadunknown": "Seznam squadů teď nejde přečíst. Zkuste to za minutu.",
+  "pl.better-squads.test.allmuted": "Všichni online z toho squadu jsou ztlumeni adminem",
+  "pl.better-squads.test.reachednobody": "Test byl odeslán, ale nedostal se k nikomu"
 }

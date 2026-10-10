@@ -180,5 +180,15 @@
   "pl.better-squads.col.sentto": "Wysłano do",
   "pl.better-squads.card.activity": "Aktywność",
   "pl.better-squads.card.activity.sub": "Ostatnio dostarczone wiadomości. Przy wiadomościach per czytelnik widać pierwszą kopię.",
-  "pl.better-squads.live.turnOn": "włącz „{switch}” w {where}"
+  "pl.better-squads.group.words": "Słowa wewnątrz innych linii",
+  "pl.better-squads.text.mutednone": "Słowo dla „nic nie wyciszono”",
+  "pl.better-squads.text.squadnoname": "Słowo dla oddziału bez nazwy",
+  "pl.better-squads.text.unknownobject": "Rajd: słowo dla obiektu bez nazwy",
+  "pl.better-squads.text.testline": "Wiadomość testowa z tej strony",
+  "pl.better-squads.live.turnOnBoth": "włącz „{enable}” i „{switch}” na karcie {module} w {where}",
+  "pl.better-squads.live.nomodule": "ten serwer używa starszego SSA Bridge, który nie ma tego modułu",
+  "pl.better-squads.live.noanswer": "SSA Bridge nie odpowiedział",
+  "pl.better-squads.test.squadunknown": "Listy oddziałów nie da się teraz odczytać. Spróbuj ponownie za minutę.",
+  "pl.better-squads.test.allmuted": "Wszyscy członkowie online tego oddziału są wyciszeni przez admina",
+  "pl.better-squads.test.reachednobody": "Test wysłano, ale do nikogo nie dotarł"
 }

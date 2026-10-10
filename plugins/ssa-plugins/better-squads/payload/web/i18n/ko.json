@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "받는 사람",
   "pl.better-squads.card.activity": "활동",
   "pl.better-squads.card.activity.sub": "최근 전달된 메시지. 개별 전송 메시지는 첫 번째 사본을 보여 줍니다.",
-  "pl.better-squads.live.turnOn": "{where}에서 \"{switch}\" 켜기"
+  "pl.better-squads.group.words": "다른 줄 안에 들어가는 단어",
+  "pl.better-squads.text.mutednone": "\"음소거 없음\"을 나타내는 단어",
+  "pl.better-squads.text.squadnoname": "이름 없는 스쿼드를 나타내는 단어",
+  "pl.better-squads.text.unknownobject": "습격: 이름 없는 대상을 나타내는 단어",
+  "pl.better-squads.text.testline": "이 페이지에서 보내는 테스트 메시지",
+  "pl.better-squads.live.turnOnBoth": "{where}의 {module} 카드에서 \"{enable}\"과 \"{switch}\" 켜기",
+  "pl.better-squads.live.nomodule": "이 서버는 이 모듈이 없는 이전 SSA Bridge를 사용합니다",
+  "pl.better-squads.live.noanswer": "SSA Bridge가 응답하지 않았습니다",
+  "pl.better-squads.test.squadunknown": "지금은 스쿼드 목록을 읽을 수 없습니다. 1분 후 다시 시도하세요.",
+  "pl.better-squads.test.allmuted": "해당 스쿼드의 온라인 멤버가 모두 관리자에 의해 음소거되었습니다",
+  "pl.better-squads.test.reachednobody": "테스트를 보냈지만 아무에게도 도달하지 않았습니다"
 }

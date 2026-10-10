@@ -222,9 +222,13 @@
           menu.innerHTML = '';
           if (!items.length) { hide(); return; }
           items.slice(0, 24).forEach(function (it) {
-            var id = it.code || it.id || it.name || '';
-            var code = /^BPC_/.test(id) ? id : 'BPC_' + id;
-            var nm = it.name || id;
+            // The record's OWN spawn blueprint. This used to glue `BPC_` onto whatever id came back
+            // — a second id rule beside the item database's, and a wrong one for any vehicle whose
+            // blueprint is not its code with a prefix. A record that names no spawn code cannot be
+            // picked: there is nothing honest to fill the box with.
+            var code = String(it.spawn_code || '');
+            if (!CODE_RX.test(code)) return;
+            var nm = it.name || code;
             var img = it.image || '';
             var row = h('div', { class: 'vr-ac-row' }, [
               img ? h('img', { src: img, alt: '', loading: 'lazy' }) : h('span', { class: 'vr-ac-ph' }),
@@ -241,6 +245,7 @@
             });
             menu.appendChild(row);
           });
+          if (!menu.children.length) { hide(); return; }
           menu.style.display = 'block';
         }).catch(function () {
           // This used to just hide the menu, which reads exactly like "no vehicle matched" — the
@@ -292,12 +297,27 @@
     //
     // The four command names are a {cmds} var rather than four fragments glued to a sentence: a
     // translator moves the whole clause, and `/rent` stays `/rent` wherever it lands in it.
-    el.innerHTML = '<div class="vr-head"><p class="muted" style="font-size:.86rem;margin:0">'
-      + T('pl.vehicle-rental.lead',
-        'Players rent vehicles with {cmds} in game chat, and from a Discord menu if you run a bot.',
-        { cmds: '<code>/rent</code>, <code>/myrent</code>, <code>/extend</code>, <code>/return</code>' })
-      + '</p></div><div id="vr-body" class="muted">' + T('pl.vehicle-rental.loading', 'Loading…') + '</div>';
+    //
+    // ⚠ The four names are the OWNER'S, and so is the prefix in front of them. Hard-coding
+    // `/rent /myrent /extend /return` described every server that renamed a command or uses another
+    // prefix wrongly, on the first line of the tab. So the sentence is drawn from the configured names
+    // and the chat prefix once both are known, and from the shipped names until then.
+    el.innerHTML = '<div class="vr-head"><p class="muted vr-lead" style="font-size:.86rem;margin:0"></p></div><div id="vr-body" class="muted">'
+      + T('pl.vehicle-rental.loading', 'Loading…') + '</div>';
     var body = el.querySelector('#vr-body');
+    var leadEl = el.querySelector('.vr-lead');
+    var chatPrefix = '/';
+    function escHtml(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function drawLead() {
+      var c = config || {};
+      var names = [c.cmdRent || 'rent', c.cmdMine || 'myrent', c.cmdExtend || 'extend', c.cmdReturn || 'return'];
+      leadEl.innerHTML = T('pl.vehicle-rental.lead',
+        'Players rent vehicles with {cmds} in game chat, and from a Discord menu if you run a bot.',
+        { cmds: names.map(function (n) { return '<code>' + escHtml(chatPrefix + n) + '</code>'; }).join(', ') });
+    }
+    drawLead();
+    api('/chat-state').then(function (r) { if (r && typeof r.prefix === 'string' && r.prefix) { chatPrefix = r.prefix; drawLead(); } })
+      .catch(function () { /* the shipped prefix stays */ });
 
     var savedSnapshot = '';
     // Where a failed FIRST load goes. Without a slot, a throwing client only moves the silence: the
@@ -320,6 +340,7 @@
         config = c || {};
         if (!Array.isArray(config.vehicles)) config.vehicles = [];
         savedSnapshot = JSON.stringify(config);
+        drawLead();
         render();
       }).catch(loadFailed);
     }
@@ -328,11 +349,11 @@
     // The in-game chat channel a message goes to. The VALUE is the bridge's own channel id and is
     // never translated; only the caption in the list is.
     function chatChannelLabel(ch) {
-      if (ch === 'global') return T('pl.vehicle-rental.chat.global', 'global');
-      if (ch === 'squad') return T('pl.vehicle-rental.chat.squad', 'squad');
-      if (ch === 'admin') return T('pl.vehicle-rental.chat.admin', 'admin');
-      if (ch === 'server') return T('pl.vehicle-rental.chat.server', 'server');
-      return T('pl.vehicle-rental.chat.local', 'local');
+      if (ch === 'global') return T('pl.vehicle-rental.chat.global', 'Global');
+      if (ch === 'squad') return T('pl.vehicle-rental.chat.squad', 'Squad');
+      if (ch === 'admin') return T('pl.vehicle-rental.chat.admin', 'Admin');
+      if (ch === 'server') return T('pl.vehicle-rental.chat.server', 'Server');
+      return T('pl.vehicle-rental.chat.local', 'Local');
     }
     // How a finished rental ended. A reason this build does not know reads as "expired", exactly as
     // the lookup table this replaced did — the table is a function so that every key is written out.
@@ -534,6 +555,69 @@
             ['extendRaceFailed', T('pl.vehicle-rental.text.extendRaceFailed', 'Extend lost the race — refund failed')],
             ['refundUnknown', T('pl.vehicle-rental.text.refundUnknown', 'Note — the refund could not be confirmed')],
             ['balanceListCut', T('pl.vehicle-rental.text.balanceListCut', 'The list of who is online was cut')],
+            // Every other sentence a player reads — the limits, the refusals, the balance check, the
+            // notes on an ended rental and the whole Discord flow — which used to be English
+            // literals in the backend and are the owner's to word now like every line above.
+            ['free', T('pl.vehicle-rental.text.free', 'Word for “free”')],
+            ['unitMoney', T('pl.vehicle-rental.text.unitMoney', 'Word for money')],
+            ['unitGold', T('pl.vehicle-rental.text.unitGold', 'Word for gold')],
+            ['poolBank', T('pl.vehicle-rental.text.poolBank', 'Name of the bank balance')],
+            ['poolGold', T('pl.vehicle-rental.text.poolGold', 'Name of the gold balance')],
+            ['noPlans', T('pl.vehicle-rental.text.noPlans', 'List — vehicle with no plans')],
+            ['noPlansPick', T('pl.vehicle-rental.text.noPlansPick', 'Plan list — none set up')],
+            ['closedMark', T('pl.vehicle-rental.text.closedMark', 'List — what ⏳ means')],
+            ['windowsNeedManager', T('pl.vehicle-rental.text.windowsNeedManager', 'Hours — manager too old')],
+            ['winRentals', T('pl.vehicle-rental.text.winRentals', 'Hours — name for all rentals')],
+            ['winVehicle', T('pl.vehicle-rental.text.winVehicle', 'Hours — name for a vehicle')],
+            ['winPlan', T('pl.vehicle-rental.text.winPlan', 'Hours — name for a plan')],
+            ['limitActive', T('pl.vehicle-rental.text.limitActive', 'Limit — too many active rentals')],
+            ['limitActiveVehicle', T('pl.vehicle-rental.text.limitActiveVehicle', 'Limit — too many of this vehicle')],
+            ['tooOften', T('pl.vehicle-rental.text.tooOften', 'Limit — cooldown not over')],
+            ['limitDaily', T('pl.vehicle-rental.text.limitDaily', 'Limit — daily limit reached')],
+            ['limitDailyVehicle', T('pl.vehicle-rental.text.limitDailyVehicle', 'Limit — daily limit for this vehicle')],
+            ['busy', T('pl.vehicle-rental.text.busy', 'Rent — still being processed')],
+            ['noStorage', T('pl.vehicle-rental.text.noStorage', 'Rent — storage problem')],
+            ['badChoice', T('pl.vehicle-rental.text.badChoice', 'Rent — invalid choice')],
+            ['noSpawnCode', T('pl.vehicle-rental.text.noSpawnCode', 'Rent — vehicle has no spawn code')],
+            ['badDuration', T('pl.vehicle-rental.text.badDuration', 'Rent — plan duration is negative')],
+            ['mustBeOnline', T('pl.vehicle-rental.text.mustBeOnline', 'Rent — must be online')],
+            ['notFound', T('pl.vehicle-rental.text.notFound', 'Rent — player not found in game')],
+            ['notEnough', T('pl.vehicle-rental.text.notEnough', 'Rent — not enough money')],
+            ['notEnoughExtend', T('pl.vehicle-rental.text.notEnoughExtend', 'Extend — not enough money')],
+            ['savedBalance', T('pl.vehicle-rental.text.savedBalance', 'Note — balance is from the last save')],
+            ['depositCash', T('pl.vehicle-rental.text.depositCash', 'Advice — deposit carried cash')],
+            ['extendBusy', T('pl.vehicle-rental.text.extendBusy', 'Extend — still being processed')],
+            ['extendNoPrice', T('pl.vehicle-rental.text.extendNoPrice', 'Extend — no recorded price')],
+            ['extendMustBeOnline', T('pl.vehicle-rental.text.extendMustBeOnline', 'Extend — must be online')],
+            ['extendGone', T('pl.vehicle-rental.text.extendGone', 'Extend — the vehicle is gone')],
+            ['endedByAdmin', T('pl.vehicle-rental.text.endedByAdmin', 'Note — ended by an admin')],
+            ['endedStuck', T('pl.vehicle-rental.text.endedStuck', 'Note — ended, vehicle not removed')],
+            ['expiredStuck', T('pl.vehicle-rental.text.expiredStuck', 'Note — expired, vehicle not removed')],
+            ['dcError', T('pl.vehicle-rental.text.dcError', 'Discord — something went wrong')],
+            ['dcPickVehicle', T('pl.vehicle-rental.text.dcPickVehicle', 'Discord — pick a vehicle')],
+            ['dcChooseVehicle', T('pl.vehicle-rental.text.dcChooseVehicle', 'Discord — vehicle menu hint')],
+            ['dcPlanCount', T('pl.vehicle-rental.text.dcPlanCount', 'Discord — number of plans')],
+            ['dcNoPlans', T('pl.vehicle-rental.text.dcNoPlans', 'Discord — vehicle has no plans')],
+            ['dcChoosePlan', T('pl.vehicle-rental.text.dcChoosePlan', 'Discord — plan menu hint')],
+            ['dcRenting', T('pl.vehicle-rental.text.dcRenting', 'Discord — choose a plan')],
+            ['dcStale', T('pl.vehicle-rental.text.dcStale', 'Discord — menu out of date')],
+            ['dcLinkFirst', T('pl.vehicle-rental.text.dcLinkFirst', 'Discord — link your character first')],
+            ['dcProcessing', T('pl.vehicle-rental.text.dcProcessing', 'Discord — processing')],
+            ['dcNoStorage', T('pl.vehicle-rental.text.dcNoStorage', 'Discord — storage problem')],
+            ['dcNotActive', T('pl.vehicle-rental.text.dcNotActive', 'Discord — rental no longer active')],
+            ['dcExtended', T('pl.vehicle-rental.text.dcExtended', 'Discord — extended')],
+            ['dcExtendButton', T('pl.vehicle-rental.text.dcExtendButton', 'Discord — Extend button')],
+            ['embConfirmed', T('pl.vehicle-rental.text.embConfirmed', 'Embed — confirmed, title')],
+            ['embVehicle', T('pl.vehicle-rental.text.embVehicle', 'Embed — Vehicle field')],
+            ['embDuration', T('pl.vehicle-rental.text.embDuration', 'Embed — Duration field')],
+            ['embPrice', T('pl.vehicle-rental.text.embPrice', 'Embed — Price field')],
+            ['embExpires', T('pl.vehicle-rental.text.embExpires', 'Embed — Expires field')],
+            ['embSoonTitle', T('pl.vehicle-rental.text.embSoonTitle', 'Embed — ending soon, title')],
+            ['embSoon', T('pl.vehicle-rental.text.embSoon', 'Embed — ending soon')],
+            ['embSoonExtend', T('pl.vehicle-rental.text.embSoonExtend', 'Embed — ending soon, can extend')],
+            ['embEndedTitle', T('pl.vehicle-rental.text.embEndedTitle', 'Embed — ended, title')],
+            ['embEnded', T('pl.vehicle-rental.text.embEnded', 'Embed — ended')],
+            ['embEndedRemoved', T('pl.vehicle-rental.text.embEndedRemoved', 'Embed — ended and removed')],
           ];
           if (!config.texts) config.texts = {};
           // ⚠ **THIS LIST IS THE ORDER AND THE LABEL, NEVER THE SET.** The screen used to draw
@@ -555,7 +639,7 @@
           });
         })()),
         h('p', { class: 'muted', style: 'font-size:.78rem;margin-top:6px' }, T('pl.vehicle-rental.text.tokens',
-          'Tokens: {player} {vehicle} {duration} {price} {left} {sector} {cmd} {list}. Leave a line empty to use the built-in wording.')),
+          'Tokens: {player} {vehicle} {duration} {price} {left} {sector} {cmd} {list} {window} {max} {n}. Some lines have their own. Leave a line empty for the default.')),
       ]));
 
       // ── vehicles ──
@@ -888,16 +972,15 @@
       }
       loadRentals();
       // One timer per mount, cleared when the tab is rebuilt, so reopening the tab never stacks them.
-      // Ordinarily this only re-renders the "time left" countdown from data already in hand — the
-      // list itself is refreshed on demand (the table's own refresh icon, or after ending a rental).
-      // While a fetch is failing it re-fetches instead, which is what makes "it keeps retrying" in
-      // the message above true rather than a promise nothing here was keeping.
+      // Every tick RE-FETCHES both lists. It used to only redraw the countdown from data already in
+      // hand, so a rental a player started after the tab was opened did not appear until somebody
+      // clicked refresh. Fetching also keeps "it keeps retrying" in the message above true.
       if (window.vrTick) clearInterval(window.vrTick);
       // It stops once the tab has been left and skips a round while the browser tab is hidden.
       window.vrTick = setInterval(function () {
         if (!body.isConnected) { clearInterval(window.vrTick); window.vrTick = null; return; }
         if (document.hidden) return;
-        if (rentalsErr) loadRentals(); else activeTbl.refresh();
+        loadRentals();
       }, 30000);
 
       body.appendChild(rentalsErrBar);

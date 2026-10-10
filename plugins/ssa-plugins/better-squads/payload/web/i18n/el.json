@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Στάλθηκε σε",
   "pl.better-squads.card.activity": "Δραστηριότητα",
   "pl.better-squads.card.activity.sub": "Τα τελευταία μηνύματα που παραδόθηκαν. Για μηνύματα ανά αναγνώστη φαίνεται το πρώτο αντίγραφο.",
-  "pl.better-squads.live.turnOn": "ενεργοποιήστε το «{switch}» στο {where}"
+  "pl.better-squads.group.words": "Λέξεις μέσα σε άλλες γραμμές",
+  "pl.better-squads.text.mutednone": "Λέξη για «τίποτα σε σίγαση»",
+  "pl.better-squads.text.squadnoname": "Λέξη για ομάδα χωρίς όνομα",
+  "pl.better-squads.text.unknownobject": "Επιδρομή: λέξη για αντικείμενο χωρίς όνομα",
+  "pl.better-squads.text.testline": "Δοκιμαστικό μήνυμα από αυτή τη σελίδα",
+  "pl.better-squads.live.turnOnBoth": "ενεργοποιήστε το «{enable}» και το «{switch}» στην κάρτα {module} στο {where}",
+  "pl.better-squads.live.nomodule": "αυτός ο διακομιστής τρέχει παλαιότερο SSA Bridge χωρίς αυτή τη λειτουργική μονάδα",
+  "pl.better-squads.live.noanswer": "το SSA Bridge δεν απάντησε",
+  "pl.better-squads.test.squadunknown": "Η λίστα ομάδων δεν μπορεί να διαβαστεί αυτή τη στιγμή. Δοκιμάστε ξανά σε ένα λεπτό.",
+  "pl.better-squads.test.allmuted": "Όλα τα συνδεδεμένα μέλη αυτής της ομάδας είναι σε σίγαση από διαχειριστή",
+  "pl.better-squads.test.reachednobody": "Η δοκιμή στάλθηκε αλλά δεν έφτασε σε κανέναν"
 }

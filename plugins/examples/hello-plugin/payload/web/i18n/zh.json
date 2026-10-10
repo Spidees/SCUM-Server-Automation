@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "在游戏中公告",
+  "pl.hello-plugin.announceAsk": "要把问候发给游戏里的所有人吗？",
+  "pl.hello-plugin.empty": "还没有人在这个服务器上玩过。",
+  "pl.hello-plugin.greet": "打招呼",
+  "pl.hello-plugin.greeting": "问候语",
+  "pl.hello-plugin.lookup": "查找物品",
+  "pl.hello-plugin.name": "名称",
+  "pl.hello-plugin.noPremium": "Premium 已关闭，所以游戏内工具不会响应。",
+  "pl.hello-plugin.online": "当前在线：{n}",
+  "pl.hello-plugin.pick": "选择地点",
+  "pl.hello-plugin.pickNote": "在地图上点按你想查看的位置。",
+  "pl.hello-plugin.players": "玩家",
+  "pl.hello-plugin.save": "保存",
+  "pl.hello-plugin.saved": "已保存。",
+  "pl.hello-plugin.sent": "已发送。",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "服务器停止时无法读取游戏数据库。这里的其他功能都可以使用。",
+  "pl.hello-plugin.tab": "你好",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "登录后可以看到你自己的问候语。",
+  "pl.hello-plugin.wave": "挥手回应"
+}

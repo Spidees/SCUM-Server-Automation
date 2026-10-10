@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Im Spiel ankündigen",
+  "pl.hello-plugin.announceAsk": "Den Gruß an alle im Spiel senden?",
+  "pl.hello-plugin.empty": "Auf diesem Server hat noch niemand gespielt.",
+  "pl.hello-plugin.greet": "Grüßen",
+  "pl.hello-plugin.greeting": "Gruß",
+  "pl.hello-plugin.lookup": "Gegenstand nachschlagen",
+  "pl.hello-plugin.name": "Name",
+  "pl.hello-plugin.noPremium": "Premium ist aus, daher antworten die Spielwerkzeuge nicht.",
+  "pl.hello-plugin.online": "Jetzt online: {n}",
+  "pl.hello-plugin.pick": "Ort wählen",
+  "pl.hello-plugin.pickNote": "Tippe auf der Karte dorthin, wo du nachsehen willst.",
+  "pl.hello-plugin.players": "Spieler",
+  "pl.hello-plugin.save": "Speichern",
+  "pl.hello-plugin.saved": "Gespeichert.",
+  "pl.hello-plugin.sent": "Gesendet.",
+  "pl.hello-plugin.steam": "Steam-ID",
+  "pl.hello-plugin.stopped": "Die Spieldatenbank ist nicht lesbar, solange der Server gestoppt ist. Alles andere hier funktioniert.",
+  "pl.hello-plugin.tab": "Hallo",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Melde dich an, um deinen eigenen Gruß zu sehen.",
+  "pl.hello-plugin.wave": "Zurückwinken"
+}

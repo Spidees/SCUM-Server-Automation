@@ -36,7 +36,40 @@
       : T('pl.discord-embeds.hist.count', '{n} messages', { n: n });
   }
   // One sentence for a failure, the route's own words first. Used by every catch in this file.
-  function why(err) { return SSA.apiError(err); }
+  function why(err) { return window.eeRefusal(err); }
+  // A route's refusal in the reader's language. The backend sends a CODE — `code` on a 200 answer,
+  // `error` on a refused request, which the SDK hands over as `err.code` — and keeps its English
+  // only for a code this screen does not know yet. Shared by both halves of this file.
+  window.eeRefusal = function (x) {
+    if (!x) return T('pl.discord-embeds.noReason', 'the manager did not say why');
+    var body = (x.body && typeof x.body === 'object') ? x.body : x;
+    var code = String(body.code || (x instanceof Error ? x.code : body.error) || '');
+    switch (code) {
+      case 'no_channel': return T('pl.discord-embeds.err.noChannel', 'no channel was picked');
+      case 'send_failed': return T('pl.discord-embeds.err.sendFailed', 'Discord did not accept the message');
+      case 'no_message': return T('pl.discord-embeds.err.noMessage', 'no message was given');
+      case 'channel_not_found': return T('pl.discord-embeds.err.channelNotFound', 'the bot cannot see that channel');
+      case 'message_gone': return T('pl.discord-embeds.err.messageGone', 'that message is gone, it may have been deleted in Discord');
+      case 'message_not_found': return T('pl.discord-embeds.err.messageNotFound', 'that message is not in that channel');
+      case 'not_ours': return T('pl.discord-embeds.err.notOurs', 'that message was not posted by this bot, so it cannot be edited');
+      case 'no_time': return T('pl.discord-embeds.err.noTime', 'no time was given');
+      case 'time_past': return T('pl.discord-embeds.err.timePast', 'that time is in the past');
+      case 'schedule_full': return T('pl.discord-embeds.err.scheduleFull', 'the schedule is full ({max} messages), delete one first', { max: body.max != null ? body.max : 200 });
+      case 'no_name': return T('pl.discord-embeds.err.noName', 'the template has no name');
+      case 'stale': return T('pl.discord-embeds.err.stale', 'Someone else saved this first. Your changes were not saved; reload and try again.');
+      case 'embed_not_found': return T('pl.discord-embeds.err.embedNotFound', 'that embed no longer exists');
+      case 'embed_empty': return T('pl.discord-embeds.err.embedEmpty', 'that embed has nothing in it yet');
+      case 'embed_off': return T('pl.discord-embeds.err.embedOff', 'this embed is switched off');
+      case 'no_editor': return T('pl.discord-embeds.err.noEditor', 'the editor half of the plugin is not loaded');
+      case 'not_built': return T('pl.discord-embeds.err.notBuilt', 'the embed could not be built from what is in it');
+      case 'post_failed': return body.detail
+        ? T('pl.discord-embeds.err.postFailedWhy', 'Discord refused it: {why}', { why: body.detail })
+        : T('pl.discord-embeds.err.postFailed', 'it could not be posted');
+    }
+    if (x instanceof Error || x.status != null) return SSA.apiError(x);
+    return String(body.reason || body.error || T('pl.discord-embeds.noReason', 'the manager did not say why'));
+  };
+  var refusal = window.eeRefusal;
   // Shared by all three tabs (they live in two separate IIFEs), so the module identifies itself the
   // same way wherever you land. Before, one tab had an <h2> and the other two had a bare paragraph,
   // which made the module look like it started and stopped depending on where you clicked.
@@ -505,7 +538,9 @@
               onclick: function () { curGroup = g; draw(); } }, label);
           };
           chips.appendChild(mk(T('pl.discord-embeds.tok.all', 'All'), ''));
-          groups.forEach(function (g) { chips.appendChild(mk(g, g)); });
+          // `@embed` is this embed's own tokens; the backend sends the id and the words live here.
+          // Every other group is the manager's own.
+          groups.forEach(function (g) { chips.appendChild(mk(g === '@embed' ? T('pl.discord-embeds.group.embed', 'This embed') : g, g)); });
         }
         grid.innerHTML = '';
         tokPager.innerHTML = '';
@@ -861,7 +896,8 @@
     form.appendChild(sec(T('pl.discord-embeds.sec.footer', 'Footer'), [
       h('p', { class: 'ee-note' },
         T('pl.discord-embeds.footer.note',
-          'Footer and timestamp come from your bot’s branding, on every embed. Change them there (Premium).')),
+          'Footer and timestamp come from your bot’s branding, on every embed. Change them in {where} (Premium).',
+          { where: T('nav.settings', 'Settings') + ' → ' + T('setthing.discord-bot', 'Discord bot') + ' → ' + T('cfg.Discord.Branding.Name', 'Footer name') })),
     ]));
 
     var fieldsBox = h('div', {});
@@ -1189,7 +1225,7 @@
       api(editing ? '/edit' : '/send', { method: 'POST', body: body }).then(function (r) {
         sendStatus.textContent = (r && r.ok)
           ? (editing ? T('pl.discord-embeds.send.updated', 'Updated ✓') : T('pl.discord-embeds.send.sent', 'Sent ✓'))
-          : (r && r.error ? T('pl.discord-embeds.failedWhy', 'Failed: {why}', { why: r.error }) : T('pl.discord-embeds.failed', 'Failed'));
+          : (r ? T('pl.discord-embeds.failedWhy', 'Failed: {why}', { why: refusal(r) }) : T('pl.discord-embeds.failed', 'Failed'));
       }).catch(function (err) {
         // A rejected request is not the 200-with-refusal `Failed:` above — it never reached Discord
         // at all, and the sentence has to lead with what did NOT happen: nothing was sent or
@@ -1219,7 +1255,7 @@
       }
       loadStatus.textContent = T('pl.discord-embeds.loading', 'Loading…');
       api('/fetch', { method: 'POST', body: { channelId: chId, messageId: msgId } }).then(function (r) {
-        if (!r || !r.ok) { loadStatus.textContent = (r && r.error) || T('pl.discord-embeds.load.failed', 'Could not load it.'); return; }
+        if (!r || !r.ok) { loadStatus.textContent = r ? T('pl.discord-embeds.load.failedWhy', 'Could not load it — {why}', { why: refusal(r) }) : T('pl.discord-embeds.load.failed', 'Could not load it.'); return; }
         loadStatus.textContent = T('pl.discord-embeds.load.loaded', 'Loaded — editing it now.');
         setEditing({ messageId: r.messageId, channelId: r.channelId, channelName: '', sentAt: r.sentAt, title: r.embed.title || '' });
         var v2 = r.embed; v2.content = r.content || '';
@@ -1250,6 +1286,12 @@
       if (!whenInp.value) { schedStatus.textContent = T('pl.discord-embeds.sched.needTime', 'Pick a date and time.'); return; }
       var at = new Date(whenInp.value).getTime();
       if (!at || isNaN(at)) { schedStatus.textContent = T('pl.discord-embeds.sched.badTime', 'That time is not valid.'); return; }
+      // The same question Send asks: a booked @everyone pings the whole channel just the same.
+      var ping = /(^|\s)@(everyone|here)\b/.exec(model.content || '');
+      if (ping && !confirm(T('pl.discord-embeds.send.pingConfirm', 'This will ping @{who} — everyone in the channel gets a notification. Send it?', { who: ping[2] }))) {
+        schedStatus.textContent = T('pl.discord-embeds.send.cancelled', 'Cancelled.');
+        return;
+      }
       schedStatus.textContent = T('pl.discord-embeds.sched.scheduling', 'Scheduling…');
       api('/scheduled', { method: 'POST', body: {
         channelId: chanSel.value, channelName: (chanSel.options[chanSel.selectedIndex] || {}).text || '',
@@ -1257,7 +1299,7 @@
         buttons: model.buttons, selects: model.selects || [], content: model.content || '',
       } }).then(function (r) {
         schedStatus.textContent = (r && r.ok) ? T('pl.discord-embeds.sched.done', 'Scheduled ✓')
-          : (r && r.error ? T('pl.discord-embeds.failedWhy', 'Failed: {why}', { why: r.error }) : T('pl.discord-embeds.failed', 'Failed'));
+          : (r ? T('pl.discord-embeds.failedWhy', 'Failed: {why}', { why: refusal(r) }) : T('pl.discord-embeds.failed', 'Failed'));
         if (r && r.ok) loadScheduled();
       }).catch(function (err) { schedStatus.textContent = T('pl.discord-embeds.sched.notScheduled', 'NOT scheduled — {why}', { why: why(err) }); });
     });
@@ -1438,7 +1480,7 @@
                     // as a deletion any more than a rejected request is — Discord still has the
                     // message, so `editing` must not be cleared and the list must not be reloaded as
                     // if it were gone.
-                    if (r && r.ok === false) { try { SSA.toast(T('pl.discord-embeds.notDeleted', 'NOT deleted — {why}', { why: r.error || T('pl.discord-embeds.noReason', 'the manager did not say why') }), 'error'); } catch (e) {} return; }
+                    if (r && r.ok === false) { try { SSA.toast(T('pl.discord-embeds.notDeleted', 'NOT deleted — {why}', { why: refusal(r) }), 'error'); } catch (e) {} return; }
                     if (editing && editing.messageId === entry.messageId) setEditing(null);
                     loadHistory();
                   })
@@ -1529,7 +1571,8 @@
   // dictionary, same keys — a key written on one side is the one the other side reads.
   var T = SSA.t;
   // One sentence for a failure, the route's own words first. Used by every catch in this IIFE.
-  function why(err) { return SSA.apiError(err); }
+  function why(err) { return window.eeRefusal(err); }
+  var refusal = window.eeRefusal;
   /* THE SWITCH THIS TAB'S PROSE SENDS AN OWNER TO, NAMED ONCE.
    *
    * Two sentences on the Built-in Embeds tab tell an owner to turn on "Replace fields", and it is a
@@ -1543,10 +1586,10 @@
   function saveResult(r, okText) {
     if (r && r.ok) return okText;
     if (r && r.stale) {
-      try { SSA.toast(r.error, 'error'); } catch (e) { /* toast optional */ }
+      try { SSA.toast(refusal(r), 'error'); } catch (e) { /* toast optional */ }
       return T('pl.discord-embeds.save.stale', 'NOT saved — another tab saved first. Reload the page.');
     }
-    var reason = (r && r.error) ? String(r.error) : '';
+    var reason = (r && (r.error || r.code)) ? refusal(r) : '';
     return reason ? T('pl.discord-embeds.save.failedWhy', 'Save failed — {why}', { why: reason })
       : T('pl.discord-embeds.save.failed', 'Save failed');
   }
@@ -1793,8 +1836,16 @@
       // Groups come from the manager, not a list here — it now sends notifications, player DM
       // alerts and intel cards as well, and a hardcoded pair would silently hide them.
       var GROUP_ORDER = ['feeds', 'live', 'notifications', 'dm', 'intel'];
+      // The backend sends the group's id only; its name is a word for this screen to translate.
+      var GROUP_NAMES = {
+        feeds: T('pl.discord-embeds.group.feeds', 'Feeds'),
+        live: T('pl.discord-embeds.group.live', 'Live embeds'),
+        notifications: T('pl.discord-embeds.group.notifications', 'Notifications'),
+        dm: T('pl.discord-embeds.group.dm', 'Player DM alerts'),
+        intel: T('pl.discord-embeds.group.intel', 'Player Intel'),
+      };
       var groupLabels = {};
-      kinds.forEach(function (k) { if (!groupLabels[k.group]) groupLabels[k.group] = k.groupLabel || k.group; });
+      kinds.forEach(function (k) { if (!groupLabels[k.group]) groupLabels[k.group] = GROUP_NAMES[k.group] || k.groupLabel || k.group; });
       var groupKeys = Object.keys(groupLabels).sort(function (a, b) {
         var ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
@@ -1906,7 +1957,7 @@
         enableChk.checked = !!entry.enabled;
         fieldsChk.checked = !!entry.fields;
         fieldsLabel.style.display = (kd && kd.styleOnly) ? 'none' : '';
-        var hasPlayer = !!(kd && kd.tokens && kd.tokens.some(function (t) { return t && t.group === 'Player stats'; }));
+        var hasPlayer = !!(kd && kd.tokens && kd.tokens.some(function (t) { return t && /^stat_/.test(String(t.t || '')); }));
         // Be explicit about where this layout came from. "Not seen yet" is the honest answer for an
         // embed the manager has not sent since it started, and explains an empty field list.
         var origin = !kd ? ''
@@ -2170,7 +2221,7 @@
                 // Say WHICH thing went wrong — the backend now tells us. "Failed (channel / bot?)"
                 // covered four different causes and pointed at none of them.
                 st.textContent = (r && r.ok) ? T('pl.discord-embeds.custom.posted', 'Posted ✓ — keeps updating')
-                  : ('⚠ ' + ((r && r.error) || T('pl.discord-embeds.custom.postFailed', 'could not post')));
+                  : ('⚠ ' + (r ? refusal(r) : T('pl.discord-embeds.custom.postFailed', 'could not post')));
               }).catch(function (err) {
                 // The post is a SECOND request, after the save already succeeded — its own failure
                 // must say so on its own, not leave the status line reading "Posting…" forever.
@@ -2180,7 +2231,7 @@
               // `cb` above only ran on a real success; if the save itself was refused or thrown,
               // `saveAll` already toasted it — this is what stops the status LINE (which nothing
               // else here updates) from being left on "Saving…" in that case.
-              if (r && r.ok === false) st.textContent = T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: r.error || T('pl.discord-embeds.noReason', 'the manager did not say why') });
+              if (r && r.ok === false) st.textContent = T('pl.discord-embeds.notSaved', 'NOT saved — {why}', { why: refusal(r) });
             });
           } }, T('pl.discord-embeds.custom.savePost', 'Save & post now')),
           st,

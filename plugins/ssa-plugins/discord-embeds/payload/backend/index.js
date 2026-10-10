@@ -347,10 +347,10 @@ module.exports = {
 
     host.routes.post('/send', async (req, res) => {
       const b = req.body || {};
-      if (!b.channelId) return res.status(400).json({ error: 'no channel' });
+      if (!b.channelId) return res.status(400).json({ error: 'no_channel', reason: 'no channel was picked' });
       try {
         const msg = await host.discord.send(b.channelId, buildPayload(b));
-        if (!msg) return res.json({ ok: false, error: 'send failed' });
+        if (!msg) return res.json({ ok: false, code: 'send_failed', error: 'Discord did not accept the message' });
         const id = msg && msg.id ? String(msg.id) : null;
         if (id) {
           remember({
@@ -367,15 +367,15 @@ module.exports = {
     // Rewrite a message the editor sent earlier, in place.
     host.routes.post('/edit', async (req, res) => {
       const b = req.body || {};
-      if (!b.channelId || !b.messageId) return res.status(400).json({ error: 'no message' });
+      if (!b.channelId || !b.messageId) return res.status(400).json({ error: 'no_message', reason: 'no message was given' });
       try {
         const ch = await host.discord.channel(b.channelId);
-        if (!ch || !ch.messages) return res.status(404).json({ error: 'channel not found' });
+        if (!ch || !ch.messages) return res.status(404).json({ error: 'channel_not_found', reason: 'the bot cannot see that channel' });
         const msg = await ch.messages.fetch(String(b.messageId)).catch(() => null);
         // A message deleted in Discord is the common case here, and "not found" is the honest answer —
         // silently re-sending it somewhere would be worse than failing.
-        if (!msg) return res.status(404).json({ error: 'message not found — it may have been deleted' });
-        if (!msg.editable) return res.status(403).json({ error: 'that message was not posted by this bot' });
+        if (!msg) return res.status(404).json({ error: 'message_gone', reason: 'that message is gone, it may have been deleted in Discord' });
+        if (!msg.editable) return res.status(403).json({ error: 'not_ours', reason: 'that message was not posted by this bot, so it cannot be edited' });
         await msg.edit(buildPayload(b));
         const list = history();
         const hit = list.find((x) => x.messageId === String(b.messageId));
@@ -417,14 +417,14 @@ module.exports = {
     // entry was cleared. Read-only: it returns the message, the admin decides what to do with it.
     host.routes.post('/fetch', async (req, res) => {
       const b = req.body || {};
-      if (!b.channelId || !b.messageId) return res.status(400).json({ error: 'need a channel and message id' });
+      if (!b.channelId || !b.messageId) return res.status(400).json({ error: 'no_message', reason: 'no message was given' });
       try {
         const ch = await host.discord.channel(b.channelId);
-        if (!ch || !ch.messages) return res.status(404).json({ error: 'channel not found (or the bot cannot see it)' });
+        if (!ch || !ch.messages) return res.status(404).json({ error: 'channel_not_found', reason: 'the bot cannot see that channel' });
         const msg = await ch.messages.fetch(String(b.messageId)).catch(() => null);
-        if (!msg) return res.status(404).json({ error: 'message not found in that channel' });
+        if (!msg) return res.status(404).json({ error: 'message_not_found', reason: 'that message is not in that channel' });
         // Only our own messages can be edited later, so say so now rather than after the rewrite.
-        if (!msg.editable) return res.status(403).json({ error: 'that message was not posted by this bot, so it cannot be edited' });
+        if (!msg.editable) return res.status(403).json({ error: 'not_ours', reason: 'that message was not posted by this bot, so it cannot be edited' });
         // A message can carry ten embeds; read the first as the main one and the rest as extras,
         // otherwise adopting a multi-embed announcement would quietly throw most of it away.
         const raw = (msg.embeds || []).map((x) => (x && x.toJSON ? x.toJSON() : x)).filter(Boolean);
@@ -486,10 +486,10 @@ module.exports = {
     host.routes.post('/scheduled', (req, res) => {
       const b = req.body || {};
       const at = Number(b.at);
-      if (!b.channelId) return res.status(400).json({ error: 'no channel' });
-      if (!Number.isFinite(at)) return res.status(400).json({ error: 'no time' });
+      if (!b.channelId) return res.status(400).json({ error: 'no_channel', reason: 'no channel was picked' });
+      if (!Number.isFinite(at)) return res.status(400).json({ error: 'no_time', reason: 'no time was given' });
       // A past time would fire on the very next tick, which is never what someone meant to book.
-      if (at < Date.now() - 60000) return res.status(400).json({ error: 'that time is in the past' });
+      if (at < Date.now() - 60000) return res.status(400).json({ error: 'time_past', reason: 'that time is in the past' });
       const list = scheduled();
       // A full queue REFUSES, rather than accepting and dropping.
       //
@@ -498,7 +498,7 @@ module.exports = {
       // `{ok: true}`. The owner scheduled an announcement, was told it was booked, and it never
       // existed — the one failure mode a scheduler must never have.
       if (list.length >= SCHED_MAX) {
-        return res.status(400).json({ error: `the schedule is full (${SCHED_MAX} messages). Delete one, then book again.` });
+        return res.status(400).json({ error: 'schedule_full', max: SCHED_MAX, reason: `the schedule is full (${SCHED_MAX} messages), delete one first` });
       }
       list.push({
         id: 'sch_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
@@ -576,7 +576,7 @@ module.exports = {
     host.routes.get('/templates', (req, res) => res.json(host.store.get('templates', {})));
     host.routes.post('/templates', (req, res) => {
       const b = req.body || {};
-      if (!b.name || typeof b.name !== 'string') return res.status(400).json({ error: 'no name' });
+      if (!b.name || typeof b.name !== 'string') return res.status(400).json({ error: 'no_name', reason: 'the template has no name' });
       const t = host.store.get('templates', {}); t[b.name] = b.data || {}; host.store.set('templates', t);
       res.json({ ok: true });
     });

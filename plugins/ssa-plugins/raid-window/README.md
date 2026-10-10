@@ -24,7 +24,11 @@ was**, and the pushing stops once the base has been **quiet for a while**.
 - **A raid ends only after real quiet**: no damage for as long as you set. A bridge that stops
   answering never ends a raid early.
 - **Every push is checked.** The bridge reads the base's protection before and after, so each push
-  shows as *Pushed*, *No change*, *Sent* (not confirmed) or *Refused*.
+  shows as *Pushed*, *No change*, *Already later*, *Already protected*, *Sent* (not confirmed),
+  *Skipped* (no protection length to keep) or *Refused*.
+- **Base attack alerts can keep a raid going, never start one.** Only an alert about a base being
+  damaged counts, matched to the base by where the damage landed. A stolen car or a picked lock does
+  not.
 
 ## Requirements
 - The **SSA Bridge** plugin.
@@ -40,14 +44,14 @@ was**, and the pushing stops once the base has been **quiet for a while**.
 - Manager **5.16.2+**.
 
 ## Configuration
-Everything is configured from the plugin's **admin tab** (⏳ Raid Window), with the server running or
-stopped. The **?** beside each setting explains what it does:
+Everything is configured from the plugin's **admin tab** (⏳ Raid Window):
 
 - **Keep raids going when defenders log out**: the main switch.
 - **Push protection back by**: how far ahead protection is set to start (default 60 minutes).
 - **A raid is over after no damage for**: how long a base must be quiet (default 60 minutes).
-- **Every hit restarts the countdown**: protection starts that long after the **last** hit, as if the
-  owner had only just logged off (off by default).
+- **Every hit restarts the countdown**: protection starts **Push protection back by** after the
+  **last** hit (off by default). Set that to your server's offline start delay and a raided base
+  behaves as if its owners had only just logged off.
 - **Hits needed to count as a raid** (default 3). A destroyed building part always counts.
 - **More options**: **Repeat the push every** (default 10 minutes), **Most pushes for one raid**
   (default 24), **Protection length**, base attack alerts, the cooldown skip, bases and flags to never
@@ -66,9 +70,8 @@ stopped. The **?** beside each setting explains what it does:
   raid**.
 - **On offline protection a push is live only.** The game's save keeps the start it wrote itself, so
   after a server restart protection starts when the game had set it, which ends a raid anyway.
-- **Every hit restarts the countdown** starts offline protection **Push protection back by** after the
-  last hit. Set that to your server's offline start delay and a raided base behaves as if its owners
-  had only just logged off.
+- **Everything can be set with the server stopped.** While the server stops, starts or restarts the
+  save cannot be read, and the tab says so; a raid already being pushed is not ended by that.
 - **Nothing happens while nobody is online**, because nobody can raid. It starts again as soon as
   someone connects.
 - **Keep the repeat shorter than the push**, or protection can switch on between two pushes. The tab

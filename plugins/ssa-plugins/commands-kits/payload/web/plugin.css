@@ -430,3 +430,10 @@
 
 /* The token tip is a sentence and opens with a capital in every language. */
 .ck-tok-tip::first-letter { text-transform: uppercase; }
+/* What a claim is for — kit, command or shared cooldown group — beside its name in Player claims. */
+.ck-kind {
+  margin-left: .4rem; font-size: .66rem; font-weight: 600; letter-spacing: .02em;
+  padding: .1rem .4rem; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--line, #333); color: var(--muted, #8b9099);
+}
+.ck-kind.gone { font-style: italic; }

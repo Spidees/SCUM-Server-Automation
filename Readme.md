@@ -67,11 +67,17 @@ The filename tells you which kind of build it is:
 
 **It is free, and it does not need the manager.** Every module, every command and every read works on its own: unpack it into your server's `SCUM/Binaries/Win64/` and it runs. UE4SS is in the archive, so there is nothing else to fetch. A licence changes exactly one thing: whether joining players see a single chat line naming the bridge.
 
+**Building your own tool?** [`ssa_bridge/sdk/`](ssa_bridge/sdk) has typings for the whole interface and a small client for Node and for Python, so a bot, a website or a tool on another machine can talk to the bridge without the manager.
+
+### 📡 The SSA Reporter, for the server browser
+
+[**`ssa_reporter/`**](ssa_reporter) holds the **SSA Reporter**: a small in-game mod that tells [scumsa.com](https://scumsa.com) your server's name, player count, game time and version once a minute. Your listing in the server browser is then live and yours to claim, even when the official master list is stale or wrong. Unpack it into your server's `SCUM/Binaries/Win64/`, paste the token from your scumsa account page into its config, restart. It sends nothing from the save and no player names. Run the bridge or the Reporter, not both: the bridge has the same report built in.
+
 ### 🎮 The SCUMSA Launcher, for players
 
 [**`launcher/`**](launcher) holds the **SCUMSA Launcher** installer: every SCUM server with your real ping, one press to join, and the client mods a server needs installed for you. Run the installer once; the launcher updates itself from [scumsa.com](https://scumsa.com).
 
-> **What's in this repository.** The public home for the SSA **plugins**, developer **examples**, the manager **release**, the **bridge** and the **launcher**. The manager's own source is closed; everything you need to *run* a server, or to *play* on one, is here plus [scumsa.com](https://scumsa.com).
+> **What's in this repository.** The public home for the SSA **plugins**, developer **examples**, the manager **release**, the **bridge**, the **Reporter** and the **launcher**. The manager's own source is closed; everything you need to *run* a server, or to *play* on one, is here plus [scumsa.com](https://scumsa.com).
 
 ---
 
@@ -108,7 +114,7 @@ The complete **Plugin SDK**, with every method, all events and the UE4SS guide, 
 
 ## 📄 License
 
-The plugins and the manager release are **© 2026 Martin Zámečník, all rights reserved** (see [`LICENSE`](LICENSE)); the source is public for transparency, not for reuse. The developer examples in [`plugins/examples/`](plugins/examples) are **MIT-licensed**: copy them freely as a starting point for your own plugins.
+The plugins and the manager release are **© 2026 Martin Zámečník, all rights reserved** (see [`LICENSE`](LICENSE)); the source is public for transparency, not for reuse. The developer examples in [`plugins/examples/`](plugins/examples) and the bridge SDK in [`ssa_bridge/sdk/`](ssa_bridge/sdk) are **MIT-licensed**: copy them freely as a starting point for your own plugins and tools.
 
 ---
 

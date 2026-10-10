@@ -179,5 +179,15 @@
   "pl.better-squads.col.sentto": "Primatelji",
   "pl.better-squads.card.activity": "Aktivnost",
   "pl.better-squads.card.activity.sub": "Posljednje isporučene poruke. Kod poruka po čitatelju prikazuje se prva kopija.",
-  "pl.better-squads.live.turnOn": "uključite „{switch}” u {where}"
+  "pl.better-squads.group.words": "Riječi unutar drugih redaka",
+  "pl.better-squads.text.mutednone": "Riječ za „ništa nije utišano”",
+  "pl.better-squads.text.squadnoname": "Riječ za odred bez imena",
+  "pl.better-squads.text.unknownobject": "Napad: riječ za neimenovani objekt",
+  "pl.better-squads.text.testline": "Testna poruka s ove stranice",
+  "pl.better-squads.live.turnOnBoth": "uključite „{enable}” i „{switch}” na kartici {module} u {where}",
+  "pl.better-squads.live.nomodule": "ovaj poslužitelj koristi stariji SSA Bridge koji nema ovaj modul",
+  "pl.better-squads.live.noanswer": "SSA Bridge nije odgovorio",
+  "pl.better-squads.test.squadunknown": "Popis odreda trenutno se ne može pročitati. Pokušajte ponovno za minutu.",
+  "pl.better-squads.test.allmuted": "Sve online članove tog odreda utišao je admin",
+  "pl.better-squads.test.reachednobody": "Test je poslan, ali nije stigao ni do koga"
 }

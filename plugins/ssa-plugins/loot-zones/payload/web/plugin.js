@@ -43,6 +43,148 @@
     return T('nav.plugins', 'Plugins') + ' → ' + T('plugins.viewInGame', 'SSA Bridge');
   }
   /**
+   * A bridge switch's caption, read off the bridge's OWN schema through `/bridge-check` — the words
+   * on the card an owner has to find. Deliberately not translated, for the reason `ACTIVITY_SWITCH`
+   * gives; the English beside each call is the caption as the bridge ships it, for a page that has
+   * not heard back from the check yet.
+   */
+  function bridgeLabel(module, key, fallback) {
+    var items = (state.bridge && state.bridge.items) || [];
+    for (var i = 0; i < items.length; i++) {
+      var x = items[i];
+      if (x && x.module === module && x.key === key && x.label && x.label !== key) return String(x.label);
+    }
+    return fallback;
+  }
+  /**
+   * ── A SENTENCE THE BACKEND SENT AS A CODE ─────────────────────────────────────────────────────
+   *
+   * The patrol's refusals and the spawn-plan answers travel as English text with `{ code, vars }`
+   * beside them (see `coded()` in the backend). A code this page knows is rendered here, in the
+   * reader's language and with every control it names built from the panel's own keys and the
+   * bridge's own captions; one it does not know falls back to the backend's English, word for word.
+   */
+  function codedText(c, fallback) {
+    if (!c || !c.code) return fallback;
+    var v = c.vars || {};
+    var n = Number(v.n) || 0;
+    var why = v.why == null ? '' : String(v.why);
+    var liveOn = bridgeLabel('live', 'enabled', 'Read live player data');
+    var liveWhere = bridgeLabel('live', 'where', 'Position, facing and speed');
+    switch (c.code) {
+      case 'no_bridge_answer':
+        return T('pl.loot-zones.c.noBridge', 'The bridge did not answer: not deployed, not running, or too old.');
+      case 'zones_not_known':
+        return T('pl.loot-zones.c.zonesNotKnown',
+          // The game hands its zone list over only through a player, so the drawing waits for one.
+          'The game has not sent its zone list yet. Loot is live; the rectangle appears when a player joins.');
+      case 'no_prefix':
+        return T('pl.loot-zones.c.noPrefix', 'The zone name prefix is empty. Fill it in where this tab sets up the rectangle.');
+      case 'old_manager':
+        return T('pl.loot-zones.c.oldManager',
+          'This manager is older than the spawn-plan reading. Update the manager to {version} or newer for this part.',
+          { version: v.version || '5.20.0' });
+      case 'players_unknown':
+        return T('pl.loot-zones.c.playersUnknown',
+          'Player positions are unknown, so nothing was done. Turn on "{a}" and "{b}" under {where}.',
+          { a: liveOn, b: liveWhere, where: bridgeWhere() });
+      case 'no_positions':
+        return T('pl.loot-zones.c.noPositions',
+          'No guard sent: player positions are unknown. Turn on "{a}" and "{b}" under {where}.',
+          { a: liveOn, b: liveWhere, where: bridgeWhere() });
+      case 'not_removed':
+        return T('pl.loot-zones.c.notRemoved', '{kind}: not removed. Turn on "{switch}" under {where}.', {
+          kind: v.kind || '',
+          'switch': v.key ? bridgeLabel('despawn', v.key, v.label || v.key) : (v.label || ''),
+          where: bridgeWhere(),
+        });
+      case 'loose':
+        return T('pl.loot-zones.c.loose', 'Guards outside the zone not taken back yet: {n}. {why}', { n: n, why: why });
+      case 'stuck':
+        return T('pl.loot-zones.c.stuck', 'Guards that walked out and could not be removed: {n}. {why} Retried next round.',
+          { n: n, why: why });
+      case 'spots_dropped':
+        return T('pl.loot-zones.c.spotsDropped', 'Guard places left out, no room to stand within 30 m: {n} ({why}). Retried later.',
+          { n: n, why: why });
+      case 'ground_why':
+        return T('pl.loot-zones.c.groundWhy', 'Some guard places could not be settled on the ground this round: {why}',
+          { why: why });
+      case 'half_typed':
+        return T('pl.loot-zones.c.halfTyped', 'Named points missing a number, skipped: {n}. Fill all three, or remove the point.',
+          { n: n });
+      case 'more_unused':
+        return T('pl.loot-zones.c.moreUnused', 'More named points unused: {n}. Press "Check this spot" on each in its guard.',
+          { n: n });
+      case 'pool_why':
+        return T('pl.loot-zones.c.poolWhy', 'This zone is still finding places; the last check failed: {why} Retrying in seconds.',
+          { why: why });
+      case 'pool_rest':
+        return T('pl.loot-zones.c.poolRest',
+          'This zone is running out of places of its own. Name points on a guard\'s row, or move the rectangle.');
+      case 'no_guard_chosen':
+        return T('pl.loot-zones.c.noGuardChosen', 'No guard has been chosen yet, so the places stand empty.');
+      case 'window_blind':
+        return T('pl.loot-zones.c.windowBlind',
+          '"{guard}" has game hours {from} to {to} that are NOT applied: {why} Guards are sent as if none were set.',
+          { guard: v.guard || '', from: v.from || '', to: v.to || '', why: why });
+      case 'window_closed':
+        return T('pl.loot-zones.c.windowClosed', '"{guard}" is outside its game hours ({from} to {to}; now {now}).',
+          { guard: v.guard || '', from: v.from || '', to: v.to || '', now: v.now || '' })
+          + (v.minutes != null
+            ? ' ' + T('pl.loot-zones.c.gameHour', 'A game hour is {n} real minutes.', { n: v.minutes }) : '');
+      case 'cooldown':
+        return T('pl.loot-zones.c.cooldown', 'No guard sent this round: cooldown, {n} s left.', { n: n });
+      case 'post_unchecked':
+        return T('pl.loot-zones.c.postUnchecked', 'A place could not be checked: {why}', { why: why });
+      case 'spot_removed':
+        return T('pl.loot-zones.c.spotRemoved',
+          'The game kept removing guards at one spot, so it rests. Move the rectangle or add guard places.');
+      case 'post_never_kept':
+        return T('pl.loot-zones.c.postNeverKept',
+          'A place never kept a guard, so it rests. Widen the search height or name the point yourself.');
+      case 'wait_move':
+        return T('pl.loot-zones.c.waitMove', 'Places waiting for a spot away from where the last guard fell: {n}.', { n: n });
+      case 'resting':
+        return T('pl.loot-zones.c.resting', 'Places resting after the game refused a guard: {n}. If it repeats, move the rectangle.',
+          { n: n });
+      case 'need_player_near':
+        return T('pl.loot-zones.c.needPlayerNear',
+          'No guard sent: guards need a player within 150 m. Places further than that from everybody: {n}.', { n: n });
+      case 'surface_wait':
+        return T('pl.loot-zones.c.surfaceWait', 'Surface places waiting while nearby players are underground: {n}.', { n: n });
+      case 'near_player':
+        return T('pl.loot-zones.c.nearPlayer', 'Places left empty because a player is near: {n}. They fill once clear.', { n: n });
+      case 'unplaced':
+        return why
+          ? T('pl.loot-zones.c.unplacedWhy', 'Places not settled on the ground yet, so nothing is sent: {n}. The last check failed: {why}',
+            { n: n, why: why })
+          : T('pl.loot-zones.c.unplaced', 'Places not settled on the ground yet, so nothing is sent: {n}. They settle within a minute or so.',
+            { n: n });
+      case 'over_want':
+        return T('pl.loot-zones.c.overWant', 'Places left empty because that guard\'s number is reached: {n}. Raise it, or add a guard with no number.',
+          { n: n });
+      case 'spare':
+        return T('pl.loot-zones.c.spare', 'Places with no guard: {n}. Raise a guard\'s number, add one with no number, or lower "{max}".',
+          { n: n, max: labMaxPosts() });
+      case 'census_unknown':
+        return T('pl.loot-zones.c.censusUnknown', 'Guards could not be counted across the zone ({why}); each place was checked instead.',
+          { why: why });
+      case 'prefix_empty':
+        return T('pl.loot-zones.c.prefixEmpty',
+          'Nothing was saved: the zone name prefix cannot be empty. It is how this plugin tells its zones from yours.');
+      case 'config_unreadable':
+        return T('pl.loot-zones.c.configUnreadable',
+          'Nothing was saved: the plugin\'s config.json could not be read. Try again; if it repeats, check nothing holds it open.');
+      default:
+        return fallback;
+    }
+  }
+  /** One refusal off a patrol row, translated when the row carried its code. */
+  function refusalText(pat, s) {
+    var c = pat && pat.refusalCodes ? pat.refusalCodes[s] : null;
+    return codedText(c, String(s == null ? '' : s));
+  }
+  /**
    * A COUNT AND ITS NOUN TRAVEL TOGETHER, ALWAYS.
    *
    * `n + ' ' + (n === 1 ? 'place' : 'places')` is a translated word glued to a number, which is the
@@ -370,7 +512,7 @@
     return api('/config', { method: 'POST', body: state.cfg })
       .then(function (r) {
         if (!r || !r.config) {
-          var whyNot = r && (r.why || r.reason || r.error);
+          var whyNot = r && (r.code ? codedText({ code: r.code, vars: r.vars }, r.why || r.code) : (r.why || r.reason || r.error));
           SSA.toast(whyNot
             ? T('pl.loot-zones.save.failedWhy', 'Save failed: {why}', { why: whyNot })
             : T('pl.loot-zones.save.failed', 'Save failed'));
@@ -1847,7 +1989,9 @@
     if (pat && guarding) {
       if ((pat.refusals || []).length) {
         zoneNotes.push(note('bad', T('pl.loot-zones.zone.patrolRefused',
-          'The last patrol could not do everything: {why}', { why: (pat.refusals || []).join(' — ') })));
+          'The last patrol could not do everything: {why}', {
+            why: (pat.refusals || []).map(function (x) { return refusalText(pat, x); }).join(' — '),
+          })));
       } else if (pat.awake === true && pat.reached === 0 && (sm0.kinds || []).length) {
         zoneNotes.push(note('wait', T('pl.loot-zones.zone.nothingFound',
           'A player is near; nothing to clear. "{button}" shows what is inside.', { button: labWhatIsIn() })));
@@ -4108,7 +4252,7 @@
     // Nobody has answered yet, which is silence rather than a fact. A guess here would be a number.
     if (!act) return out;
     if (act.known === false) {
-      out.push(note('', T('pl.loot-zones.sum.activity.unknown', '{why}', { why: act.why || '' })));
+      out.push(note('', T('pl.loot-zones.sum.activity.unknown', '{why}', { why: codedText(act.whyCode, act.why || '') })));
       return out;
     }
     // Said only while this zone is asking for something: a switch that governs nothing is noise on a
@@ -4121,7 +4265,7 @@
     var zr = (act.zones || {})[String(z.id)];
     if (!zr) return out;
     if (!zr.coverage) {
-      out.push(note('', T('pl.loot-zones.sum.activity.unknown', '{why}', { why: zr.why || '' })));
+      out.push(note('', T('pl.loot-zones.sum.activity.unknown', '{why}', { why: codedText(zr.whyCode, zr.why || '') })));
       return out;
     }
     var kinds = zr.coverage.kinds || [];
@@ -4401,7 +4545,7 @@
           : (r.why === 'nothing'
             ? T('pl.loot-zones.fail.activity.nothing',
               '{asset} makes no characters, so rolling it more often changes nothing. Left alone.', { asset: r.asset })
-            : String(r.why || '')));
+            : codedText(r.whyCode, String(r.why || ''))));
       if (!why) return;
       kids.push(note('', T('pl.loot-zones.fail.activity.zone', '{zone}: {why}', { zone: r.zone || '', why: why })));
     });

@@ -34,7 +34,7 @@
 .mp-err-act{margin-top:.7rem}
 
 /* ── fields ── */
-.mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:14px}
 .mp-stack{display:flex;flex-direction:column;gap:12px}
 .mp-f{display:flex;flex-direction:column;gap:5px}
 .mp-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
@@ -47,7 +47,7 @@
 
 /* ── mine/trap picker ── */
 .mp-pick-quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
-.mp-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px}
+.mp-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,118px),1fr));gap:10px}
 .mp-pi{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px 10px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:10px;color:var(--text,#f1f3f5);cursor:pointer;font:inherit;text-align:center;transition:border-color .12s,background .12s,transform .06s}
 .mp-pi { --hov-bg:var(--bg,#0b0c0e);--hov-fg:var(--text,#f1f3f5);--hov-line:var(--muted,#8b9099) }
 .mp-pi:hover { background:var(--hov-bg);border-color:var(--hov-line);color:var(--hov-fg) }
@@ -74,12 +74,6 @@
 .mp-ex-in{flex:1;min-width:180px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.84rem;padding:.42rem .6rem}
 .mp-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:0}
 
-/* online-player picker (inside SSA modal) */
-.mp-online{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto}
-.mp-online-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:7px;padding:.5rem .7rem;color:var(--text,#f1f3f5);font:inherit;cursor:pointer;font-size:.84rem}
-.mp-online-row:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
-.mp-online-row code{color:var(--muted,#8b9099);font-size:.76rem}
-
 /* the button row above each table (Refresh / Reset warnings / Clear history) + the Save bar. Tables,
    pagination, search, player/location cells and status tags all use the manager's NATIVE classes
    (.data-table, .th-sort, .player-search, .roster-pager, .gl-player, .gl-loc, .gl-tag-*, button.secondary). */
@@ -89,10 +83,8 @@
    rather than pushing the buttons off a narrow screen. */
 .mp-savemsg{font-size:.82rem;color:var(--muted,#8b9099);min-width:0;flex:1 1 220px}
 
-/* A 17-digit Steam ID cannot shrink, and neither of these had `min-width:0`, so one long player
-   name pushed the row past the edge of the modal it lives in. */
-.mp-online-row > * { min-width: 0; }
-.mp-online-row code, .mp-chip code { overflow-wrap: anywhere; }
+/* A 17-digit Steam ID cannot shrink, so it may break anywhere rather than push the chip wide. */
+.mp-chip code { overflow-wrap: anywhere; }
 
 /* Offences cell: the number, and a way to forgive that one player. The button stays quiet until the
    row is hovered so a table of counts does not read as a table of buttons — but it is always in the

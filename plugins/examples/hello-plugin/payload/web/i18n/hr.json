@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Objavi u igri",
+  "pl.hello-plugin.announceAsk": "Poslati pozdrav svima u igri?",
+  "pl.hello-plugin.empty": "Na ovom poslužitelju još nitko nije igrao.",
+  "pl.hello-plugin.greet": "Pozdravi",
+  "pl.hello-plugin.greeting": "Pozdrav",
+  "pl.hello-plugin.lookup": "Potraži predmet",
+  "pl.hello-plugin.name": "Ime",
+  "pl.hello-plugin.noPremium": "Premium je isključen, pa alati u igri neće odgovoriti.",
+  "pl.hello-plugin.online": "Sada na mreži: {n}",
+  "pl.hello-plugin.pick": "Odaberi mjesto",
+  "pl.hello-plugin.pickNote": "Dodirnite kartu na mjestu koje želite pogledati.",
+  "pl.hello-plugin.players": "Igrači",
+  "pl.hello-plugin.save": "Spremi",
+  "pl.hello-plugin.saved": "Spremljeno.",
+  "pl.hello-plugin.sent": "Poslano.",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "Bazu podataka igre nije moguće čitati dok je poslužitelj zaustavljen. Sve ostalo ovdje radi.",
+  "pl.hello-plugin.tab": "Bok",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Prijavite se da vidite svoj pozdrav.",
+  "pl.hello-plugin.wave": "Mahni natrag"
+}

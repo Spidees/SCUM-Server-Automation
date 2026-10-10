@@ -75,9 +75,10 @@ Everything is configured from the plugin's **admin tab** (💬 Commands & Kits),
   *Allow only* / *Deny*, *Items*, *Vehicles*, *Full containers*, *Variants*, *When this kit can be
   claimed*, *…and at what time of day IN GAME*, *Message to player*, *Admin actions* and *Cost*.
 - **Messages**: every system line players see (cooldown, already claimed, cannot afford, and so on),
-  in any language. A blank field uses the built-in English.
+  the words that go inside them (the balance and currency names, the in-game window line), and every
+  line of the Discord claim panel, in any language. A blank field uses the built-in English.
 - **Activity**: the live spawn queue, the delivery log, and **Player claims**, where claims can be
-  reset for one player or for everyone.
+  reset for one player or for everyone. Items and rewards are shown by their names.
 - **Settings**: *Command prefix*, *Default reply channel*, *Welcome delay (s)*, *Spawn gap (ms)* and
   *Spawn attempts*, the **Discord claim panel**, the **Welcome message**, and advanced spawn command
   templates.
@@ -87,7 +88,7 @@ with a line saying what it shows:
 player (`{player}`, `{squad}`, `{ping}`, `{health}`, `{sector}`), server (`{online}`,
 `{maxplayers}`, `{date}`, `{gametime}`, `{temperature}`, `{nextrestart}`, `{restartin}`), balances
 (`{money}`, `{gold}`, `{fame}`), stats (`{kills}`, `{kd}`, `{playtime}` and more), attributes,
-position (`{location}`, `{x}`, `{saved_x}`) and command arguments (`{args}`, `{arg1}`).
+position (`{location}`, `{x}`, `{saved_x}`) and command arguments (`{args}`, `{arg1}`, and `{prefix}`, the command prefix).
 
 ## Good to know
 - **The command prefix applies to every chat command on the server**, including other plugins'.
@@ -112,8 +113,8 @@ position (`{location}`, `{x}`, `{saved_x}`) and command arguments (`{args}`, `{a
   picker's own footer, and press Done.
 - **Live tokens are read when the line is sent.** `{ping}`, `{health}`, `{sector}`, `{gametime}`,
   `{temperature}` and the balances come from the running game when the bridge can answer. The game
-  time, temperature, sector and balances fall back to the last save. A value nobody can read shows
-  as `?`, never as 0.
+  time, temperature, sector and balances fall back to the last save. A value nobody can read,
+  including a balance, a stat or a position the save cannot give, shows as `?`, never as 0.
 - A new install ships a **/ping** command that answers the player's ping. An existing command list
   is never changed, so it does not appear there; add it yourself with the reply `Your ping: {ping} ms`.
 - The shipped **Welcome Pack** and **Daily Kit** are examples with nothing in them, so they arrive

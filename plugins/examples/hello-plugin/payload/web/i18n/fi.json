@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Ilmoita pelissä",
+  "pl.hello-plugin.announceAsk": "Lähetetäänkö tervehdys kaikille pelissä?",
+  "pl.hello-plugin.empty": "Tällä palvelimella ei ole vielä pelannut kukaan.",
+  "pl.hello-plugin.greet": "Tervehdi",
+  "pl.hello-plugin.greeting": "Tervehdys",
+  "pl.hello-plugin.lookup": "Etsi esine",
+  "pl.hello-plugin.name": "Nimi",
+  "pl.hello-plugin.noPremium": "Premium on pois päältä, joten pelin työkalut eivät vastaa.",
+  "pl.hello-plugin.online": "Paikalla nyt: {n}",
+  "pl.hello-plugin.pick": "Valitse paikka",
+  "pl.hello-plugin.pickNote": "Napauta karttaa siitä kohdasta, jota haluat katsoa.",
+  "pl.hello-plugin.players": "Pelaajat",
+  "pl.hello-plugin.save": "Tallenna",
+  "pl.hello-plugin.saved": "Tallennettu.",
+  "pl.hello-plugin.sent": "Lähetetty.",
+  "pl.hello-plugin.steam": "Steam-tunnus",
+  "pl.hello-plugin.stopped": "Pelin tietokantaa ei voi lukea, kun palvelin on pysäytetty. Kaikki muu täällä toimii.",
+  "pl.hello-plugin.tab": "Hei",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Kirjaudu sisään nähdäksesi oman tervehdyksesi.",
+  "pl.hello-plugin.wave": "Vilkuta takaisin"
+}

@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Vastaanottajat",
   "pl.better-squads.card.activity": "Toiminta",
   "pl.better-squads.card.activity.sub": "Viimeksi toimitetut viestit. Lukijakohtaisista näytetään ensimmäinen kopio.",
-  "pl.better-squads.live.turnOn": "kytke päälle ”{switch}” kohdassa {where}"
+  "pl.better-squads.group.words": "Sanat muiden rivien sisällä",
+  "pl.better-squads.text.mutednone": "Sana tilanteelle ”mitään ei ole mykistetty”",
+  "pl.better-squads.text.squadnoname": "Sana nimettömälle ryhmälle",
+  "pl.better-squads.text.unknownobject": "Ryöstö: sana nimettömälle kohteelle",
+  "pl.better-squads.text.testline": "Testiviesti tältä sivulta",
+  "pl.better-squads.live.turnOnBoth": "kytke päälle ”{enable}” ja ”{switch}” kortilla {module} kohdassa {where}",
+  "pl.better-squads.live.nomodule": "tällä palvelimella on vanhempi SSA Bridge, jossa tätä moduulia ei ole",
+  "pl.better-squads.live.noanswer": "SSA Bridge ei vastannut",
+  "pl.better-squads.test.squadunknown": "Ryhmäluetteloa ei voi lukea juuri nyt. Yritä uudelleen minuutin päästä.",
+  "pl.better-squads.test.allmuted": "Kaikki ryhmän paikalla olevat on mykistänyt ylläpitäjä",
+  "pl.better-squads.test.reachednobody": "Testi lähetettiin, mutta se ei tavoittanut ketään"
 }

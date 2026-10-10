@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "ΔΕΝ αποθηκεύτηκε — {err}",
   "pl.mine-protection.btn.save": "Αποθήκευση ρυθμίσεων",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "ενεργοποιήστε το «{switch}» στο {where}."
+  "pl.mine-protection.live.turnOn": "ενεργοποιήστε το «{switch}» στο {where}.",
+  "pl.mine-protection.live.idleTitle": "Δεν επιβάλλεται τίποτα. ",
+  "pl.mine-protection.live.idleOld": "Αυτός ο manager είναι πολύ παλιός για αυτό το plugin. Ενημέρωσε τον manager.",
+  "pl.mine-protection.live.noModule": "αυτός ο server τρέχει παλαιότερο SSA Bridge χωρίς αυτό το module.",
+  "pl.mine-protection.live.bridgeOff": "το SSA Bridge δεν απάντησε."
 }

@@ -8,17 +8,20 @@ every block is one thing a plugin can do, with a comment saying what it demonstr
 
 ## What it shows
 
-- **Config** you can edit on the card — `host.config.get / set / onChange`
+- **Config** you can edit on the card — `host.config.get / set / onChange`, with the defaults kept in the backend so a missing file never empties a screen
 - **Events** — server lifecycle plus parsed game events (`kill`, player join/leave, …)
-- **HTTP routes** — an admin-gated API and a public one for the Field Console
+- **HTTP routes** — an admin-gated API, a public one for the Field Console, and a signed-in one that only a visitor signed in on the Field Console can reach
 - **Game database** — read-only `host.db.scum` (tolerating a stopped server)
 - **Persistence** — a key/value `host.store` and a full `host.sqlite()` database
 - **In-game chat & a `/command`** — greet players and answer `/online`, `/kit`
 - **The SSA Bridge** — run in-game commands with `host.server.command()`
 - **Discord** — your own embed + button, and adding a field to the manager's kill feed
+- **Time windows** — `host.time`, on the server's wall clock, behind a `/happyhour` command
 - **Scheduling & notifications** — timers and `host.notify()`
-- **Admin UI** — a workspace tab, per-player and per-vehicle actions, live updates
-- **Field Console UI** — a public tab for your players' stats site
+- **Admin UI** — a workspace tab with the panel's own table, cells, pickers, map picker, record card, modals and live updates, translated into 20 languages from `web/i18n`
+- **Field Console UI** — a public tab for your players' stats site, with a signed-in route
+- **Working with the server stopped** — every screen loads and says what is waiting, instead of going blank
+- **Failure handling** — `SSA.apiClient()` / `FC.apiClient()` reject on an error and `apiError()` turns it into a sentence; chat sends are caught; a bridge command is only reported as done when the game confirmed it
 
 ## Install and try it
 
@@ -56,14 +59,16 @@ hello-plugin/
 - `version` — bump it to ship a payload update; `updated` — an optional date string.
 - `image` — card icon at the root (`png` / `jpg` / `svg`).
 - `apiVersion` — the plugin API you target (current: `1`).
-- `minManagerVersion` / `maxManagerVersion` — optional manager version range.
+- `minManagerVersion` / `maxManagerVersion` — optional manager version range. The minimum is the newest
+  manager that ships every host and SDK name you call without a feature test; a name an older manager
+  lacks is `undefined`, and calling it throws.
 - `dependencies` — other plugins that must be active first (with optional versions, below).
 - `main` — backend entry under `payload/`; omit for a frontend-only plugin.
-- `web` — admin UI: `{ "script": "web/plugin.js", "style": "web/plugin.css" }`.
-- `fc` — public Field Console UI: `{ "script": "fc/plugin.js", "style": "fc/plugin.css" }`.
+- `web` — admin UI: `{ "script": "web/plugin.js", "style": "web/plugin.css", "i18n": "web/i18n" }`. `i18n` is a folder with one flat `<lang>.json` per language and no `en.json`: English is the fallback written at each `SSA.t('pl.<id>.key', 'English')` call.
+- `fc` — public Field Console UI: `{ "script": "fc/plugin.js", "style": "fc/plugin.css" }`. Add `"requireLogin": true` to keep the plugin's tabs behind the console's sign-in card; protect the data itself with `host.routes.player.*`, because the script and style still load for everyone.
 - `config` — your editable config file under `payload/`.
 - `readme` — a specific readme file (defaults to a `README.*` at the root).
-- `premium` — informational flag for your own plugin.
+- Any other key is ignored, so a manifest written for a newer manager still loads on an older one.
 
 ## Dependencies and versioning
 
@@ -92,17 +97,20 @@ The **SSA Bridge** is what lets a plugin act inside the game — run admin comma
 message players. From a plugin you call it through `host`:
 
 ```js
-// Always pre-check, and check the { ok, error } you get back.
+// Always pre-check, and read what comes back. The command is the bare verb: no chat '#'.
 const health = await host.server.bridge();          // { available, licensed, players, version }
 if (!health.available) return;
-const r = await host.server.command('#Announce Hello');
+const r = await host.server.command('Announce Hello');
 if (!r.ok) host.logger.warn(r.error);
+// ok is not "done": confirmed === false means the game was handed the line and nothing confirmed it.
+// Never charge or consume anything on that.
+if (r.ok && r.confirmed === false) host.logger.warn('not confirmed');
 
 // A command that lands on a specific player (no Location arg) — run it through them:
-await host.server.command('#SpawnItem 1_9mm_Handgun 1', { executor: steamId });
+await host.server.command('SpawnItem Weapon_M1911 1', { executor: steamId });
 
-// In-game chat is bridge-powered too:
-host.chat.dm(steamId, 'Welcome!', { name: 'SERVER' });
+// In-game chat is bridge-powered too. It REJECTS when nothing was sent, so catch it:
+host.chat.dm(steamId, 'Welcome!', { name: 'SERVER' }).catch(() => {});
 host.chat.onCommand('online', (ctx) => ctx.reply(`Online: ${host.stats.onlineCount()}`));
 ```
 

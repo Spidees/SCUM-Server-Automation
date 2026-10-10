@@ -9,12 +9,11 @@
   "description": "A complete reference manager plugin: config, events, HTTP routes, game-DB reads, persistence, in-game chat & a /command, Discord, an admin tab and a Field Console tab.",
   "image": "icon.svg",
   "apiVersion": 1,
-  "minManagerVersion": "3.5.0",
+  "minManagerVersion": "5.53.0",
   "dependencies": [],
   "main": "backend/index.js",
-  "web": { "script": "web/plugin.js", "style": "web/plugin.css" },
+  "web": { "script": "web/plugin.js", "style": "web/plugin.css", "i18n": "web/i18n" },
   "fc": { "script": "fc/plugin.js" },
   "config": "config.json",
-  "readme": "README.md",
-  "premium": false
+  "readme": "README.md"
 }

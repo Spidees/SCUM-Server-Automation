@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Mottagare",
   "pl.better-squads.card.activity": "Aktivitet",
   "pl.better-squads.card.activity.sub": "De senast levererade meddelandena. För läsarmeddelanden visas första kopian.",
-  "pl.better-squads.live.turnOn": "slå på ”{switch}” under {where}"
+  "pl.better-squads.group.words": "Ord inuti andra rader",
+  "pl.better-squads.text.mutednone": "Ord för ”inget tystat”",
+  "pl.better-squads.text.squadnoname": "Ord för en grupp utan namn",
+  "pl.better-squads.text.unknownobject": "Räd: ord för ett namnlöst objekt",
+  "pl.better-squads.text.testline": "Testmeddelande från den här sidan",
+  "pl.better-squads.live.turnOnBoth": "slå på ”{enable}” och ”{switch}” på kortet {module} under {where}",
+  "pl.better-squads.live.nomodule": "den här servern kör en äldre SSA Bridge som saknar den här modulen",
+  "pl.better-squads.live.noanswer": "SSA Bridge svarade inte",
+  "pl.better-squads.test.squadunknown": "Grupplistan kan inte läsas just nu. Försök igen om en minut.",
+  "pl.better-squads.test.allmuted": "Alla onlinemedlemmar i den gruppen är tystade av en admin",
+  "pl.better-squads.test.reachednobody": "Testet skickades men nådde ingen"
 }

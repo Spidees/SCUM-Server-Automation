@@ -27,11 +27,17 @@ export interface LinkedPlayer {
 
 // ── Backend: the `host` facade passed to register(host) ──────────────────────
 export interface Host {
+  /**
+   * `apiVersion` is the contract your manifest asked for. The manager loads a plugin only when that
+   * number is one it implements (today: 1). New calls arrive WITHOUT raising it, so test for a call
+   * before you use one that is newer than your `minManagerVersion`: `if (host.time && host.time.isOpen)`.
+   */
   info: { id: string; dir: string; libDir: string; dataDir: string; version: string; apiVersion: number };
 
   logger: { info(m: string): void; warn(m: string): void; error(m: string): void; debug(m: string): void };
 
   events: {
+    /** Returns `off()`. A listener that throws is caught and logged. A `fn` that is not a function registers nothing. */
     on(evt: PluginEvent | string, fn: (payload: any) => void): () => void;
     once(evt: PluginEvent | string, fn: (payload: any) => void): () => void;
     /** Broadcast your own event. Names without a ':' are auto-namespaced `<yourId>:<evt>`. */
@@ -39,7 +45,13 @@ export interface Host {
   };
 
   config: {
+    /** The owner's config, parsed. `{}` when the file is missing or unreadable: merge your DEFAULTS by key presence. */
     get<T = Record<string, any>>(): T;
+    /**
+     * Merge `patch` onto the stored config, save it, tell `onChange` listeners, and return the result.
+     * Anything other than an object changes nothing and returns the current config. THROWS when the
+     * save fails, for example when your manifest names no `config` file. A throw means nothing was written.
+     */
     set<T = Record<string, any>>(patch: Partial<T>): T;
     text(): string;
     onChange(fn: (cfg: any) => void): () => void;
@@ -2432,6 +2444,7 @@ export interface Host {
      * Pass NO argument for every record. Profile `0` is not "all": it is what the game left
      * unowned, so an empty or non-numeric id THROWS rather than being read as 0.
      */
+    /** Omit `profileId` for every record. An id that is not a number REJECTS: profile 0 means "unowned", so it is never guessed. */
     virtualized(profileId?: number): Promise<Record<string, any> | null>;
     /** World containers with their locks. `locks: []` means "walk in"; the key being ABSENT means the
      *  lock list could not be read at all, and the two must not be confused. */
@@ -3222,8 +3235,15 @@ export interface Host {
      * `history: true` also puts the line in the chat history — see `record()` below, whose rules it
      * follows exactly, including the refusal.
      */
+    /**
+     * REJECTS when nothing was sent, with the code as the message: `bridge_unavailable` (no bridge, or
+     * the server is stopped), `empty_message`, or the bridge's own code. Catch it: an unhandled
+     * rejection in a timer is logged as your plugin's fault.
+     */
     send(text: string, opts?: ChatOpts & { history?: boolean }): Promise<{ channel: string; delivered: number }>;
+    /** Rejects like `send()`. */
     dm(steamId: string, text: string, opts?: ChatOpts): Promise<{ channel: string; delivered: number }>;
+    /** Rejects like `send()`. */
     broadcast(text: string, opts?: ChatOpts & { history?: boolean }): Promise<{ channel: string; delivered: number }>;
     /**
      * Put a line in the CHAT HISTORY: the admin chat view, the Field Console, and your Discord chat
@@ -3246,6 +3266,7 @@ export interface Host {
   /** Push a notification through the manager's own pipeline (Discord + admin realtime). */
   notify(type: string, data?: Record<string, any>): void;
 
+  /** Timers cleared for you on unload. A delay that is not a number, or a `fn` that is not a function, schedules nothing and returns a no-op `off()`. */
   schedule: {
     every(ms: number, fn: () => void): () => void;
     after(ms: number, fn: () => void): () => void;
@@ -3299,7 +3320,13 @@ export interface Host {
     zone(tz?: string): { tz: string | null; offset: string | null; label: string };
   };
 
-  routes: RouteApi & { public: RouteApi };
+  /**
+   * `routes.*` → /api/plugin-host/<id>/… (admin panel). `routes.public.*` → /api/plugin-public/<id>/…,
+   * anonymous; `req.visitor` is the signed-in visitor or null. `routes.player.*` → the same mount,
+   * answering 401 `{ error: 'login_required', reason }` unless a Field Console visitor (or an admin)
+   * is signed in; `req.visitor` is then always set.
+   */
+  routes: RouteApi & { public: RouteApi; player: RouteApi };
 
   realtime: { toAdmins(event: string, payload: any): void };
 
@@ -3537,6 +3564,20 @@ export type BridgeCommandResult =
   ({ ok: true; accepted?: boolean; note?: string; changed?: boolean } & Record<string, any>)
   | BridgeFailure;
 
+/** Who is signed in on the Field Console, as a plugin route sees them (`req.visitor`). */
+export interface FcVisitor {
+  /** null until a SCUM character is linked (a Discord sign-in without a link, or an admin). */
+  steamId: string | null;
+  discordId: string | null;
+  /** The character's name; the admin's name for an admin-only session. */
+  name: string | null;
+  via: 'discord' | 'steam' | 'admin';
+  admin: boolean;
+  /** The owner's Field Console groups this visitor is in, as ids: `guest` and `member` always, then
+   *  `player`, `vip`, `moderator` and the owner's own. An admin carries every group. */
+  groups: string[];
+}
+
 export interface RouteApi {
   get(path: string, handler: (req: any, res: any) => void): void;
   post(path: string, handler: (req: any, res: any) => void): void;
@@ -3578,11 +3619,17 @@ export type ChatCommandStatus =
   | { ready: false; until: number }
   | { ready: false; why: string };
 
+/**
+ * Every event the manager raises on the plugin bus. Two more names reach you that no list can hold:
+ * `<yourId>:config` (your own config was saved, the payload is the new config; `config.onChange` is
+ * the same thing) and anything another plugin `emit()`s as `<itsId>:<name>`.
+ */
 export type PluginEvent =
   | 'server:online' | 'server:offline' | 'server:starting' | 'server:loading' | 'server:stopping'
   | 'service:started' | 'service:stopped' | 'manager:started' | 'manager:stopped'
   | 'performance' | 'admin:alert' | 'status' | 'logline' | 'notification'
-  | 'update:available' | 'update:failed' | 'backup:started' | 'backup:completed' | 'backup:failed'
+  | 'update:available' | 'update:started' | 'update:completed' | 'update:failed'
+  | 'backup:started' | 'backup:completed' | 'backup:failed' | 'backup:restored'
   | 'kill' | 'economy' | 'player:join' | 'player:leave' | 'player:chat' | 'player:intel' | 'raid:alert';
 
 /**
@@ -3637,6 +3684,49 @@ export interface EmbedKindInfo {
   tokens: Array<{ t: string; label: string; value: string }>;
 }
 
+/**
+ * `plugin.json`. Unknown keys are ignored, so a manifest written for a newer manager loads on an
+ * older one; the fields an older manager does not know simply do nothing there.
+ */
+export interface PluginManifest {
+  /** Unique slug: letters, digits, `.`, `_`, `-`. Also the plugin's folder name in the library. */
+  id: string;
+  name: string;
+  /** `x.y.z`. Deployment is version-gated: a change ships only under a new version. */
+  version: string;
+  /** Defaults to `ue4ss` when absent, so a manager plugin must say `manager`. */
+  type?: 'manager' | 'ue4ss' | 'ue4ss-runtime';
+  description?: string;
+  author?: string;
+  website?: string;
+  /** Card icon, a file in the plugin folder (1:1 PNG or SVG). */
+  image?: string;
+  /** Shown in the card's readme viewer. */
+  readme?: string;
+  /** Free text shown on the card, usually a date. */
+  updated?: string;
+  /** The host contract you target. Only `1` exists. */
+  apiVersion?: number;
+  minManagerVersion?: string;
+  maxManagerVersion?: string;
+  /** Must be active first. A plain id or `{ id, min?, max? }`. Blocks enabling when unmet. */
+  dependencies?: Array<string | { id: string; min?: string; max?: string }>;
+  /** Load order only; never blocks anything. `host.consume()` answers `null` when absent. */
+  optionalDependencies?: Array<string | { id: string; min?: string; max?: string }>;
+  /** Backend entry, relative to `payload/`. Omit for a frontend-only plugin. */
+  main?: string;
+  /** Your editable config file, relative to `payload/`. `host.config.set()` needs it. */
+  config?: string;
+  /** Admin-panel assets, relative to `payload/`. `i18n` is a folder of `<lang>.json` files (no `en.json`). */
+  web?: { script?: string; style?: string; i18n?: string };
+  /** Field Console assets. `requireLogin: true` (the boolean) puts every tab behind the sign-in card. */
+  fc?: { script?: string; style?: string; requireLogin?: boolean };
+  /** What must be switched on in the SSA Bridge. The owner applies `needs` in one click; `wants` is never written. */
+  bridge?: { needs?: Array<{ module: string; switches: string[]; why: string }>; wants?: Array<{ module: string; switches: string[]; why: string }> };
+  /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`. */
+  modName?: string;
+}
+
 export interface PluginModule {
   register(host: Host): void | Promise<void>;
   unregister?(host: Host): void | Promise<void>;
@@ -3678,6 +3768,8 @@ export interface SSAMapPoint {
 }
 
 export interface SSA {
+  /** The frontend SDK contract, `1`. New calls arrive without raising it: feature-detect with `typeof SSA.x === 'function'` or the `can*()` flags. */
+  version: number;
   ready(fn: (ssa: SSA) => void): void;
   registerTab(opts: TabDef): void;
   views: {
@@ -3786,6 +3878,13 @@ export interface SSA {
   showOnMap(x: number, y: number, z?: number): void;           // centre the Live Map on a coordinate
   itemPreview(elOrCode: HTMLElement | string, anchor?: HTMLElement): void; // show the item-preview popover
   showTab(name: string): void;                                 // switch to a native panel tab
+  /**
+   * The panel's record card for one game code: every published field, the cross-linked lists, and
+   * what only this server knows (how many exist in the save, the trader price, a Give button).
+   * `onUse` adds a *Use this* button that closes the card and hands the code back. Feature-detect
+   * with `canOpenRecord()`.
+   */
+  openRecord(code: string, opts?: { domain?: 'items' | 'vehicles' | string; onUse?: (code: string) => void; useLabel?: string }): void;
 
   // ── native pickers (Promise; also accept opts.onPick / opts.onCancel) ──
   pickItem(opts?: { domain?: 'items' | 'vehicles'; category?: string; title?: string; onPick?: (it: any) => void; onCancel?: () => void }): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
@@ -3827,30 +3926,56 @@ export interface SSA {
   canShowOnMap(): boolean;
   canItemPreview(): boolean;
   canPickItem(): boolean;
+  canOpenRecord(): boolean;
   canPickOnMap(): boolean;
 }
 
 // ── Public Field Console frontend: window.FC (payload/fc/plugin.js) ───────────
 // Mirrors SSA minus the admin-only bits. Feed it with PUBLIC routes (host.routes.public.*).
 export interface FC {
+  /** The Field Console SDK contract, `1`. Feature-detect newer calls: `typeof FC.apiClient === 'function'`. */
+  version: number;
   ready(fn: (fc: FC) => void): void;
+  /** `icon` is a sprite id of the console (`i-users`, `i-map`, …). Namespace `id`: an id the console already ships takes that screen over. */
   registerTab(opts: { id: string; label: string; icon?: string; order?: number; render: (el: HTMLElement) => void }): void;
   views: { mount(anchor: string | HTMLElement, render: (el: HTMLElement) => void, opts?: { when?: () => boolean }): () => void; replace(viewId: string, render: (el: HTMLElement) => void): void };
   el(tag: string, props?: Record<string, any>, kids?: any): HTMLElement;
   mount(target: string | HTMLElement, content: string | HTMLElement): HTMLElement | null;
   toast(msg: string, kind?: string): void;
-  modal(opts: any): any;
-  confirm(msg: string): Promise<boolean>;
-  theme: { setTokens(tokens: Record<string, string>): void; injectCss(css: string): void };
-  i18n: { add(lang: string, dict: Record<string, string>): void };
+  modal(opts: { title?: string; body: string | HTMLElement; actions?: Array<{ label: string; primary?: boolean; run?: () => boolean | void }>; dismissable?: boolean; onClose?: () => void }): { close: () => void; el: HTMLElement; body: HTMLElement };
+  /** Answers `false` however the reader closes it other than OK. */
+  confirm(msg: string, opts?: { title?: string; okLabel?: string; cancelLabel?: string }): Promise<boolean>;
+  theme: { setTokens(tokens: Record<string, string>, opts?: { selector?: string }): void; injectCss(css: string): void };
+  /** The console loads your `web.i18n` files (the panel's) before your script runs. `add()` merges strings by hand. */
+  i18n: { add(lang: string, dict: Record<string, string>): void; override(lang: string, dict: Record<string, string>): void };
   t(key: string, fallback?: string, vars?: Record<string, any>): string;
   lang(): string;
+  /**
+   * Your public route (`/api/plugin-public/<id>/…`). Does NOT reject on a non-2xx: a 403 resolves with
+   * the route's body. Resolves which plugin is asking at CALL time, so from a click handler or a timer
+   * it asks `/_/` instead. Prefer `apiClient()`.
+   */
   api<T = any>(path: string, opts?: RequestInit): Promise<T>;
+  /**
+   * The client to hold, the Field Console's twin of `SSA.apiClient()`. Call it once at the top of your
+   * script. It REJECTS on a non-2xx with `{ status, code, reason?, body }`, and refuses with
+   * `plugin_unresolved` if it was captured outside your script. Feature-detect it on an older manager.
+   */
+  apiClient(): <T = any>(path: string, opts?: RequestInit) => Promise<T>;
+  /** One sentence for a rejection: the route's own `reason` first. */
+  apiError(err: { status?: number; code?: string; reason?: string } | Error | null, fallback?: string): string;
   on(evt: string, fn: (payload: any) => void): () => void;
   emit(evt: string, payload?: any): void;
   provide(name: string, api: any): void;
   consume<T = any>(name: string): T | null;
   go(viewId: string): void;
+  /** Who is signed in on this page, from the session it already read (no request); null for nobody.
+   *  `FC.on('visitor', fn)` hears every later answer. The server still decides: use `host.routes.player`. */
+  visitor(): { steamId: string | null; discordId: string | null; name: string | null; via: 'discord' | 'steam' } | null;
+  /** The calls that need to know which plugin is asking, bound to yours. Take it at load (or in
+   *  `FC.ready`) and use it after an `await`, when the console no longer knows who is calling.
+   *  Manager 5.53+; feature-detect with `typeof FC.self === 'function'`. */
+  self(): { id: string; registerTab(opts: Parameters<FC['registerTab']>[0]): void; api: FC['api']; apiClient: FC['apiClient'] };
 }
 
 declare global { interface Window { SSA: SSA; FC: FC } }

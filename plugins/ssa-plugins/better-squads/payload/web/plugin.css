@@ -43,7 +43,7 @@
 
 /* ── token palette ── */
 .bs-tokens{display:flex;flex-wrap:wrap;gap:6px}
-.bs-token{background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:.72rem;padding:.2rem .45rem;transition:border-color .12s,color .12s}
+.bs-token{background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:.72rem;padding:.2rem .45rem;min-width:44px;transition:border-color .12s,color .12s}
 /* Ghost: no fill, the colour change IS the affordance. Both halves of the hover pair are stated on
    the ELEMENT, so `button:hover` cannot supply the other one — overriding only `color` left the
    amber fill in place and the text on it was 1.63:1, which is not readable. */

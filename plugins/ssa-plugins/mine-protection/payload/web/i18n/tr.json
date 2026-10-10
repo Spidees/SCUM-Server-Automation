@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "KAYDEDİLMEDİ — {err}",
   "pl.mine-protection.btn.save": "Yapılandırmayı kaydet",
   "pl.mine-protection.tab.label": "Mayın Koruması",
-  "pl.mine-protection.live.turnOn": "{where} içinde \"{switch}\" seçeneğini açın."
+  "pl.mine-protection.live.turnOn": "{where} içinde \"{switch}\" seçeneğini açın.",
+  "pl.mine-protection.live.idleTitle": "Hiçbir şey uygulanmıyor. ",
+  "pl.mine-protection.live.idleOld": "Bu yönetici bu eklenti için çok eski. Yöneticiyi güncelle.",
+  "pl.mine-protection.live.noModule": "bu sunucu bu modülü içermeyen eski bir SSA Bridge kullanıyor.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge yanıt vermedi."
 }

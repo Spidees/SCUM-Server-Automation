@@ -87,6 +87,16 @@ const DEFAULTS = {
       info:         '{squad} — {squadonline}/{squadsize} online, score {score}.',
       infoMotd:     'MOTD: {motd}',
       nobodyOnline: 'Nobody else from the squad is online.',
+      // ── WORDS THAT FILL A TOKEN, AND THE ADMIN'S TEST LINE ───────────────────────────────────────
+      //
+      // These were English literals down in the code, so an owner writing every line in their own
+      // language still had "none", "your squad" and "something" land inside them, and the test an
+      // admin sends from the panel arrived in English on a Czech server. Owner data like every other
+      // line here; the shipped wording reads exactly as the literals did.
+      mutedNone:     'none',
+      squadNoName:   'your squad',
+      unknownObject: 'something',
+      testLine:      '[{squad}] Better Squads test — if you can read this, it works.',
     },
   },
 };
@@ -128,6 +138,44 @@ module.exports = {
     const sidOf = (pl) => String((pl && (pl.SteamID || pl.steamId || pl.steamid || pl.steam_id || pl.user_id)) || '');
     const nmOf = (pl) => (pl && (pl.PlayerName || pl.name || pl.playerName)) || '';
     const safeChannel = (ch) => (ch && TARGET_OK[ch] ? ch : 'squad');
+    // The squad's name as a line prints it: the game's own, or the owner's word for a squad that has
+    // none.
+    const sqName = (c, squad) => (squad && squad.name) || c.commands.texts.squadNoName || '';
+    /**
+     * How many players a send really reached: a number, or `null` when the reply does not say.
+     *
+     * ⚠ `Number(null)` IS 0, so `Number.isFinite(Number(res.delivered))` reads an absent count as
+     * "reached nobody". A reply carrying no `delivered` at all is an older manager or bridge, not a
+     * failure, and only a real number is believed.
+     */
+    const deliveredOf = (res) => {
+      const v = res && res.delivered;
+      if (v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    /**
+     * The in-game command prefix, as players type it. Every reply that tells a player what to type
+     * carries it: "Use squad on" is not a command anybody can run. An older manager without
+     * `host.chat.prefix()` answers the manager's own default.
+     */
+    const cmdPrefix = () => {
+      try {
+        if (host.chat && typeof host.chat.prefix === 'function') {
+          const p = host.chat.prefix();
+          if (p != null && String(p) !== '') return String(p);
+        }
+      } catch { /* fall through to the default */ }
+      return '/';
+    };
+    // Every timer through the host's scheduler, which clears it on unload and isolates a throw. An
+    // older host without one gets a plain interval that does not hold the process open.
+    const every = (ms, fn) => {
+      if (host.schedule && typeof host.schedule.every === 'function') return host.schedule.every(ms, fn);
+      const t = setInterval(fn, ms);
+      if (t.unref) t.unref();
+      return () => clearInterval(t);
+    };
 
     // ── persisted state ──────────────────────────────────────────────────────
     // `failed` counts alerts that reached NOBODY. It is listed here rather than only being created
@@ -215,8 +263,8 @@ module.exports = {
      * `displayName` on purpose: a squad roster must never be run through a class-name rule, because
      * a player is free to call themselves something that looks like one.
      *
-     * Guarded — the manifest's floor is manager 4.0.3 and this arrived in 5.2, so an older host has
-     * no such method and the value stays exactly what it was.
+     * Guarded although the manifest's floor (5.16.2) is past 5.3.0, where this arrived: a resolver that
+     * is missing or throws must leave the value exactly what it was rather than lose the name.
      */
     function actorDisplayName(steamId, given) {
       const g = String(given || '').trim();
@@ -244,7 +292,9 @@ module.exports = {
       if (typeof host.db.scum.available === 'function' && !host.db.scum.available()) return undefined;
       const rows = host.db.scum.all(SQUAD_SQL, key) || [];
       const squad = rows.length
-        ? { id: rows[0].squadId, name: rows[0].squadName || 'your squad', members: rows.map((r) => ({ steamId: String(r.steamId), name: r.name })) }
+        // A squad with no name keeps an EMPTY one here; the owner's word for it (`squadNoName`) is
+        // filled in where a line is written, so it is in their language rather than in ours.
+        ? { id: rows[0].squadId, name: rows[0].squadName || '', members: rows.map((r) => ({ steamId: String(r.steamId), name: r.name })) }
         : null;
       squadCache.set(key, { at: Date.now(), squad });
       return squad;
@@ -277,20 +327,30 @@ module.exports = {
     // rather than state and the save is the right place for it.
     const liveNote = { players: null, squads: null };
     const liveSaid = { players: 0, squads: 0 };
-    const LIVE_SWITCH = {
-      players: "Read live player data, with Position, facing and speed",
-      squads: "Read live squads, and allow the changes below, with Include the member list",
+    // The bridge schema's own captions, each one separately: the module card, its master switch and
+    // the one setting this plugin needs. The panel builds the sentence and the route in front of them
+    // out of its own keys, so it is right in every language and survives a renamed tab.
+    const LIVE_LABELS = {
+      players: { module: 'Live player data', enable: 'Read live player data', switch: 'Position, facing and speed' },
+      squads: { module: 'Live squads', enable: 'Read live squads, and allow the changes below', switch: 'Include the member list' },
     };
-    // The switch LABEL travels as its own field and the panel builds the route in front of it out of
-    // its own nav keys, so the sentence stays right in every language and survives a renamed tab.
+    // `code` is what the panel translates. `text` is English for the log and for a panel that does
+    // not know the code; `reason` is the module's own refusal, passed through as it said it.
     function noteLive(key, q) {
       const code = (q && q.code) || 'bridge_off';
+      const L = LIVE_LABELS[key];
       let text;
       if (code === 'refused') text = (q && q.reason) || null;
-      else if (code === 'module_off') text = `the in-game module is switched off — turn on '${LIVE_SWITCH[key]}'`;
+      else if (code === 'module_off') text = `the in-game module is switched off — turn on '${L.enable}' and '${L.switch}'`;
       else if (code === 'no_module') text = 'this server runs an older SSA Bridge that does not have this module';
       else text = 'the SSA Bridge did not answer';
-      liveNote[key] = { code, text, at: Date.now(), switch: code === 'module_off' ? LIVE_SWITCH[key] : undefined };
+      liveNote[key] = {
+        code, text, at: Date.now(),
+        reason: code === 'refused' ? ((q && q.reason) || null) : undefined,
+        module: code === 'module_off' ? L.module : undefined,
+        enable: code === 'module_off' ? L.enable : undefined,
+        switch: code === 'module_off' ? L.switch : undefined,
+      };
       // `bridge_off` is the ordinary state and deserves silence; the rest are one switch or one
       // update away. Said once an hour, because this sits on the path of every squad message.
       if (code === 'bridge_off' || !text) return;
@@ -420,7 +480,7 @@ module.exports = {
         if (!row) return undefined;      // incomplete → the database has all of them, use that
         out.push({ steamId: row.steamId, name: row.name });
       }
-      return { id: q.data.id != null ? q.data.id : null, name: q.data.name || 'your squad', members: out, source: 'live' };
+      return { id: q.data.id != null ? q.data.id : null, name: q.data.name || '', members: out, source: 'live' };
     }
 
     /** Live membership where the game will say, the database where it will not. */
@@ -540,8 +600,7 @@ module.exports = {
       if (profileIdCache.size > 5000) profileIdCache.clear();
       if (profileRowCache.size > 5000) profileRowCache.clear();
     }
-    const maintTimer = setInterval(pruneMaps, 300000);
-    if (maintTimer.unref) maintTimer.unref();
+    const stopMaint = every(300000, pruneMaps);
 
     // A hard ceiling on outbound messages. Nothing normal comes close to it; it exists so a
     // pathological burst (a mass event, a runaway loop in a future edit) can never turn into a chat
@@ -624,7 +683,7 @@ module.exports = {
       if (typeof at === 'function') at = await at();
 
       const base = Object.assign({
-        squad: squad.name,
+        squad: sqName(c, squad),
         squadsize: squad.members.length,
         squadonline: squad.members.filter((m) => online.has(m.steamId)).length,
         sector: at ? await sectorOf(at.x, at.y) : '',
@@ -654,7 +713,8 @@ module.exports = {
           // The bridge reports how many players it actually reached. A call can succeed and deliver
           // to nobody — everyone logged off in the same instant, or the channel refused them — and
           // counting that as sent is how the panel ends up disagreeing with what the squad saw.
-          const delivered = (res && Number.isFinite(Number(res.delivered))) ? Number(res.delivered) : targets.length;
+          const said = deliveredOf(res);
+          const delivered = said == null ? targets.length : said;
           if (delivered <= 0) {
             host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s).`);
             stats.failed = (stats.failed || 0) + 1; persist();
@@ -676,8 +736,18 @@ module.exports = {
             if (!text) continue;
             // Per recipient, so a failure to reach ONE player must not abort the loop and silence
             // everyone after them.
-            try { await host.chat.send(text, { channel, targets: [sid] }); reached++; if (!first) first = text; }
-            catch (e) { failedFor.push(sid); host.logger.debug(`chat send failed (${kind} → ${sid}): ${e && e.message}`); }
+            //
+            // ⚠ **A SEND THAT DID NOT THROW HAS NOT NECESSARILY ARRIVED.** The bridge answers how many
+            // players it really reached, and a line to somebody who logged off that instant comes
+            // back `delivered: 0`. That used to count as reached, so a line nobody read went into
+            // the feed and the "Reached nobody" counter stayed at 0. An answer with no count at all
+            // is an older manager and is believed, as before.
+            try {
+              const res = await host.chat.send(text, { channel, targets: [sid] });
+              const n = deliveredOf(res);
+              if (n == null || n > 0) { reached++; if (!first) first = text; }
+              else failedFor.push(sid);
+            } catch (e) { failedFor.push(sid); host.logger.debug(`chat send failed (${kind} → ${sid}): ${e && e.message}`); }
           }
           // `stats.sent++` used to run whatever happened, so a message that reached NOBODY was
           // counted as sent and written into the activity feed with empty text. The squad got
@@ -773,7 +843,8 @@ module.exports = {
       }
       announce('raid', String(e.ownerSteamId), {
         player: displayName(e.ownerSteamId, e.ownerName),
-        object: obj.customName || obj.name || 'something',
+        // The owner's word for an object the alert does not name, in their own language.
+        object: obj.customName || obj.name || cfg().commands.texts.unknownObject || '',
         type: e.type || '',
       }, at);
     });
@@ -838,14 +909,17 @@ module.exports = {
         for (const [id, snap] of rosters) if (stamp - snap.at > ROSTER_TTL_MS) rosters.delete(id);
       } catch (e) { host.logger.debug(`roster poll: ${e && e.message}`); }
     }
+    // `rosterTimer` holds the STOP function of the running poll. `wire()` clears `offs` before it
+    // calls this, which stops the old one; stopping it here as well covers any other caller.
     function startRosterPoll() {
-      if (rosterTimer) clearInterval(rosterTimer);
+      if (rosterTimer) { rosterTimer(); rosterTimer = null; }
       const c = cfg();
       const secs = Math.max(5, Number(c.rosterPollSeconds) || 60);
       const anyOn = c.events.squadJoin.enabled || c.events.squadLeave.enabled;
-      if (!anyOn) { rosterTimer = null; return; }
-      rosterTimer = setInterval(pollRosters, secs * 1000);
-      offs.push(() => clearInterval(rosterTimer));
+      if (!anyOn) return;
+      const stop = every(secs * 1000, pollRosters);
+      rosterTimer = stop;
+      offs.push(() => { stop(); if (rosterTimer === stop) rosterTimer = null; });
     }
 
     // ── player commands ──────────────────────────────────────────────────────
@@ -868,7 +942,7 @@ module.exports = {
       }
       mates.sort((a, b) => (a.distance == null ? 1e9 : a.distance) - (b.distance == null ? 1e9 : b.distance));
       const base = {
-        squad: squad.name, squadsize: squad.members.length,
+        squad: sqName(c, squad), squadsize: squad.members.length,
         squadonline: squad.members.filter((m) => online.has(m.steamId)).length,
       };
       if (!mates.length) return [fill(t.rosterEmpty, base)];
@@ -885,7 +959,9 @@ module.exports = {
       const me = String(ctx.steamId || '');
       const sub = String((ctx.args && ctx.args[0]) || '').toLowerCase();
       let rest = (ctx.argString || '').split(/\s+/).slice(1).join(' ').trim();
-      const root = c.commands.root;
+      // What a player TYPES, prefix included: every reply that tells them what to type uses this,
+      // because "Use squad on" is a command nobody can run.
+      const root = cmdPrefix() + c.commands.root;
       const squad = await squadFor(me);
 
       const reply = (s) => (s ? ctx.reply(s, { channel: safeChannel(c.channel) }) : Promise.resolve());
@@ -896,7 +972,7 @@ module.exports = {
       if (sub && subOn(c, 'mute') && sub === subName(c, 'mute')) {
         const p = prefFor(me);
         const arg = rest.toLowerCase();
-        if (!arg) return reply(fill(t.muteUsage, { root, mute: subName(c, 'mute'), events: EVENT_KEYS.join('|'), muted: Object.keys(p.muted).join(', ') || 'none' }));
+        if (!arg) return reply(fill(t.muteUsage, { root, mute: subName(c, 'mute'), events: EVENT_KEYS.join('|'), muted: Object.keys(p.muted).join(', ') || t.mutedNone || '' }));
         const unknown = [];
         if (arg === 'none') p.muted = {};
         else if (arg === 'all') EVENT_KEYS.forEach((k) => { p.muted[k] = true; });
@@ -913,7 +989,7 @@ module.exports = {
           });
         }
         persist();
-        const done = fill(t.muteSet, { muted: Object.keys(p.muted).join(', ') || 'none' });
+        const done = fill(t.muteSet, { muted: Object.keys(p.muted).join(', ') || t.mutedNone || '' });
         return reply(unknown.length
           ? `${done} ${fill(t.muteUnknown, { unknown: unknown.join(', '), events: EVENT_KEYS.join('|') })}`
           : done);
@@ -971,7 +1047,8 @@ module.exports = {
         }
         try {
           const res = await host.chat.send(line, { channel: chan, targets });
-          const n = (res && Number.isFinite(Number(res.delivered))) ? Number(res.delivered) : targets.length;
+          const said = deliveredOf(res);
+          const n = said == null ? targets.length : said;
           if (n <= 0) {
             host.logger.warn(`"${root} ${kind}" from ${who} reached none of its ${targets.length} recipient(s).`);
             return 0;
@@ -987,7 +1064,7 @@ module.exports = {
       if (sub && subOn(c, 'here') && sub === subName(c, 'here')) {
         if (!reachable.length) return reply(fill(t.nobodyOnline, {}));
         const who = displayName(me, ctx.name);
-        const line = fill(t.here, { player: who, sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: squad.name });
+        const line = fill(t.here, { player: who, sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: sqName(c, squad) });
         const sent = await sendToSquad(line, reachable.map((m) => m.steamId), 'here', who);
         return reply(sent > 0 ? fill(t.hereOk, {}) : fill(t.sendFailed, {}));
       }
@@ -1000,7 +1077,7 @@ module.exports = {
         if (!rest) return reply(fill(t.msgUsage, { root, msg: subName(c, 'msg') }));
         if (!reachable.length) return reply(fill(t.nobodyOnline, {}));
         const who = displayName(me, ctx.name);
-        const line = fill(t.msgLine, { player: who, text: rest, squad: squad.name });
+        const line = fill(t.msgLine, { player: who, text: rest, squad: sqName(c, squad) });
         // …and the count the player is told is the number the BRIDGE delivered to, never the number
         // we aimed at. "Sent to 3 squadmate(s)" when one was mid-reconnect is the same defect in
         // miniature.
@@ -1034,7 +1111,7 @@ module.exports = {
         let extra = null;
         try { extra = host.players.squad(me); } catch { /* ignore */ }
         const base = {
-          squad: squad.name, squadsize: squad.members.length,
+          squad: sqName(c, squad), squadsize: squad.members.length,
           squadonline: squad.members.filter((m) => online.has(m.steamId)).length,
           // squad.score is a float in the database; nobody wants "score 1234.5678".
           score: (extra && extra.score) != null ? Math.round(Number(extra.score)) : '',
@@ -1155,6 +1232,8 @@ module.exports = {
         // read means it answered last time it was asked. An owner has to be able to tell "live" from
         // "quietly back on the last save"; without this they cannot.
         live: { players: liveNote.players, squads: liveNote.squads },
+        // The in-game command prefix, so the panel's "Players type" preview shows what they really type.
+        prefix: cmdPrefix(),
       });
     });
 
@@ -1203,21 +1282,34 @@ module.exports = {
     host.routes.post('/test', async (req, res) => {
       const sid = String((req.body || {}).steamId || '');
       if (!sid) { res.status(400).json({ ok: false, error: 'steamId required' }); return; }
-      const squad = squadOf(sid);
+      const c = cfg();
+      // The SAME roster an alert would use — live where the game says, saved where it cannot — so the
+      // test proves the path a real alert takes. `undefined` is "could not read", never "no squad":
+      // with the save unreadable the old read answered `not_in_squad` about a player who has one.
+      const squad = await squadFor(sid, true);
+      if (squad === undefined) { res.json({ ok: false, error: 'squad_unknown' }); return; }
       if (!squad) { res.json({ ok: false, error: 'not_in_squad' }); return; }
       const online = onlineIndex();
-      const targets = squad.members.map((m) => m.steamId).filter((s) => online.has(s));
-      if (!targets.length) { res.json({ ok: false, error: 'nobody_online' }); return; }
+      const inGame = squad.members.map((m) => m.steamId).filter((s) => online.has(s));
+      if (!inGame.length) { res.json({ ok: false, error: 'nobody_online' }); return; }
+      // An admin mute holds for the test too: the panel promises a muted player gets none of these.
+      const adminMuted = new Set((c.mutedSteamIds || []).map(String));
+      const targets = inGame.filter((s) => !adminMuted.has(s));
+      if (!targets.length) { res.json({ ok: false, error: 'all_muted' }); return; }
       try {
-        await host.chat.send(`[${squad.name}] Better Squads test — if you can read this, it works.`,
-          { channel: safeChannel(cfg().channel), targets });
-        res.json({ ok: true, delivered: targets.length });
+        const out = await host.chat.send(fill(c.commands.texts.testLine || DEFAULTS.commands.texts.testLine, { squad: sqName(c, squad) }),
+          { channel: safeChannel(c.channel), targets });
+        // What the bridge says it reached, never the number we aimed at. A reply with no count is
+        // an older manager and the aim is all there is to report.
+        const n = deliveredOf(out);
+        if (n != null && n <= 0) { res.json({ ok: false, error: 'reached_nobody', targets: targets.length }); return; }
+        res.json({ ok: true, delivered: n == null ? targets.length : n, targets: targets.length });
       } catch (e) {
         res.json({ ok: false, error: (e && e.message) || 'send_failed' });
       }
     });
 
-    host.onUnload(() => { clear(); clearInterval(maintTimer); flushNow(); });
+    host.onUnload(() => { clear(); stopMaint(); flushNow(); });
     host.logger.info('Better Squads ready');
   },
 };

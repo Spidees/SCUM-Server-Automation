@@ -13,6 +13,8 @@ Everything ships **off**, so your server says nothing new until you turn somethi
   `{victim}`, `{weapon}`, `{distance}`, `{name}`, `{sector}` or `{owner}`. Click one to insert it.
 - **Kills, joins, leaves and raids** are announced as soon as the manager reads them from the server
   log. Kill lines name weapons and creatures the way the game does, and a suicide has its own message.
+- **A raid is a base taking damage.** Raid protection switching on or off, a picked lock, a looted
+  chest or a sold vehicle is never announced, though the manager tells the owner about all of them.
 - **Bunkers** come from the server log too, so they need no bridge. **Abandoned** bunkers open and lock
   on their own schedule; a **secret** bunker opens when a player uses a key card on it.
 - **Cargo drops and game events** exist only in the running game, so the plugin **asks the SSA Bridge
@@ -47,7 +49,8 @@ Everything is configured from the plugin's **admin tab** (💬 Chat Messages):
   being hit.
 - **There is no timing to set.** One check of cargo and events costs the bridge a few milliseconds.
 - **What is already happening when the manager starts is not announced.** An event already open or
-  running, or a crate already down, stays quiet; the next change is announced.
+  running, a crate already down, or an abandoned bunker already active when the game first lists
+  them, stays quiet; the next change is announced.
 - **Each of the 25 event locations is watched on its own**, so the first event of a session is
   announced wherever it is held.
 - **While nobody is online** the plugin takes one first reading and then waits for a player, unless

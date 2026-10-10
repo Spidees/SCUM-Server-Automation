@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "ประกาศในเกม",
+  "pl.hello-plugin.announceAsk": "ส่งคำทักทายถึงทุกคนในเกมไหม?",
+  "pl.hello-plugin.empty": "ยังไม่มีใครเล่นในเซิร์ฟเวอร์นี้",
+  "pl.hello-plugin.greet": "ทักทาย",
+  "pl.hello-plugin.greeting": "คำทักทาย",
+  "pl.hello-plugin.lookup": "ค้นหาไอเทม",
+  "pl.hello-plugin.name": "ชื่อ",
+  "pl.hello-plugin.noPremium": "Premium ปิดอยู่ เครื่องมือในเกมจึงไม่ตอบสนอง",
+  "pl.hello-plugin.online": "ออนไลน์ตอนนี้: {n}",
+  "pl.hello-plugin.pick": "เลือกสถานที่",
+  "pl.hello-plugin.pickNote": "แตะบนแผนที่ตรงที่คุณต้องการดู",
+  "pl.hello-plugin.players": "ผู้เล่น",
+  "pl.hello-plugin.save": "บันทึก",
+  "pl.hello-plugin.saved": "บันทึกแล้ว",
+  "pl.hello-plugin.sent": "ส่งแล้ว",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "อ่านฐานข้อมูลเกมไม่ได้ขณะที่เซิร์ฟเวอร์หยุดอยู่ ส่วนอื่นทั้งหมดที่นี่ยังใช้งานได้",
+  "pl.hello-plugin.tab": "สวัสดี",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "เข้าสู่ระบบเพื่อดูคำทักทายของคุณเอง",
+  "pl.hello-plugin.wave": "โบกมือตอบ"
+}

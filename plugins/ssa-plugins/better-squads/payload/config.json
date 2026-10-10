@@ -105,7 +105,11 @@
       "baseNone": "No squad base found on the map.",
       "info": "{squad} — {squadonline}/{squadsize} online, score {score}.",
       "infoMotd": "MOTD: {motd}",
-      "nobodyOnline": "Nobody else from the squad is online."
+      "nobodyOnline": "Nobody else from the squad is online.",
+      "mutedNone": "none",
+      "squadNoName": "your squad",
+      "unknownObject": "something",
+      "testLine": "[{squad}] Better Squads test — if you can read this, it works."
     }
   }
 }

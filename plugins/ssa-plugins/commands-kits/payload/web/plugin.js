@@ -34,7 +34,34 @@
     channels: ['local', 'global', 'squad', 'admin', 'server'],
     currencies: ['free', 'money', 'gold', 'fame'],
     defaultMessages: {},
+    messageGroups: {},
   };
+  // Where the bridge's switches live, built from the PANEL's own keys (the nav entry and the tab
+  // that render themselves from them), so the route is right in every language and after a rename.
+  function bridgeWhere() {
+    return T('nav.plugins', 'Plugins') + ' → ' + T('plugins.viewInGame', 'SSA Bridge');
+  }
+  // The live module's two switches the game clock needs, in the words the bridge card shows.
+  function noGameClockText() {
+    return T('pl.commands-kits.gw.noClockRoute', 'the game clock cannot be read. Turn on "{read}" and "{time}" in {where}.',
+      { read: switchCaption('live', 'enabled', 'Read live player data'), time: switchCaption('live', 'time', 'Time of day and day length'), where: bridgeWhere() });
+  }
+  // A bridge switch's caption exactly as its card on the panel draws it: the panel's own
+  // `mod.<module>.<key>` line when it has one, else the caption the bridge ships, which is English.
+  function switchCaption(mod, key, english) {
+    var k = ['mod', mod, key].join('.');
+    return SSA.t(k, english);
+  }
+  // A failed spawn or a queued one, drawn from the parts the backend sends: the game's own name, the
+  // count, and for a full container the item it is filled with. An older row is a plain string.
+  function spawnLabel(v) {
+    if (!v) return '';
+    if (typeof v === 'string') return v;
+    var base = v.fillName || v.fill
+      ? T('pl.commands-kits.log.containerOf', '{container} filled with {fill}', { container: v.name || v.code || '', fill: v.fillName || v.fill })
+      : (v.name || v.code || v.label || '') + (Number(v.count) > 1 ? ' ×' + v.count : '');
+    return base;
+  }
   function triggers() {
     return [['welcome', T('pl.commands-kits.trigger.welcome', 'On join (welcome)')],
       ['command', T('pl.commands-kits.trigger.command', 'Chat command')]];
@@ -101,6 +128,40 @@
       partialUnknown: T('pl.commands-kits.msglabel.partialUnknown', 'Part did not arrive AND the payment is unconfirmed'),
       spawnRefused: T('pl.commands-kits.msglabel.spawnRefused', 'The game refused the spawn (stale code)'),
       listCut: T('pl.commands-kits.msglabel.listCut', 'The list of who is online was cut'),
+      // The words that go INSIDE the sentences above.
+      poolMoney: T('pl.commands-kits.msglabel.poolMoney', '{pool} for a money price'),
+      poolGold: T('pl.commands-kits.msglabel.poolGold', '{pool} for a gold price'),
+      poolFame: T('pl.commands-kits.msglabel.poolFame', '{pool} for a fame price'),
+      asofSave: T('pl.commands-kits.msglabel.asofSave', '{asof} when only the last save could answer'),
+      curMoney: T('pl.commands-kits.msglabel.curMoney', '{currency} for money'),
+      curGold: T('pl.commands-kits.msglabel.curGold', '{currency} for gold'),
+      curFame: T('pl.commands-kits.msglabel.curFame', '{currency} for fame'),
+      curFree: T('pl.commands-kits.msglabel.curFree', '{currency} for free'),
+      windowGame: T('pl.commands-kits.msglabel.windowGame', '{window} for an in-game window'),
+      windowGameSpeed: T('pl.commands-kits.msglabel.windowGameSpeed', '{speed} inside that line'),
+      windowNeedsUpdate: T('pl.commands-kits.msglabel.windowNeedsUpdate', '{window} when the manager is too old'),
+      // The Discord claim panel.
+      discordLink: T('pl.commands-kits.msglabel.discordLink', 'Account not linked'),
+      discordNone: T('pl.commands-kits.msglabel.discordNone', 'No kit can be claimed from Discord'),
+      discordPick: T('pl.commands-kits.msglabel.discordPick', 'Text above the kit menu'),
+      discordChoose: T('pl.commands-kits.msglabel.discordChoose', 'Kit menu placeholder'),
+      discordFree: T('pl.commands-kits.msglabel.discordFree', 'Price of a free kit'),
+      discordStale: T('pl.commands-kits.msglabel.discordStale', 'The kit list changed'),
+      discordOffline: T('pl.commands-kits.msglabel.discordOffline', 'Player not in game'),
+      discordDelivering: T('pl.commands-kits.msglabel.discordDelivering', 'Delivery in progress'),
+      discordDone: T('pl.commands-kits.msglabel.discordDone', 'Kit delivered'),
+      discordFailed: T('pl.commands-kits.msglabel.discordFailed', 'Claim failed'),
+      discordError: T('pl.commands-kits.msglabel.discordError', 'Something went wrong'),
+      discordNotAllowed: T('pl.commands-kits.msglabel.discordNotAllowed', 'Menu: player not allowed'),
+      discordGroupLocked: T('pl.commands-kits.msglabel.discordGroupLocked', 'Menu: locked by a group'),
+      discordMaxClaims: T('pl.commands-kits.msglabel.discordMaxClaims', 'Menu: claim limit reached'),
+      discordCooldown: T('pl.commands-kits.msglabel.discordCooldown', 'Menu: on cooldown'),
+      discordAlreadyClaimed: T('pl.commands-kits.msglabel.discordAlreadyClaimed', 'Menu: already claimed'),
+      discordNotLinked: T('pl.commands-kits.msglabel.discordNotLinked', 'Menu: linked players only'),
+      discordInflight: T('pl.commands-kits.msglabel.discordInflight', 'Menu: already on its way'),
+      discordClosed: T('pl.commands-kits.msglabel.discordClosed', 'Menu: outside its time window'),
+      discordClosedGame: T('pl.commands-kits.msglabel.discordClosedGame', 'Menu: outside its in-game window'),
+      discordUnavailable: T('pl.commands-kits.msglabel.discordUnavailable', 'Menu: any other reason'),
     };
   }
   function msgLabel(key) {
@@ -174,6 +235,7 @@
         ['{args}', T('pl.commands-kits.tok.args', 'Everything the player typed after the command')],
         ['{arg1}', T('pl.commands-kits.tok.arg1', 'The first word after the command')],
         ['{channel}', T('pl.commands-kits.tok.channel', 'The chat channel they used')],
+        ['{prefix}', T('pl.commands-kits.tok.prefix', 'The command prefix players type, like /')],
       ]],
     ];
   }
@@ -275,7 +337,10 @@
   var twClock = null;                      // { supported, now, zone } — asked once per tab
   function twClockLine() {
     if (!twClock) return '';
-    if (twClock.supported === false) return twClock.why || T('pl.commands-kits.tw.unsupported', 'This manager cannot evaluate time windows.');
+    if (twClock.supported === false) {
+      if (twClock.code === 'managerTooOld') return T('pl.commands-kits.tw.tooOld', 'This manager is too old for time windows. Entries with one stay closed until you update.');
+      return twClock.why || T('pl.commands-kits.tw.unsupported', 'This manager cannot evaluate time windows.');
+    }
     var z = twClock.zone || {}, n = twClock.now || {};
     return T('pl.commands-kits.tw.clock', 'Server clock: {time} {zone}. This is real time, not in-game time.',
       { time: n.hhmm || '??:??', zone: z.label || T('pl.commands-kits.tw.zoneUnknown', 'server time') });
@@ -498,7 +563,8 @@
         note.className = 'tw-note bad';
         note.textContent = T('pl.commands-kits.gw.blind',
           '⚠ {span} — not applied: {why} Until then it works at any hour.',
-          { span: span, why: (gwClock && gwClock.why) || T('pl.commands-kits.gw.noClock', 'the game\'s own clock could not be read.') });
+          { span: span, why: (gwClock && gwClock.code === 'noGameClock') ? noGameClockText()
+            : ((gwClock && gwClock.why) || T('pl.commands-kits.gw.noClock', 'the game\'s own clock could not be read.')) });
         clockNote.textContent = '';
         return;
       }
@@ -526,6 +592,12 @@
     return box;
   }
 
+  // A label or a note that NAMES a token (`{window} for an in-game window`) shows the token as code,
+  // the way a token chip does: it is the thing typed into the box, not a hole in the sentence.
+  function withCode(text) {
+    return String(text == null ? '' : text).split(/(\{[a-zA-Z][a-zA-Z0-9_]*\})/).filter(function (p) { return p !== ''; })
+      .map(function (p) { return /^\{[a-zA-Z][a-zA-Z0-9_]*\}$/.test(p) ? h('code', {}, p) : p; });
+  }
   function field(label, ctl, hint) { return h('label', { class: 'ck-f' }, [h('span', {}, label), ctl, hint ? h('small', { class: 'ck-hint' }, hint) : null]); }
   function inlineField(label, ctl, title) { return h('label', { class: 'ck-inl', title: title || undefined }, [h('span', {}, label), ctl]); }
   // A compact quantity control — the “×” is glued to the number (× 3) so it reads as one unit, not a
@@ -865,8 +937,10 @@
       queueBox.innerHTML = '';
       var items = statusData.queueItems || [], cur = statusData.current, depth = statusData.queue || 0;
       if (!cur && !items.length && depth <= 0) { queueBox.appendChild(h('p', { class: 'ck-empty' }, T('pl.commands-kits.queue.empty', 'Queue is empty — every delivery is up to date.'))); return; }
-      if (cur) queueBox.appendChild(h('div', { class: 'ck-q-cur' }, [h('span', { class: 'ck-q-spin' }), h('span', { class: 'ck-q-lbl' }, [h('strong', {}, T('pl.commands-kits.queue.now', 'Delivering now: ')), cur])]));
-      items.forEach(function (lbl) { queueBox.appendChild(h('div', { class: 'ck-q-row' }, [h('span', { class: 'ck-q-dot' }), h('span', {}, lbl)])); });
+      // A queued spawn is sent as its parts; an older backend sent a finished string.
+      var qText = function (v) { return typeof v === 'string' ? v : spawnLabel(v) + (v && v.player ? ' → ' + v.player : ''); };
+      if (cur) queueBox.appendChild(h('div', { class: 'ck-q-cur' }, [h('span', { class: 'ck-q-spin' }), h('span', { class: 'ck-q-lbl' }, [h('strong', {}, T('pl.commands-kits.queue.now', 'Delivering now: ')), qText(cur)])]));
+      items.forEach(function (lbl) { queueBox.appendChild(h('div', { class: 'ck-q-row' }, [h('span', { class: 'ck-q-dot' }), h('span', {}, qText(lbl))])); });
       var extra = depth - items.length;
       if (extra > 0) queueBox.appendChild(h('p', { class: 'ck-hint' }, T('pl.commands-kits.queue.more', '+ {n} more waiting…', { n: extra })));
     }
@@ -1037,7 +1111,7 @@
           h('div', { class: 'ck-inl', title: T('pl.commands-kits.cmd.announce.hint', 'On = everyone sees the reply. Off = only the player who typed it.') }, [h('span', {}, T('pl.commands-kits.cmd.announce', 'Announce to all')), toggle(!!cmd.broadcast, function (v) { cmd.broadcast = v; render(); })]),
           h('div', { class: 'ck-inl', title: T('pl.commands-kits.linkedOnly.hint', 'On = only players with a character linked to Discord (Field Console). Off = anybody.') }, [h('span', {}, T('pl.commands-kits.linkedOnly', 'Linked players only')), toggle(!!cmd.requireLinked, function (v) { cmd.requireLinked = v; render(); })]),
           inlineField(T('pl.commands-kits.cooldownH', 'Cooldown (h)'), numf(cmd.cooldownHours, function (v) { cmd.cooldownHours = v; render(); }), T('pl.commands-kits.cmd.cooldown.hint', 'Hours before the same player can reuse it. 0 = none.')),
-          inlineField(T('pl.commands-kits.cmd.group', 'Shared CD group'), txt(cmd.group, 'e.g. shops', function (v) { cmd.group = v.trim(); }), T('pl.commands-kits.cmd.group.hint', 'Commands with the same group share ONE cooldown.')),
+          inlineField(T('pl.commands-kits.cmd.group', 'Shared CD group'), txt(cmd.group, T('pl.commands-kits.cmd.group.ph', 'e.g. shops'), function (v) { cmd.group = v.trim(); }), T('pl.commands-kits.cmd.group.hint', 'Commands with the same group share ONE cooldown.')),
           h('div', { class: 'ck-inl', title: T('pl.commands-kits.cmd.savePos.hint', 'Remember the player’s position now so another command can teleport them back with {saved_x/y/z}.') }, [h('span', {}, T('pl.commands-kits.cmd.savePos', 'Remember position')), toggle(!!cmd.savePosition, function (v) { cmd.savePosition = v; })]),
           h('div', { class: 'ck-inl', title: T('pl.commands-kits.cmd.notify.hint', 'On = the player sees the game\'s feedback. Off = runs silently via the bridge.') }, [h('span', {}, T('pl.commands-kits.notify', 'Notify player')), toggle(!!cmd.notify, function (v) { cmd.notify = v; })]),
         ].concat(costRow(cmd, render).map(function (n) { return n; }))),
@@ -1378,7 +1452,7 @@
           inlineField(T('pl.commands-kits.replyIn', 'Reply in'), sel(pack.replyChannel || 'local', META.channels.map(function (c) { return [c, chLabels()[c] || c]; }), function (v) { pack.replyChannel = v; })),
           inlineField(T('pl.commands-kits.cooldownH', 'Cooldown (h)'), numf(pack.cooldownHours, function (v) { pack.cooldownHours = v; render(); }), T('pl.commands-kits.kit.cooldown.hint', '0 = welcome once ever / command no cooldown.')),
           inlineField(T('pl.commands-kits.kit.maxPer', 'Max / player'), numf(pack.maxClaims, function (v) { pack.maxClaims = v; }), T('pl.commands-kits.kit.maxPer.hint', '0 = unlimited (subject to cooldown).')),
-          inlineField(T('pl.commands-kits.kit.group', 'Exclusive group'), txt(pack.group, 'e.g. starter', function (v) { pack.group = v.trim(); }), T('pl.commands-kits.kit.group.hint', 'Packs in the same group are mutually exclusive.')),
+          inlineField(T('pl.commands-kits.kit.group', 'Exclusive group'), txt(pack.group, T('pl.commands-kits.kit.group.ph', 'e.g. starter'), function (v) { pack.group = v.trim(); }), T('pl.commands-kits.kit.group.hint', 'Packs in the same group are mutually exclusive.')),
           h('div', { class: 'ck-inl', title: T('pl.commands-kits.linkedOnly.hint', 'On = only players with a character linked to Discord (Field Console). Off = anybody.') }, [h('span', {}, T('pl.commands-kits.linkedOnly', 'Linked players only')), toggle(!!pack.requireLinked, function (v) { pack.requireLinked = v; render(); })]),
           h('div', { class: 'ck-inl', title: T('pl.commands-kits.kit.notify.hint', 'On: the player sees the game\'s spawn messages. Off: silent; your message still sends.') }, [h('span', {}, T('pl.commands-kits.notify', 'Notify player')), toggle(!!pack.notify, function (v) { pack.notify = v; })]),
           // Discord claiming is per-kit and OFF by default: turning it on for everything the moment
@@ -1428,16 +1502,34 @@
     function messagesView() {
       var wrap = h('div', { class: 'ck-viewbody' });
       wrap.appendChild(tokenBar(msgTokens()));
-      var grid = h('div', { class: 'ck-msggrid' });
       var keys = Object.keys(META.defaultMessages || {});
       Object.keys(msgLabels()).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
-      keys.forEach(function (key) {
-        grid.appendChild(field(msgLabel(key), txt(state.messages[key], (META.defaultMessages || {})[key] || '', function (v) { state.messages[key] = v; }, 'ck-in ck-grow')));
-      });
-      wrap.appendChild(ckSection(T('pl.commands-kits.sysmsg.section', 'System messages'), T('pl.commands-kits.sysmsg.sectionSub', 'Shown to players in these cases. Any language, tokens work; blank uses the default.'), [grid]));
+      // Which section a key is drawn in comes from the backend; a key it does not place lands in
+      // the first section, so a message added later still gets a field.
+      var groups = META.messageGroups || {};
+      var inGroup = {};
+      Object.keys(groups).forEach(function (g) { (groups[g] || []).forEach(function (k) { inGroup[k] = g; }); });
+      function grid(list) {
+        var g = h('div', { class: 'ck-msggrid' });
+        list.forEach(function (key) {
+          g.appendChild(field(withCode(msgLabel(key)), txt(state.messages[key], (META.defaultMessages || {})[key] || '', function (v) { state.messages[key] = v; }, 'ck-in ck-grow')));
+        });
+        return g;
+      }
+      var pick = function (g) { return keys.filter(function (k) { return (inGroup[k] || '') === g; }); };
+      wrap.appendChild(ckSection(T('pl.commands-kits.sysmsg.section', 'System messages'), T('pl.commands-kits.sysmsg.sectionSub', 'Shown to players in these cases. Any language, tokens work; blank uses the default.'), [grid(pick(''))]));
+      if (pick('words').length) wrap.appendChild(ckSection(T('pl.commands-kits.sysmsg.words', 'Words inside those messages'), withCode(T('pl.commands-kits.sysmsg.wordsSub', 'Filled into the lines above. The in-game window line takes {from}, {to}, {now} and {speed}.')), [grid(pick('words'))]));
+      if (pick('discord').length) wrap.appendChild(ckSection(T('pl.commands-kits.sysmsg.discord', 'Discord claim panel'), withCode(T('pl.commands-kits.sysmsg.discordSub', 'What players read in the private kit menu. {pack}, {left} and {window} work.')), [grid(pick('discord'))]));
       return wrap;
     }
 
+    // What a claim is for. `null` is an entry the config no longer has.
+    function kindLabel(k) {
+      return k === 'kit' ? T('pl.commands-kits.kind.kit', 'Kit')
+        : k === 'command' ? T('pl.commands-kits.kind.command', 'Command')
+          : k === 'group' ? T('pl.commands-kits.kind.group', 'Shared cooldown group')
+            : T('pl.commands-kits.kind.removed', 'No longer configured');
+    }
     function loadClaims() {
       api('/claims').then(function (d) { claimsErr = null; claimsData = (d && d.claims) || []; if (claimsTable) claimsTable.refresh(); })
         // Keep whatever rows are already on screen — a request failure is not "nobody has claimed
@@ -1481,7 +1573,7 @@
       actTable = SSA.table({
         rows: function () { return statusData.recent || []; },
         searchPlaceholder: T('pl.commands-kits.log.search', 'Search players, rewards, items…'),
-        search: function (r) { return [r.player, r.steamId, r.reward].concat((r.failedItems || []).map(function (f) { return (f && f.label) || f; })).join(' '); },
+        search: function (r) { return [r.player, r.steamId, r.reward].concat((r.failedItems || []).map(function (f) { return (f && f.name ? spawnLabel(f) + ' ' + (f.code || '') : (f && f.label)) || f; })).join(' '); },
         empty: T('pl.commands-kits.log.empty', 'No deliveries yet — kits and rewards handed out will show here.'),
         sort: { key: 'at', dir: 'desc' }, pageSize: 20, onRefresh: refreshStatus,
         columns: [
@@ -1510,11 +1602,11 @@
             // so the only thing left is to make it visible. Without this an unpaid delivery sat in
             // this log looking exactly like a paid one.
             if (r.unpaid) {
-              var ub = h('div', { class: 'ck-result' }, [tag, SSA.cell.tag(T('pl.commands-kits.tag.notPaid', 'NOT PAID') + (r.price ? ' · ' + r.price : ''), 'bad')]);
+              var ub = h('div', { class: 'ck-result' }, [tag, SSA.cell.tag(T('pl.commands-kits.tag.notPaid', 'NOT PAID') + (r.priceCurrency ? ' · ' + r.priceAmount + ' ' + (curLabels()[r.priceCurrency] || r.priceCurrency) : (r.price ? ' · ' + r.price : '')), 'bad')]);
               if (bad && (r.failedItems || []).length) {
                 (r.failedItems || []).forEach(function (fi) {
                   var c = (fi && fi.code) || (typeof fi === 'string' ? fi : '');
-                  ub.appendChild(SSA.cell.item(c, (fi && fi.label) || c));
+                  ub.appendChild(SSA.cell.item(c, (fi && fi.name ? spawnLabel(fi) : (fi && fi.label)) || c));
                 });
               }
               return ub;
@@ -1530,7 +1622,7 @@
             if (items.length) {
               items.forEach(function (fi) {
                 var code = (fi && fi.code) || (typeof fi === 'string' ? fi : '');
-                var label = (fi && fi.label) || code;
+                var label = (fi && fi.name ? spawnLabel(fi) : (fi && fi.label)) || code;
                 // Native clickable item preview — same popover as the mine-protection table / Log Viewer.
                 box.appendChild(SSA.cell.item(code, label));
               });
@@ -1550,14 +1642,15 @@
       claimsTable = SSA.table({
         rows: function () { return claimsData; },
         searchPlaceholder: T('pl.commands-kits.claims.search', 'Search players, rewards…'),
-        search: function (r) { return [r.name, r.steamId, r.packId].join(' '); },
+        search: function (r) { return [r.name, r.steamId, r.reward || r.packId, kindLabel(r.rewardKind)].join(' '); },
         // A function, not a string, so "this could not be read" and "nobody has claimed anything"
         // stay two different sentences — the first is about the request, the second about the world.
         empty: function () { return claimsErr ? T('pl.commands-kits.claims.readFailed', 'This list could not be read — {why}', { why: claimsErr }) : T('pl.commands-kits.claims.empty', 'Nobody has claimed anything yet. Players appear here after their first kit.'); },
         sort: { key: 'at', dir: 'desc' }, pageSize: 10, onRefresh: loadClaims,
         columns: [
           { key: 'player', label: T('pl.commands-kits.col.player', 'Player'), sort: true, sortVal: function (r) { return (r.name || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.name, r.steamId); } },
-          { key: 'packId', label: T('pl.commands-kits.col.reward', 'Reward'), sort: true, sortVal: function (r) { return r.packId; }, render: function (r) { return document.createTextNode(r.packId); } },
+          { key: 'packId', label: T('pl.commands-kits.col.reward', 'Reward'), sort: true, sortVal: function (r) { return String(r.reward || r.packId || '').toLowerCase(); },
+            render: function (r) { return h('span', {}, [document.createTextNode(r.reward || r.packId || ''), h('span', { class: 'ck-kind' + (r.rewardKind ? '' : ' gone') }, kindLabel(r.rewardKind))]); } },
           { key: 'count', label: T('pl.commands-kits.col.uses', 'Uses'), sort: true, sortVal: function (r) { return r.count || 1; }, tdClass: 'mono', render: function (r) { return document.createTextNode(String(r.count || 1)); } },
           { key: 'at', label: T('pl.commands-kits.col.lastUsed', 'Last used'), sort: true, sortVal: function (r) { return r.at || 0; }, tdClass: 'dim', render: function (r) { return document.createTextNode(r.at ? new Date(r.at).toLocaleString() : '—'); } },
           { key: 'reset', label: '', render: function (r) { return h('button', { class: 'secondary', title: T('pl.commands-kits.claims.resetTitle', 'Let this player use it again'), onclick: function () { api('/claims/reset', { method: 'POST', body: { packId: r.packId, steamId: r.steamId } }).then(function () { toast(T('pl.commands-kits.reset', 'Reset')); loadClaims(); }).catch(function (err) { toast(T('pl.commands-kits.claims.resetFailed', 'NOT reset — {why}', { why: why(err) }), 'error'); }); } }, T('pl.commands-kits.reset', 'Reset')); } },
@@ -1595,6 +1688,14 @@
       // ── Discord claim panel ───────────────────────────────────────────────────
       state.discord = state.discord || {};
       var d = state.discord;
+      // The route answers a code; the sentence is this panel's, in the reader's language.
+      var postRefusal = function (r) {
+        var c = r && r.code;
+        if (c === 'noChannel') return T('pl.commands-kits.dc.err.noChannel', 'no channel is set for the Discord panel');
+        if (c === 'noKits') return T('pl.commands-kits.dc.err.noKits', 'no kit has "{switch}" on yet', { switch: T('pl.commands-kits.kit.discord', 'Claim from Discord') });
+        if (c === 'postFailed') return T('pl.commands-kits.dc.err.postFailed', 'the bot could not post there (missing channel or permission)');
+        return (r && r.reason) || (r && r.error) || T('pl.commands-kits.dc.unknown', 'unknown');
+      };
       var dChan = h('select', { class: 'ck-in' }, [h('option', { value: d.channelId || '' }, d.channelId ? T('pl.commands-kits.dc.current', '(current)') : T('pl.commands-kits.dc.pick', '— pick a channel —'))]);
       api('/discord-channels').then(function (list) {
         dChan.innerHTML = '';
@@ -1619,7 +1720,7 @@
           // for a message that was never sent. A 200 without `ok` is a refusal too, and the route's
           // own `reason` is worth more than its bare `error` code when it sent one.
           postStatus.textContent = (r && r.ok) ? T('pl.commands-kits.dc.posted', 'Posted ✓')
-            : T('pl.commands-kits.dc.notPosted', 'Not posted — {why}', { why: (r && r.reason) || (r && r.error) || T('pl.commands-kits.dc.unknown', 'unknown') });
+            : T('pl.commands-kits.dc.notPosted', 'Not posted — {why}', { why: postRefusal(r) });
         }).catch(function (err) { postStatus.textContent = T('pl.commands-kits.dc.notPosted', 'Not posted — {why}', { why: why(err) }); });
       // `i-discord`, not `i-send`: there is no send icon in the panel's sprite, and a missing one
       // renders NOTHING — no error, no broken-image mark, just a button that looks unfinished.
@@ -1730,6 +1831,7 @@
         if (m.channels) META.channels = m.channels;
         if (m.currencies) META.currencies = m.currencies;
         if (m.defaultMessages) META.defaultMessages = m.defaultMessages;
+        if (m.messageGroups && typeof m.messageGroups === 'object') META.messageGroups = m.messageGroups;
         var cfg = r[1] || {};
         state.commands = (Array.isArray(cfg.commands) ? cfg.commands : []).map(function (c) { c.channel = normCh(c.channel); return c; });
         state.welcome = (cfg.welcome && typeof cfg.welcome === 'object') ? cfg.welcome : {}; state.welcome.channel = normCh(state.welcome.channel);

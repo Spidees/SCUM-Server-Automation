@@ -101,6 +101,63 @@ const DEFAULT_MSG = {
   // minutes away or forty — which is why `{window}` for this one carries the game time it is NOW
   // as well as the hours, and why the two are never merged into one sentence.
   closedGame:    '⏳ {pack} is not available at this time of day in game — {window}',
+
+  // ── THE WORDS INSIDE THOSE SENTENCES ─────────────────────────────────────────────────────────
+  //
+  // `{pool}`, `{asof}`, `{currency}` and `{window}` used to be filled with English made here, so a
+  // fully translated `insufficient` line still read "…your bank account has 100" in the middle of a
+  // Czech sentence. They are the owner's words now, like the sentences around them: absent from a
+  // config written before this, which reads the English below exactly as it read before.
+  poolMoney:     'bank account',
+  poolGold:      'gold balance',
+  poolFame:      'fame',
+  // Starts with a space on purpose: it is glued onto `{have}` and is empty when the game answered.
+  asofSave:      ' — that is your balance as of the last server save, so try again shortly',
+  curMoney:      'money',
+  curGold:       'gold',
+  curFame:       'fame',
+  curFree:       'free',
+  // `{window}` for `closedGame`. `{speed}` is `windowGameSpeed` filled in, or empty when the bridge
+  // did not say how fast the game day runs.
+  windowGame:    'it is available {from}–{to} in GAME time; it is {now} in game now{speed}',
+  windowGameSpeed: ' ({speed} game hours per real hour)',
+  // `{window}` for `closed` on a manager too old to evaluate a wall-clock window at all.
+  windowNeedsUpdate: 'time windows need a newer manager, so this is switched off until an admin updates it',
+
+  // ── THE DISCORD CLAIM PANEL ──────────────────────────────────────────────────────────────────
+  //
+  // Players read every one of these in Discord. They were fixed English down in the interaction
+  // handler; they are the owner's words now, with the same English as before.
+  discordLink:      '⚠️ Link your SCUM character to Discord first (on the Field Console), then try again.',
+  discordNone:      'No kits are available from Discord right now.',
+  discordPick:      'Pick a kit:',
+  discordChoose:    'Choose a kit',
+  discordFree:      'Free',
+  discordStale:     '🔄 The kit list changed, so nothing was claimed. Open the menu again.',
+  discordOffline:   '🔌 You need to be online in game to receive a kit.',
+  discordDelivering:'⏳ Delivering…',
+  discordDone:      '✅ **{pack}** is on its way — check your inventory.',
+  discordFailed:    'That could not be claimed right now.',
+  discordError:     'Something went wrong.',
+  // The short reason under a kit in the menu. A dropdown row is a hundred characters, so these are
+  // the short forms of the chat refusals above rather than the same sentences.
+  discordNotAllowed:    'not available to you',
+  discordGroupLocked:   'you already picked another from this group',
+  discordMaxClaims:     'claim limit reached',
+  discordCooldown:      'on cooldown — {left} left',
+  discordAlreadyClaimed:'already claimed',
+  discordNotLinked:     'for linked players only',
+  discordInflight:      'already on its way to you',
+  discordClosed:        'not available right now — {window}',
+  discordClosedGame:    'not at this time of day in game — {window}',
+  discordUnavailable:   'not available right now',
+};
+// Which screen section each message belongs on. The panel draws the sections in this order and
+// anything not named here lands in the first one, so a key added later still gets a field.
+const MSG_GROUPS = {
+  words: ['poolMoney', 'poolGold', 'poolFame', 'asofSave', 'curMoney', 'curGold', 'curFame', 'curFree',
+    'windowGame', 'windowGameSpeed', 'windowNeedsUpdate'],
+  discord: Object.keys(DEFAULT_MSG).filter((k) => /^discord[A-Z]/.test(k)),
 };
 
 // ── the shipped configuration, IN THE BACKEND ─────────────────────────────────────────────────────
@@ -204,6 +261,8 @@ module.exports = {
     const safeChannel = (ch) => (ch && TARGET_OK[ch]) ? ch : DEFAULT_CHANNEL;
     const replyChannelFor = (obj) => safeChannel((obj && (obj.channel || obj.replyChannel)) || cfg().replyChannel || DEFAULT_CHANNEL);
     const msgText = (key) => (cfg().messages || {})[key] || DEFAULT_MSG[key] || '';
+    // The prefix players type, exactly as this plugin sets it on the bridge in `reload()`.
+    const chatPrefix = () => { const p = cfg().commandPrefix; return (typeof p === 'string' && p.trim()) ? p.trim() : '/'; };
 
     // ── context / tokens ────────────────────────────────────────────────────────
     const serverName = () => { try { return (host.server.info() || {}).name || 'the server'; } catch { return 'the server'; } };
@@ -296,6 +355,8 @@ module.exports = {
         player: safeName(name), name: safeName(name), steamid: safeSid(steamId),
         channel: (ctx && ctx.channel) || '', args: safeArg((ctx && ctx.argString) || ''),
         server: serverName(), date: now.toLocaleDateString(), time: now.toLocaleTimeString(),
+        // The chat prefix, so "type {prefix}daily" stays right when an owner changes it.
+        prefix: chatPrefix(),
       };
       if (/\{(online|maxplayers)\}/i.test(tpl)) { refreshMax(); const on = onlineCount(); map.online = on != null ? on : '?'; map.maxplayers = _maxPlayers != null ? _maxPlayers : '?'; }
       // DISPLAY ONLY, and deliberately the SAVED figures. `subst` is synchronous and is called from
@@ -307,8 +368,20 @@ module.exports = {
       //                                            observed NULL for every profile on this build
       // The `insufficient` line does NOT use these: it is filled with the live {have} the refusal
       // was actually decided on, before `subst` ever runs.
-      if (/\{(money|bank|cash|gold)\}/i.test(tpl)) { const f = host.players.finances(steamId) || {}; map.money = f.bank || 0; map.bank = f.bank || 0; map.cash = f.cash || 0; map.gold = f.gold || 0; }
-      if (/\{(fame|kills|deaths|kd|pvpkills|headshots|zombiekills|animalkills|longestkill|distance|lockspicked|fishcaught|playtime|survived)\}/i.test(tpl)) {
+      //
+      // ⚠ **A SOURCE THAT DID NOT ANSWER IS `?`, NEVER 0.** `finances()` and `stats()` answer null for
+      // a save that will not open or a profile it cannot find, and `|| 0` turned that into "you have
+      // 0" in front of a player whose bank holds thousands. A field the save holds as NULL is the
+      // same: nobody could read it, so nobody can say it is nought.
+      const known = (v) => { const n = num(v); return n == null ? UNKNOWN_TOKEN : n; };
+      if (/\{(money|bank|cash|gold)\}/i.test(tpl)) { const f = host.players.finances(steamId); map.money = known(f && f.bank); map.bank = map.money; map.cash = known(f && f.cash); map.gold = known(f && f.gold); }
+      if (/\{(fame|kills|deaths|kd|pvpkills|headshots|zombiekills|animalkills|longestkill|distance|lockspicked|fishcaught|playtime|survived)\}/i.test(tpl)
+          && !host.players.stats(steamId)) {
+        // The whole stat sheet could not be read. Every one of these is unknown, not zero.
+        for (const k of ['fame', 'kills', 'deaths', 'kd', 'pvpkills', 'headshots', 'zombiekills', 'animalkills', 'longestkill', 'distance', 'lockspicked', 'fishcaught', 'playtime', 'survived']) map[k] = UNKNOWN_TOKEN;
+      } else if (/\{(fame|kills|deaths|kd|pvpkills|headshots|zombiekills|animalkills|longestkill|distance|lockspicked|fishcaught|playtime|survived)\}/i.test(tpl)) {
+        // A sheet that WAS read: its blank columns are LEFT JOINs with no row behind them, which is
+        // a player with nothing recorded yet — a real 0.
         const s = host.players.stats(steamId) || {};
         map.fame = s.FamePoints || 0; map.kills = s.Kills || 0; map.deaths = s.Deaths || 0; map.pvpkills = s.PvpKills || 0;
         map.headshots = s.Headshots || 0; map.zombiekills = s.ZombieKills || 0; map.animalkills = s.AnimalKills || 0;
@@ -320,8 +393,20 @@ module.exports = {
       // {squad} come out empty. memberCount holds the size.
       if (/\{(squad|squadsize)\}/i.test(tpl)) { const q = host.players.squad(steamId) || {}; map.squad = q.name || ''; map.squadsize = q.memberCount || ''; }
       if (/\{(strength|constitution|dexterity|intelligence)\}/i.test(tpl)) { const at = (host.players.skills(steamId) || {}).attributes || {}; map.strength = at.strength != null ? at.strength : ''; map.constitution = at.constitution != null ? at.constitution : ''; map.dexterity = at.dexterity != null ? at.dexterity : ''; map.intelligence = at.intelligence != null ? at.intelligence : ''; }
-      if (/\{(x|y|z|location)\}/i.test(tpl)) { const l = (extra && extra.loc) || playerLoc(steamId) || {}; map.x = Math.round(l.x || 0); map.y = Math.round(l.y || 0); map.z = Math.round(l.z || 0); map.location = l.x != null ? `${map.x}, ${map.y}` : ''; }
-      if (/\{saved_[xyz]\}/i.test(tpl)) { const sp = ledger.get('pos:' + steamId, null) || {}; map.saved_x = Math.round(sp.x || 0); map.saved_y = Math.round(sp.y || 0); map.saved_z = Math.round(sp.z || 0); }
+      // No position is not the island's origin: `?` in a chat line. An ACTION naming one of these is
+      // skipped before it gets here (`runActions`), so `?` never reaches the game's console.
+      if (/\{(x|y|z|location)\}/i.test(tpl)) {
+        const l = (extra && extra.loc) || playerLoc(steamId);
+        const has = !!(l && num(l.x) != null && num(l.y) != null);
+        map.x = has ? Math.round(num(l.x)) : UNKNOWN_TOKEN; map.y = has ? Math.round(num(l.y)) : UNKNOWN_TOKEN;
+        map.z = (has && num(l.z) != null) ? Math.round(num(l.z)) : UNKNOWN_TOKEN;
+        map.location = has ? `${map.x}, ${map.y}` : UNKNOWN_TOKEN;
+      }
+      if (/\{saved_[xyz]\}/i.test(tpl)) {
+        const sp = ledger.get('pos:' + steamId, null);
+        const has = !!(sp && num(sp.x) != null && num(sp.y) != null && num(sp.z) != null);
+        map.saved_x = has ? Math.round(num(sp.x)) : UNKNOWN_TOKEN; map.saved_y = has ? Math.round(num(sp.y)) : UNKNOWN_TOKEN; map.saved_z = has ? Math.round(num(sp.z)) : UNKNOWN_TOKEN;
+      }
       if (extra) for (const k of Object.keys(extra)) if (k !== 'loc' && extra[k] != null) map[k.toLowerCase()] = extra[k];
       let out = tpl.replace(/\{arg(\d+)\}/gi, (_, n) => safeArg((ctx && ctx.args && ctx.args[Number(n) - 1]) || ''));
       out = out.replace(/\{(\w+)\}/g, (m, k) => { const key = k.toLowerCase(); return (key in map) ? String(map[key]) : m; });
@@ -458,7 +543,16 @@ module.exports = {
      * anything, and it is a legacy column observed NULL for every profile on this build. Judging
      * affordability on it would refuse solvent players outright.
      */
-    const poolWord = (cur) => (cur === 'gold' ? 'gold balance' : cur === 'fame' ? 'fame' : 'bank account');
+    // The OWNER's word for the pool, because a player reads it inside their `insufficient` line. The
+    // admin-facing log and alert lines below keep the English (`poolEn`): they are read by whoever
+    // reconciles a charge and are not on the Messages screen.
+    const poolWord = (cur) => msgText(cur === 'gold' ? 'poolGold' : cur === 'fame' ? 'poolFame' : 'poolMoney');
+    const poolEn = (cur) => (cur === 'gold' ? 'gold balance' : cur === 'fame' ? 'fame' : 'bank account');
+    /** The owner's word for a currency, for `{currency}`. An unknown one is shown as it was set. */
+    const curWord = (cur) => {
+      const k = { money: 'curMoney', gold: 'curGold', fame: 'curFame', free: 'curFree' }[String(cur || '')];
+      return k ? msgText(k) : (cur == null ? '' : String(cur));
+    };
     const finite = (v) => ((typeof v === 'number' && Number.isFinite(v)) ? v : null);
 
     // The bridge's live `money` and `fame` groups are BOTH off by default, so the commonest reason a
@@ -470,7 +564,7 @@ module.exports = {
       if (_warnedLiveOff[grp]) return;
       _warnedLiveOff[grp] = true;
       // That group ships off; until it is on, affordability is judged on the last save.
-      host.logger.warn(`the SSA Bridge sent no ${grp} for this player. Turn on "${grp === 'fame' ? 'Fame points and level' : 'Money, gold and account number'}" in Plugins → SSA Bridge → Live data.`);
+      host.logger.warn(`the SSA Bridge sent no ${grp} for this player. Turn on "${grp === 'fame' ? 'Fame points and level' : 'Money, gold and account number'}" on the Live player data card in Plugins → SSA Bridge.`);
     }
 
     /**
@@ -557,7 +651,7 @@ module.exports = {
     const shortVars = (short, currency) => ({
       have: short.have,
       pool: poolWord(currency),
-      asof: short.source === 'db' ? ' — that is your balance as of the last server save, so try again shortly' : '',
+      asof: short.source === 'db' ? msgText('asofSave') : '',
     });
     /**
      * Did that bridge call actually reach the game?
@@ -603,7 +697,7 @@ module.exports = {
       if (!cmd) return { ok: true, why: null };    // free / unknown currency — nothing to take
       try {
         const out = cmdOutcome(await host.server.command(cmd));
-        if (out === 'ok') host.logger.debug(`took ${amt} from ${steamId}'s ${poolWord(cost.currency)}`);
+        if (out === 'ok') host.logger.debug(`took ${amt} from ${steamId}'s ${poolEn(cost.currency)}`);
         return out === 'ok' ? { ok: true, why: null } : { ok: false, why: out };
       } catch (e) {
         host.logger.warn(`charge command threw for ${steamId}: ${e.message}`);
@@ -622,7 +716,7 @@ module.exports = {
     function reportUnpaid(steamId, name, cost, what, why) {
       // Naming the pool is not decoration: an owner reconciling this by hand has to know which
       // balance to look at, and "500 money" does not say whether that is the bank account or gold.
-      const price = `${Math.abs(Number(cost.amount) || 0)} ${cost.currency} (${poolWord(cost.currency)})`;
+      const price = `${Math.abs(Number(cost.amount) || 0)} ${cost.currency} (${poolEn(cost.currency)})`;
       if (why === 'unconfirmed') {
         // Nobody online: the charge went out with no answer, so it may or may not have been taken.
         host.logger.warn(`${name || steamId} received "${what}"; the ${price} charge could NOT BE CONFIRMED. Check their balance before reversing anything.`);
@@ -846,7 +940,7 @@ module.exports = {
     function windowWhy(entry) {
       if (!hasWindows(entry)) return '';
       const t = timeApi();
-      if (!t) return 'time windows need a newer manager, so this is switched off until an admin updates it';
+      if (!t) return msgText('windowNeedsUpdate');
       const r = t.isOpen(entry.windows);
       return r.open ? '' : r.why;
     }
@@ -1011,11 +1105,11 @@ module.exports = {
       // so "from 21:00" alone tells a player nothing about how long they have to wait. The speed is
       // named when the bridge gave it, because that is the only thing that turns the gap into
       // minutes somebody can plan around.
-      const speed = Number(st.speed) > 0
-        ? ` (${st.speed} game hours per real hour)`
-        : '';
-      return `it is available ${gameHHMM(st.win.from)}–${gameHHMM(st.win.to)} in GAME time; `
-        + `it is ${gameHHMM(st.hour)} in game now${speed}`;
+      // Both halves are the owner's words (`windowGame`, `windowGameSpeed`), because the player reads
+      // this inside their `closedGame` line and a translated sentence with English in the middle is
+      // not translated.
+      const speed = Number(st.speed) > 0 ? fill(msgText('windowGameSpeed'), { speed: st.speed }) : '';
+      return fill(msgText('windowGame'), { from: gameHHMM(st.win.from), to: gameHHMM(st.win.to), now: gameHHMM(st.hour), speed });
     }
     /** The one sentence either clock gives for a refusal, whichever of the two is doing it. */
     const anyWindowWhy = (entry, clock) => windowWhy(entry) || gameWindowWhy(entry, clock);
@@ -1250,18 +1344,28 @@ module.exports = {
       try { host.store.set('ckstats', stats); } catch { /* ignore */ }
     }
     if (typeof host.onUnload === 'function') host.onUnload(() => { if (statsDirty) persistStats(true); });
+    // The activity log is written back at most every two seconds and on unload, not once per row: the
+    // store rewrites its whole file on every `set`, and a kit for a full server was a rewrite per
+    // player. What a player PAID for is the ledger, which is still written at once; this is the
+    // panel's history of it, and the admin alert for an unpaid delivery goes out immediately anyway.
+    let recentDirty = false;
+    function persistRecent() {
+      recentDirty = false;
+      try { host.store.set('recent', recent.slice(0, 150)); } catch { /* ignore */ }
+    }
+    if (typeof host.onUnload === 'function') host.onUnload(() => { if (recentDirty) persistRecent(); });
     function pushRecent(rec) {
       recent.unshift(rec);
       if (recent.length > 150) recent = recent.slice(0, 150);
-      try { host.store.set('recent', recent.slice(0, 150)); } catch { /* ignore */ }
+      if (!recentDirty) { recentDirty = true; host.schedule.after(2000, () => { if (recentDirty) persistRecent(); }); }
       try { host.realtime.toAdmins('commands-kits:event', { rec: rec, stats: stats, queue: spawnQueue.length }); } catch { /* realtime optional */ }
     }
     function statusSnapshot() {
       return {
         queue: spawnQueue.length, running: spawnBusy, stats: stats, recent: recent,
         // Live queue for the panel: the item being dispatched now + what's waiting (labels only).
-        current: currentJob ? currentJob.label : null,
-        queueItems: spawnQueue.slice(0, 50).map((j) => j.label),
+        current: currentJob ? (currentJob.view || currentJob.label) : null,
+        queueItems: spawnQueue.slice(0, 50).map((j) => j.view || j.label),
         // Deliveries, failures and the queue are all necessarily 0 before the server has ever run, and
         // a row of zeroes with nothing said about them reads as a broken plugin rather than an idle
         // one. `running` above is the SPAWN QUEUE's own flag and answers a different question, which is
@@ -1278,10 +1382,10 @@ module.exports = {
     // the queue at once, and "the game refused one of MY items" has to stay attached to the delivery
     // it belongs to. The queue writes the refused labels into it; a caller that passes nothing gets
     // exactly the old behaviour.
-    function enqueueSpawn(cmd, opts, label, report) {
+    function enqueueSpawn(cmd, opts, label, report, view) {
       return new Promise((resolve) => {
         if (spawnQueue.length >= MAX_QUEUE) { host.logger.warn(`[spawn-queue] full (${MAX_QUEUE}) — dropping "${label}"`); return resolve(false); }
-        spawnQueue.push({ cmd: cmd, opts: opts, label: label, resolve: resolve, report: report });
+        spawnQueue.push({ cmd: cmd, opts: opts, label: label, view: view || null, resolve: resolve, report: report });
         if (spawnQueue.length > 1) host.logger.debug(`[spawn-queue] queued "${label}" (depth ${spawnQueue.length})`);
         pumpQueue();
       });
@@ -1485,7 +1589,7 @@ module.exports = {
           if (short.cut) host.logger.warn(`"${pack.name || id}" was refused for ${name || steamId}: their balance could not be checked live.`);
           return { ok: false, reason: short.cut ? 'listCut' : 'insufficient', have: short.have, balanceSource: short.source };
         }
-        host.logger.debug(`${name || steamId} may claim "${pack.name || id}" (${cost.amount} ${cost.currency} from their ${poolWord(cost.currency)})`);
+        host.logger.debug(`${name || steamId} may claim "${pack.name || id}" (${cost.amount} ${cost.currency} from their ${poolEn(cost.currency)})`);
       }
       const c = cfg();
       // Spawn FIRST. Fuse: if nothing lands, don't charge and don't spend the claim.
@@ -1499,28 +1603,38 @@ module.exports = {
       // millions of items and take the server down.
       const clampCount = (n) => Math.max(1, Math.min(1000, Math.floor(Number(n) || 1)));
       // All spawns go through the throttled+retried queue so a burst never faults items away.
+      // ── TWO LABELS PER SPAWN, AND THEY ARE FOR DIFFERENT READERS ────────────────────────────────
+      //
+      // `label` keeps the CODE: it goes into the manager's log and the admin alert, where whoever
+      // reconciles a delivery needs the exact spawn code. `view` is what the panel draws — the
+      // game's own name through the resolver, the count, and for a container the item it is filled
+      // with as a separate field, so no English "of" is glued in here and the panel words it in the
+      // reader's language. The failed-item chip keeps `code` for its preview link.
       for (const it of (pack.items || [])) {
         if (!it.item) continue; total++;
         const n = clampCount(it.count);
         const label = `${it.item}${n > 1 ? ` ×${n}` : ''}`;
+        const view = { code: it.item, name: prettyCode(it.item), count: n, player: name || '' };
         const cmd = fill(c.itemSpawnCmd || DEFAULT_ITEM_CMD, { item: it.item, count: n, x: lp.x, y: lp.y, z: lp.z, steamid: steamId });
-        (await enqueueSpawn(cmd, spawnOpts, `${label} → ${name}`, spawnReport)) ? spawned++ : (failed++, failedItems.push({ code: it.item, label }));
+        (await enqueueSpawn(cmd, spawnOpts, `${label} → ${name}`, spawnReport, view)) ? spawned++ : (failed++, failedItems.push({ code: it.item, label: `${view.name}${n > 1 ? ` ×${n}` : ''}`, name: view.name, count: n, codeLabel: label }));
       }
       for (const v of (pack.vehicles || [])) {
         if (!v.code) continue; total++;
         const n = clampCount(v.count);
         const label = `${v.code}${n > 1 ? ` ×${n}` : ''}`;
+        const view = { code: v.code, name: prettyCode(v.code), count: n, player: name || '' };
         const cmd = fill(c.vehicleSpawnCmd || DEFAULT_VEH_CMD, { code: v.code, count: n, x: lp.x, y: lp.y, z: lp.z, steamid: steamId });
-        (await enqueueSpawn(cmd, spawnOpts, `${label} → ${name}`, spawnReport)) ? spawned++ : (failed++, failedItems.push({ code: v.code, label }));
+        (await enqueueSpawn(cmd, spawnOpts, `${label} → ${name}`, spawnReport, view)) ? spawned++ : (failed++, failedItems.push({ code: v.code, label: `${view.name}${n > 1 ? ` ×${n}` : ''}`, name: view.name, count: n, codeLabel: label }));
       }
       // filled containers (backpack/vest/crate full of an item) — #SpawnInventoryFullOf has no Location,
       // so it's run THROUGH the target player (executor) and appears on them.
       for (const inv of (pack.inventories || [])) {
         if (!inv.container || !inv.fill) continue; total++;
         const sets = clampCount(inv.sets);
-        const label = `${inv.container} of ${inv.fill}`;
+        const label = `${inv.container} + ${inv.fill}`;
+        const view = { code: inv.container, name: prettyCode(inv.container), fill: inv.fill, fillName: prettyCode(inv.fill), player: name || '' };
         const cmd = fill(invCmd(c.invSpawnCmd), { container: inv.container, sets: sets, fill: inv.fill, x: lp.x, y: lp.y, z: lp.z, steamid: steamId });
-        (await enqueueSpawn(cmd, { executor: steamId, hide }, `${label} → ${name}`, spawnReport)) ? spawned++ : (failed++, failedItems.push({ code: inv.container, label }));
+        (await enqueueSpawn(cmd, { executor: steamId, hide }, `${label} → ${name}`, spawnReport, view)) ? spawned++ : (failed++, failedItems.push({ code: inv.container, label: `${view.name} + ${view.fillName}`, name: view.name, fill: inv.fill, fillName: view.fillName, codeLabel: label }));
       }
       // `variant` is on the row because it is the only way an owner can check that the chances are
       // doing what they set: a weighted roll is invisible from anywhere else, and "it always gives
@@ -1570,6 +1684,10 @@ module.exports = {
         rec.unpaid = true;
         rec.unpaidWhy = took.why;
         rec.price = `${Math.abs(Number(cost.amount) || 0)} ${cost.currency}`;
+        // The same price as structure, so the panel can name the currency in the reader's language
+        // rather than printing the config key.
+        rec.priceAmount = Math.abs(Number(cost.amount) || 0);
+        rec.priceCurrency = cost.currency || null;
       }
       // A PARTIAL delivery is charged in full — the kit has one price, its items are not priced
       // individually, so there is nothing to pro-rate and changing that is the owner's decision, not
@@ -1580,7 +1698,7 @@ module.exports = {
       // put it right — the same shape as `unpaid` above.
       if (failed > 0) {
         rec.partial = true;
-        const missing = failedItems.map((f) => (f && f.label) || (f && f.code) || '?').join(', ');
+        const missing = failedItems.map((f) => (f && (f.codeLabel || f.label)) || (f && f.code) || '?').join(', ');
         host.logger.warn(`"${pack.name || id}" reached ${name || steamId} with ${failed} of ${total} item(s) MISSING (${missing}) — they were charged the full price.`);
         try {
           // The PLAYER's copy names the things the way the game names them; the log line above keeps
@@ -1611,10 +1729,10 @@ module.exports = {
         // else. `fill` first with the pack's own facts, `subst` after for everything else: `fill`
         // leaves a token it does not know exactly as it found it, which is what lets the two run in
         // series over one template.
-        const paidVars = { pack: pack.name || id, cost: cost.amount, currency: cost.currency };
+        const paidVars = { pack: pack.name || id, cost: cost.amount, currency: curWord(cost.currency) };
         for (const line of (await substLive(fill(pack.message, paidVars), name, steamId, null)).split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean)) host.chat.dm(steamId, line, { channel: ch }).catch(() => {});
       }
-      host.logger.info(`delivered "${pack.name || id}" to ${name} (${spawned}/${total} spawned${failed ? `, ${failed} failed` : ''})${paid ? `, ${took.ok ? 'charged' : 'NOT charged'} ${Math.abs(Number(cost.amount) || 0)} ${cost.currency} from their ${poolWord(cost.currency)}` : ''}`);
+      host.logger.info(`delivered "${pack.name || id}" to ${name} (${spawned}/${total} spawned${failed ? `, ${failed} failed` : ''})${paid ? `, ${took.ok ? 'charged' : 'NOT charged'} ${Math.abs(Number(cost.amount) || 0)} ${cost.currency} from their ${poolEn(cost.currency)}` : ''}`);
       return { ok: true, spawned, total, failed };
     }
 
@@ -1647,7 +1765,7 @@ module.exports = {
           pack: pack.name || cmdName || id, cmd: cmdName || '',
           h: cooldownLeftH(id, pack.cooldownHours, steamId),
           left: fmtLeft(cooldownLeftMs(id, pack.cooldownHours, steamId)),
-          cost: pack.cost && pack.cost.amount, currency: pack.cost && pack.cost.currency,
+          cost: pack.cost && pack.cost.amount, currency: curWord(pack.cost && pack.cost.currency),
           window: anyWindowWhy(pack, clock),
         };
         const block = blockReason(pack, id, steamId, false, clock);
@@ -1689,7 +1807,7 @@ module.exports = {
           // As in `claimPack`: fresh and awaited, and only when this command really has a game
           // window on it. A command without one never touches the bridge for this.
           const clock = gameWindowOf(cmd).on ? await gameClock() : null;
-          const vars = { pack: cmd.name || name, cmd: name, h: cooldownLeftH(cdKey, cmd.cooldownHours, ctx.steamId), left: fmtLeft(cooldownLeftMs(cdKey, cmd.cooldownHours, ctx.steamId)), cost: cmd.cost && cmd.cost.amount, currency: cmd.cost && cmd.cost.currency, window: anyWindowWhy(cmd, clock) };
+          const vars = { pack: cmd.name || name, cmd: name, h: cooldownLeftH(cdKey, cmd.cooldownHours, ctx.steamId), left: fmtLeft(cooldownLeftMs(cdKey, cmd.cooldownHours, ctx.steamId)), cost: cmd.cost && cmd.cost.amount, currency: curWord(cmd.cost && cmd.cost.currency), window: anyWindowWhy(cmd, clock) };
           // gate: allow/deny + cooldown (shared per group when set, else per command name)
           const block = blockReason(cmd, cdKey, ctx.steamId, true, clock);
           if (block) return ctx.reply(await substLive(fill(msgText(block), vars), ctx.name, ctx.steamId, ctx), { channel: ch }).catch(() => {});
@@ -1785,7 +1903,7 @@ module.exports = {
         const vars = {
           pack: entry.name || id, cmd: entry.command || entry.name || id,
           h: cooldownLeftH(id, entry.cooldownHours, sid), left: fmtLeft(leftMs),
-          cost: entry.cost && entry.cost.amount, currency: entry.cost && entry.cost.currency,
+          cost: entry.cost && entry.cost.amount, currency: curWord(entry.cost && entry.cost.currency),
           window: anyWindowWhy(entry, clock),
         };
         // The owner's own sentence for this refusal, so it is in their language like every other
@@ -1912,7 +2030,8 @@ module.exports = {
       return h.toString(36);
     }
     const packSig = (pack, id) => sigOf(id + '|' + (pack && pack.name) + '|' + ((pack && pack.cost && pack.cost.amount) || 0) + '|' + ((pack && pack.cost && pack.cost.currency) || ''));
-    const D_STALE = '🔄 The kit list changed, so nothing was claimed. Open the menu again.';
+    // The owner's sentence (Messages → Discord claim panel), read when it is sent.
+    const D_STALE = () => msgText('discordStale');
 
     /** Packs an owner has made claimable from Discord, with their real list positions kept. */
     function discordPacks(c) {
@@ -1921,15 +2040,15 @@ module.exports = {
         .filter(({ pack }) => pack && pack.enabled !== false && pack.discord === true);
     }
     const priceText = (pack) => (isPaid(pack.cost)
-      ? `${Math.abs(Number(pack.cost.amount) || 0)} ${pack.cost.currency}`
-      : 'Free');
+      ? `${Math.abs(Number(pack.cost.amount) || 0)} ${curWord(pack.cost.currency)}`
+      : msgText('discordFree'));
 
     async function postPanel(channelId) {
       const c = cfg();
       const d = c.discord || {};
       const chId = String(channelId || d.channelId || '');
-      if (!chId) return { ok: false, error: 'no channel is set for the Discord panel' };
-      if (!discordPacks(c).length) return { ok: false, error: 'no kit is marked "claimable from Discord" yet' };
+      if (!chId) return { ok: false, code: 'noChannel', error: 'no channel is set for the Discord panel' };
+      if (!discordPacks(c).length) return { ok: false, code: 'noKits', error: 'no kit is marked "claimable from Discord" yet' };
       const B = host.discord.js;
       // Clamped. These come straight from owner config, and discord.js validates at the SETTER — an
       // over-long title throws here, gets caught by the route wrapper and surfaces as a raw
@@ -1947,7 +2066,7 @@ module.exports = {
       const msg = await host.discord.send(chId, { embeds: [e], components: [row] });
       // `host.discord.send` RETURNS false rather than throwing, so "nothing happened" has to be
       // checked for — the panel would otherwise report a post that never existed.
-      if (!msg) return { ok: false, error: 'the bot could not post there (missing channel or permission)' };
+      if (!msg) return { ok: false, code: 'postFailed', error: 'the bot could not post there (missing channel or permission)' };
       return { ok: true };
     }
 
@@ -1966,14 +2085,14 @@ module.exports = {
         const c = cfg();
         const prof = host.players.linked(i.user.id);
         if (!prof || !prof.steamId) {
-          return await i.reply({ content: '⚠️ Link your SCUM character to Discord first (on the Field Console), then try again.', ...EPHEMERAL });
+          return await i.reply({ content: msgText('discordLink'), ...EPHEMERAL });
         }
         const steamId = String(prof.steamId);
         const playerName = prof.name || prof.playerName || prof.discordUsername || '';
 
         if (isBtn) {
           const list = discordPacks(c);
-          if (!list.length) return await i.reply({ content: 'No kits are available from Discord right now.', ...EPHEMERAL });
+          if (!list.length) return await i.reply({ content: msgText('discordNone'), ...EPHEMERAL });
           const B = host.discord.js;
           // Show WHY a kit cannot be taken rather than hiding it: "the button does nothing" is the
           // complaint an owner gets, and a greyed-out reason answers it before they ask.
@@ -1988,26 +2107,28 @@ module.exports = {
             // menu as the word "closed" — a raw internal name on a screen, which is the same defect
             // this project has one resolver to stop everywhere else. Every reason `blockReason` can
             // return is named here now, and the fallback is a sentence rather than a token.
-            const why = block ? ({
-              notAllowed: 'not available to you', groupLocked: 'you already picked another from this group',
-              maxClaims: 'claim limit reached', cooldown: `on cooldown — ${cooldownLeftH(id, pack.cooldownHours, steamId)}h left`,
-              alreadyClaimed: 'already claimed',
-              notLinked: 'for linked players only',
-              inflight: 'already on its way to you',
-              // Both windows get the same short form here — a dropdown row is a hundred characters
-              // and the full sentence does not fit — but they are still two different reasons, and
-              // the one that says "in game" is the one a player must not read as their own evening.
-              closed: `not available right now — ${windowWhy(pack)}`,
-              closedGame: `not at this time of day in game — ${gameWindowWhy(pack, clock)}`,
-            }[block] || 'not available right now') : priceText(pack);
+            const why = block ? fill(msgText({
+              notAllowed: 'discordNotAllowed', groupLocked: 'discordGroupLocked', maxClaims: 'discordMaxClaims',
+              cooldown: 'discordCooldown', alreadyClaimed: 'discordAlreadyClaimed', notLinked: 'discordNotLinked',
+              inflight: 'discordInflight',
+              // Both windows get the short form here — a dropdown row is a hundred characters and
+              // the full sentence does not fit — but they are still two different reasons, and the
+              // one that says "in game" is the one a player must not read as their own evening.
+              closed: 'discordClosed', closedGame: 'discordClosedGame',
+            }[block] || 'discordUnavailable'), {
+              left: fmtLeft(cooldownLeftMs(id, pack.cooldownHours, steamId)),
+              h: cooldownLeftH(id, pack.cooldownHours, steamId),
+              window: block === 'closedGame' ? gameWindowWhy(pack, clock) : windowWhy(pack),
+              pack: pack.name || id,
+            }) : priceText(pack);
             return {
               label: String(pack.name || id).slice(0, 100),
               description: String(why).slice(0, 100),
               value: (idx + '.' + packSig(pack, id)).slice(0, 100),
             };
           });
-          const menu = new B.StringSelectMenuBuilder().setCustomId(D_PICK).setPlaceholder('Choose a kit').addOptions(opts);
-          return await i.reply({ content: 'Pick a kit:', components: [host.discord.row(menu)], ...EPHEMERAL });
+          const menu = new B.StringSelectMenuBuilder().setCustomId(D_PICK).setPlaceholder(String(msgText('discordChoose')).slice(0, 150)).addOptions(opts);
+          return await i.reply({ content: msgText('discordPick'), components: [host.discord.row(menu)], ...EPHEMERAL });
         }
 
         // A choice. The value carries which pack it MEANT, not just where it sat — an owner editing
@@ -2020,18 +2141,18 @@ module.exports = {
         const pack = (Array.isArray(c.packs) ? c.packs : [])[idx];
         const id = pack ? packId(pack, idx) : '';
         if (!pack || pack.discord !== true || (sig && packSig(pack, id) !== sig)) {
-          return await i.update({ content: D_STALE, components: [] });
+          return await i.update({ content: D_STALE(), components: [] });
         }
         // Items are spawned onto the player, so they have to BE there. Saying so beats a kit that
         // silently lands nowhere.
         const online = (() => { try { return (host.players.online() || []).some((p) => String(sidOf(p)) === steamId); } catch { return null; } })();
-        if (online === false) return await i.update({ content: '🔌 You need to be online in game to receive a kit.', components: [] });
+        if (online === false) return await i.update({ content: msgText('discordOffline'), components: [] });
 
-        await i.update({ content: '⏳ Delivering…', components: [] });
+        await i.update({ content: msgText('discordDelivering'), components: [] });
         const out = await claimPack(steamId, playerName, pack, idx, pack.command || '', null);
         const said = out.ok
-          ? `✅ **${pack.name || id}** is on its way — check your inventory.`
-          : (out.message || 'That could not be claimed right now.');
+          ? fill(msgText('discordDone'), { pack: pack.name || id })
+          : (out.message || msgText('discordFailed'));
         // Discord's edit window is FIFTEEN MINUTES, and delivery can outlast it: every item goes
         // through one global, throttled, retried spawn queue, and under a bridge outage on a busy
         // server the queue alone takes longer than that. When the edit is refused the player's
@@ -2046,7 +2167,7 @@ module.exports = {
         }
       } catch (e) {
         host.logger.error('discord interaction: ' + e.message);
-        try { if (i && !i.replied && i.reply) await i.reply({ content: 'Something went wrong.', ...EPHEMERAL }); } catch (x) { /* nothing left to say */ }
+        try { if (i && !i.replied && i.reply) await i.reply({ content: msgText('discordError'), ...EPHEMERAL }); } catch (x) { /* nothing left to say */ }
       }
     });
 
@@ -2085,7 +2206,8 @@ module.exports = {
     host.routes.get('/clock', (req, res) => {
       const t = host.time;
       if (!t || typeof t.now !== 'function') {
-        return res.json({ supported: false, why: 'This manager is too old for time windows. Entries with one stay closed until you update.' });
+        // A CODE, which the panel words in the reader's language; `why` stays for anything older.
+        return res.json({ supported: false, code: 'managerTooOld', why: 'This manager is too old for time windows. Entries with one stay closed until you update.' });
       }
       res.json({ supported: true, now: t.now(), zone: t.zone() });
     });
@@ -2103,7 +2225,9 @@ module.exports = {
     host.routes.get('/game-clock', async (req, res) => {
       const clock = await gameClock().catch(() => null);
       if (!clock || clock.unknown) {
-        return res.json({ supported: true, known: false, why: (clock && clock.why) || NO_GAME_CLOCK });
+        // `code` is what the panel turns into a sentence, with the route to the switches built out of
+        // the panel's own words. `why` is the English kept for anything that reads it.
+        return res.json({ supported: true, known: false, code: 'noGameClock', why: (clock && clock.why) || NO_GAME_CLOCK });
       }
       res.json({
         supported: true, known: true, hour: clock.hour, unit: 'game-hours',
@@ -2227,11 +2351,10 @@ module.exports = {
       variantModes: VARIANT_MODES,
       messageKeys: Object.keys(DEFAULT_MSG),
       defaultMessages: DEFAULT_MSG,
-      tokens: ['{player}', '{steamid}', '{squad}', '{squadsize}', '{online}', '{maxplayers}', '{server}', '{channel}', '{args}', '{arg1}',
-        '{money}', '{cash}', '{gold}', '{fame}', '{kills}', '{deaths}', '{kd}', '{pvpkills}', '{headshots}', '{zombiekills}', '{animalkills}',
-        '{longestkill}', '{distance}', '{lockspicked}', '{fishcaught}', '{playtime}', '{survived}',
-        '{strength}', '{constitution}', '{dexterity}', '{intelligence}',
-        '{location}', '{x}', '{y}', '{z}', '{saved_x}', '{saved_y}', '{saved_z}', '{date}', '{time}'],
+      // Which section of the Messages screen each key is drawn in. The token list that used to be
+      // here was read by nothing and had drifted from what `subst` fills; the panel's palette is the
+      // one list, with a sentence beside every token.
+      messageGroups: MSG_GROUPS,
     }));
 
     // `GET /players` (online only) used to live here. Both jobs its comment claimed are done
@@ -2256,6 +2379,26 @@ module.exports = {
     });
 
     // who has claimed what — one row per (pack, player). Reset lets a player use a one-time reward again.
+    /**
+     * What a claim key is FOR, for a screen. The ledger keys a claim by the kit's id (`pack3`, `daily`),
+     * by a command's own word, or by `grp:<name>` for commands sharing one cooldown — all internal.
+     * Kits are looked up first, because a kit's id and a command's word can be the same string and the
+     * kit is the one with a claim limit. `kind: null` is an entry that no longer exists in the config.
+     */
+    function claimSubject(pid) {
+      const c = cfg();
+      const p = String(pid || '');
+      if (p.startsWith('grp:')) return { kind: 'group', name: p.slice(4) };
+      const packs = Array.isArray(c.packs) ? c.packs : [];
+      for (let i = 0; i < packs.length; i++) {
+        if (packs[i] && packId(packs[i], i) === p) return { kind: 'kit', name: String(packs[i].name || packs[i].command || p) };
+      }
+      for (const cmd of (Array.isArray(c.commands) ? c.commands : [])) {
+        const n = String((cmd && cmd.name) || '').toLowerCase().replace(/^\/+/, '').trim();
+        if (n && n === p) return { kind: 'command', name: chatPrefix() + n };
+      }
+      return { kind: null, name: p };
+    }
     host.routes.get('/claims', (req, res) => {
       const all = ledger.entries();
       const rows = [];
@@ -2263,7 +2406,9 @@ module.exports = {
         if (!k.startsWith('claim:')) continue;
         const rest = k.slice(6); const cut = rest.lastIndexOf(':'); if (cut < 0) continue;
         const pid = rest.slice(0, cut), sid = rest.slice(cut + 1);
-        rows.push({ key: k, packId: pid, steamId: sid, name: nameOf(v) || playerName(sid, ''), at: atOf(v), count: Number(all[`count:${pid}:${sid}`] || 0) || 0 });
+        const what = claimSubject(pid);
+        rows.push({ key: k, packId: pid, steamId: sid, name: nameOf(v) || playerName(sid, ''), at: atOf(v), count: Number(all[`count:${pid}:${sid}`] || 0) || 0,
+          reward: what.name, rewardKind: what.kind });
       }
       rows.sort((a, b) => b.at - a.at);
       res.json({ claims: rows });

@@ -101,9 +101,17 @@
       [T('pl.better-squads.group.roster', 'Roster (the bare command)'), ['rosterHeader', 'rosterLine', 'rosterEmpty']],
       [T('pl.better-squads.group.rally', 'Rally & messages'), ['here', 'hereOk', 'msgLine', 'msgOk', 'msgUsage', 'nobodyOnline']],
       [T('pl.better-squads.group.baseinfo', 'Base & info'), ['base', 'baseNone', 'info', 'infoMotd']],
-      [T('pl.better-squads.group.selfservice', 'Self-service switches'), ['mutedOn', 'mutedOff', 'muteUsage', 'muteSet']],
-      [T('pl.better-squads.group.other', 'Other'), ['help', 'notInSquad']],
+      [T('pl.better-squads.group.selfservice', 'Self-service switches'), ['mutedOn', 'mutedOff', 'muteUsage', 'muteSet', 'mutedNone']],
+      [T('pl.better-squads.group.words', 'Words inside other lines'), ['squadNoName', 'unknownObject']],
+      [T('pl.better-squads.group.other', 'Other'), ['help', 'notInSquad', 'testLine']],
     ];
+  }
+  /* What the activity feed shows for a kind: the event's or the command's own title from the tables
+   * above, never the key the backend files it under (`squadJoin`, `here`, `msg`). */
+  function kindLabel(kind) {
+    var all = events().concat(subs());
+    for (var i = 0; i < all.length; i++) if (all[i][0] === kind) return all[i][1];
+    return humanKey(kind);
   }
   /** A key with no label of its own, made readable rather than left as a camel-case identifier. */
   function humanKey(k) {
@@ -134,6 +142,10 @@
       info: T('pl.better-squads.text.info', 'Squad info'),
       infoMotd: T('pl.better-squads.text.infomotd', 'Squad MOTD'),
       nobodyOnline: T('pl.better-squads.text.nobodyonline', 'Nobody else online'),
+      mutedNone: T('pl.better-squads.text.mutednone', 'Word for “nothing muted”'),
+      squadNoName: T('pl.better-squads.text.squadnoname', 'Word for a squad with no name'),
+      unknownObject: T('pl.better-squads.text.unknownobject', 'Raid: word for an unnamed object'),
+      testLine: T('pl.better-squads.text.testline', 'Test message from this page'),
     };
   }
 
@@ -339,10 +351,22 @@
         ['squads', function (note) { return T('pl.better-squads.warn.savedsquads', ' Squad membership is coming from the last save, not the running game: {note}.', { note: note }); }],
       ].forEach(function (row) {
         var n = live[row[0]];
-        if (!n || !n.text) return;
-        var note = (n.code === 'module_off' && n.switch)
-          ? T('pl.better-squads.live.turnOn', 'turn on "{switch}" in {where}', { switch: n.switch, where: bridgeWhere() })
-          : n.text;
+        if (!n || !n.code) return;
+        // Translated per CODE. The switch captions are the bridge schema's own, sent apart from any
+        // sentence, and the route to them is built from the panel's own nav keys.
+        var note;
+        if (n.code === 'module_off' && n.switch) {
+          note = T('pl.better-squads.live.turnOnBoth', 'turn on "{enable}" and "{switch}" on the {module} card in {where}',
+            { enable: n.enable || '', switch: n.switch, module: n.module || '', where: bridgeWhere() });
+        } else if (n.code === 'refused') {
+          // The module's own refusal, as it said it. A refusal that gave no reason has nothing to show.
+          note = n.reason || n.text;
+          if (!note) return;
+        } else if (n.code === 'no_module') {
+          note = T('pl.better-squads.live.nomodule', 'this server runs an older SSA Bridge that does not have this module');
+        } else {
+          note = T('pl.better-squads.live.noanswer', 'the SSA Bridge did not answer');
+        }
         statusBar.appendChild(h('div', { class: 'bs-warn' }, [icon('alert'), row[1](note)]));
       });
     }
@@ -468,10 +492,14 @@
       var rootIn = textField(function () { return cfg.commands.root; }, function (v) { cfg.commands.root = v; });
       var preview = h('code', { class: 'bs-prev' }, '');
       var SUB_DEFS = subs();
+      // The manager's real in-game prefix, which the backend reports; '/' is its default when an
+      // older backend does not say.
+      function cmdPrefix() { return (statusData && statusData.prefix) || '/'; }
       function renderPreview() {
+        var pfx = cmdPrefix();
         preview.textContent = SUB_DEFS.filter(function (s) { return (cfg.commands.subs[s[0]] || {}).enabled; })
-          .map(function (s) { return '/' + cfg.commands.root + ' ' + (cfg.commands.subs[s[0]] || {}).name; })
-          .join('   ') || '/' + cfg.commands.root;
+          .map(function (s) { return pfx + cfg.commands.root + ' ' + (cfg.commands.subs[s[0]] || {}).name; })
+          .join('   ') || pfx + cfg.commands.root;
       }
       var subGrid = h('div', { class: 'bs-subs' }, SUB_DEFS.map(function (s) {
         var sc = cfg.commands.subs[s[0]] || (cfg.commands.subs[s[0]] = { enabled: false, name: s[0] });
@@ -514,7 +542,7 @@
 
       wrap.appendChild(card(T('pl.better-squads.card.replies', 'Command replies'), T('pl.better-squads.card.replies.sub', 'Every line players see. Tokens and [ optional parts ] work as in events.'),
         textCards.concat([
-          tokenBar(['{player}', '{squad}', '{squadonline}', '{squadsize}', '{sector}', '{distance}', '{direction}', '{text}', '{count}', '{score}', '{motd}', '{list}', '{muted}', '{root}']),
+          tokenBar(['{player}', '{squad}', '{squadonline}', '{squadsize}', '{sector}', '{distance}', '{direction}', '{text}', '{count}', '{score}', '{motd}', '{list}', '{muted}', '{root}', '{unknown}', '{events}', '{on}', '{mute}', '{msg}']),
           saveBar(T('pl.better-squads.save.replies', 'Save replies')),
         ])));
 
@@ -618,7 +646,10 @@
           api('/test', { method: 'POST', body: { steamId: String(p.steamId || p.SteamID || '') } }).then(function (r) {
             if (r && r.ok) toast((r.delivered === 1 ? T('pl.better-squads.test.sent.one', 'Sent to {n} squad member', { n: r.delivered }) : T('pl.better-squads.test.sent', 'Sent to {n} squad members', { n: r.delivered })), 'ok');
             else if (r && r.error === 'not_in_squad') toast(T('pl.better-squads.test.notinsquad', 'That player is not in a squad'), 'err');
+            else if (r && r.error === 'squad_unknown') toast(T('pl.better-squads.test.squadunknown', 'The squad list cannot be read right now. Try again in a minute.'), 'err');
             else if (r && r.error === 'nobody_online') toast(T('pl.better-squads.test.nobodyonline', 'Nobody from that squad is online'), 'err');
+            else if (r && r.error === 'all_muted') toast(T('pl.better-squads.test.allmuted', 'Everyone online in that squad is muted by an admin'), 'err');
+            else if (r && r.error === 'reached_nobody') toast(T('pl.better-squads.test.reachednobody', 'The test was sent but reached nobody'), 'err');
             else if (r && r.error) toast(T('pl.better-squads.test.failedwhy', 'Test failed — {why}', { why: r.error }), 'err');
             else toast(T('pl.better-squads.test.failed', 'Test failed'), 'err');
           }).catch(function (err) {
@@ -646,7 +677,7 @@
         empty: T('pl.better-squads.log.empty', 'Nothing sent yet. Messages appear here as they go out.'),
         columns: [
           { key: 'at', label: T('pl.better-squads.col.when', 'When'), sort: true, sortVal: function (r) { return r.at || 0; }, render: function (r) { return document.createTextNode(ago(r.at)); } },
-          { key: 'kind', label: T('pl.better-squads.col.event', 'Event'), render: function (r) { return SSA.cell.tag(r.kind, 'ok'); } },
+          { key: 'kind', label: T('pl.better-squads.col.event', 'Event'), render: function (r) { return SSA.cell.tag(kindLabel(r.kind), 'ok'); } },
           { key: 'actor', label: T('pl.better-squads.col.player', 'Player'), render: function (r) { return document.createTextNode(r.actor || '—'); } },
           { key: 'text', label: T('pl.better-squads.col.message', 'Message'), render: function (r) { return document.createTextNode(r.text || ''); } },
           { key: 'recipients', label: T('pl.better-squads.col.sentto', 'Sent to'), render: function (r) { return document.createTextNode(String(r.recipients || 0)); } },

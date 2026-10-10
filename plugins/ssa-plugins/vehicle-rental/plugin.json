@@ -2,8 +2,8 @@
   "id": "vehicle-rental",
   "name": "Vehicle Rental System",
   "type": "manager",
-  "version": "1.8.4",
-  "updated": "2026-10-07",
+  "version": "1.8.5",
+  "updated": "2026-10-09",
   "author": "SCUMSA",
   "website": "https://scumsa.com/plugins.php?p=vehicle-rental",
   "description": "Players rent a vehicle from in-game chat or a Discord menu, pay with their own money or gold, and get it spawned beside them. No admin has to be online. The plugin runs the whole rental: reminders, extensions, early return, and removing the vehicle when the time is up. Discord is optional.",
@@ -34,9 +34,18 @@
         "module": "live",
         "switches": [
           "enabled",
-          "money"
+          "money",
+          "where"
         ],
-        "why": "Prices a rental against the balance the running game holds this second. With these off the check reads the last server save, so a player can spend their money elsewhere and still rent a vehicle on credit."
+        "why": "Prices a rental against the balance the running game holds this second, and places the vehicle where the player is standing now. With these off both come from the last server save: a player can spend their money elsewhere and still rent on credit, and the vehicle appears where they stood at that save."
+      },
+      {
+        "module": "vehicles",
+        "switches": [
+          "enabled",
+          "position"
+        ],
+        "why": "Tells which vehicle a rental spawned, and whether it is still there, from the running game. With this off both come from the last server save, so a vehicle spawned since then can be reported as gone and left standing when the rental is returned."
       }
     ]
   },

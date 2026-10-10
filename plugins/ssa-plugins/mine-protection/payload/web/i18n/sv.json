@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "Sparades INTE — {err}",
   "pl.mine-protection.btn.save": "Spara konfiguration",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "slå på ”{switch}” under {where}."
+  "pl.mine-protection.live.turnOn": "slå på ”{switch}” under {where}.",
+  "pl.mine-protection.live.idleTitle": "Inget upprätthålls. ",
+  "pl.mine-protection.live.idleOld": "Den här managern är för gammal för det här pluginet. Uppdatera managern.",
+  "pl.mine-protection.live.noModule": "den här servern kör en äldre SSA Bridge utan den här modulen.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge svarade inte."
 }

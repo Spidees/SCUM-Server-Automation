@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "NIE zapisano — {err}",
   "pl.mine-protection.btn.save": "Zapisz konfigurację",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "włącz „{switch}” w {where}."
+  "pl.mine-protection.live.turnOn": "włącz „{switch}” w {where}.",
+  "pl.mine-protection.live.idleTitle": "Nic nie jest egzekwowane. ",
+  "pl.mine-protection.live.idleOld": "Ten manager jest za stary dla tej wtyczki. Zaktualizuj managera.",
+  "pl.mine-protection.live.noModule": "ten serwer używa starszego SSA Bridge bez tego modułu.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge nie odpowiedział."
 }

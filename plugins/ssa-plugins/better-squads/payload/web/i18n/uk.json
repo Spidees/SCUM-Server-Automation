@@ -180,5 +180,15 @@
   "pl.better-squads.col.sentto": "Кому надіслано",
   "pl.better-squads.card.activity": "Активність",
   "pl.better-squads.card.activity.sub": "Останні доставлені повідомлення. Для повідомлень кожному показано першу копію.",
-  "pl.better-squads.live.turnOn": "увімкніть «{switch}» у {where}"
+  "pl.better-squads.group.words": "Слова всередині інших рядків",
+  "pl.better-squads.text.mutednone": "Слово для «нічого не заглушено»",
+  "pl.better-squads.text.squadnoname": "Слово для загону без назви",
+  "pl.better-squads.text.unknownobject": "Рейд: слово для безіменного об’єкта",
+  "pl.better-squads.text.testline": "Тестове повідомлення з цієї сторінки",
+  "pl.better-squads.live.turnOnBoth": "увімкніть «{enable}» і «{switch}» на картці {module} у {where}",
+  "pl.better-squads.live.nomodule": "на цьому сервері старіший SSA Bridge, у якому немає цього модуля",
+  "pl.better-squads.live.noanswer": "SSA Bridge не відповів",
+  "pl.better-squads.test.squadunknown": "Список загонів зараз неможливо прочитати. Спробуйте за хвилину.",
+  "pl.better-squads.test.allmuted": "Усі гравці цього загону в мережі заглушені адміністратором",
+  "pl.better-squads.test.reachednobody": "Тест надіслано, але він нікого не досяг"
 }

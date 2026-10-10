@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "EI tallennettu — {err}",
   "pl.mine-protection.btn.save": "Tallenna asetukset",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "kytke päälle ”{switch}” kohdassa {where}."
+  "pl.mine-protection.live.turnOn": "kytke päälle ”{switch}” kohdassa {where}.",
+  "pl.mine-protection.live.idleTitle": "Mitään ei valvota. ",
+  "pl.mine-protection.live.idleOld": "Tämä manager on liian vanha tälle lisäosalle. Päivitä manager.",
+  "pl.mine-protection.live.noModule": "tällä palvelimella on vanhempi SSA Bridge ilman tätä moduulia.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge ei vastannut."
 }

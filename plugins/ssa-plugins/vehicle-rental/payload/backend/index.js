@@ -31,7 +31,7 @@ function fmtDur(min) { min = Math.max(1, parseInt(min, 10) || 0); if (min < 60) 
  * changes is that the player is told what they were sold.
  */
 function planMinutes(o) { return parseInt(o && o.minutes, 10) || 60; }
-function money(o) { return (o.amount || 0) + ' ' + (o.currency === 'gold' ? 'gold' : 'money'); }
+// A price a player reads is `money(o, c)` inside `register`: its unit words are the owner's `texts`.
 // Minutes left, as something a player reads at a glance in chat.
 function fmtLeft(ms) { const m = Math.max(0, Math.round(ms / 60000)); return fmtDur(m || 1); }
 
@@ -54,11 +54,11 @@ function fitLines(lines, more) {
   // a chat-only server (which this plugin supports; its own `/discord-state` route exists to say so)
   // told a player to go somewhere that is not there, in a language they may not read. A template
   // carrying `{n}` is the whole line and the owner writes it; a template WITHOUT one is an owner's
-  // existing wording from before this changed, so it keeps its old shape rather than losing the
-  // count that used to sit in front of it.
+  // existing wording from before this changed, so it keeps the count in front of it — as a number
+  // and a sign rather than as English words, because that tail is read in the player's language.
   if (left > 0) {
     const tpl = String(more || '');
-    out.push(/\{n\}/.test(tpl) ? tpl.replace(/\{n\}/g, String(left)) : ('… and ' + left + ' more' + (tpl ? ' — ' + tpl : '')));
+    out.push(/\{n\}/.test(tpl) ? tpl.replace(/\{n\}/g, String(left)) : ('… +' + left + (tpl ? ' — ' + tpl : '')));
   }
   return out.join('\n');
 }
@@ -241,6 +241,78 @@ module.exports = {
           // {window} on an older manager that cannot evaluate one. It reaches the player inside
           // `closedNow`, so it has to be a sentence in their language like everything around it.
           windowsNeedManager: 'time windows need a newer manager, so this is switched off until an admin updates it',
+          // ── EVERY OTHER SENTENCE A PLAYER READS ────────────────────────────────────────────────
+          //
+          // These were string literals in the code below: the limits, the ordinary refusals, the
+          // balance check, the extension refusals, the notes on an ended rental, the whole Discord
+          // flow and its embeds. A server running in any other language answered its players in
+          // English on all of them. They are the owner's data like every line above, so they live
+          // here and on the tab, with the English as the shipped default.
+          //
+          // The words a price is built out of. {price} is "<amount> <unit>".
+          unitMoney:      'money',
+          unitGold:       'gold',
+          poolBank:       'bank account',
+          poolGold:       'gold balance',
+          // The three levels a time window can sit on, as {vehicle} in `closedNow`.
+          winRentals:     'Rentals',
+          winVehicle:     'This vehicle',
+          winPlan:        '{vehicle} at this plan',
+          // Limits. {max} is the limit, {left} the time until the next rental.
+          limitActive:    'You already have the maximum active rentals ({max}).',
+          limitActiveVehicle: 'You already have the maximum active rentals ({max}) for this vehicle.',
+          tooOften:       '⏳ You are renting too often — you can rent again in {left}.',
+          limitDaily:     '📵 You reached the rental limit ({max}/day).',
+          limitDailyVehicle: '📵 You reached the rental limit ({max}/day for this vehicle).',
+          // Ordinary refusals of a rental.
+          busy:           '⏳ Your rental is still being processed — give it a moment.',
+          noStorage:      '🛠️ Rentals are temporarily unavailable (storage problem). Please tell an admin.',
+          badChoice:      'Invalid selection.',
+          noSpawnCode:    '🛠️ This vehicle isn’t fully set up yet (missing spawn code). Please tell an admin.',
+          badDuration:    '🛠️ That rental plan isn’t set up correctly (its duration is negative). Please tell an admin.',
+          mustBeOnline:   '🔌 You must be online in-game to rent a vehicle.',
+          notFound:       '📍 I couldn’t find you in-game. Get online and fully spawned in, then try again.',
+          // The balance check. {need} {have} {unit} {pool} {cash}
+          notEnough:      '💸 Not enough {unit} — this rental costs {need} {unit}, your {pool} has {have}.',
+          notEnoughExtend: '💸 Not enough {unit} — extending costs {need} {unit}, your {pool} has {have}.',
+          savedBalance:   'That is your balance as of the last server save — if you have just been paid, try again shortly.',
+          depositCash:    'You are carrying {cash} — deposit it at a bank and try again.',
+          // Extending.
+          extendBusy:     '⏳ That extension is still being processed.',
+          extendNoPrice:  'This rental has no recorded price, so it cannot be extended. Ask an admin to end it and rent again.',
+          extendMustBeOnline: '🔌 You must be online in-game to extend a rental.',
+          extendGone:     '💥 That vehicle is gone, so there is nothing to extend. Use the return command to close the rental.',
+          // Notes after an ended rental, in brackets after the `ended` line.
+          endedByAdmin:   'ended by an admin',
+          endedStuck:     'it could not be removed, so it may still be there',
+          expiredStuck:   'it could not be removed — tell an admin if it is still there',
+          // The Discord flow. {expires} is a Discord timestamp that every reader sees in their own
+          // language and time zone.
+          dcError:        'Something went wrong.',
+          dcPickVehicle:  'Pick a vehicle to rent:',
+          dcChooseVehicle: 'Choose a vehicle',
+          dcPlanCount:    '{n} plan(s)',
+          dcNoPlans:      'That vehicle has no rental plans.',
+          dcChoosePlan:   'Choose a plan',
+          dcRenting:      'Renting **{vehicle}** — choose a plan:',
+          dcStale:        '🔄 The vehicle list changed while that menu was open, so nothing was rented and you were not charged. Open the rental menu again.',
+          dcLinkFirst:    '⚠️ Link your SCUM character to Discord first (on the Field Console), then try again.',
+          dcProcessing:   '⏳ Processing your rental…',
+          dcNoStorage:    'Rentals are not available right now (no database).',
+          dcNotActive:    'That rental is no longer active.',
+          dcExtended:     '🔄 Rental extended! New expiry: {expires}',
+          dcExtendButton: 'Extend',
+          embConfirmed:   '✅ Rental confirmed',
+          embVehicle:     'Vehicle',
+          embDuration:    'Duration',
+          embPrice:       'Price',
+          embExpires:     'Expires',
+          embSoonTitle:   '⏳ Rental ending soon',
+          embSoon:        'Your **{vehicle}** rental expires {expires}.',
+          embSoonExtend:  'Your **{vehicle}** rental expires {expires}. Extend it to keep the vehicle.',
+          embEndedTitle:  '⚠️ Rental ended',
+          embEnded:       'Your **{vehicle}** rental has expired.',
+          embEndedRemoved: 'Your **{vehicle}** rental has expired and the vehicle has been removed.',
         },
       };
     }
@@ -275,7 +347,20 @@ module.exports = {
     }
     // texts merge one level deeper, so a config saved before a line existed still gets its default
     // instead of an empty message.
-    const txt = (c, key) => Object.assign(defaultConfig().texts, c.texts || {})[key] || '';
+    //
+    // ⚠ **AN EMPTY BOX IS THE BUILT-IN WORDING, NOT SILENCE.** The tab says "Leave a line empty to use
+    // the built-in wording", and this used to keep a stored '' — so an owner who cleared a box to get
+    // the default back sent their players an empty line, or (for a Discord embed field) a message
+    // Discord refuses outright. Blank and whitespace-only both fall back to the default.
+    const txt = (c, key) => {
+      const own = c && c.texts && c.texts[key];
+      if (typeof own === 'string' && own.trim()) return own;
+      const d = defaultConfig().texts[key];
+      return typeof d === 'string' ? d : '';
+    };
+    // The price a player reads, in the owner's own words for the two currencies.
+    const unitOf = (c, cur) => txt(c, cur === 'gold' ? 'unitGold' : 'unitMoney');
+    const money = (o, c) => (o.amount || 0) + ' ' + unitOf(c || cfg(), o.currency);
     /**
      * A parenthesised aside appended to a reply, in the owner's own words.
      *
@@ -317,10 +402,11 @@ module.exports = {
      * was never going to help.
      */
     function windowError(c, v, o) {
+      const vname = (v && v.name) || txt(c, 'winVehicle');
       const levels = [
-        [c.windows, 'Rentals'],
-        [v && v.windows, (v && v.name) || 'This vehicle'],
-        [o && o.windows, `${(v && v.name) || 'This vehicle'} at this plan`],
+        [c.windows, txt(c, 'winRentals')],
+        [v && v.windows, vname],
+        [o && o.windows, fill(txt(c, 'winPlan'), { vehicle: vname })],
       ];
       for (const [w, what] of levels) {
         if (!hasWindows(w)) continue;
@@ -369,12 +455,36 @@ module.exports = {
       });
     }
 
-    function playerLoc(steamId) {
+    const fin = (v) => { const n = Number(v); return (v != null && v !== '' && Number.isFinite(n)) ? n : null; };
+    // The bridge answered about a player but carried no position: its `where` switch is off. Once
+    // per boot, because every rental until it is switched on spawns at the SAVED position.
+    let _warnedWhereOff = false;
+    /**
+     * Where the player is standing, which is where the vehicle goes.
+     *
+     * ⚠ **THE SAVED WORLD IS WHERE THEY WERE AT THE LAST AUTOSAVE.** `host.map.world()` is `SCUM.db`,
+     * memoised until the next save, so a player who ran 300 m since then got their vehicle 300 m
+     * back down the road — or inside a building they had just walked out of. The running game is
+     * asked first (`host.players.live`, the bridge's `live` module with its `where` switch); the save
+     * answers only when the game gives no finite position.
+     */
+    async function playerLoc(steamId) {
+      try {
+        const p = (host.players && typeof host.players.live === 'function') ? await host.players.live(steamId) : null;
+        if (p && p.source === 'live') {
+          const x = fin(p.x), y = fin(p.y), z = fin(p.z);
+          if (x != null && y != null && z != null && (x || y || z)) return { x: Math.round(x), y: Math.round(y), z: Math.round(z), source: 'live' };
+          if (!_warnedWhereOff) {
+            _warnedWhereOff = true;
+            host.logger.warn('the SSA Bridge answered about this player but not about where they are, so the vehicle is placed at their position from the LAST SAVE. On the Plugins page, turn on "Position, facing and speed" in the "Live player data" module of the SSA Bridge card.');
+          }
+        }
+      } catch (e) { /* the save answers below */ }
       try {
         const w = host.map.world() || {};
         const list = w.players || w.player || [];
         const p = (Array.isArray(list) ? list : []).find(function (pl) { return String(pl.steamId || pl.steamid || pl.SteamID) === String(steamId); });
-        if (p) return { x: Math.round(p.x || 0), y: Math.round(p.y || 0), z: Math.round(p.z || 0) };
+        if (p) return { x: Math.round(p.x || 0), y: Math.round(p.y || 0), z: Math.round(p.z || 0), source: 'db' };
       } catch (e) {}
       return { x: 0, y: 0, z: 0 };
     }
@@ -386,16 +496,45 @@ module.exports = {
         return list.some(function (p) { return String(p.steamId || p.steamid || p.SteamID || p.steam_id) === String(steamId); });
       } catch (e) { return null; }
     }
-    /** Every vehicle id in the world right now, or null when the map cannot say. */
-    function vehicleIdSet() {
+    /**
+     * The vehicles the RUNNING GAME holds, as `{ id, x, y }`, or null when the bridge cannot answer.
+     *
+     * `host.bridge.vehicles()` is the bridge's `vehicles` module (its "Report live vehicle state"
+     * switch). Each row's `eLo` is the vehicle's entity id — the same number `SCUM.db` files it under
+     * and the same one the game names in its `SpawnVehicle` reply — so the two sources are joined on
+     * one identity. Not memoised: every call asks the game.
+     */
+    async function liveVehicles() {
+      try {
+        if (!host.bridge || typeof host.bridge.vehicles !== 'function') return null;
+        const list = await host.bridge.vehicles();
+        if (!Array.isArray(list)) return null;
+        const out = [];
+        list.forEach(function (v) { if (v && v.eLo != null) out.push({ id: String(v.eLo), x: fin(v.x), y: fin(v.y) }); });
+        return out;
+      } catch (e) { return null; }
+    }
+    /** The vehicles in the last SAVE, as `{ id, x, y }`, or null when the map cannot say. */
+    function savedVehicles() {
       try {
         const w = host.map.world() || {};
-        const vs = w.vehicles;
-        if (!Array.isArray(vs)) return null;
-        const s = new Set();
-        vs.forEach(function (v) { if (v && v.id != null) s.add(String(v.id)); });
-        return s;
+        if (!Array.isArray(w.vehicles)) return null;
+        const out = [];
+        w.vehicles.forEach(function (v) { if (v && v.id != null) out.push({ id: String(v.id), x: fin(v.x), y: fin(v.y) }); });
+        return out;
       } catch (e) { return null; }
+    }
+    /**
+     * Every vehicle id in the world right now, and which source said so: `{ src, ids }`, or null
+     * when neither can say. The live list first — the save only knows what was there at the last
+     * autosave, so a vehicle parked since then is invisible to it and would look "new" after a spawn.
+     */
+    async function vehicleIdSet() {
+      const live = await liveVehicles();
+      if (live) return { src: 'live', ids: new Set(live.map(function (v) { return v.id; })) };
+      const saved = savedVehicles();
+      if (saved) return { src: 'db', ids: new Set(saved.map(function (v) { return v.id; })) };
+      return null;
     }
 
     /**
@@ -431,37 +570,39 @@ module.exports = {
      * smaller problem than one destroyed by mistake.
      */
     async function captureVehicleId(loc, before) {
-      if (!before) return '';
+      if (!before || !before.ids) return '';
       try {
-        // The manager's world snapshot is memoised for EIGHT seconds, so a look sooner than that can
-        // legitimately observe no change at all and conclude nothing spawned. So it looks exactly
-        // twice, each time just past that window: a snapshot that is still valid 8.2 s after the
-        // previous look was necessarily built after it, so both looks are fresh and both were taken
-        // after the spawn — the same two full cache cycles the old twenty-second deadline allowed.
+        // The AFTER list comes from the SAME source as the before list, or the diff is meaningless:
+        // a vehicle the save has not seen yet but the game has is "new" to a mixed comparison.
         //
-        // It used to look every 1.5 s for twenty seconds. Between refreshes those looks saw the same
-        // snapshot again, and every look that landed after one expired paid for a whole world scan,
-        // two or three per rental, for an answer the second fresh snapshot already gives.
-        const POLL_MS = 8200;
-        const LOOKS = 2;
+        // Live: the bridge is asked afresh every time, so a few short looks find the vehicle as soon
+        // as the game has placed it.
+        //
+        // Saved: `host.map.world()` is `SCUM.db`, memoised until the game's NEXT AUTOSAVE — a vehicle
+        // spawned a moment ago is not in it until then, which on most servers is longer than these
+        // two looks. That is why the game's own reply ("with ID n") and the live list are asked
+        // first, and why this branch frequently finds nothing and leaves the rental "not captured"
+        // rather than guessing.
+        const live = before.src === 'live';
+        const POLL_MS = live ? 2000 : 8200;
+        const LOOKS = live ? 5 : 2;
         for (let look = 0; look < LOOKS; look++) {
           await new Promise(function (r) { setTimeout(r, POLL_MS); });
-          const w = host.map.world() || {};
-          if (!Array.isArray(w.vehicles)) continue;
-          // Ids some OTHER active rental already owns. `before` can be up to eight seconds stale, so
-          // a vehicle another player rented in that window looks new to us — and adopting it would
+          const list = live ? await liveVehicles() : savedVehicles();
+          if (!list) continue;
+          // Ids some OTHER active rental already owns. `before` was taken a moment before our spawn,
+          // so a vehicle another player rented in that window looks new to us — and adopting it would
           // destroy their vehicle when our rental expires. Two guards are not one too many here.
           const taken = new Set();
           if (db) { try { db.prepare('SELECT vehId FROM rentals WHERE active=1 AND vehId IS NOT NULL').all().forEach(function (r) { if (r.vehId) taken.add(String(r.vehId)); }); } catch (e) {} }
           let best = null, bestD = 1e9;
-          w.vehicles.forEach(function (v) {
-            if (!v || v.id == null) return;
-            const id = String(v.id);
-            if (before.has(id) || taken.has(id)) return;      // already there, or already someone's
-            const d = Math.hypot((v.x || 0) - loc.x, (v.y || 0) - loc.y);
+          list.forEach(function (v) {
+            if (before.ids.has(v.id) || taken.has(v.id)) return;      // already there, or already someone's
+            if (v.x == null || v.y == null) return;                   // no position: cannot be judged near
+            const d = Math.hypot(v.x - loc.x, v.y - loc.y);
             if (d < bestD) { bestD = d; best = v; }
           });
-          if (best && bestD < 3000) return String(best.id);
+          if (best && bestD < 3000) return best.id;
         }
         return '';
       } catch (e) { return ''; }
@@ -470,8 +611,8 @@ module.exports = {
     /**
      * Wire a rental to its vehicle once the world catches up.
      *
-     * NOT part of the rental itself. Identifying the vehicle can take about sixteen seconds — the snapshot
-     * it reads is refreshed on its own eight-second clock — and making a player stare at "Processing
+     * NOT part of the rental itself. Identifying the vehicle can take ten to sixteen seconds when the
+     * game's reply did not name it — see `captureVehicleId` — and making a player stare at "Processing
      * your rental…" for that long, for something that only matters at expiry, is the wrong trade.
      * The rental is confirmed at once and the id is filled in behind it.
      */
@@ -522,6 +663,22 @@ module.exports = {
       try { return (await p) || ''; } catch (e) { return ''; }
     }
 
+    // A player's rentals: every open row, and the ones really still running. At register scope,
+    // beside the commands and the readiness check that answer from them.
+    const activeFor = (steamId) => (db ? db.prepare('SELECT * FROM rentals WHERE active=1 AND steamId=? ORDER BY expiresAt').all(String(steamId)) : []);
+    // ⚠ **`active=1` IS NOT "STILL RUNNING", AND THREE COMMANDS GAVE THREE ACCOUNTS OF ONE RENTAL.**
+    // The expiry sweep runs once a minute, so a rental that ran out is `active=1` until it fires —
+    // and every one of these commands took `rows[0]`, which is the one expiring FIRST. So a player
+    // holding an expired row and a live one was told "that rental has already ended, there is
+    // nothing to return" about the live one and could not return it at all; `/extend` had no
+    // expiry test and would happily CHARGE to resurrect the dead row; and `/myrent` reported the
+    // dead one as "1 min left" for ever, because `fmtLeft` floors a negative at zero.
+    //
+    // So the commands work on the rentals that are really running, and "you have rows but none of
+    // them are live" is the same answer as having none — which is what the sweep is about to make
+    // true anyway.
+    const liveFor = (steamId) => activeFor(steamId).filter((r) => !r.expiresAt || r.expiresAt > Date.now());
+
     // ── admin routes ──
     /**
      * ⚠ **A LINE THE STORED CONFIG DOES NOT CARRY HAS NO BOX ON THE SCREEN, SO IT CANNOT BE
@@ -561,9 +718,17 @@ module.exports = {
       let works = sectorWorks;
       if (works === null) {
         // Nothing has asked yet. Probe with any player we can see; with nobody online there is
-        // nothing honest to say, so say that.
-        const w = (function () { try { return host.map.world() || {}; } catch (e) { return {}; } }());
-        const p = (w.players || [])[0];
+        // nothing honest to say, so say that. The RUNNING game's roster first: the saved world lists
+        // whoever was online at the last autosave, who may have left since.
+        let p = null;
+        try {
+          const all = (host.players && typeof host.players.liveAll === 'function') ? await host.players.liveAll() : null;
+          p = (Array.isArray(all) ? all : []).find(function (x) { return x && fin(x.x) != null && fin(x.y) != null; }) || null;
+        } catch (e) { p = null; }
+        if (!p) {
+          const w = (function () { try { return host.map.world() || {}; } catch (e) { return {}; } }());
+          p = (w.players || [])[0] || null;
+        }
         if (p && host.map.sector) {
           try { works = !!(await host.map.sector(p.x, p.y)); } catch (e) { works = false; }
         }
@@ -645,6 +810,17 @@ module.exports = {
     host.routes.get('/history', function (req, res) {
       res.json(db ? db.prepare('SELECT * FROM rentals WHERE active=0 ORDER BY id DESC LIMIT 200').all() : []);
     });
+    /**
+     * The chat prefix, so the tab's opening sentence names the commands the way a player types them.
+     * Its own route for the reason `/discord-state` is: the panel POSTs `/config` back whole, and
+     * anything riding along in it would be saved as a setting.
+     */
+    host.routes.get('/chat-state', function (req, res) {
+      let prefix = '/';
+      try { prefix = (host.chat.prefix && host.chat.prefix()) || '/'; } catch (e) { prefix = '/'; }
+      res.json({ prefix });
+    });
+
     // End one, from the panel. A rental whose vehicle id was never captured, or one an admin needs to
     // revoke, otherwise sits in the list until it expires with nothing anyone can do about it.
     host.routes.post('/rentals/end', async function (req, res) {
@@ -668,9 +844,10 @@ module.exports = {
       // unconditionally; the expiry sweep corrects that when it could not, and this path did not —
       // so the one case where a player needs to know their vehicle is still out there was the one
       // case they were told the opposite.
-      await say(r.steamId, fill(txt(cfg(), 'ended'), rentalVars(r, cfg()))
-        + ' (ended by an admin)'
-        + (out.removed ? '' : ' — it could not be removed, so it may still be there'));
+      const ce = cfg();
+      await say(r.steamId, fill(txt(ce, 'ended'), rentalVars(r, ce))
+        + note(ce, 'endedByAdmin')
+        + (out.removed ? '' : note(ce, 'endedStuck')));
       host.logger.info('rental #' + id + ' ended by an admin (' + (r.playerName || r.steamId) + ')'
         + (out.removed ? '' : ' — the vehicle could NOT be removed')
         + '. No refund was paid: ending a rental from the panel does not refund, unlike a player returning one.');
@@ -797,12 +974,12 @@ module.exports = {
       const nVeh = () => db.prepare('SELECT COUNT(*) n FROM rentals WHERE active=1 AND steamId=? AND vehIdx=?').get(steamId, vi).n;
 
       const gMax = Number(c.maxPerPlayer) || 0;
-      if (gMax > 0 && nAll() >= gMax) return 'You already have the maximum active rentals (' + gMax + ').';
+      if (gMax > 0 && nAll() >= gMax) return fill(txt(c, 'limitActive'), vars(c, { max: gMax }));
       const mMax = pv('maxPerPlayer');
-      if (mMax != null && mMax > 0 && nVeh() >= mMax) return 'You already have the maximum active rentals (' + mMax + ') for this vehicle.';
+      if (mMax != null && mMax > 0 && nVeh() >= mMax) return fill(txt(c, 'limitActiveVehicle'), vars(c, { max: mMax }));
 
       const tooSoon = (minutes, last) => (minutes && last && (Date.now() - last) < minutes * 60000)
-        ? '⏳ You are renting too often — you can rent again in ' + fmtLeft(last + minutes * 60000 - Date.now()) + '.'
+        ? fill(txt(c, 'tooOften'), vars(c, { left: fmtLeft(last + minutes * 60000 - Date.now()) }))
         : null;
       const gCd = Number(c.cooldownMinutes) || 0;
       if (gCd) {
@@ -817,11 +994,11 @@ module.exports = {
 
       const gDl = Number(c.dailyLimit) || 0;
       if (gDl && db.prepare('SELECT COUNT(*) n FROM rentals WHERE steamId=? AND startedAt >= ?').get(steamId, Date.now() - 86400000).n >= gDl) {
-        return '📵 You reached the rental limit (' + gDl + '/day).';
+        return fill(txt(c, 'limitDaily'), vars(c, { max: gDl }));
       }
       const mDl = pv('dailyLimit');
       if (mDl && db.prepare('SELECT COUNT(*) n FROM rentals WHERE steamId=? AND vehIdx=? AND startedAt >= ?').get(steamId, vi, Date.now() - 86400000).n >= mDl) {
-        return '📵 You reached the rental limit (' + mDl + '/day for this vehicle).';
+        return fill(txt(c, 'limitDailyVehicle'), vars(c, { max: mDl }));
       }
       return null;
     }
@@ -943,7 +1120,7 @@ module.exports = {
     function warnLiveOff() {
       if (_warnedLiveOff) return;
       _warnedLiveOff = true;
-      host.logger.warn('the SSA Bridge answered about this player but not about their money — turn on Bridge → Live data → "Money, gold and account number" (that group ships OFF). Until then a rental is priced against the LAST SAVE, which is as old as your save interval.');
+      host.logger.warn('the SSA Bridge answered about this player but not about their money. On the Plugins page, turn on "Money, gold and account number" in the "Live player data" module of the SSA Bridge card (it ships OFF). Until then a rental is priced against the LAST SAVE, which is as old as your save interval.');
     }
 
     /**
@@ -1006,10 +1183,10 @@ module.exports = {
      * game permits; refusing a stale-rich one costs a retry after the next save. So it refuses, and
      * the message names the figure it used so nobody has to guess which it was.
      */
-    async function affordError(steamId, o, c) {
+    async function affordError(steamId, o, c, extending) {
       if (c.free) return null;
       const need = Math.max(0, parseInt(o.amount, 10) || 0);
-      const unit = o.currency === 'gold' ? 'gold' : 'money';
+      const unit = unitOf(c, o.currency);
       const bal = await balanceOf(steamId, o.currency);
       // BEFORE the figure is looked at, because the figure is what is in doubt. A cut roster means
       // this player may be standing in the world while the payload says they are not, so the saved
@@ -1021,14 +1198,16 @@ module.exports = {
       }
       if (bal.have == null) return null;
       if (bal.have >= need) return null;
-      let msg = '💸 Not enough ' + unit + ' — this rental costs ' + need + ' ' + unit + ', your ' + poolWord(o.currency) + ' has ' + bal.have + '.';
-      if (bal.source === 'db') msg += ' (That is your balance as of the last server save — if you have just been paid, try again shortly.)';
+      let msg = fill(txt(c, extending ? 'notEnoughExtend' : 'notEnough'), vars(c, {
+        unit: unit, need: need, have: bal.have, pool: txt(c, o.currency === 'gold' ? 'poolGold' : 'poolBank'),
+      }));
+      if (bal.source === 'db') msg += note(c, 'savedBalance');
       // The one piece of advice that actually fixes it, and only when it would. `cash` is
       // `user_profile.money_balance`, which this build of the game leaves NULL for every profile —
       // so in practice this never fires. It is kept rather than deleted because it costs nothing and
       // is correct the day the column starts carrying a figure again.
       const cash = bal.cash || 0;
-      if (o.currency !== 'gold' && cash > 0 && (bal.have + cash) >= need) msg += ' You are carrying ' + cash + ' — deposit it at a bank and try again.';
+      if (o.currency !== 'gold' && cash > 0 && (bal.have + cash) >= need) msg += ' ' + fill(txt(c, 'depositCash'), vars(c, { cash: cash }));
       return msg;
     }
 
@@ -1043,7 +1222,7 @@ module.exports = {
 
     async function rent(who, vehIdx, optIdx) {
       const key = String(who.steamId || '');
-      if (renting.has(key)) return { ok: false, error: '⏳ Your rental is still being processed — give it a moment.' };
+      if (renting.has(key)) { const cb = cfg(); return { ok: false, error: fill(txt(cb, 'busy'), vars(cb)) }; }
       renting.add(key);
       try { return await rentInner(who, vehIdx, optIdx); } finally { renting.delete(key); }
     }
@@ -1055,13 +1234,13 @@ module.exports = {
       // says why so an owner can fix it rather than wonder where the vehicles came from.
       if (!db) {
         host.logger.error('rental refused: the plugin has no database, so limits and expiry cannot work');
-        return { ok: false, error: '🛠️ Rentals are temporarily unavailable (storage problem). Please tell an admin.' };
+        return { ok: false, error: fill(txt(c, 'noStorage'), vars(c)) };
       }
       const v = c.vehicles[Number(vehIdx)];
       const o = v && (v.options || [])[Number(optIdx)];
-      if (c.enabled === false) return { ok: false, error: txt(c, 'disabled') };
-      if (!v || !o) return { ok: false, error: 'Invalid selection.' };
-      if (!v.code) return { ok: false, error: '🛠️ This vehicle isn’t fully set up yet (missing spawn code). Please tell an admin.' };
+      if (c.enabled === false) return { ok: false, error: fill(txt(c, 'disabled'), vars(c)) };
+      if (!v || !o) return { ok: false, error: fill(txt(c, 'badChoice'), vars(c)) };
+      if (!v.code) return { ok: false, error: fill(txt(c, 'noSpawnCode'), vars(c, { vehicle: v.name || '' })) };
       // A NEGATIVE duration puts the expiry in the past: the player is charged and the very next
       // sweep destroys the vehicle. Refusing is the only answer that does not cost someone money.
       //
@@ -1072,7 +1251,7 @@ module.exports = {
       // costs nothing.
       if (parseInt(o.minutes, 10) < 0) {
         host.logger.warn(`rental refused: plan ${optIdx} on "${v.name || 'vehicle'}" has a NEGATIVE duration (${JSON.stringify(o.minutes)}), which would expire the moment it is paid for`);
-        return { ok: false, error: '🛠️ That rental plan isn’t set up correctly (its duration is negative). Please tell an admin.' };
+        return { ok: false, error: fill(txt(c, 'badDuration'), vars(c, { vehicle: v.name || '' })) };
       }
 
       // Before the limits, because "you already have one" is the wrong complaint to hand somebody
@@ -1082,11 +1261,11 @@ module.exports = {
 
       const limErr = limitsError(who.steamId, vehIdx, v, c);
       if (limErr) return { ok: false, error: limErr };
-      if (c.requireOnline && isOnline(who.steamId) === false) return { ok: false, error: '🔌 You must be online in-game to rent a vehicle.' };
+      if (c.requireOnline && isOnline(who.steamId) === false) return { ok: false, error: fill(txt(c, 'mustBeOnline'), vars(c)) };
 
       // need a valid in-game position — never spawn a phantom vehicle at 0,0,0
-      const loc = playerLoc(who.steamId);
-      if (!loc || (!loc.x && !loc.y && !loc.z)) return { ok: false, error: '📍 I couldn’t find you in-game. Get online and fully spawned in, then try again.' };
+      const loc = await playerLoc(who.steamId);
+      if (!loc || (!loc.x && !loc.y && !loc.z)) return { ok: false, error: fill(txt(c, 'notFound'), vars(c)) };
       const sec = await sectorAllowed(loc);
       if (!sec.ok) return { ok: false, error: fill(txt(c, 'notAllowedHere'), vars(c, { sector: sec.sector })) };
 
@@ -1098,7 +1277,7 @@ module.exports = {
 
       // What was already parked here, so the vehicle we are about to spawn can be told apart from
       // the player's own. Taken BEFORE the spawn — after it, the two are indistinguishable.
-      const before = vehicleIdSet();
+      const before = await vehicleIdSet();
 
       // spawn FIRST and verify it worked; only charge on success, so an offline/failed bridge never bills the player
       // offset ~3m to the side so the vehicle doesn't spawn on the renter's head (crushing them)
@@ -1159,7 +1338,7 @@ module.exports = {
         // either way, because handing out a vehicle on a payment nobody confirmed is the mistake in
         // the other direction. What must not happen is telling somebody whose money may be gone that
         // it certainly is not.
-        return { ok: false, error: fill(txt(c, paid.why === 'unconfirmed' ? 'chargeUnknown' : 'chargeFailed'), vars(c, { vehicle: v.name || 'vehicle', price: money(o) })) };
+        return { ok: false, error: fill(txt(c, paid.why === 'unconfirmed' ? 'chargeUnknown' : 'chargeFailed'), vars(c, { vehicle: v.name || 'vehicle', price: money(o, c) })) };
       }
 
       const now = Date.now(), exp = now + planMinutes(o) * 60000;
@@ -1173,15 +1352,23 @@ module.exports = {
       // Filled in behind the confirmation — see captureLater.
       captureLater(rentalId, { x: loc.x + 300, y: loc.y, z: loc.z }, before, spawnedIdFrom(spawnRes));
 
-      const told = await say(who.steamId, fill(txt(c, 'confirmed'), vars(c, { player: who.playerName || '', vehicle: v.name || 'vehicle', duration: fmtDur(planMinutes(o)), price: c.free ? txt(c, 'free') : money(o) })));
+      const told = await say(who.steamId, fill(txt(c, 'confirmed'), vars(c, { player: who.playerName || '', vehicle: v.name || 'vehicle', duration: fmtDur(planMinutes(o)), price: c.free ? txt(c, 'free') : money(o, c) })));
       host.notify('admin.alert', { message: 'Vehicle rented: ' + (v.name || '?') + ' by ' + (who.playerName || who.steamId), severity: 'info' });
       return { ok: true, exp: exp, rentalId: rentalId, v: v, o: o, told: told };
     }
     // Is that vehicle still in the world? Used before claiming we removed it, and before letting a
     // player "return" something that no longer exists. Unknown (no id / no map data) ⇒ true, so a
     // missing answer never blocks the lifecycle.
-    function vehicleExists(vehId) {
+    //
+    // The RUNNING game is asked first, and only a hit is believed from it: the save is `SCUM.db` as of
+    // the last autosave, so a vehicle spawned since then is not in it — and a rental returned in its
+    // first minutes read as "already gone", the vehicle was left standing and the player told so.
+    // A live miss falls through to the saved answer below, so this can only ever be MORE right than
+    // the save alone.
+    async function vehicleExists(vehId) {
       if (!vehId) return true;
+      const live = await liveVehicles();
+      if (live && live.some(function (v) { return v.id === String(vehId); })) return true;
       try {
         const w = host.map.world() || {};
         const vs = w.vehicles || [];
@@ -1221,6 +1408,7 @@ module.exports = {
     const vars = (c, extra) => Object.assign({
       cmd: host.chat.prefix ? host.chat.prefix() : '/',
       player: '', vehicle: '', duration: '', price: '', left: '', sector: '', list: '', window: '', max: '',
+      n: '', need: '', have: '', unit: '', pool: '', cash: '', expires: '',
     }, extra || {});
 
     // Sector rule. Async because map calibration is remote; null sector = unknown = allow.
@@ -1287,7 +1475,7 @@ module.exports = {
         player: r.playerName || '',
         vehicle: r.vehName || 'vehicle',
         duration: o ? fmtDur(planMinutes(o)) : '',
-        price: (c.free || !o) ? txt(c, 'free') : money(o),
+        price: (c.free || !o) ? txt(c, 'free') : money(o, c),
         left: r.expiresAt ? fmtLeft(r.expiresAt - Date.now()) : '',
       }, extra || {}));
     }
@@ -1311,7 +1499,7 @@ module.exports = {
       // immediately returns, or an admin ending one straight away. Wait for that answer instead of
       // treating "not known yet" as "there is nothing to remove".
       const vehId = await vehIdOf(r);
-      const stillThere = c.verifyVehicle === false ? true : vehicleExists(vehId);
+      const stillThere = c.verifyVehicle === false ? true : await vehicleExists(vehId);
       let removed = false;
       if (vehId && c.removeCmd && stillThere) {
         try { const res = await host.server.command(fill(c.removeCmd, { vehId: vehId, steamid: r.steamId })); removed = ran(res); }
@@ -1336,7 +1524,7 @@ module.exports = {
           if (i.customId === VEH) return await openDurationMenu(i, i.values[0]);
           if (i.customId.indexOf(OPT + ':') === 0) return await processRental(i, i.customId.slice((OPT + ':').length), i.values[0]);
         }
-      } catch (e) { host.logger.error('interaction: ' + e.message); try { if (!i.replied && !i.deferred) await i.reply({ content: 'Something went wrong.', ...EPHEMERAL }); } catch (x) {} }
+      } catch (e) { host.logger.error('interaction: ' + e.message); try { if (!i.replied && !i.deferred) { const ce = cfg(); await i.reply({ content: fill(txt(ce, 'dcError'), vars(ce)), ...EPHEMERAL }); } } catch (x) {} }
     });
 
     /**
@@ -1366,7 +1554,7 @@ module.exports = {
     // plan they agreed to at the OLD one, with no stale warning — the exact thing this exists to
     // prevent, silently not doing it.
     const optSig = (o) => sigOf((o && o.minutes) + '|' + (o && o.amount) + '|' + (o && o.currency));
-    const STALE = '🔄 The vehicle list changed while that menu was open, so nothing was rented and you were not charged. Open the rental menu again.';
+    const STALE = () => { const ce = cfg(); return fill(txt(ce, 'dcStale'), vars(ce)); };
     // "3.1f9x" → { idx: 3, sig: '1f9x' }
     function splitRef(raw) {
       const s = String(raw == null ? '' : raw);
@@ -1377,32 +1565,32 @@ module.exports = {
     async function openVehicleMenu(i) {
       const c = cfg();
       if (c.enabled === false) return i.reply({ content: fill(txt(c, 'disabled'), vars(c)), ...EPHEMERAL });
-      if (!c.vehicles.length) return i.reply({ content: 'No vehicles are available right now.', ...EPHEMERAL });
+      if (!c.vehicles.length) return i.reply({ content: fill(txt(c, 'noVehicles'), vars(c)), ...EPHEMERAL });
       const B = host.discord.js;
-      const menu = new B.StringSelectMenuBuilder().setCustomId(VEH).setPlaceholder('Choose a vehicle')
+      const menu = new B.StringSelectMenuBuilder().setCustomId(VEH).setPlaceholder(txt(c, 'dcChooseVehicle').slice(0, 150))
         // Out-of-hours vehicles stay in the menu with the reason in their description, for the same
         // reason the chat listing keeps them: a menu that changes shape through the evening teaches
         // players that things vanish, and the one question they have — when? — goes unanswered.
         .addOptions(c.vehicles.slice(0, 25).map(function (v, idx) {
           const shut = windowError(c, v, null);
           return {
-            label: (v.name || ('Vehicle ' + idx)).slice(0, 100),
+            label: (v.name || ('#' + (idx + 1))).slice(0, 100),
             value: (idx + '.' + vehSig(v)).slice(0, 100),
-            description: (shut || ((v.options || []).length + ' plan(s)')).slice(0, 100),
+            description: (shut || fill(txt(c, 'dcPlanCount'), vars(c, { n: (v.options || []).length }))).slice(0, 100),
           };
         }));
-      return i.reply({ content: 'Pick a vehicle to rent:', components: [host.discord.row(menu)], ...EPHEMERAL });
+      return i.reply({ content: fill(txt(c, 'dcPickVehicle'), vars(c)), components: [host.discord.row(menu)], ...EPHEMERAL });
     }
     async function openDurationMenu(i, vehRef) {
       const c = cfg(); const ref = splitRef(vehRef); const v = c.vehicles[Number(ref.idx)];
-      if (!v || (ref.sig && vehSig(v) !== ref.sig)) return i.update({ content: STALE, components: [] });
-      if (!(v.options || []).length) return i.update({ content: 'That vehicle has no rental plans.', components: [] });
+      if (!v || (ref.sig && vehSig(v) !== ref.sig)) return i.update({ content: STALE(), components: [] });
+      if (!(v.options || []).length) return i.update({ content: fill(txt(c, 'dcNoPlans'), vars(c, { vehicle: v.name || '' })), components: [] });
       const B = host.discord.js;
-      const menu = new B.StringSelectMenuBuilder().setCustomId((OPT + ':' + ref.idx + '.' + vehSig(v)).slice(0, 100)).setPlaceholder('Choose a plan')
+      const menu = new B.StringSelectMenuBuilder().setCustomId((OPT + ':' + ref.idx + '.' + vehSig(v)).slice(0, 100)).setPlaceholder(txt(c, 'dcChoosePlan').slice(0, 150))
         .addOptions(v.options.slice(0, 25).map(function (o, oi) {
           const shut = windowError(c, v, o);
           const opt = {
-            label: (fmtDur(planMinutes(o)) + ' — ' + (c.free ? 'Free' : money(o))).slice(0, 100),
+            label: (fmtDur(planMinutes(o)) + ' — ' + (c.free ? txt(c, 'free') : money(o, c))).slice(0, 100),
             value: (oi + '.' + optSig(o)).slice(0, 100),
           };
           // The key is OMITTED rather than set to `undefined`. discord.js validates option objects at
@@ -1413,21 +1601,21 @@ module.exports = {
           return opt;
         }));
       const shutNow = windowError(c, v, null);
-      return i.update({ content: 'Renting **' + (v.name || 'vehicle') + '** — choose a plan:' + (shutNow ? '\n' + shutNow : ''), components: [host.discord.row(menu)] });
+      return i.update({ content: fill(txt(c, 'dcRenting'), vars(c, { vehicle: v.name || '' })) + (shutNow ? '\n' + shutNow : ''), components: [host.discord.row(menu)] });
     }
 
     async function processRental(i, vehRef, optRef) {
       const prof = host.players.linked(i.user.id);
-      if (!prof || !prof.steamId) return i.update({ content: '⚠️ Link your SCUM character to Discord first (on the Field Console), then try again.', components: [] });
+      if (!prof || !prof.steamId) { const ce = cfg(); return i.update({ content: fill(txt(ce, 'dcLinkFirst'), vars(ce)), components: [] }); }
       // Check BEFORE the "Processing…" edit and before any money moves: a stale menu is not a
       // failed rental, it is a rental that must not start.
       const c0 = cfg(); const vr = splitRef(vehRef); const or = splitRef(optRef);
       const v0 = c0.vehicles[Number(vr.idx)];
       const o0 = v0 && (v0.options || [])[Number(or.idx)];
       if (!v0 || !o0 || (vr.sig && vehSig(v0) !== vr.sig) || (or.sig && optSig(o0) !== or.sig)) {
-        return i.update({ content: STALE, components: [] });
+        return i.update({ content: STALE(), components: [] });
       }
-      await i.update({ content: '⏳ Processing your rental…', components: [] });
+      await i.update({ content: fill(txt(c0, 'dcProcessing'), vars(c0)), components: [] });
       const res = await rent({ steamId: prof.steamId, discordId: i.user.id, playerName: prof.name || prof.discordUsername || '' }, vr.idx, or.idx);
       if (!res.ok) { try { await i.editReply({ content: res.error, embeds: [] }); } catch (e) {} return; }
       const embed = confirmEmbed(res.v, res.o, res.exp);
@@ -1438,9 +1626,10 @@ module.exports = {
     async function doExtend(i, rentalId) {
       // Returning without replying leaves Discord showing the player "This interaction failed" and
       // no reason at all. Every path out of here answers.
-      if (!db) return i.reply({ content: 'Rentals are not available right now (no database).', ...EPHEMERAL });
+      const cd = cfg();
+      if (!db) return i.reply({ content: fill(txt(cd, 'dcNoStorage'), vars(cd)), ...EPHEMERAL });
       const r = db.prepare('SELECT * FROM rentals WHERE id=? AND active=1').get(Number(rentalId));
-      if (!r) return i.reply({ content: 'That rental is no longer active.', ...EPHEMERAL });
+      if (!r) return i.reply({ content: fill(txt(cd, 'dcNotActive'), vars(cd)), ...EPHEMERAL });
 
       // ACKNOWLEDGE FIRST. Discord kills an unacknowledged interaction after THREE SECONDS, and
       // extending is slower than that on purpose: it can wait on a vehicle identification (up to
@@ -1453,7 +1642,7 @@ module.exports = {
       // that can take.
       try { await i.deferReply(EPHEMERAL); } catch (e) { /* already acknowledged */ }
       const out = await extendRental(r);
-      const said = out.ok ? '🔄 Rental extended! New expiry: <t:' + Math.floor(out.exp / 1000) + ':R>' : out.error;
+      const said = out.ok ? fill(txt(cd, 'dcExtended'), rentalVars(r, cd, { expires: '<t:' + Math.floor(out.exp / 1000) + ':R>' })) : out.error;
       try { return await i.editReply({ content: said }); }
       catch (e) {
         // The edit window is gone (or the defer never landed). The player is in game, which is where
@@ -1472,7 +1661,7 @@ module.exports = {
     const extending = new Set();
     async function extendRental(r) {
       const key = 'r' + r.id;
-      if (extending.has(key)) return { ok: false, error: '⏳ That extension is still being processed.' };
+      if (extending.has(key)) { const ce = cfg(); return { ok: false, error: fill(txt(ce, 'extendBusy'), vars(ce)) }; }
       extending.add(key);
       try { return await extendInner(r); } finally { extending.delete(key); }
     }
@@ -1484,7 +1673,7 @@ module.exports = {
       const o = planOf(r, c);
       const effMaxExt = (v && v.maxExtensions != null && v.maxExtensions !== '') ? Number(v.maxExtensions) : c.maxExtensions;
       if (effMaxExt && (r.extensions || 0) >= effMaxExt) return { ok: false, error: fill(txt(c, 'extendMaxed'), rentalVars(r, c, { max: effMaxExt })) };
-      if (!o) return { ok: false, error: 'This rental has no recorded price, so it cannot be extended. Ask an admin to end it and rent again.' };
+      if (!o) return { ok: false, error: fill(txt(c, 'extendNoPrice'), rentalVars(r, c)) };
       // An extension is a fresh purchase at the same price, so it has to obey the same window. Without
       // this the happy hour has a hole you can drive through: rent at 20:30 for the cheap plan, then
       // top it up at that price all night. The rental itself is NOT cut short — what a player already
@@ -1504,16 +1693,16 @@ module.exports = {
       // RETURNING deliberately does NOT check this. Handing the vehicle back is how a player stops
       // paying, and refusing it while they are offline would trap them in a rental they are trying
       // to end — the opposite of what the setting is for.
-      if (c.requireOnline && isOnline(r.steamId) === false) return { ok: false, error: '🔌 You must be online in-game to extend a rental.' };
+      if (c.requireOnline && isOnline(r.steamId) === false) return { ok: false, error: fill(txt(c, 'extendMustBeOnline'), rentalVars(r, c)) };
       // `endRental` checks this before claiming to have removed something; extending has to check it
       // before taking money for more time on it. Someone else blowing the car up at minute 50 should
       // not cost the renter another full price at minute 55.
       const liveId = await vehIdOf(r);
-      if (c.verifyVehicle !== false && liveId && !vehicleExists(liveId)) {
-        return { ok: false, error: '💥 That vehicle is gone, so there is nothing to extend. Use the return command to close the rental.' };
+      if (c.verifyVehicle !== false && liveId && !(await vehicleExists(liveId))) {
+        return { ok: false, error: fill(txt(c, 'extendGone'), rentalVars(r, c)) };
       }
-      const affErr = await affordError(r.steamId, o, c);
-      if (affErr) return { ok: false, error: affErr.replace('this rental costs', 'extending costs') };
+      const affErr = await affordError(r.steamId, o, c, true);
+      if (affErr) return { ok: false, error: affErr };
       // Same rule as renting: if the charge doesn't land, don't hand out the time.
       const paid = await charge(r.steamId, o, 1);
       if (!paid.ok) return { ok: false, error: fill(txt(c, paid.why === 'unconfirmed' ? 'extendUnknown' : 'extendFailed'), rentalVars(r, c)) };
@@ -1543,14 +1732,15 @@ module.exports = {
       // The image the admin picked. The panel offers the field, fills it in automatically from the
       // item database when a vehicle is chosen, and saves it — and nothing ever read it back, so it
       // appeared nowhere a player could see.
-      const e = host.discord.embed().setTitle('✅ Rental confirmed').setColor(0x54c98a);
+      const c = cfg();
+      const e = host.discord.embed().setTitle(txt(c, 'embConfirmed').slice(0, 256)).setColor(0x54c98a);
       if (v && v.image) { try { e.setThumbnail(v.image); } catch (err) { /* bad URL */ } }
       return e
         .addFields(
-          { name: 'Vehicle', value: v.name || '—', inline: true },
-          { name: 'Duration', value: fmtDur(planMinutes(o)), inline: true },
-          { name: 'Price', value: cfg().free ? 'Free' : money(o), inline: true },
-          { name: 'Expires', value: '<t:' + Math.floor(exp / 1000) + ':R>' },
+          { name: txt(c, 'embVehicle').slice(0, 256), value: v.name || '—', inline: true },
+          { name: txt(c, 'embDuration').slice(0, 256), value: fmtDur(planMinutes(o)), inline: true },
+          { name: txt(c, 'embPrice').slice(0, 256), value: c.free ? txt(c, 'free') : money(o, c), inline: true },
+          { name: txt(c, 'embExpires').slice(0, 256), value: '<t:' + Math.floor(exp / 1000) + ':R>' },
         );
     }
 
@@ -1571,19 +1761,6 @@ module.exports = {
       unregisterCommands();
       const c0 = cfg();
       if (c0.inGameCommands === false) { host.logger.info('in-game commands: off'); return; }
-      const activeFor = (steamId) => (db ? db.prepare('SELECT * FROM rentals WHERE active=1 AND steamId=? ORDER BY expiresAt').all(String(steamId)) : []);
-      // ⚠ **`active=1` IS NOT "STILL RUNNING", AND THREE COMMANDS GAVE THREE ACCOUNTS OF ONE RENTAL.**
-      // The expiry sweep runs once a minute, so a rental that ran out is `active=1` until it fires —
-      // and every one of these commands took `rows[0]`, which is the one expiring FIRST. So a player
-      // holding an expired row and a live one was told "that rental has already ended, there is
-      // nothing to return" about the live one and could not return it at all; `/extend` had no
-      // expiry test and would happily CHARGE to resurrect the dead row; and `/myrent` reported the
-      // dead one as "1 min left" for ever, because `fmtLeft` floors a negative at zero.
-      //
-      // So the commands work on the rentals that are really running, and "you have rows but none of
-      // them are live" is the same answer as having none — which is what the sweep is about to make
-      // true anyway.
-      const liveFor = (steamId) => activeFor(steamId).filter((r) => !r.expiresAt || r.expiresAt > Date.now());
 
       /**
        * Where this player stands, for the built-in `/help`.
@@ -1645,7 +1822,7 @@ module.exports = {
           // yesterday cannot find it or learn when it comes back.
           const lines = list.map(function (v, idx) {
             const plans = (v.options || []).map(function (o, oi) {
-              return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳');
+              return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o, c)) + (windowOpen(c, v, o) ? '' : ' ⏳');
             }).join('  ');
             return (idx + 1) + '. ' + (v.name || 'Vehicle') + ' — ' + (plans || txt(c, 'noPlans')) + (windowOpen(c, v, null) ? '' : ' ⏳');
           });
@@ -1655,7 +1832,7 @@ module.exports = {
         const v = list[n - 1];
         const opts = v.options || [];
         if (!Number.isFinite(p) || p < 1 || p > opts.length) {
-          const plans = opts.map(function (o, oi) { return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o)) + (windowOpen(c, v, o) ? '' : ' ⏳'); }).join('  ');
+          const plans = opts.map(function (o, oi) { return (oi + 1) + ') ' + fmtDur(planMinutes(o)) + (c.free ? '' : ' ' + money(o, c)) + (windowOpen(c, v, o) ? '' : ' ⏳'); }).join('  ');
           // Asking about one vehicle is specific enough to be told the actual times rather than a
           // symbol — this is the reply that answers "well, when then?".
           const shut = windowError(c, v, null);
@@ -1673,7 +1850,7 @@ module.exports = {
         // side and was invisible from this one until it started reporting. `res.told === false` is
         // that case; `ctx.reply` is a different door and still works.
         if (c.inGameNotify === false || res.told === false) {
-          return ctx.reply(fill(txt(c, 'confirmed'), vars(c, { player: ctx.name || '', vehicle: (res.v && res.v.name) || 'vehicle', duration: res.o ? fmtDur(planMinutes(res.o)) : '', price: (c.free || !res.o) ? txt(c, 'free') : money(res.o) })));
+          return ctx.reply(fill(txt(c, 'confirmed'), vars(c, { player: ctx.name || '', vehicle: (res.v && res.v.name) || 'vehicle', duration: res.o ? fmtDur(planMinutes(res.o)) : '', price: (c.free || !res.o) ? txt(c, 'free') : money(res.o, c) })));
         }
       }, { status: rentStatus }));
 
@@ -1706,7 +1883,10 @@ module.exports = {
       cmdOffs.push(host.chat.onCommand(c0.cmdReturn || 'return', async function (ctx) {
         const c = cfg();
         if (c.allowReturn === false) return ctx.reply(fill(txt(c, 'returnOff'), vars(c)));
-        const rows = activeFor(ctx.steamId);
+        // `liveFor`, like /extend and /myrent. `activeFor()[0]` is the row expiring FIRST, which can
+        // be one that ran out a moment ago and the minute sweep has not closed yet — so a player
+        // holding that and a live rental was told "nothing to return" about the live one.
+        const rows = liveFor(ctx.steamId);
         if (!rows.length) return ctx.reply(fill(txt(c, 'noRentals'), vars(c)));
         const r = rows[0];
         // An expired rental is not returnable. The sweep runs once a minute, so between expiry and
@@ -1797,10 +1977,10 @@ module.exports = {
         if ((r.expiresAt - now) > effRem * 60000) continue; // not within this rental's own reminder window yet
         const effMaxExt = (rv && rv.maxExtensions != null && rv.maxExtensions !== '') ? Number(rv.maxExtensions) : c.maxExtensions;
         const canExtend = c.allowExtend !== false && (!effMaxExt || (r.extensions || 0) < effMaxExt);
-        const em = host.discord.embed().setTitle('⏳ Rental ending soon').setColor(0xe6b23a)
-          .setDescription('Your **' + (r.vehName || 'vehicle') + '** rental expires <t:' + Math.floor(r.expiresAt / 1000) + ':R>.' + (canExtend ? ' Extend it to keep the vehicle.' : ''));
+        const em = host.discord.embed().setTitle(txt(c, 'embSoonTitle').slice(0, 256)).setColor(0xe6b23a)
+          .setDescription(fill(txt(c, canExtend ? 'embSoonExtend' : 'embSoon'), rentalVars(r, c, { expires: '<t:' + Math.floor(r.expiresAt / 1000) + ':R>' })).slice(0, 4096));
         const msg = { embeds: [em] };
-        if (canExtend) msg.components = [host.discord.row(new B.ButtonBuilder().setCustomId(EXT + ':' + r.id).setLabel('Extend').setStyle(B.ButtonStyle.Primary).setEmoji('🔄'))];
+        if (canExtend) msg.components = [host.discord.row(new B.ButtonBuilder().setCustomId(EXT + ':' + r.id).setLabel(txt(c, 'dcExtendButton').slice(0, 80)).setStyle(B.ButtonStyle.Primary).setEmoji('🔄'))];
         if (r.discordId) { try { await host.discord.dm(r.discordId, msg); } catch (e) {} }
         // …and in the game, where the player actually is.
         await say(r.steamId, fill(txt(c, 'endingSoon'), rentalVars(r, c, { left: fmtLeft(r.expiresAt - now) })));
@@ -1809,13 +1989,13 @@ module.exports = {
       const expired = db.prepare('SELECT * FROM rentals WHERE active=1 AND expiresAt <= ?').all(now);
       for (const r of expired) {
         const out = await endRental(r, 'expired');
-        const em = host.discord.embed().setTitle('⚠️ Rental ended').setColor(0xff5c5c)
-          .setDescription('Your **' + (r.vehName || 'vehicle') + '** rental has expired' + (out.removed ? ' and the vehicle has been removed.' : '.'));
+        const em = host.discord.embed().setTitle(txt(c, 'embEndedTitle').slice(0, 256)).setColor(0xff5c5c)
+          .setDescription(fill(txt(c, out.removed ? 'embEndedRemoved' : 'embEnded'), rentalVars(r, c)).slice(0, 4096));
         if (r.discordId) { try { await host.discord.dm(r.discordId, { embeds: [em] }); } catch (e) {} }
         // The Discord embed already says only "expired" when the vehicle could not be removed; the
         // in-game line claimed it was removed either way.
         await say(r.steamId, fill(txt(c, 'ended'), rentalVars(r, c))
-          + (out.removed ? '' : ' (it could not be removed — tell an admin if it is still there)'));
+          + (out.removed ? '' : note(c, 'expiredStuck')));
       }
     }
 

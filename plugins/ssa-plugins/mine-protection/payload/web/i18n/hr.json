@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "NIJE spremljeno — {err}",
   "pl.mine-protection.btn.save": "Spremi konfiguraciju",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "uključite „{switch}” u {where}."
+  "pl.mine-protection.live.turnOn": "uključite „{switch}” u {where}.",
+  "pl.mine-protection.live.idleTitle": "Ništa se ne provodi. ",
+  "pl.mine-protection.live.idleOld": "Ovaj manager je prestar za ovaj plugin. Ažuriraj manager.",
+  "pl.mine-protection.live.noModule": "ovaj server koristi stariji SSA Bridge bez ovog modula.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge nije odgovorio."
 }

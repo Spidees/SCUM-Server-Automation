@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "NEuloženo — {err}",
   "pl.mine-protection.btn.save": "Uložit konfiguraci",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "zapněte „{switch}“ v {where}."
+  "pl.mine-protection.live.turnOn": "zapněte „{switch}“ v {where}.",
+  "pl.mine-protection.live.idleTitle": "Nic se nevynucuje. ",
+  "pl.mine-protection.live.idleOld": "Tento manager je pro tento plugin příliš starý. Aktualizuj manager.",
+  "pl.mine-protection.live.noModule": "tento server běží na starším SSA Bridge bez tohoto modulu.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge neodpověděl."
 }

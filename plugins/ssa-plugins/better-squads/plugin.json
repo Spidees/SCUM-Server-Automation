@@ -2,8 +2,8 @@
   "id": "better-squads",
   "name": "Better Squads",
   "type": "manager",
-  "version": "2.3.3",
-  "updated": "2026-10-07",
+  "version": "2.3.4",
+  "updated": "2026-10-09",
   "author": "SCUMSA",
   "website": "https://scumsa.com/plugins.php?p=better-squads",
   "description": "Gives every squad its own private chat: alerts when a squadmate connects, dies or has their base raided, plus in-game commands players run themselves. Each line is yours to word, and can tell every member how far the event is from where they are standing. Nobody outside the squad sees any of it.",
@@ -39,7 +39,7 @@
           "enabled",
           "members"
         ],
-        "why": "Reads the squad roster the game itself holds, so a player who has just joined is told and one who has just left stops hearing the squad's private messages, neither has to wait for a save."
+        "why": "Reads the squad roster the game itself holds, so a player who has just joined starts receiving the squad's private messages and one who has just left stops, without waiting for a save. The joined/left announcements themselves still come from the saved roster."
       }
     ]
   },

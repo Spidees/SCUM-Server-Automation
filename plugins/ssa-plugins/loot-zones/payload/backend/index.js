@@ -565,7 +565,44 @@ module.exports = {
   async register(host) {
     const log = host.logger || host.log;
     const safe = (fn, dflt) => { try { return fn(); } catch { return dflt; } };
-    const nz = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+    /**
+     * A number out of a setting, or the default. ⚠ `Number(null)` and `Number('')` are both 0, so a
+     * box the owner cleared — or a key a hand-edit left as `null` — used to read as a deliberate
+     * zero: no wait after a kill, no time between switches. Absent and blank mean "use the default".
+     */
+    const nz = (v, d) => {
+      if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) return d;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : d;
+    };
+
+    /**
+     * ── A SENTENCE THE TAB TRANSLATES, SENT AS A CODE BESIDE ITS ENGLISH ─────────────────────────
+     *
+     * The card's refusals travel as plain strings — they are deduplicated, merged from sub-results
+     * and stored across a restart as text — so the code cannot ride inside them without breaking
+     * every reader. Instead every sentence built through `coded()` is REMEMBERED by its exact text,
+     * and the place that publishes a list (`codesFor`) attaches `{ text: { code, vars } }` beside it.
+     * The tab renders a known code in the reader's language and falls back to the English for one it
+     * does not know, so an older tab and a newer backend still agree.
+     *
+     * Constants are kept for the life of the process; the rest are bounded, because a sentence with
+     * a count in it is a new string every time the count moves.
+     */
+    const saidConst = new Map();
+    const saidLive = new Map();
+    function coded(code, vars, text) {
+      if (saidLive.size > 3000) saidLive.clear();
+      saidLive.set(text, { code, vars: vars || {} });
+      return text;
+    }
+    function saidFixed(code, vars, text) { saidConst.set(text, { code, vars: vars || {} }); return text; }
+    const codeOf = (text) => (text == null ? null : (saidConst.get(String(text)) || saidLive.get(String(text)) || null));
+    function codesFor(list) {
+      const o = {};
+      for (const s of list || []) { const c = codeOf(s); if (c) o[s] = c; }
+      return o;
+    }
 
     /**
      * The half of a bridge actor id that the `entities` module's `entity:` read wants.
@@ -1149,6 +1186,43 @@ module.exports = {
      * rewrite every few seconds for a timestamp. So the clocks live here, and the stored copy of a
      * patrol is written only when what it SAYS has changed — `/status` reads this first.
      */
+    /**
+     * `host.store`, with a patrol ROUND's writes to its own keys held until the round ends.
+     *
+     * Every `host.store.set` is a rewrite of the plugin's whole store file, and one round of one zone
+     * used to make several — its places, its pool, its kills, its cooldown clock, the card's reading
+     * — once per zone, every few seconds while anybody is near. A round now coalesces them: the last
+     * value of each key is written once, at the end of the round, and only if the round set it.
+     *
+     * Reads see the held value, so nothing inside the process can tell the difference. What it costs
+     * is durability for the length of one round: a manager that is KILLED mid-round loses that
+     * round's bookkeeping, which the next round redoes from the world. An ordinary stop, an update or
+     * switching the plugin off flushes first (`onUnload`). Only these keys are held — the map ledger,
+     * the spawn plans this plugin holds and the rotation's own state are written at once, always.
+     */
+    let storeHeld = null;
+    const ROUND_KEYS = new Set(['guardPosts', 'sentrySeen', 'guardPool', 'lastPatrol', 'guardKills', 'lastGuardAtMs']);
+    const copyOf = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+    const st = {
+      get(k, d) {
+        if (storeHeld && storeHeld.has(k)) { const v = copyOf(storeHeld.get(k)); return v === undefined ? d : v; }
+        return host.store.get(k, d);
+      },
+      set(k, v) {
+        if (storeHeld && ROUND_KEYS.has(k)) { storeHeld.set(k, copyOf(v)); return v; }
+        return host.store.set(k, v);
+      },
+    };
+    function holdStore() { if (!storeHeld) storeHeld = new Map(); }
+    function flushStore() {
+      const held = storeHeld;
+      storeHeld = null;
+      if (!held) return;
+      for (const [k, v] of held) {
+        try { host.store.set(k, v); } catch (e) { if (log) log.warn(`store write failed: ${e && e.message}`); }
+      }
+    }
+
     const patrolClock = {};
     const patrolSeen = {};
     const lastRefusalLog = {};
@@ -1243,7 +1317,7 @@ module.exports = {
      * and is quietly empty today with nothing saying so.
      */
     function postsOf(zoneId) {
-      const all = host.store.get(K.posts, {});
+      const all = st.get(K.posts, {});
       const v = (all && typeof all === 'object') ? all[String(zoneId)] : null;
       return Array.isArray(v) ? v.slice() : [];
     }
@@ -1294,7 +1368,7 @@ module.exports = {
      * whatever took its place. It is dropped the first time the sweep really looks for it.
      */
     function forgetGuardIds() {
-      const all = host.store.get(K.posts, {});
+      const all = st.get(K.posts, {});
       if (!all || typeof all !== 'object') return;
       const next = {};
       let moved = false;
@@ -1305,7 +1379,7 @@ module.exports = {
           return Object.assign({}, p, { ids: [], wasIds: had, emptySince: 0, everHeld: false });
         });
       }
-      if (moved) host.store.set(K.posts, next);
+      if (moved) st.set(K.posts, next);
     }
 
     /**
@@ -1315,7 +1389,7 @@ module.exports = {
      * the fix was installed, still showing the old sentence.
      */
     function forgetRefusals() {
-      const all = host.store.get(K.posts, {});
+      const all = st.get(K.posts, {});
       if (!all || typeof all !== 'object') return;
       const next = {};
       let moved = false;
@@ -1326,7 +1400,7 @@ module.exports = {
           return Object.assign({}, p, { refused: 0, refusedUntil: 0, refusedWhy: '' });
         });
       }
-      if (moved) host.store.set(K.posts, next);
+      if (moved) st.set(K.posts, next);
     }
     // At load, before the first patrol, so the first round already tries.
     forgetRefusals();
@@ -1335,15 +1409,15 @@ module.exports = {
       if (JSON.stringify(postsOf(zoneId)) !== JSON.stringify(list)) setPosts(zoneId, list);
     }
     function setPosts(zoneId, list) {
-      const all = Object.assign({}, host.store.get(K.posts, {}) || {});
+      const all = Object.assign({}, st.get(K.posts, {}) || {});
       if (list && list.length) all[String(zoneId)] = list; else delete all[String(zoneId)];
-      host.store.set(K.posts, all);
+      st.set(K.posts, all);
     }
     const getActive = () => {
-      const v = host.store.get(K.active, []);
+      const v = st.get(K.active, []);
       return Array.isArray(v) ? v : [];
     };
-    const setActive = (list) => host.store.set(K.active, list);
+    const setActive = (list) => st.set(K.active, list);
 
     // ── the ledger: what this plugin really drew ─────────────────────────────────────────────────
     /**
@@ -1356,7 +1430,7 @@ module.exports = {
     const uniq = (list) => Array.from(new Set((list || []).map((n) => String(n)).filter(Boolean)));
 
     function ledger() {
-      const v = host.store.get(K.drawn, {});
+      const v = st.get(K.drawn, {});
       return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
     }
     /** The names the ledger holds for one zone — the ones it was really drawn under. */
@@ -1391,7 +1465,7 @@ module.exports = {
       if (Array.isArray(rec.names) && next.length === rec.names.length
         && next.every((n, i) => n === rec.names[i])) return;          // nothing new: no store write
       all[id] = { set: (entry && entry.set) || rec.set || null, names: next };
-      host.store.set(K.drawn, all);
+      st.set(K.drawn, all);
     }
     /** Take names out of the ledger — they are off the map, or the game says it never had them. */
     function forgetDrawn(entry, names) {
@@ -1404,7 +1478,7 @@ module.exports = {
       const left = rec.names.filter((n) => !gone.has(String(n)));
       if (left.length === rec.names.length) return;
       if (left.length) all[id] = { set: rec.set || null, names: left }; else delete all[id];
-      host.store.set(K.drawn, all);
+      st.set(K.drawn, all);
     }
     /** The same, for a name the sweep removed and which may belong to any zone or to none. */
     function forgetDrawnAnywhere(names) {
@@ -1420,7 +1494,7 @@ module.exports = {
         moved = true;
         if (left.length) all[id] = { set: rec.set || null, names: left }; else delete all[id];
       }
-      if (moved) host.store.set(K.drawn, all);
+      if (moved) st.set(K.drawn, all);
     }
     /**
      * The names the CURRENT configuration would produce for one zone.
@@ -1473,7 +1547,8 @@ module.exports = {
     // than WHAT, which is true whatever language the box is drawn in.
     // The prefix is the only thing that tells this plugin's zones apart from ones drawn by hand;
     // blank, every zone on the server would count as ours.
-    const NO_PREFIX = 'the zone name prefix is empty. Fill it in where this tab sets up the rectangle.';
+    const NO_PREFIX = saidFixed('no_prefix', {},
+      'the zone name prefix is empty. Fill it in where this tab sets up the rectangle.');
     const zoneNameFor = (entry) => safeZoneName(`${cfg().zone.namePrefix}${entry.name || entry.set}`);
     const zoneNameAt = (entry, i, count) => safeZoneName(count > 1 ? `${zoneNameFor(entry)} ${i + 1}` : zoneNameFor(entry));
     /**
@@ -1609,11 +1684,12 @@ module.exports = {
       return `the bridge's "${moduleId}" module refused this read; the manager's log says why`;
     }
 
-    const NO_BRIDGE_ANSWER = 'the bridge did not answer: not deployed, not running, or too old';
+    const NO_BRIDGE_ANSWER = saidFixed('no_bridge_answer', {},
+      'the bridge did not answer: not deployed, not running, or too old');
 
     // The bridge asks for the zone list through an online player, so this usually means nobody is on.
-    const NOT_KNOWN = 'the game has not sent the bridge its zone list yet. Loot is live; '
-      + 'the rectangle follows once a player is online.';
+    const NOT_KNOWN = saidFixed('zones_not_known', {}, 'the game has not sent the bridge its zone list yet. Loot is live; '
+      + 'the rectangle follows once a player is online.');
 
     /**
      * The configuration index our zones should point at.
@@ -1857,7 +1933,7 @@ module.exports = {
       const r = await host.server.command('ReloadLootCustomizationsAndResetSpawners');
       const said = (r && Array.isArray(r.output)) ? r.output.join(' ') : '';
       if (r && r.ok && r.confirmed !== false && /reloaded/i.test(said)) {
-        host.store.set(K.lootReloadedAt, Date.now());
+        st.set(K.lootReloadedAt, Date.now());
         log.info(`loot reloaded on the running server — the game said: ${said}`);
         return { ok: true, said };
       }
@@ -2122,7 +2198,7 @@ module.exports = {
       if (!prefixUsable()) return { ok: false, why: NO_PREFIX };
       const m = host.map || {};
       if (typeof m.writeZones !== 'function' || typeof m.zonesWritable !== 'function') {
-        return { ok: false, why: 'this manager is too old to write zones; update to 5.15.2 or newer' };
+        return { ok: false, why: 'this manager is too old to write zones; update to 5.15.3 or newer' };
       }
       const pre = await m.zonesWritable().catch(() => null);
       if (!pre || pre.ok !== true) {
@@ -2276,6 +2352,8 @@ module.exports = {
         clock: out.clock || null,
         outsideWindow: out.outsideWindow || 0,
         refusals: (out.refusals || []).slice(0, 4),
+        // Each refusal the tab can translate, keyed by its own English text. See `coded()`.
+        refusalCodes: codesFor((out.refusals || []).slice(0, 4)),
         // Which kind of zero this patrol's zeros are. See `patrolGuards`.
         playersKnown: out.playersKnown === undefined ? null : !!out.playersKnown,
         playersOnline: out.playersOnline === undefined ? null : out.playersOnline,
@@ -2315,15 +2393,15 @@ module.exports = {
       // Stored only when the SENTENCE changed. A counter that moved is a changed sentence; the
       // timestamp and the distance to the nearest player are not.
       const gist = (r) => JSON.stringify(Object.assign({}, r, { at: 0, nearest: 0 }));
-      const all = host.store.get(K.lastPatrol, {}) || {};
+      const all = st.get(K.lastPatrol, {}) || {};
       if (!all[key] || gist(all[key]) !== gist(row)) {
-        host.store.set(K.lastPatrol, Object.assign({}, all, { [key]: row }));
+        st.set(K.lastPatrol, Object.assign({}, all, { [key]: row }));
       }
     }
 
     /** What the screen shows: this process's own readings over whatever the store last kept. */
     function patrolsForScreen() {
-      return Object.assign({}, host.store.get(K.lastPatrol, {}) || {}, patrolSeen);
+      return Object.assign({}, st.get(K.lastPatrol, {}) || {}, patrolSeen);
     }
 
     function markPatrolled(zoneId) {
@@ -2435,8 +2513,14 @@ module.exports = {
 
     // A zone only works while somebody is near it, so no player positions means nothing is done.
     // Both switches are reads, in the bridge's "Live player data" module.
-    const PLAYERS_UNKNOWN = 'player positions are unknown, so nothing was done. Turn on "Read live player data" '
-      + 'and "Position, facing and speed" (Live player data).';
+    // The two switches are named by the tab from the bridge's own captions, with the route built
+    // from the panel's keys; this English is only the fallback for a tab that does not know the code.
+    const PLAYERS_UNKNOWN = saidFixed('players_unknown', {},
+      'player positions are unknown, so nothing was done. Turn on "Read live player data" '
+      + 'and "Position, facing and speed" (Live player data).');
+    const NO_POSITIONS = saidFixed('no_positions', {},
+      'no guard sent: player positions unknown. Turn on "Read live player data" '
+      + 'and "Position, facing and speed".');
 
     /**
      * Can this bridge put a map sentry away, and is it allowed to? Read off the despawn module's own
@@ -2511,6 +2595,8 @@ module.exports = {
      * the card for the words they had just been given found nothing at all.
      */
     const REMOVE_SWITCH = { sentry: 'Remove dropship-dropped sentries', puppet: 'Remove puppets (zombies)' };
+    // The same two switches by their KEY, so the tab can read the caption off the bridge's own schema.
+    const REMOVE_KEY = { sentry: 'sentries', puppet: 'puppets' };
 
     /**
      * Where this zone's own guards of one bridge kind are: the slots this plugin was handed when it
@@ -2892,7 +2978,7 @@ module.exports = {
         log.info(`"${entry.name || entry.set}" — ${taken} guard(s) that had left the zone's reach were taken away`);
       }
       if (loose && life.leash === 'zone' && why) {
-        out.refusals.push(`${loose} guard(s) outside the zone could not be taken back yet: ${why}`);
+        out.refusals.push(coded('loose', { n: loose, why }, `${loose} guard(s) outside the zone could not be taken back yet: ${why}`));
       }
     }
 
@@ -2958,8 +3044,8 @@ module.exports = {
       }
       if (stuck) {
         // Still counted as this zone's, so nothing is sent beside them; retried next round.
-        out.refusals.push(`${stuck} guard(s) walked outside the zone and could not be removed: ${why} `
-          + 'Retried next round.');
+        out.refusals.push(coded('stuck', { n: stuck, why }, `${stuck} guard(s) walked outside the zone and could not be removed: ${why} `
+          + 'Retried next round.'));
       }
     }
 
@@ -3105,7 +3191,34 @@ module.exports = {
 
     /** What to call this guard on a screen, when the owner did not name it themselves. */
     function typeLabel(t) {
-      return String(t.label || '').trim() || typeWord(t) || 'an unnamed guard';
+      return String(t.label || '').trim() || wordLabel(typeWord(t)) || 'an unnamed guard';
+    }
+    /**
+     * A guard WORD as a person reads it. A class the picker had no label for used to reach the
+     * card's sentences raw (`BP_Guard_Lvl_2`); the manager's own actor rule turns that into the
+     * game's name ("Guard (Lvl 2)"), then the item resolver, and only then the word itself. A
+     * manager too old to have `items.actorName` simply gets the next rung down.
+     */
+    function wordLabel(word) {
+      const w = String(word || '').trim();
+      if (!w) return '';
+      const rnd = /^random_(.+)$/.exec(w);
+      if (rnd) return rnd[1] === 'zombie_safe' ? 'a random zombie (the safer list)' : `a random ${rnd[1].replace(/_/g, ' ')}`;
+      const items = host.items || {};
+      try {
+        if (typeof items.actorName === 'function') {
+          // `actorName` recognises a CLASS by its `_C`, which `typeWord` has already taken off.
+          for (const q of [w, `${w}_C`]) {
+            const n = items.actorName(q);
+            if (n && String(n) !== q) return String(n);
+          }
+        }
+        if (typeof items.name === 'function') {
+          const n = items.name(w);
+          if (n && String(n) !== w) return String(n);
+        }
+      } catch { /* the resolver is optional; the word is still a true answer */ }
+      return w;
     }
 
     /**
@@ -3797,7 +3910,7 @@ module.exports = {
      * on the zone's own random ground. Only an admin's named point pins a guard to one place.
      */
     function sentriesOf(zoneId) {
-      const all = host.store.get(K.sentrySeen, {});
+      const all = st.get(K.sentrySeen, {});
       const v = (all && typeof all === 'object') ? all[String(zoneId)] : null;
       return Array.isArray(v) ? v : [];
     }
@@ -3805,9 +3918,9 @@ module.exports = {
       const at = { x: Math.round(nz(o.x, 0)), y: Math.round(nz(o.y, 0)) };
       const had = sentriesOf(zoneId);
       if (had.some((q) => near(q, at, SAME_SPOT_CM))) return;
-      const all = Object.assign({}, host.store.get(K.sentrySeen, {}) || {});
+      const all = Object.assign({}, st.get(K.sentrySeen, {}) || {});
       all[String(zoneId)] = had.concat([at]);
-      host.store.set(K.sentrySeen, all);
+      st.set(K.sentrySeen, all);
     }
 
     /**
@@ -3826,7 +3939,7 @@ module.exports = {
       };
     }
     function poolOf(zoneId) {
-      const all = host.store.get(K.pool, {});
+      const all = st.get(K.pool, {});
       const v = (all && typeof all === 'object') ? all[String(zoneId)] : null;
       const rec = (v && typeof v === 'object') ? v : {};
       return {
@@ -3840,20 +3953,20 @@ module.exports = {
       };
     }
     function setPool(zoneId, rec) {
-      const all = Object.assign({}, host.store.get(K.pool, {}) || {});
+      const all = Object.assign({}, st.get(K.pool, {}) || {});
       const was = JSON.stringify(all[String(zoneId)] || null);
       const now = { seed: rec.seed, step: rec.step, miss: rec.miss, tries: rec.tries, done: rec.done, restUntil: rec.restUntil, pts: rec.pts };
       if (was === JSON.stringify(now)) return;           // a round that learned nothing writes nothing
       all[String(zoneId)] = now;
-      host.store.set(K.pool, all);
+      st.set(K.pool, all);
     }
     /** The pool of a zone that has gone: nothing else ever removes it. */
     function dropPool(zoneId) {
-      const all = host.store.get(K.pool, {}) || {};
+      const all = st.get(K.pool, {}) || {};
       if (!all[String(zoneId)]) return;
       const next = Object.assign({}, all);
       delete next[String(zoneId)];
-      host.store.set(K.pool, next);
+      st.set(K.pool, next);
     }
 
     /**
@@ -4387,11 +4500,11 @@ module.exports = {
         // ⚠ A ZONE THAT WAS LEFT STARTS AGAIN. The kill delay exists so whoever just cleared the zone
         // has time to loot and fight without guards appearing behind them. Somebody who walks away
         // and comes back meets a guarded zone again, looted or not, which is deliberate.
-        const allKills = host.store.get(K.kills, {}) || {};
+        const allKills = st.get(K.kills, {}) || {};
         if (allKills[String(entry.id)]) {
           const rest = Object.assign({}, allKills);
           delete rest[String(entry.id)];
-          host.store.set(K.kills, rest);
+          st.set(K.kills, rest);
         }
       }
       wasAwake[String(entry.id)] = true;
@@ -4427,7 +4540,8 @@ module.exports = {
           // decide it.
           if (!stowing && pre.allowed === false) {
             // ⚠ The CARD is "Remove from the world"; "Removal" is a group inside it.
-            out.refusals.push(`${kind}: not removed. Turn on "${REMOVE_SWITCH[kind] || kind}" (Remove from the world card, Removal group).`);
+            out.refusals.push(coded('not_removed', { kind, key: REMOVE_KEY[kind] || '', label: REMOVE_SWITCH[kind] || kind },
+              `${kind}: not removed. Turn on "${REMOVE_SWITCH[kind] || kind}" (Remove from the world card, Removal group).`));
             continue;
           }
           const all = pre.objects || [];
@@ -4549,11 +4663,12 @@ module.exports = {
       // card showed a rectangle, no places and no reason. Both halves reach the screen now: how many
       // went, and what the game said about them.
       if (out.spotsDropped) {
-        out.refusals.push(`${out.spotsDropped} guard place(s) left out: no room to stand within 30 m `
-          + `(${out.spotsDroppedWhy}). Retried later.`);
+        out.refusals.push(coded('spots_dropped', { n: out.spotsDropped, why: out.spotsDroppedWhy },
+          `${out.spotsDropped} guard place(s) left out: no room to stand within 30 m `
+          + `(${out.spotsDroppedWhy}). Retried later.`));
       }
       if (out.groundWhy) {
-        out.refusals.push(`some guard places could not be settled on the ground this round — ${out.groundWhy}`);
+        out.refusals.push(coded('ground_why', { why: out.groundWhy }, `some guard places could not be settled on the ground this round — ${out.groundWhy}`));
       }
       /**
        * ⚠ **A POINT SOMEBODY TYPED IS REFUSED BY NAME, WITH ITS OWN THREE NUMBERS ON THE CARD.**
@@ -4572,8 +4687,8 @@ module.exports = {
        */
       const halfTyped = allTypes.reduce((n, t) => n + nz(t.atDropped, 0), 0);
       if (halfTyped) {
-        out.refusals.push(`${halfTyped} named point(s) are missing a number and are skipped. `
-          + 'Fill all three, or remove the point.');
+        out.refusals.push(coded('half_typed', { n: halfTyped }, `${halfTyped} named point(s) are missing a number and are skipped. `
+          + 'Fill all three, or remove the point.'));
       }
       const bad = posts.filter((p) => p.named && p.badPoint);
       out.named = posts.filter((p) => p.named).length;
@@ -4584,8 +4699,8 @@ module.exports = {
           + `used for "${p.gt}": ${p.badPoint.why} It is not moved; it is checked again later.`);
       }
       if (bad.length > 3) {
-        out.refusals.push(`${bad.length - 3} more named point(s) are unused. Press "Check this spot" `
-          + 'on each in its guard.');
+        out.refusals.push(coded('more_unused', { n: bad.length - 3 }, `${bad.length - 3} more named point(s) are unused. Press "Check this spot" `
+          + 'on each in its guard.'));
       }
       /**
        * ⚠ **ONLY WHERE THE ZONE IS REALLY SHORT.** A pool stops being filled for two reasons and
@@ -4601,13 +4716,13 @@ module.exports = {
        * of places, because a zone that has what it asked for is not waiting on anything.
        */
       if (out.poolWhy && (out.poolUsed || 0) < want) {
-        out.refusals.push(`this zone is still finding places; the last check failed: ${out.poolWhy} `
-          + 'Retrying in seconds.');
+        out.refusals.push(coded('pool_why', { why: out.poolWhy }, `this zone is still finding places; the last check failed: ${out.poolWhy} `
+          + 'Retrying in seconds.'));
       }
       if (out.poolRest && (out.poolUsed || 0) < want) {
         // The ground it looked at is water, roofs or walls; it looks again in a few minutes.
-        out.refusals.push('this zone is running out of places of its own. Name points on a guard\'s '
-          + 'row, or move the rectangle.');
+        out.refusals.push(coded('pool_rest', {}, 'this zone is running out of places of its own. Name points on a guard\'s '
+          + 'row, or move the rectangle.'));
       }
 
       /**
@@ -5054,7 +5169,7 @@ module.exports = {
      * setting in both cases — so the window a kill is held for has to be the DEAD GUARD'S own.
      */
     function recentKills(zoneId, deadByWord, windowFor) {
-      const all = host.store.get(K.kills, {}) || {};
+      const all = st.get(K.kills, {}) || {};
       const key = String(zoneId);
       const mine = Object.assign({}, all[key] || {});
       const now = Date.now();
@@ -5071,7 +5186,7 @@ module.exports = {
         if (!(windowMs > 0) || now - nz(mine[id].at, 0) >= windowMs) { delete mine[id]; changed = true; continue; }
         perWord.set(mine[id].word, (perWord.get(mine[id].word) || 0) + 1);
       }
-      if (changed) host.store.set(K.kills, Object.assign({}, all, { [key]: mine }));
+      if (changed) st.set(K.kills, Object.assign({}, all, { [key]: mine }));
       return perWord;
     }
 
@@ -5084,7 +5199,7 @@ module.exports = {
       if (!types.length) {
         // Nothing chosen. The sentries still went — that is what "replace" with an empty choice
         // means — and saying nothing here would look like a patrol that failed.
-        out.refusals.push('no guard has been chosen yet, so the posts are standing empty');
+        out.refusals.push(coded('no_guard_chosen', {}, 'no guard has been chosen yet, so the posts are standing empty'));
         return out;
       }
       const zoneWait = Math.max(0, nz(rep.afterDeathSeconds, 120)) * 1000;
@@ -5122,27 +5237,31 @@ module.exports = {
         if (v.blind) {
           // Said EVERY round, deliberately: the card draws the last patrol's refusals, and a window
           // that is quietly not being applied is exactly the "partly working" state this is for.
-          out.refusals.push(`"${typeLabel(t)}" has a time window set (${hhmm(win.from)} to `
+          out.refusals.push(coded('window_blind', { guard: typeLabel(t), from: hhmm(win.from), to: hhmm(win.to), why: v.why },
+            `"${typeLabel(t)}" has a time window set (${hhmm(win.from)} to `
             + `${hhmm(win.to)}, GAME'S clock) that is NOT being applied: ${v.why} `
-            + 'Guards are sent as if no window were set.');
+            + 'Guards are sent as if no window were set.'));
           continue;
         }
         if (!v.open) {
           shut.set(t, `${hhmm(win.from)} to ${hhmm(win.to)}`);
           // Posts are not filled; guards already standing are left alone.
-          out.refusals.push(`"${typeLabel(t)}" is outside its time window `
+          out.refusals.push(coded('window_closed', {
+            guard: typeLabel(t), from: hhmm(win.from), to: hhmm(win.to), now: hhmm(v.hour),
+            minutes: (clock && clock.speed) ? Math.round(600 / clock.speed) / 10 : null,
+          }, `"${typeLabel(t)}" is outside its time window `
             + `(${hhmm(win.from)}–${hhmm(win.to)}, GAME'S clock; now ${hhmm(v.hour)}).`
-            + (clock && clock.speed ? ` A game hour is ${Math.round(600 / clock.speed) / 10} real minutes.` : ''));
+            + (clock && clock.speed ? ` A game hour is ${Math.round(600 / clock.speed) / 10} real minutes.` : '')));
         }
       }
 
       // ⚠ THE ZONE'S OWN CLOCK, checked before anything else is spent. A zone still inside its
       // cooldown makes no bridge call at all this round — the cheapest correct answer.
       const cool = Math.max(0, nz(rep.cooldownSeconds, 0)) * 1000;
-      const lastSent = nz((host.store.get(K.lastGuardAt, {}) || {})[String(entry.id)], 0);
+      const lastSent = nz((st.get(K.lastGuardAt, {}) || {})[String(entry.id)], 0);
       if (cool > 0 && lastSent && (Date.now() - lastSent) < cool) {
         const left = Math.ceil((cool - (Date.now() - lastSent)) / 1000);
-        out.refusals.push(`no guard was sent this round: cooldown, ${left} more second(s).`);
+        out.refusals.push(coded('cooldown', { n: left }, `no guard was sent this round: cooldown, ${left} more second(s).`));
         return out;
       }
 
@@ -5185,7 +5304,7 @@ module.exports = {
        */
       // Only a pool that EXISTS is read: `poolOf` draws a fresh seed for a zone that has none, and a
       // zone with no places of its own has nothing to move to anyway.
-      const poolRec = (host.store.get(K.pool, {}) || {})[String(entry.id)];
+      const poolRec = (st.get(K.pool, {}) || {})[String(entry.id)];
       const poolNow = (poolRec && area && Array.isArray(area.rects) && area.rects.length) ? poolOf(entry.id) : null;
       let poolTouched = false;
       function otherPlace(p, t) {
@@ -5254,8 +5373,7 @@ module.exports = {
         // module that is off — and the owner has no way to find out which.
         // It will not risk a guard next to somebody. Both switches are reads (Live player data);
         // "Never appear within" 0 sends guards without checking, which is not recommended.
-        out.refusals.push('no guard sent: player positions unknown. Turn on "Read live player data" '
-          + 'and "Position, facing and speed".');
+        out.refusals.push(NO_POSITIONS);
         return out;
       }
 
@@ -5495,7 +5613,7 @@ module.exports = {
         if (verdict.unknown) {
           // A post that could not be LOOKED at is left exactly as it is. Sending a guard on an
           // unreadable answer is how one dead guard becomes a heap of them.
-          out.refusals.push(`a post could not be checked: ${verdict.why}`);
+          out.refusals.push(coded('post_unchecked', { why: verdict.why }, `a post could not be checked: ${verdict.why}`));
           continue;
         }
         if (verdict.held) {
@@ -5545,8 +5663,8 @@ module.exports = {
             // The whole ring refused. Back to where it started, and a long rest before trying again.
             p.x = p.home.x; p.y = p.home.y; p.vanished = 0;
             p.blind = MAX_BLIND_FILLS; p.blindUntil = Date.now() + BLIND_REST_MS;
-            out.refusals.push('the game kept removing guards at one spot; resting. A moved rectangle '
-              + 'or more guard spots helps.');
+            out.refusals.push(coded('spot_removed', {}, 'the game kept removing guards at one spot; resting. A moved rectangle '
+              + 'or more guard spots helps.'));
             continue;
           }
           const off = VANISH_RING[p.vanished];
@@ -5588,8 +5706,8 @@ module.exports = {
              */
             // Commonest cause is height: the game refuses a spawn below the ground. The route that is
             // gone at the next restart can be asked whether what it made is still alive.
-            out.refusals.push('a post never kept a guard, so it is resting. Widen the search height '
-              + 'or name the point yourself.');
+            out.refusals.push(coded('post_never_kept', {}, 'a post never kept a guard, so it is resting. Widen the search height '
+              + 'or name the point yourself.'));
             continue;
           }
         }
@@ -5718,9 +5836,9 @@ module.exports = {
           p.blind = nz(p.blind, 0) + 1;
           if (p.blind >= MAX_BLIND_FILLS) p.blindUntil = Date.now() + BLIND_REST_MS;
           // The zone's clock starts when a guard really goes out, not when one was merely attempted.
-          const clocks = Object.assign({}, host.store.get(K.lastGuardAt, {}) || {});
+          const clocks = Object.assign({}, st.get(K.lastGuardAt, {}) || {});
           clocks[String(entry.id)] = Date.now();
-          host.store.set(K.lastGuardAt, clocks);
+          st.set(K.lastGuardAt, clocks);
           sent = true;
         } else if (made.why) {
           out.refusals.push(made.why);
@@ -5739,7 +5857,7 @@ module.exports = {
         log.info(`"${entry.name || entry.set}" — ${relocated} guard place(s) moved to another part of the zone`);
       }
       if (waitMove && !sent) {
-        out.refusals.push(`${waitMove} place(s) wait for a new spot away from where the last guard fell.`);
+        out.refusals.push(coded('wait_move', { n: waitMove }, `${waitMove} place(s) wait for a new spot away from where the last guard fell.`));
       }
       if (moved) {
         log.info(`"${entry.name || entry.set}" — ${moved} guard spot(s) moved: the game removed `
@@ -5751,52 +5869,53 @@ module.exports = {
         for (const w of restingWhy) out.refusals.push(w);
         if (resting > restingWhy.size) {
           // A place refused again and again is a roof, a wall or a steep slope.
-          out.refusals.push(`${resting - restingWhy.size} post(s) resting after the game refused a guard. `
-            + 'If it repeats, move the rectangle.');
+          out.refusals.push(coded('resting', { n: resting - restingWhy.size }, `${resting - restingWhy.size} post(s) resting after the game refused a guard. `
+            + 'If it repeats, move the rectangle.'));
         }
       }
       // Said where it was counted. A post skipped in silence reads as a post that is broken.
       if (waitingNear && !sent && !out.held && !out.spawned) {
         // With no NPC allowance a guard lives only near a player.
-        out.refusals.push(`no guard sent: guards need a player within 150 m, and ${waitingNear} spot(s) `
-          + 'are further than that from everybody. Walk closer.');
+        out.refusals.push(coded('need_player_near', { n: waitingNear }, `no guard sent: guards need a player within 150 m, and ${waitingNear} spot(s) `
+          + 'are further than that from everybody. Walk closer.'));
       }
       if (overUnder && !out.spawned) {
-        out.refusals.push(`${overUnder} surface spot(s) wait: nearby players are underground, so guards go there.`);
+        out.refusals.push(coded('surface_wait', { n: overUnder }, `${overUnder} surface spot(s) wait: nearby players are underground, so guards go there.`));
       }
       // A count rather than another sentence: the WHY was said once per guard type above, and the
       // number is the half a card cannot work out for itself.
       if (outsideWindow) out.outsideWindow = outsideWindow;
       if (nearPlayer) {
-        out.refusals.push(`${nearPlayer} post(s) left empty: a player is near. They fill once clear.`);
+        out.refusals.push(coded('near_player', { n: nearPlayer }, `${nearPlayer} post(s) left empty: a player is near. They fill once clear.`));
       }
       if (unplaced) {
         out.unplaced = unplaced;
         const why = (area && area.groundWhy) || null;
         // A guard put where the game will not keep one pops in and out in front of players.
-        out.refusals.push(`${unplaced} place(s) not settled on the ground yet, so nothing is sent. `
+        out.refusals.push(coded('unplaced', { n: unplaced, why },
+          `${unplaced} place(s) not settled on the ground yet, so nothing is sent. `
           + (why
             ? `The last check failed: ${why}`
-            : 'They settle within a minute or so.'));
+            : 'They settle within a minute or so.')));
       }
       if (overWant && !out.spawned) {
-        out.refusals.push(`${overWant} place(s) left empty: that guard\'s number is reached. Raise it, `
-          + 'or add a guard with no number.');
+        out.refusals.push(coded('over_want', { n: overWant }, `${overWant} place(s) left empty: that guard\'s number is reached. Raise it, `
+          + 'or add a guard with no number.'));
       }
       if (spare) {
         out.spare = spare;
         // Every guard names a number and they add up to fewer than the places; a guard with no
         // number shares whatever is left.
-        out.refusals.push(`${spare} place(s) have no guard. Raise a guard\'s number, add one with no number, `
-          + 'or lower "At most this many places".');
+        out.refusals.push(coded('spare', { n: spare }, `${spare} place(s) have no guard. Raise a guard\'s number, add one with no number, `
+          + 'or lower "At most this many places".'));
       }
       // ⚠ SAID LAST, so it never pushes a sharper reason off the card. Degrading is not a failure and
       // it is not a success either; the owner is told which kind of zero the numbers beside it are.
       if (censusWhy) {
         // Counted from held places, so a guard that walked away is missed and the ceiling can be
         // reached one guard late.
-        out.refusals.push(`guards could not be counted across the zone (${censusWhy}); `
-          + 'each place was checked instead.');
+        out.refusals.push(coded('census_unknown', { why: censusWhy }, `guards could not be counted across the zone (${censusWhy}); `
+          + 'each place was checked instead.'));
       }
       // What the zone asked for, what the plan gave it, and what it has — per guard, for the card.
       // ⚠ `have` IS NULL WHERE NOTHING COULD BE COUNTED, which is a different fact from 0 and must
@@ -6455,7 +6574,7 @@ module.exports = {
        */
       const known = gameSpawnFor(r);
       if (known && known.spawnable === false) {
-        return { count: 0, ids: [], why: whyNoGameSpawn(typeWord(r) || name, known) };
+        return { count: 0, ids: [], why: whyNoGameSpawn(wordLabel(typeWord(r)) || name, known) };
       }
       const ids = [];
       // Guards the GAME'S OWN command made, which hands back no identifier — counted apart from `ids`
@@ -6582,7 +6701,7 @@ module.exports = {
              * is a file an update rewrites — this is the rule, in code, where it cannot drift.
              */
             if (entry && entry.verb && BANNED_VERBS.has(String(entry.verb))) {
-              const banned = whyNoGameSpawn(typeWord(r) || name, entry);
+              const banned = whyNoGameSpawn(wordLabel(typeWord(r)) || name, entry);
               why = banned;
               break;
             }
@@ -6617,7 +6736,7 @@ module.exports = {
             // ⚠ THE CLASS WORD, NEVER THE OWNER'S LABEL. Every sentence this returns is about a
             // class path, and one of them now asks the shipped catalogue whether the build HAS it —
             // which a label like "night shift" can only ever answer no to.
-            why = whyNoGameSpawn(typeWord(r) || name, entry);
+            why = whyNoGameSpawn(wordLabel(typeWord(r)) || name, entry);
             break;
           }
           /**
@@ -6695,18 +6814,18 @@ module.exports = {
       if (!g.enabled) {
         // Only ever put back what THIS plugin set. A number an owner changed themselves while a zone
         // was live is theirs, and restoring over it would be this plugin undoing somebody else.
-        const mine = nz(host.store.get(K.respawnSet, 0), 0);
+        const mine = nz(st.get(K.respawnSet, 0), 0);
         if (!mine) return;
-        host.store.set(K.respawnSet, 0);
-        const back = nz(host.store.get(K.respawnWas, 0), 0);
+        st.set(K.respawnSet, 0);
+        const back = nz(st.get(K.respawnWas, 0), 0);
         if (back > 0) await bx('setSentryTuning', 'respawn', back);
         return;
       }
       if (!want) {
-        const mine = nz(host.store.get(K.respawnSet, 0), 0);
+        const mine = nz(st.get(K.respawnSet, 0), 0);
         if (!mine) return;
-        const back = nz(host.store.get(K.respawnWas, 0), 0);
-        host.store.set(K.respawnSet, 0);
+        const back = nz(st.get(K.respawnWas, 0), 0);
+        st.set(K.respawnSet, 0);
         if (back > 0) {
           const r = await bx('setSentryTuning', 'respawn', back);
           log.info(`sentry respawn delay put back to ${back}s ${r && r.ok ? '' : '(the bridge did not confirm it)'}`);
@@ -6733,7 +6852,7 @@ module.exports = {
         const row = rows.find((f) => f && (f.key === 'respawn' || f.key === 'sentryRespawnSeconds'));
         return row ? nz(row.value, 0) : 0;
       })();
-      const mine = nz(host.store.get(K.respawnSet, 0), 0);
+      const mine = nz(st.get(K.respawnSet, 0), 0);
       // Already exactly what was asked for, and the game confirmed it: nothing to send.
       if (was === seconds && mine === seconds) return;
       /**
@@ -6748,8 +6867,8 @@ module.exports = {
         log.warn(`the sentry respawn delay could not be set: ${(r && (r.reason || r.error)) || NO_BRIDGE_ANSWER}`);
         return;
       }
-      if (was > 0 && !mine) host.store.set(K.respawnWas, was);
-      host.store.set(K.respawnSet, seconds);
+      if (was > 0 && !mine) st.set(K.respawnWas, was);
+      st.set(K.respawnSet, seconds);
       log.info(`sentry respawn delay set to ${seconds}s for EVERY guarded zone on the map`
         + `${was > 0 ? ` (it was ${was}s)` : ' (the old value could not be read, so it will not be put back)'}`);
     }
@@ -6880,7 +6999,10 @@ module.exports = {
      * that the game had not sent its zone list yet.
      */
     // Everything else on the page keeps working.
-    const OLD_MANAGER = 'this manager is older than the spawn-plan reading. Update the manager for this part.';
+    // `encounterPlaces`, `setEncounterZone` and `restoreEncounterZones` arrived in manager 5.20.0.
+    const OLD_MANAGER_NEEDS = '5.20.0';
+    const OLD_MANAGER = saidFixed('old_manager', { version: OLD_MANAGER_NEEDS },
+      `this manager is older than the spawn-plan reading. Update the manager to ${OLD_MANAGER_NEEDS} or newer for this part.`);
     /**
      * ⚠ **THREE CAUSES, AND THE FIRST TWO ARE NOT THE SAME SENTENCE.** No bridge at all is the
      * ordinary one and this plugin already has words for it; a bridge with none of these three verbs
@@ -7130,9 +7252,9 @@ module.exports = {
         const name = entry.name || entry.set || String(a.id);
         if (!wants) continue;
         const r = zoneRects(entry);
-        if (!r.ok) { refused.push({ zone: name, why: r.why }); continue; }
+        if (!r.ok) { refused.push({ zone: name, why: r.why, whyCode: codeOf(r.why) }); continue; }
         const cov = coverageOf(r.rects, island);
-        if (!cov) { refused.push({ zone: name, why: NOT_KNOWN }); continue; }
+        if (!cov) { refused.push({ zone: name, why: NOT_KNOWN, whyCode: codeOf(NOT_KNOWN) }); continue; }
         zones.push({ zone: name, id: String(a.id), wants, coverage: cov });
 
         for (const k of cov.kinds) {
@@ -7204,7 +7326,7 @@ module.exports = {
      * nothing anywhere remembering it.
      */
     async function restoreActivity(which) {
-      const held = host.store.get(K.activitySet, {}) || {};
+      const held = st.get(K.activitySet, {}) || {};
       const names = Object.keys(held).filter((n) => !which || which.indexOf(n) >= 0);
       if (!names.length) return { restored: 0, failed: 0 };
       let restored = 0;
@@ -7226,7 +7348,7 @@ module.exports = {
       const next = Object.assign({}, held);
       for (const nm of names) delete next[nm];
       for (const nm of failed) next[nm] = held[nm];
-      host.store.set(K.activitySet, next);
+      st.set(K.activitySet, next);
       dropPlacesCache();
       if (failed.length) {
         // The bridge also puts each back when its hold lapses.
@@ -7253,7 +7375,7 @@ module.exports = {
       activityBusy = true;
       try {
         const c = cfg();
-        const held = host.store.get(K.activitySet, {}) || {};
+        const held = st.get(K.activitySet, {}) || {};
 
         // Switched off entirely, or nothing live: put back whatever is ours and stop. Asked BEFORE
         // the island is read, because a plugin that has been switched off must not be making bridge
@@ -7274,9 +7396,9 @@ module.exports = {
         const blocked = activityBlocker();
         if (blocked === OLD_MANAGER) {
           if (!oldManagerSaid) { oldManagerSaid = true; log.warn(OLD_MANAGER); }
-          return { known: false, why: OLD_MANAGER };
+          return { known: false, why: OLD_MANAGER, whyCode: codeOf(OLD_MANAGER) };
         }
-        if (blocked) return { known: false, why: blocked };
+        if (blocked) return { known: false, why: blocked, whyCode: codeOf(blocked) };
 
         const island = await islandPlaces(true);
         if (!island) {
@@ -7284,7 +7406,7 @@ module.exports = {
           // facts that both produce an empty plan, and restoring on the first would undo an owner's
           // live zone every time a poll missed. The bridge's own hold is what covers a manager that
           // really has stopped; this path simply waits.
-          return { known: false, why: NOT_KNOWN };
+          return { known: false, why: NOT_KNOWN, whyCode: codeOf(NOT_KNOWN) };
         }
         if (island.canChange === false) {
           return { known: true, blocked: 'switch', want: [], held: Object.keys(held) };
@@ -7309,7 +7431,7 @@ module.exports = {
 
         const sent = [];
         const failed = [];
-        const nowHeld = Object.assign({}, host.store.get(K.activitySet, {}) || {});
+        const nowHeld = Object.assign({}, st.get(K.activitySet, {}) || {});
         for (const w of plan.want) {
           const live = assets.get(w.asset) || {};
           const already = Number.isFinite(Number(live.chancePercent))
@@ -7332,7 +7454,7 @@ module.exports = {
           }
         }
         if (sent.length || stale.length) {
-          host.store.set(K.activitySet, nowHeld);
+          st.set(K.activitySet, nowHeld);
           dropPlacesCache();
         }
         if (sent.length) {
@@ -7527,7 +7649,7 @@ module.exports = {
       }
       if (!byBridge && !bySave && !nothingThere) {
         // Owed, and remembered as owed: the next sweep that can read a list takes it.
-        host.store.set(K.sweepDue, true);
+        st.set(K.sweepDue, true);
         // Neither could. Said out loud, WITH THE REFUSAL'S OWN WORDS: a rectangle nobody removed is
         // one an owner meets tomorrow, and reporting a clean switch over it is how it stays there.
         // The sentence used to name neither the zone's names nor why, so an owner reading the log
@@ -7541,8 +7663,8 @@ module.exports = {
       if (!opts.quiet) await announce('deactivate', { zone: entry.name || entry.set, set: entry.set });
       // Removing the files is a loot change too, and the game will not see it until it restarts —
       // so what is pending here is the NORMAL loot coming back, which is the opposite sentence.
-      host.store.set(K.lootWrittenAt, Date.now());
-      host.store.set(K.lootPendingKind, 'off');
+      st.set(K.lootWrittenAt, Date.now());
+      st.set(K.lootPendingKind, 'off');
       log.info(`"${entry.name || entry.set}" off — loot files removed; normal loot from the next start`);
       return { erased, nothingThere };
     }
@@ -7603,8 +7725,8 @@ module.exports = {
       // start to tell "live" from "waiting" — the question the reload would have answered — and the
       // direction decides the sentence, because "richer loot is coming" and "normal loot is coming
       // back" are opposite things to tell an owner.
-      host.store.set(K.lootWrittenAt, Date.now());
-      host.store.set(K.lootPendingKind, 'on');
+      st.set(K.lootWrittenAt, Date.now());
+      st.set(K.lootPendingKind, 'on');
       log.info(`"${entry.name || entry.set}" on — ${copied} preset file(s) in place, `
         + `zone ${drawn ? 'drawn' : 'NOT drawn'}. ${LOOT_AT_RESTART}`);
       return { ok: true, copied, drawn, drawnWhy, drawnBy, rectCount: r.rects.length, rows, guards };
@@ -7740,7 +7862,7 @@ module.exports = {
       // run the same reload and the cost it protects against — every examine spawner on the map
       // reset — falls on players either way.
       const gap = Math.max(0, nz(c.minMinutesBetweenSwitches, 0)) * 60000;
-      const last = nz(host.store.get(K.lastSwitch, 0), 0);
+      const last = nz(st.get(K.lastSwitch, 0), 0);
       if (gap && last && (Date.now() - last) < gap && !(why && why.force)) {
         const leftM = Math.ceil((gap - (Date.now() - last)) / 60000);
         return { ok: false, why: `each switch resets containers map-wide, so wait ${leftM} more minute(s) (minimum gap ${c.minMinutesBetweenSwitches} min)` };
@@ -7799,10 +7921,10 @@ module.exports = {
         await applyActivity().catch((e) => log.warn(`${e && e.message}`));
         // The reminder counts from the moment something went live, so the first one lands an
         // interval later instead of directly under the "it changed" line players just read.
-        if (nowActive.length && !have.length) host.store.set(K.reminded, Date.now());
+        if (nowActive.length && !have.length) st.set(K.reminded, Date.now());
         // Stamped HERE rather than inside `activate`, so a switch-OFF starts the clock too: it runs
         // the same map-wide reload, and counting only the switch-on made every other one free.
-        host.store.set(K.lastSwitch, Date.now());
+        st.set(K.lastSwitch, Date.now());
         if (cfg().reloadOnSwitch !== false && (out.off.length || out.on.some((o) => o.ok))) {
           out.reload = await reloadLoot().catch((e) => ({ ok: false, why: e && e.message }));
         }
@@ -7834,7 +7956,7 @@ module.exports = {
     /** Advance to the next zone and remember it as THIS server session's pick. */
     function wantedByRestart() {
       const picked = pickNext();
-      if (picked.length) host.store.set(K.sessionPick, picked[0]);
+      if (picked.length) st.set(K.sessionPick, picked[0]);
       return picked;
     }
 
@@ -7846,10 +7968,10 @@ module.exports = {
       // ⚠ `Number(x) || -1` is the bug this line exists to not have: turn 0 is a legitimate
       // position and it is FALSY, so the fallback fired on it and the rotation sat on the first
       // zone for ever. Driven, four starts in a row, all of them zone one.
-      const raw = host.store.get(K.turn, -1);
+      const raw = st.get(K.turn, -1);
       const turn = Number.isFinite(Number(raw)) ? Number(raw) : -1;
-      const next = (turn + 1) % list.length;
-      host.store.set(K.turn, next);
+      const next = (((turn + 1) % list.length) + list.length) % list.length;
+      st.set(K.turn, next);
       return [list[next]];
     }
 
@@ -7910,7 +8032,7 @@ module.exports = {
         } else {
           log.info('the game has not told the bridge its zone list yet, and the save cannot be written '
             + '— leaving everything alone until one of them can answer');
-          host.store.set(K.sweepDue, true);
+          st.set(K.sweepDue, true);
           return { skipped: true, why: (live && live.why) || NOT_KNOWN, strayZones: [] };
         }
       }
@@ -7973,7 +8095,7 @@ module.exports = {
       }
       if (removed.length) forgetDrawnAnywhere(removed);
       // Settled only by a sweep that read a real list and left nothing of ours behind.
-      host.store.set(K.sweepDue, stubborn.length > 0);
+      st.set(K.sweepDue, stubborn.length > 0);
       return { strayZones, removed, stubborn, why: stubborn.length ? lastWhy : null, via };
     }
 
@@ -7988,7 +8110,7 @@ module.exports = {
       const keep = new Set();
       for (const a of believed) for (const n of drawnNames(a).concat(derivedNames(a))) keep.add(n);
       const owed = allDrawnNames().filter((n) => !keep.has(n));
-      host.store.set(K.sweepDue, true);
+      st.set(K.sweepDue, true);
       if (!owed.length) return { skipped: true, why: (live && live.why) || NOT_KNOWN, strayZones: [] };
       const r = await eraseFromSave(owed).catch(() => ({ ok: false }));
       if (r && r.ok === true) {
@@ -8053,7 +8175,7 @@ module.exports = {
     let owedTimer = null;
     let owedTries = 0;
     function owedWork() {
-      return host.store.get(K.sweepDue, false) === true || getActive().some((a) => a.drawn !== true);
+      return st.get(K.sweepDue, false) === true || getActive().some((a) => a.drawn !== true);
     }
     // A generation, so a chase stopped while one of its passes is still running does not re-arm
     // itself when that pass finishes.
@@ -8116,7 +8238,7 @@ module.exports = {
       // ⚠ AND AGAIN WHENEVER A REMOVAL IS OWED. Once per process was not enough: a switch made as
       // the server went down could reach neither route, and the rectangle it could not remove stayed
       // for the whole next session because the one sweep this process owed had already run.
-      if (bootDone && (!sweptOnce || host.store.get(K.sweepDue, false) === true)) {
+      if (bootDone && (!sweptOnce || st.get(K.sweepDue, false) === true)) {
         await reconcile().catch((e) => log.warn(`reconcile: ${e && e.message}`));
       }
       if (c.rotation === 'time') {
@@ -8134,7 +8256,7 @@ module.exports = {
        */
       {
         const known = new Set((c.zones || []).map((z) => String(z && z.id)));
-        for (const id of Object.keys(host.store.get(K.pool, {}) || {})) {
+        for (const id of Object.keys(st.get(K.pool, {}) || {})) {
           if (!known.has(String(id))) dropPool(id);
         }
       }
@@ -8163,6 +8285,7 @@ module.exports = {
     async function patrolDue() {
       if (patrolBusy || Date.now() < patrolNotBefore) return;
       patrolBusy = true;
+      holdStore();
       try {
         // Nothing live, or nothing guarded: look again in a few seconds, which is how soon a zone
         // switched on or set to guard starts being patrolled.
@@ -8209,6 +8332,7 @@ module.exports = {
           });
         }
       } finally {
+        flushStore();
         patrolBusy = false;
       }
     }
@@ -8217,13 +8341,13 @@ module.exports = {
       const m = (cfg().messages || {}).reminder || {};
       if (!m.enabled) return;
       const every = Math.max(1, nz(m.everyMinutes, 60)) * 60000;
-      const last = nz(host.store.get(K.reminded, 0), 0);
+      const last = nz(st.get(K.reminded, 0), 0);
       if (last && Date.now() - last < every) return;
       const names = liveNames();
       // Nothing to say is not a reminder. Stamping here spent the interval on an empty server, so a
       // zone switched on afterwards waited a full hour for a line that was due the moment it started.
       if (!names.length) return;
-      host.store.set(K.reminded, Date.now());
+      st.set(K.reminded, Date.now());
       await deliver('reminder', { zones: names.join(', '), zone: names[0], count: names.length });
     }
 
@@ -8243,7 +8367,7 @@ module.exports = {
         // point of this mode — so it re-applies the zone this server session already picked and
         // leaves the turn alone. With no pick yet it does nothing and waits for the server to come
         // up, which is the signal that really moves it.
-        const mine = String(host.store.get(K.sessionPick, '') || '');
+        const mine = String(st.get(K.sessionPick, '') || '');
         if (mine) {
           await applyWanted([mine], { force: true }).catch((e) => log.warn(`${e && e.message}`));
         }
@@ -8281,6 +8405,8 @@ module.exports = {
     const joinTimers = new Set();
     if (typeof host.onUnload === 'function') {
       host.onUnload(() => {
+        // A round's held bookkeeping reaches the disk before anything else is let go.
+        flushStore();
         clearInterval(timer);
         clearInterval(patrolTimer);
         clearTimeout(bootTimer);
@@ -8413,7 +8539,7 @@ module.exports = {
         // A new server session is a new zone list, loaded out of the save — whatever this plugin could
         // not take out of it while the server was down is on the map again. One sweep, once the
         // bridge can read the list, settles it.
-        host.store.set(K.sweepDue, true);
+        st.set(K.sweepDue, true);
         /**
          * ⚠ **AND THE CLASSES THE ENGINE ROUTE NEEDS ARE GONE, so the once-per-session bootstrap
          * has to be allowed to run again.** A blueprint class is resident because something made
@@ -8523,10 +8649,23 @@ module.exports = {
       const empty = !stored || typeof stored !== 'object' || !Object.keys(stored).length;
       if (empty && sawConfig) {
         // Saving over a failed read would erase every zone, message and guard in it.
-        return res.json({ ok: false, why: 'nothing was saved: the plugin\'s config.json could not be read. '
+        return res.json({ ok: false, code: 'config_unreadable', why: 'nothing was saved: the plugin\'s config.json could not be read. '
           + 'Try again; if it repeats, check nothing holds it open.' });
       }
       const next = overlay(stored || {}, req.body || {});
+      /**
+       * ⚠ **AN EMPTY PREFIX IS REFUSED AT THE SAVE, NOT ONLY WARNED ABOUT.** The prefix is how this
+       * plugin tells its zones from the owner's own (see `prefixUsable`), and saving an empty one used
+       * to succeed with a warning — after which nothing was drawn and nothing was cleaned up, for as
+       * long as it stayed empty. A zone block with no `namePrefix` key at all is not this case: the
+       * shipped default applies to it.
+       */
+      if (next.zone && typeof next.zone === 'object'
+        && Object.prototype.hasOwnProperty.call(next.zone, 'namePrefix')
+        && !safeZoneName(next.zone.namePrefix).length) {
+        return res.json({ ok: false, code: 'prefix_empty',
+          why: 'nothing was saved: the zone name prefix cannot be empty. It is how this plugin tells its zones from yours.' });
+      }
       host.config.set(next);
       arm();
       syncOwnConfig().catch(() => {});
@@ -8856,9 +8995,9 @@ module.exports = {
     host.routes.get('/status', async (req, res) => {
       const c = cfg();
       const live = await readZones();
-      const last = nz(host.store.get(K.lastSwitch, 0), 0);
+      const last = nz(st.get(K.lastSwitch, 0), 0);
       const gapMs = Math.max(0, nz(c.minMinutesBetweenSwitches, 0)) * 60000;
-      const lootAt = nz(host.store.get(K.lootWrittenAt, 0), 0);
+      const lootAt = nz(st.get(K.lootWrittenAt, 0), 0);
       const upAt = serverUpAt;
       const running = (host.server && typeof host.server.isRunning === 'function') ? !!host.server.isRunning() : null;
       const info = (host.server && typeof host.server.info === 'function')
@@ -8960,12 +9099,12 @@ module.exports = {
          * `true` would send them to restart a server that needs nothing.
          */
         lootPending: (running !== true || !lootAt) ? false
-          : (nz(host.store.get(K.lootReloadedAt, 0), 0) >= lootAt ? false : (upAt ? (lootAt > upAt) : null)),
+          : (nz(st.get(K.lootReloadedAt, 0), 0) >= lootAt ? false : (upAt ? (lootAt > upAt) : null)),
         // WHICH WAY the waiting change goes. "The richer loot is coming" and "the normal loot is
         // coming back" are opposite things to tell somebody, and the old screen said the first one
         // for both — so switching everything off reported that the files were on disk and players
         // were still seeing normal loot, with all three of its clauses false.
-        lootPendingKind: host.store.get(K.lootPendingKind, null) || null,
+        lootPendingKind: st.get(K.lootPendingKind, null) || null,
         // The server's NPC ceiling, so the tab can say why guards appear only near players.
         npcLimit: npcLimit(),
         /**
@@ -9073,11 +9212,12 @@ module.exports = {
     host.routes.get('/activity', async (req, res) => {
       const c = cfg();
       const island = await islandPlaces(req && req.query && req.query.fresh === '1');
-      const held = host.store.get(K.activitySet, {}) || {};
+      const held = st.get(K.activitySet, {}) || {};
       if (!island) {
         return res.json({
           known: false,
           why: activityBlocker() || NOT_KNOWN,
+          whyCode: codeOf(activityBlocker() || NOT_KNOWN),
           // The names are ours whatever the bridge can answer, so an owner can always see what is
           // outstanding — and the sentence beside them is the one that matters: nothing here is
           // saved, so the worst case is one server restart.
@@ -9091,7 +9231,7 @@ module.exports = {
         const r = zoneRects(z);
         byZone[String(z.id)] = r.ok
           ? { coverage: coverageOf(r.rects, island), wants: activityWanted(z) }
-          : { why: r.why, wants: activityWanted(z) };
+          : { why: r.why, whyCode: codeOf(r.why), wants: activityWanted(z) };
       }
       res.json({
         known: true,
@@ -9238,13 +9378,16 @@ module.exports = {
     });
 
     /** Send one of the four messages to the game as players would get it, so wording can be tried out. */
+    const TEST_PLAYER = 'Prisoner';
     host.routes.post('/test-message', async (req, res) => {
       const which = String((req.body && req.body.which) || 'activate');
       const to = String((req.body && req.body.steamId) || '').trim();
       const names = liveNames();
       const names2 = names.length ? names : ['(no zone is live — this is how it would read)'];
       const r = await deliver(which, {
-        zone: names2[0], set: names2[0], zones: names2.join(', '), count: names2.length, player: '',
+        // A sample name, so a join line reads in the test the way it will read for a real player;
+        // an empty `{player}` left "Welcome , the loot is…" and made the wording look broken.
+        zone: names2[0], set: names2[0], zones: names2.join(', '), count: names2.length, player: TEST_PLAYER,
       }, to || undefined).catch((e) => ({ sent: false, why: (e && e.message) || 'it could not be sent', failed: [] }));
       res.json(Object.assign({ ok: !!(r && r.sent), sentTo: to || 'everyone' }, r || {}));
     });

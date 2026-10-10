@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "发送给",
   "pl.better-squads.card.activity": "活动记录",
   "pl.better-squads.card.activity.sub": "最近送达的消息。按读者发送的消息只显示第一份。",
-  "pl.better-squads.live.turnOn": "在 {where} 开启「{switch}」"
+  "pl.better-squads.group.words": "其他消息中使用的词语",
+  "pl.better-squads.text.mutednone": "表示“未静音任何项目”的词语",
+  "pl.better-squads.text.squadnoname": "表示没有名称的小队的词语",
+  "pl.better-squads.text.unknownobject": "突袭：表示未命名物体的词语",
+  "pl.better-squads.text.testline": "从此页面发送的测试消息",
+  "pl.better-squads.live.turnOnBoth": "在 {where} 的 {module} 卡片上开启「{enable}」和「{switch}」",
+  "pl.better-squads.live.nomodule": "此服务器运行的是没有此模块的旧版 SSA Bridge",
+  "pl.better-squads.live.noanswer": "SSA Bridge 没有响应",
+  "pl.better-squads.test.squadunknown": "目前无法读取小队列表。请一分钟后再试。",
+  "pl.better-squads.test.allmuted": "该小队所有在线成员都已被管理员静音",
+  "pl.better-squads.test.reachednobody": "测试已发送，但没有送达任何人"
 }

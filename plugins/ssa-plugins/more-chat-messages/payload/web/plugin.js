@@ -51,7 +51,12 @@
   // reads it in. `seed` names the flag in `/status` that says whether this one has a baseline yet —
   // a polled announcement says nothing from its first reading, which is a real state and not a
   // fault, and without this the card is on, silent, and gives no reason.
-  const CARDS = [
+  //
+  // A FUNCTION, called on every mount, not a list built when the script loads: `T()` answers in the
+  // language the panel is in at the moment it is called, so a list built once kept the language
+  // the page was first opened in after the owner switched it.
+  let CARDS = [];
+  const cardDefs = () => [
     { key: 'kills', icon: 'skull', title: T('pl.more-chat-messages.kills.title', 'Kills'),
       what: T('pl.more-chat-messages.kills.what', 'Every death the kill feed sees, in the game\'s words. Kill lines have no sector.'),
       fields: [
@@ -70,7 +75,7 @@
       what: T('pl.more-chat-messages.leaves.what', 'One line when a player disconnects, with the sector they logged out in.'),
       fields: [['message', T('pl.more-chat-messages.leaves.field.message', 'Message'), '{name} {steamId} {sector} {squad}']] },
     { key: 'cargo', icon: 'box', title: T('pl.more-chat-messages.cargo.title', 'Cargo drops'), bridge: true, seed: 'seededCargo',
-      what: T('pl.more-chat-messages.cargo.what', 'Announced while still in the air. The only announcement here that needs the SSA Bridge.'),
+      what: T('pl.more-chat-messages.cargo.what.v2', 'Announced on the way down, on landing and when gone. Needs the SSA Bridge.'),
       toggles: [['announceIncoming', T('pl.more-chat-messages.cargo.toggle.incoming', 'On the way down')],
         ['announceLanded', T('pl.more-chat-messages.cargo.toggle.landed', 'Landing')],
         ['announceGone', T('pl.more-chat-messages.cargo.toggle.gone', 'Gone')]],
@@ -110,7 +115,7 @@
       fields: [['openMessage', T('pl.more-chat-messages.bunkers.abandoned.field.open', 'Active'), '{sector} {x} {y}'],
         ['closeMessage', T('pl.more-chat-messages.bunkers.abandoned.field.close', 'Locked'), '{sector} {x} {y}']] },
     { key: 'raids', icon: 'shield', title: T('pl.more-chat-messages.raids.title', 'Bases being raided'),
-      what: T('pl.more-chat-messages.raids.what', 'The same alert the manager sends a base owner, said out loud.'),
+      what: T('pl.more-chat-messages.raids.what.v2', 'When a base takes damage. Raid protection changes, locks, chests and vehicles stay quiet.'),
       toggles: [['includeOwner', T('pl.more-chat-messages.raids.toggle.owner', 'Name the base owner')]],
       fields: [['message', T('pl.more-chat-messages.raids.field.message', 'Message'), '{sector} {element} {squad}'],
         ['ownerMessage', T('pl.more-chat-messages.raids.field.owner', 'Message when naming the owner'), '{owner} {squad} {sector} {element}']] },
@@ -119,13 +124,81 @@
   // The value the backend stores is the lower-case word; this is only what a reader sees. A channel
   // a future backend adds and this list has never heard of keeps its own spelling rather than
   // vanishing from the dropdown.
-  const CHANNEL_LABEL = {
-    local: T('pl.more-chat-messages.channel.local', 'Local — heard nearby'),
-    global: T('pl.more-chat-messages.channel.global', 'Global — the whole server'),
+  //
+  // ⚠ A NAME, NOT AN AUDIENCE. These read "Local — heard nearby" and "Admin — admins only" right
+  // above a hint saying every player sees the line whichever channel it is on — which is what the
+  // bridge does. The channel picks the colour and the chat tab, so the label is the channel's name.
+  const channelLabel = (c) => ({
+    local: T('pl.more-chat-messages.channel.local.name', 'Local'),
+    global: T('pl.more-chat-messages.channel.global.name', 'Global'),
     squad: T('pl.more-chat-messages.channel.squad', 'Squad'),
-    admin: T('pl.more-chat-messages.channel.admin', 'Admin — admins only'),
+    admin: T('pl.more-chat-messages.channel.admin.name', 'Admin'),
     server: T('pl.more-chat-messages.channel.server', 'Server'),
-  };
+  })[c] || c;
+
+  // What each line in "What it has said" was, in words. The backend sends the kind as a code.
+  const kindLabel = (k) => ({
+    kill: T('pl.more-chat-messages.kind.kill', 'Kill'),
+    join: T('pl.more-chat-messages.kind.join', 'Join'),
+    leave: T('pl.more-chat-messages.kind.leave', 'Leave'),
+    cargo: T('pl.more-chat-messages.kind.cargo', 'Cargo'),
+    event: T('pl.more-chat-messages.kind.event', 'Event'),
+    bunker: T('pl.more-chat-messages.kind.bunker', 'Bunker'),
+    raid: T('pl.more-chat-messages.kind.raid', 'Raid'),
+  })[k] || String(k || '');
+
+  // A failure the chat call threw, in words. The bridge client throws codes; one this list does not
+  // know is shown as it came, which is the honest fallback for a word nobody has translated yet.
+  const failText = (code) => ({
+    bridge_unavailable: T('pl.more-chat-messages.fail.unavailable', 'the bridge is not running'),
+    bridge_timeout: T('pl.more-chat-messages.fail.timeout', 'the bridge did not answer in time'),
+    bridge_closed: T('pl.more-chat-messages.fail.closed', 'the bridge closed the connection'),
+    bridge_wrong_instance: T('pl.more-chat-messages.fail.instance', 'the bridge belongs to another server'),
+    bad_response: T('pl.more-chat-messages.fail.badresponse', 'the bridge gave an unreadable answer'),
+    chat_failed: T('pl.more-chat-messages.fail.chat', 'the game did not take the line'),
+  })[code] || String(code || '');
+
+  /** The "Note" cell. `why` is a code; an older backend sent English, which is shown as it is. */
+  function whyText(r) {
+    if (r.why === 'nobody') return T('pl.more-chat-messages.why.nobody', 'Nobody online to hear it');
+    if (r.why === 'failed') {
+      return r.detail ? T('pl.more-chat-messages.why.failed.detail', 'Not sent: {error}', { error: failText(r.detail) })
+        : T('pl.more-chat-messages.why.failed', 'Not sent');
+    }
+    return String(r.why || '');
+  }
+
+  /** Why cargo and events could not be watched. `pollError` is a code; the bridge's words ride beside. */
+  function pollErrorText(s) {
+    if (s.pollError === 'no_answer') {
+      return s.pollErrorDetail ? T('pl.more-chat-messages.poll.refused', 'the bridge refused: {reason}', { reason: s.pollErrorDetail })
+        : T('pl.more-chat-messages.poll.noanswer', 'the bridge did not answer');
+    }
+    if (s.pollError === 'no_cargo_list') return T('pl.more-chat-messages.poll.nocargo', 'the bridge answered without a cargo list');
+    return String(s.pollError || '');
+  }
+
+  /**
+   * Where to switch on the bridge's participant names, BUILT from the panel's own keys and the
+   * module schema's own captions — never written out. The module is "Live world events" and the
+   * switch "Who is in the event"; this sentence used to say "World events", which is no card's name,
+   * and the route was English in every language.
+   *
+   * The two captions are resolved exactly the way the panel resolves them on the bridge card
+   * (`modT` / `modSwitchT` in app.js): its override key `modname.<id>.<id>` / `mod.<id>.<key>` when
+   * a locale has one, the schema's own English when none does — which today is every locale, so the
+   * card and this sentence both read the English caption. The key is built from parts because it is
+   * the PANEL's key family, not this plugin's: no locale file here ships it, on purpose, and the day
+   * the panel translates the caption this sentence follows without a release of its own.
+   */
+  const bridgeCaption = (kind, mod, key, english) => T([kind, mod, key].join('.'), english);
+  function participantsWhere() {
+    return T('pl.more-chat-messages.live.noparticipants.v2', 'No sign-up names: turn on "{switch}" in {module} ({where}).', {
+      switch: bridgeCaption('mod', 'worldevents', 'players', 'Who is in the event'),
+      module: bridgeCaption('modname', 'worldevents', 'worldevents', 'Live world events'),
+      where: T('nav.plugins', 'Plugins') + ' → ' + T('plugins.viewInGame', 'SSA Bridge'),
+    });
+  }
 
   let state = null;
   let channels = ['local', 'global', 'squad', 'admin', 'server'];
@@ -337,7 +410,7 @@
     // the line, which an owner using the admin channel for its yellow found to be untrue.
     const where = [row(T('pl.more-chat-messages.card.channel', 'Chat channel'),
       select(channels.includes(String(sec.channel)) ? String(sec.channel) : 'global',
-        channels.map((c) => [c, CHANNEL_LABEL[c] || c]),
+        channels.map((c) => [c, channelLabel(c)]),
         (v) => { sec.channel = v; touch(); }),
       T('pl.more-chat-messages.card.channel.hint', 'How the line looks in game (its colour). Every player sees it either way.'))];
 
@@ -416,6 +489,7 @@
       return;
     }
     state = loaded.config;
+    CARDS = cardDefs();
     if (Array.isArray(loaded.channels) && loaded.channels.length) channels = loaded.channels;
 
     const page = el('div', { class: 'mcm' });
@@ -447,13 +521,13 @@
       columns: [
         { key: 'at', label: T('pl.more-chat-messages.said.col.when', 'When'), sort: true, sortVal: (r) => -(r.at || 0), tdClass: 'mono',
           render: (r) => document.createTextNode(r.at ? new Date(r.at).toLocaleTimeString() : '') },
-        { key: 'kind', label: T('pl.more-chat-messages.said.col.what', 'What'), sort: true, sortVal: (r) => r.kind || '',
-          render: (r) => SSA.cell.tag(r.kind || '', r.ok ? 'ok' : 'bad') },
+        { key: 'kind', label: T('pl.more-chat-messages.said.col.what', 'What'), sort: true, sortVal: (r) => kindLabel(r.kind),
+          render: (r) => SSA.cell.tag(kindLabel(r.kind), r.ok ? 'ok' : 'bad') },
         { key: 'text', label: T('pl.more-chat-messages.said.col.said', 'Said'), render: (r) => document.createTextNode(r.text || '') },
-        { key: 'why', label: T('pl.more-chat-messages.said.col.note', 'Note'), tdClass: 'dim', render: (r) => document.createTextNode(r.why || '') },
+        { key: 'why', label: T('pl.more-chat-messages.said.col.note', 'Note'), tdClass: 'dim', render: (r) => document.createTextNode(whyText(r)) },
       ],
       rows: () => recent,
-      search: (r) => (r.kind || '') + ' ' + (r.text || '') + ' ' + (r.why || ''),
+      search: (r) => kindLabel(r.kind) + ' ' + (r.text || '') + ' ' + whyText(r),
       searchPlaceholder: T('pl.more-chat-messages.said.search', 'Search what was said…'),
       pageSize: 15,
       sort: { key: 'at', dir: 'asc' },
@@ -567,7 +641,7 @@
       // owner set.
       if (state.events && state.events.enabled && state.events.announceJoin
           && s.watching && s.watching.seededEvents && s.watching.eventPlayersAvailable === false) {
-        live.appendChild(note('wait', T('pl.more-chat-messages.live.noparticipants', 'No sign-up names: turn on "Who is in the event" in the bridge\'s World events.')));
+        live.appendChild(note('wait', participantsWhere()));
       }
       // Nothing before 5.14.8 kept the log line a secret bunker writes, so the announcement could
       // not fire however the card was filled in.
@@ -581,7 +655,7 @@
       // and an owner with only game events on was never told why nothing was announced.
       if (s.pollError && s.watching && (s.watching.cargo || s.watching.events)) {
         live.appendChild(note('bad', T('pl.more-chat-messages.live.pollerror', 'Cargo drops and game events cannot be watched: {error}. Everything else here still works.',
-          { error: s.pollError })));
+          { error: pollErrorText(s) })));
       }
 
       cards.forEach((c) => c.live(s));

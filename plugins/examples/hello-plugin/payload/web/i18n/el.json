@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Ανακοίνωση στο παιχνίδι",
+  "pl.hello-plugin.announceAsk": "Να σταλεί ο χαιρετισμός σε όλους στο παιχνίδι;",
+  "pl.hello-plugin.empty": "Κανείς δεν έχει παίξει ακόμα σε αυτόν τον διακομιστή.",
+  "pl.hello-plugin.greet": "Χαιρετισμός",
+  "pl.hello-plugin.greeting": "Χαιρετισμός",
+  "pl.hello-plugin.lookup": "Αναζήτηση αντικειμένου",
+  "pl.hello-plugin.name": "Όνομα",
+  "pl.hello-plugin.noPremium": "Το Premium είναι ανενεργό, οπότε τα εργαλεία του παιχνιδιού δεν θα απαντήσουν.",
+  "pl.hello-plugin.online": "Συνδεδεμένοι τώρα: {n}",
+  "pl.hello-plugin.pick": "Επιλογή σημείου",
+  "pl.hello-plugin.pickNote": "Πατήστε στον χάρτη εκεί που θέλετε να δείτε.",
+  "pl.hello-plugin.players": "Παίκτες",
+  "pl.hello-plugin.save": "Αποθήκευση",
+  "pl.hello-plugin.saved": "Αποθηκεύτηκε.",
+  "pl.hello-plugin.sent": "Στάλθηκε.",
+  "pl.hello-plugin.steam": "Steam ID",
+  "pl.hello-plugin.stopped": "Η βάση δεδομένων του παιχνιδιού δεν διαβάζεται όσο ο διακομιστής είναι σταματημένος. Όλα τα υπόλοιπα εδώ λειτουργούν.",
+  "pl.hello-plugin.tab": "Γεια",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Συνδεθείτε για να δείτε τον δικό σας χαιρετισμό.",
+  "pl.hello-plugin.wave": "Χαιρέτα πίσω"
+}

@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Envoyé à",
   "pl.better-squads.card.activity": "Activité",
   "pl.better-squads.card.activity.sub": "Les derniers messages livrés. Pour un message par lecteur, la première copie est affichée.",
-  "pl.better-squads.live.turnOn": "activez « {switch} » dans {where}"
+  "pl.better-squads.group.words": "Mots à l’intérieur d’autres lignes",
+  "pl.better-squads.text.mutednone": "Mot pour « rien en sourdine »",
+  "pl.better-squads.text.squadnoname": "Mot pour une escouade sans nom",
+  "pl.better-squads.text.unknownobject": "Raid : mot pour un objet sans nom",
+  "pl.better-squads.text.testline": "Message de test depuis cette page",
+  "pl.better-squads.live.turnOnBoth": "activez « {enable} » et « {switch} » sur la carte {module} dans {where}",
+  "pl.better-squads.live.nomodule": "ce serveur utilise un SSA Bridge plus ancien qui n’a pas ce module",
+  "pl.better-squads.live.noanswer": "le SSA Bridge n’a pas répondu",
+  "pl.better-squads.test.squadunknown": "La liste des escouades ne peut pas être lue pour l’instant. Réessayez dans une minute.",
+  "pl.better-squads.test.allmuted": "Tous les membres en ligne de cette escouade sont mis en sourdine par un admin",
+  "pl.better-squads.test.reachednobody": "Le test a été envoyé mais n’a atteint personne"
 }

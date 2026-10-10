@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "未保存——{err}",
   "pl.mine-protection.btn.save": "保存配置",
   "pl.mine-protection.tab.label": "地雷保护",
-  "pl.mine-protection.live.turnOn": "在 {where} 开启「{switch}」。"
+  "pl.mine-protection.live.turnOn": "在 {where} 开启「{switch}」。",
+  "pl.mine-protection.live.idleTitle": "目前没有执行任何规则。 ",
+  "pl.mine-protection.live.idleOld": "此管理器版本过旧，无法使用此插件。请更新管理器。",
+  "pl.mine-protection.live.noModule": "此服务器使用的旧版 SSA Bridge 没有这个模块。",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge 没有响应。"
 }

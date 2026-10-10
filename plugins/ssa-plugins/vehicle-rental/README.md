@@ -17,14 +17,19 @@ has to be online.
 - **Time windows** limit when rentals, a vehicle or a single plan are available, such as a happy hour
   or a weekend price. They run on the **server's real clock**, not in-game time.
 - **Sector rules** allow or block renting in chosen map sectors.
+- The vehicle is spawned **where the player stands now**, read from the running game; the last
+  server save is used only when the game cannot say.
 - The rented vehicle is identified as **the one that just appeared**, never simply the nearest, so a
   player's own parked car is never removed at expiry.
 
 ## Requirements
 - The **SSA Bridge** plugin, for spawning, charging, chat messages and the commands.
-- Optional: the bridge module **Live player data** with *Read live player data* and *Money, gold and
-  account number*, so the balance check uses the running game instead of the last save. The plugin's
-  card on the **Plugins** page lists them and offers to switch them on.
+- Optional: the bridge module **Live player data** with *Read live player data*, *Money, gold and
+  account number* and *Position, facing and speed*, so the balance check and the spawn position use
+  the running game instead of the last save.
+- Optional: the bridge module **Live vehicles** with *Report live vehicle state*, so the spawned
+  vehicle is identified, and found again at return or expiry, in the running game. The plugin's card
+  on the **Plugins** page lists these switches and offers to switch them on.
 - Optional: the **Discord Embeds** plugin, to design the Discord menu embed.
 - Manager **5.16.2+**.
 
@@ -39,8 +44,9 @@ Everything is configured from the plugin's **admin tab** (🚗 Rentals):
 - **In-game**: *Send messages in-game*, *Enable in-game commands*, *Allow returning early*, *Check the
   vehicle still exists*, *Chat channel*, *Refund on early return (%)* (default 0), the four command
   names, and *Allowed sectors* / *Blocked sectors*.
-- **In-game messages**: every line a player sees, with `{player} {vehicle} {duration} {price} {left}
-  {sector} {cmd} {list}` tokens.
+- **In-game messages**: every line a player sees, in chat and in Discord, with `{player} {vehicle}
+  {duration} {price} {left} {sector} {cmd} {list} {window} {max} {n}` tokens. An empty line uses the
+  built-in wording.
 - **Vehicles**: each vehicle's name, spawn code, image, its rental plans (minutes plus a price in
   money or gold), its own time window and per-vehicle limits.
 - **Rental menu embed**: the Discord menu message, with **Save & post menu**.
@@ -55,9 +61,10 @@ Everything is configured from the plugin's **admin tab** (🚗 Rentals):
 - If the vehicle cannot be identified after the spawn, the rental still runs but the vehicle is **not
   removed** at expiry. The table shows *not captured* and an admin alert goes out. A spawn code that
   stopped working after a game update looks the same, so check the code.
-- **Ending a rental from the panel pays no refund**; a player returning one with `/return` does. The
-  player is told in game that an admin ended it.
-- `/extend` and `/return` act on the rental that runs out first.
+- **Ending a rental from the panel pays no refund.** A player returning one with `/return` gets the
+  *Refund on early return* percentage, which is 0% by default. The player is told in game that an
+  admin ended it.
+- `/extend` and `/return` act on the running rental that runs out first.
 - **Must be online** covers renting and extending. Returning is always allowed.
 - Renting from Discord needs a **linked** account; renting from chat does not.
 - Discord menus show at most **25 vehicles** and **25 plans**; the rest stay rentable from chat. The

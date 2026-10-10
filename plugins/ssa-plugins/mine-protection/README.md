@@ -15,7 +15,8 @@ offences earn a chat **warning**; after that the placer is **teleported onto the
   through the placer, so it does not depend on name or Steam ID targeting.
 - **It never punishes on a guess.** When the game database cannot say whether a mine is inside a flag,
   the mine is left alone and checked again on the next scan.
-- **Offline placers** are dealt with the moment they reconnect.
+- **Offline placers** are dealt with the moment they reconnect: the bridge's join announcement counts
+  them as online and starts a scan at once, without waiting for the next save.
 - **State survives restarts:** handled mines, offence counts and the action history are saved, so a
   restart never punishes the same mine twice. Mines that were already placed when the plugin first
   ran are never punished.
@@ -34,8 +35,8 @@ offences earn a chat **warning**; after that the placer is **teleported onto the
 Everything is configured from the plugin's **admin tab** (🛡️ Mine Protection):
 
 - **Watched mines & traps**: a picker with an icon per type and how many are placed and armed right
-  now. Quick buttons: *Explosives only*, *Select all*, *Clear*. Explosives are watched by default;
-  C4 is not, because it is a raiding tool.
+  now. Quick buttons: *Explosives only* (every explosive, C4 included), *Select all*, *Clear*. The
+  default selection is the explosives without C4, because C4 is a raiding tool.
 - **When a violation is found**: teleport onto their mine, or warn only.
 - **Warnings before action**: how many warnings a player gets first (default 1, 0 acts at once).
 - **Extra margin around flag (m)**: tolerance beyond the flag area (default 0).

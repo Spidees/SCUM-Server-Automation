@@ -119,6 +119,112 @@
     return verdicts()[state] || ['flat', T('pl.raid-window.verdict.waiting', 'Waiting'), null];
   }
 
+  /* THE BACKEND SENDS CODES, AND THE WORDS ARE MADE HERE.
+   *
+   * Every sentence below used to arrive from the backend in English and was shown as it came, so a
+   * German owner read German labels around English explanations. The backend now sends a code and
+   * its numbers; its English `text` is kept only for a code this tab does not know (an older or
+   * newer backend) and for the bridge's own refusal, which is the bridge's words and shown as is. */
+  function fixedLengthHint() {
+    return T('pl.raid-window.why.setFixed', 'To push it anyway, set a fixed protection length under {more}.',
+      { more: T('pl.raid-window.moreOptions', 'More options') });
+  }
+  /** A source that could not answer: `{ code, module, text }`. */
+  function whyText(n) {
+    if (!n) return '';
+    var mod = n.module || '';
+    if (n.code === 'module_off') return T('pl.raid-window.why.moduleOff', 'The bridge\'s {module} module is switched off. The {box} box on this tab turns it on.',
+      { module: mod, box: T('pl.raid-window.card.bridge', 'Bridge') });
+    if (n.code === 'no_module') return T('pl.raid-window.why.noModule', 'This server runs an older SSA Bridge with no {module} module. Update the SSA Bridge.', { module: mod });
+    if (n.code === 'bridge_off') return T('pl.raid-window.why.bridgeOff', 'The SSA Bridge did not answer.');
+    if (n.code === 'save_unreadable') return T('pl.raid-window.why.saveUnreadable', 'The save cannot be read right now, so the base\'s flag cannot be found yet.');
+    return sentence(n.text || '');
+  }
+  /** Why nothing is pushed for the protection mode: `{ code, cls, cause, text }`. */
+  function modeText(m) {
+    if (!m) return '';
+    if (m.code === 'global') return T('pl.raid-window.mode.global', 'This server runs global raid protection, which goes by the clock. There is nothing to push.');
+    if (m.code === 'none') return T('pl.raid-window.mode.none', 'The game has no raid protection right now: it is off, or the server is still starting.');
+    if (m.code === 'unknown_class') return T('pl.raid-window.mode.unknownClass', 'This server runs a raid protection the plugin does not know ({cls}).', { cls: m.cls || '?' });
+    if (m.code === 'unreadable') {
+      var cause = m.cause ? whyText(m.cause) : '';
+      return (cause ? cause + ' ' : '') + T('pl.raid-window.mode.unreadable', 'So the plugin cannot tell which raid protection this server runs.');
+    }
+    return sentence(m.text || '');
+  }
+  /** A push verdict or a feed entry with a `code`, in words. Null when it carries none this tab knows. */
+  function codeText(v) {
+    if (!v || !v.code) return null;
+    var p = v.params || {};
+    switch (v.code) {
+      case 'no_length_now':
+        return T('pl.raid-window.why.noLengthNow', 'The save holds no protection length for this base right now, and the running game gave none.') + ' ' + fixedLengthHint();
+      case 'no_length':
+        return T('pl.raid-window.why.noLength', 'Neither the save nor the running game could say how long this base\'s protection lasts.') + ' ' + fixedLengthHint();
+      case 'too_long':
+        return (p.from === 'save'
+          ? T('pl.raid-window.why.tooLongSave', 'The save says this base\'s protection lasts {h} hours, more than the {max} hours the SSA Bridge will send.', { h: p.hours, max: p.max })
+          : T('pl.raid-window.why.tooLongGame', 'The running game says this base\'s protection lasts {h} hours, more than the {max} hours the SSA Bridge will send.', { h: p.hours, max: p.max }))
+          + ' ' + fixedLengthHint();
+      case 'range':
+        return sentence(v.text || '') + ' ' + T('pl.raid-window.why.range',
+          'Raise "{setting}"{limit} on the {module} card in {where}, or set a shorter fixed length under {more}.',
+          { setting: p.setting || '', limit: p.limit != null ? ' (' + p.limit + ')' : '', module: p.module || '', where: bridgeWhere(),
+            more: T('pl.raid-window.moreOptions', 'More options') });
+      case 'bridge':
+        return v.text ? sentence(v.text) : T('pl.raid-window.why.noReason', 'The bridge did not say why.');
+      case 'bridge_too_old':
+        return T('pl.raid-window.why.bridgeTooOld', 'This SSA Bridge cannot postpone offline protection yet. Update the SSA Bridge.');
+      case 'note':
+        return whyText({ code: p.note, module: p.module, text: v.text });
+      case 'quiet':
+        return T('pl.raid-window.why.quiet', 'No damage for {n} minutes, so the raid is over. Protection starts when the last push set it.', { n: p.minutes });
+      case 'admin':
+        return T('pl.raid-window.why.admin', 'Stopped by an admin. Nothing was written to the game.');
+      case 'capped':
+        return T('pl.raid-window.why.capped', 'Pushed {n} times, the most "{setting}" allows. Nothing more is pushed until the raid ends.',
+          { n: p.pushes, setting: T('pl.raid-window.set.maxPushes', 'Most pushes for one raid') });
+    }
+    return null;
+  }
+  /** A settings box by its config key, in the words its row is labelled with. */
+  function labelOf(k) {
+    switch (k) {
+      case 'enabled': return T('pl.raid-window.set.enabled', 'Keep raids going when defenders log out');
+      case 'pollSeconds': return T('pl.raid-window.set.poll', 'Look for raid damage every');
+      case 'pushSeconds': return T('pl.raid-window.set.push', 'Push protection back by');
+      case 'reapplySeconds': return T('pl.raid-window.set.reapply', 'Repeat the push every');
+      case 'holdSeconds': return T('pl.raid-window.set.hold', 'A raid is over after no damage for');
+      case 'minHits': return T('pl.raid-window.set.minHits', 'Hits needed to count as a raid');
+      case 'acceptDeclared': return T('pl.raid-window.set.acceptDeclared', 'Accept raids declared by other tools');
+      case 'useOwnerAlerts': return T('pl.raid-window.set.ownerAlerts', 'Base attack alerts keep a raid going');
+      case 'resetCooldownFirst': return T('pl.raid-window.set.resetCooldown', 'Clear the protection cooldown before each push');
+      case 'durationSeconds': return T('pl.raid-window.set.duration', 'Protection length');
+      case 'allowDecodedDuration': return T('pl.raid-window.set.allowDecoded', 'If the save has no length, ask the running game');
+      case 'maxPushesPerRaid': return T('pl.raid-window.set.maxPushes', 'Most pushes for one raid');
+      case 'countFromLastHit': return T('pl.raid-window.set.countFromLastHit', 'Every hit restarts the countdown');
+      case 'exemptBaseIds': return T('pl.raid-window.set.exemptBases', 'Never touch these bases');
+      case 'exemptFlagIds': return T('pl.raid-window.set.exemptFlags', 'Never touch these flags');
+    }
+    return k;
+  }
+  function unitWord(u) {
+    if (u === 'seconds') return T('pl.raid-window.unit.seconds', 'seconds');
+    if (u === 'minutes') return T('pl.raid-window.unit.minutes', 'minutes');
+    if (u === 'hours') return T('pl.raid-window.unit.hours', 'hours');
+    return '';
+  }
+  /** One refused box: `{ key, rule, lo, hi, unit, max }`. */
+  function invalidText(d) {
+    var label = labelOf(d.key);
+    if (d.rule === 'range' && d.unit) return T('pl.raid-window.invalid.rangeUnit', '"{label}" must be from {lo} to {hi} {unit}.', { label: label, lo: d.lo, hi: d.hi, unit: unitWord(d.unit) });
+    if (d.rule === 'range') return T('pl.raid-window.invalid.range', '"{label}" must be a number from {lo} to {hi}.', { label: label, lo: d.lo, hi: d.hi });
+    if (d.rule === 'bool') return T('pl.raid-window.invalid.bool', '"{label}" must be on or off.', { label: label });
+    if (d.rule === 'duration') return T('pl.raid-window.invalid.duration', '"{label}" must be empty, or up to {max} hours.', { label: label, max: d.max });
+    if (d.rule === 'ids') return T('pl.raid-window.invalid.ids', '"{label}" must be id numbers, separated by commas.', { label: label });
+    return label;
+  }
+
   // One poll timer for the whole tab, however often it is opened.
   var timer = null;
   var active = null;
@@ -264,26 +370,43 @@
       notes.innerHTML = '';
       if (!status) return;
       if (status.enabled === false) {
-        notes.appendChild(note('flat', T('pl.raid-window.note.off', 'The plugin is switched off, so nothing is pushed. Switch it on under Settings.')));
+        // The route to the switch is built from the row's own label and the card's own title.
+        notes.appendChild(note('flat', T('pl.raid-window.note.offWhere',
+          'The plugin is switched off, so nothing is pushed. Turn on "{setting}" in the {card} box below.',
+          { setting: T('pl.raid-window.set.enabled', 'Keep raids going when defenders log out'), card: T('pl.raid-window.card.settings', 'Settings') })));
         return;
       }
-      if (status.serverRunning === false) {
+      var saveUnreadable = status.save === 'unreadable';
+      if (saveUnreadable) {
+        // The save is there and cannot be read: a stop, a start or a restart. Not "server stopped",
+        // and not a reason to end anything.
+        notes.appendChild(note('wait', [T('pl.raid-window.note.saveUnreadable', 'The save cannot be read right now (the server is stopping, starting or restarting).'),
+          T('pl.raid-window.note.stillPushed', ' A raid that is already being pushed is not ended because of this.')]));
+      } else if (status.serverRunning === false) {
         notes.appendChild(note('flat', T('pl.raid-window.note.serverStopped', 'Server stopped: no raids yet. Everything here can be set now.')));
         return;
       }
-      if (status.idle && status.idle.text) {
-        notes.appendChild(note('flat', [h('strong', {}, T('pl.raid-window.note.idle', 'Not looking right now: ')), status.idle.text + '.']));
+      if (status.idle && (status.idle.code || status.idle.text)) {
+        var idleSaid = status.idle.code === 'nobody_online'
+          // Nothing the bridge saw while idle is lost: the raid module keeps counting either way.
+          ? T('pl.raid-window.idle.nobodyOnline', 'nobody is online, so nobody can be raiding. It starts again when somebody connects.')
+          : sentence(status.idle.text || '');
+        notes.appendChild(note('flat', [h('strong', {}, T('pl.raid-window.note.idle', 'Not looking right now: ')), idleSaid]));
         return;
       }
       var n = status.notes || {};
-      if (n.mode && n.mode.text) {
-        notes.appendChild(note('wait', [h('strong', {}, T('pl.raid-window.note.nothingPushed', 'Nothing is pushed: ')), sentence(n.mode.text)]));
+      if (n.mode && (n.mode.code || n.mode.text)) {
+        notes.appendChild(note('wait', [h('strong', {}, T('pl.raid-window.note.nothingPushed', 'Nothing is pushed: ')), modeText(n.mode)]));
       }
       [['raid', T('pl.raid-window.note.raidDamage', 'Raid damage')],
         ['protect', T('pl.raid-window.note.protection', 'Protection')],
         ['db', T('pl.raid-window.note.gameDatabase', 'Game database')]].forEach(function (k) {
-        if (!n[k[0]] || !n[k[0]].text) return;
-        notes.appendChild(note('wait', [h('strong', {}, k[1] + ': '), sentence(n[k[0]].text),
+        var one = n[k[0]];
+        if (!one || !(one.code || one.text)) return;
+        if (k[0] === 'db' && saveUnreadable) return;            // said once, above
+        var said = whyText(one);
+        if (!said) return;
+        notes.appendChild(note('wait', [h('strong', {}, k[1] + ': '), said,
           T('pl.raid-window.note.stillPushed', ' A raid that is already being pushed is not ended because of this.')]));
       });
     }
@@ -319,9 +442,14 @@
         .then(function (r) {
           if (r === null) return;
           if (!r || r.ok === false) {
-            toast(r && r.error === 'bridge_ui_disabled'
-              ? T('pl.raid-window.bridge.uiDisabled', 'In-game control is switched off for this panel, so nothing was changed')
-              : T('pl.raid-window.bridge.changeFailed', 'The bridge settings could not be changed') + (r && r.error ? ' (' + String(r.error).replace(/_/g, ' ') + ')' : ''), 'error');
+            // A sentence for every refusal the manager's route can give, never its raw code.
+            var e = r && r.error ? String(r.error) : '';
+            var msg;
+            if (e === 'bridge_ui_disabled') msg = T('pl.raid-window.bridge.uiDisabled', 'In-game control is switched off for this panel, so nothing was changed');
+            else if (e === 'premium_required' || e === 'http_402') msg = T('pl.raid-window.bridge.premium', 'Nothing was changed: this manager has no active premium licence.');
+            else if (e === 'http_401' || e === 'http_403') msg = T('pl.raid-window.bridge.signIn', 'Nothing was changed: sign in to the panel again.');
+            else msg = sentence(T('pl.raid-window.bridge.changeFailed', 'The bridge settings could not be changed'));
+            toast(msg, 'error');
             return;
           }
           var n = (r.applied || []).reduce(function (k, a) { return k + (a.keys || []).length; }, 0);
@@ -416,7 +544,9 @@
           refreshBridge();
           api('/status').then(function (s) { status = s || status; renderLive(); }).catch(function () {});
         } else {
-          var w = sentence((r && (r.reason || r.error)) || T('pl.raid-window.save.noReason', 'the manager did not say why'));
+          var w = (r && Array.isArray(r.invalid) && r.invalid.length)
+            ? r.invalid.map(invalidText).join(' ')
+            : sentence((r && (r.reason || r.error)) || T('pl.raid-window.save.noReason', 'the manager did not say why'));
           saveMsg.textContent = T('pl.raid-window.save.notSaved', 'Not saved. {why}', { why: w });
           saveMsg.className = 'rw-dirty unsaved';
           toast(T('pl.raid-window.save.notSaved', 'Not saved. {why}', { why: w }), 'error');
@@ -541,15 +671,16 @@
     function closeBase(base) {
       api('/close', { method: 'POST', body: { base: base } }).then(function (r) {
         if (r && r.ok) { toast(T('pl.raid-window.stopped', 'Stopped pushing that base')); refresh(); }
+        else if (r && r.code === 'not_open') toast(T('pl.raid-window.close.notOpen', 'That base has no open raid window here.'), 'error');
         else toast(sentence((r && r.reason) || T('pl.raid-window.notDone', 'that could not be done')), 'error');
       }).catch(function (err) { toast(why(err), 'error'); });
     }
     function badge(kind, text) { return h('span', { class: 'rw-badge ' + kind }, text); }
 
-    function flagRow(f) {
+    function flagRow(f, base) {
       var v = f.lastVerdict || {};
       var meta = verdictOf(v.state);
-      var said = meta[2] || sentence(v.text || '');
+      var said = meta[2] || codeText(v) || sentence(v.text || '');
       var detail = [];
       if (meta[2] && v.text) detail.push(h('p', {}, T('pl.raid-window.bridgeSaid', 'The bridge said: {text}', { text: sentence(v.text) })));
       if (f.before && f.before.mode === 'offline') {
@@ -578,13 +709,34 @@
               : T('pl.raid-window.flag.pushedMany', 'Flag {flag}, pushed {n} times, last {ago}', { flag: f.flag, n: f.pushes, ago: ago(f.lastPushAt) }))
             : T('pl.raid-window.flag.plain', 'Flag {flag}', { flag: f.flag }))]),
         said ? h('p', { class: 'rw-say' }, said) : null,
-        detail.length ? h('details', { class: 'rw-detail' }, [h('summary', {}, T('pl.raid-window.details', 'Details'))].concat(detail)) : null,
+        detail.length ? h('details', { class: 'rw-detail', 'data-k': 'flag:' + base + ':' + f.flag }, [h('summary', {}, T('pl.raid-window.details', 'Details'))].concat(detail)) : null,
       ]);
+    }
+
+    /* The two live boxes are redrawn every ten seconds, and a redraw used to shut every
+     * "Details" and "Show more" somebody had opened to read. Each fold carries a key, the open
+     * ones are remembered across the redraw, and they come back open. */
+    function openFolds() {
+      var keep = {};
+      [liveBox, histBox].forEach(function (box) {
+        Array.prototype.forEach.call(box.querySelectorAll('details[data-k]'), function (d) {
+          if (d.open) keep[d.getAttribute('data-k')] = true;
+        });
+      });
+      return keep;
+    }
+    function reopenFolds(keep) {
+      [liveBox, histBox].forEach(function (box) {
+        Array.prototype.forEach.call(box.querySelectorAll('details[data-k]'), function (d) {
+          if (keep[d.getAttribute('data-k')]) d.open = true;
+        });
+      });
     }
 
     function renderLive() {
       renderFigs();
       renderNotes();
+      var keep = openFolds();
       liveBox.innerHTML = '';
       histBox.innerHTML = '';
       if (!status) return;
@@ -611,7 +763,7 @@
         ];
         if (r.capped) block.push(note('wait', T('pl.raid-window.live.cappedNote', 'This raid reached "Most pushes for one raid". Nothing more is pushed until it ends.')));
         if (Array.isArray(r.knownFlags) && !r.knownFlags.length) block.push(note('flat', T('pl.raid-window.live.noFlag', 'This base has no flag, so there is no protection to push.')));
-        (r.flags || []).forEach(function (f) { block.push(flagRow(f)); });
+        (r.flags || []).forEach(function (f) { block.push(flagRow(f, r.base)); });
         kids.push(h('div', { class: 'rw-base' }, block));
       });
       liveBox.appendChild(card('shield', T('pl.raid-window.card.underRaid', 'Under raid now'), kids));
@@ -619,7 +771,7 @@
       var hist = status.history || [];
       var lines = hist.map(function (e) {
         var meta = verdictOf(e.state);
-        var text = meta[2] || sentence(e.text || '');
+        var text = meta[2] || codeText(e) || sentence(e.text || '');
         if (e.state === 'moved' && e.mode === 'offline' && e.delaySeconds) {
           text = T('pl.raid-window.hist.offlineMoved', 'Offline protection now starts {t} after this push. Its length was not changed.', { t: dur(e.delaySeconds) });
         } else if (e.state === 'moved' && e.durationSeconds) {
@@ -644,7 +796,7 @@
       else {
         lines.slice(0, 10).forEach(function (l) { hk.push(l); });
         if (lines.length > 10) {
-          hk.push(h('details', { class: 'rw-more' }, [h('summary', {},
+          hk.push(h('details', { class: 'rw-more', 'data-k': 'hist-more' }, [h('summary', {},
             T('pl.raid-window.hist.showMore', 'Show {n} more', { n: lines.length - 10 }))].concat(lines.slice(10))));
         }
         hk.push(h('div', { class: 'rw-actions' }, [h('button', {
@@ -655,6 +807,7 @@
         }, T('pl.raid-window.hist.clear', 'Clear the list'))]));
       }
       histBox.appendChild(card('list', T('pl.raid-window.card.recent', 'Recent activity'), hk));
+      reopenFolds(keep);
     }
 
     load();

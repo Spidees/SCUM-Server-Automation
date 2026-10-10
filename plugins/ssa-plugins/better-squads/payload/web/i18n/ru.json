@@ -180,5 +180,15 @@
   "pl.better-squads.col.sentto": "Кому отправлено",
   "pl.better-squads.card.activity": "Активность",
   "pl.better-squads.card.activity.sub": "Последние доставленные сообщения. Для сообщений каждому показана первая копия.",
-  "pl.better-squads.live.turnOn": "включите «{switch}» в {where}"
+  "pl.better-squads.group.words": "Слова внутри других строк",
+  "pl.better-squads.text.mutednone": "Слово для «ничего не заглушено»",
+  "pl.better-squads.text.squadnoname": "Слово для отряда без названия",
+  "pl.better-squads.text.unknownobject": "Рейд: слово для безымянного объекта",
+  "pl.better-squads.text.testline": "Тестовое сообщение с этой страницы",
+  "pl.better-squads.live.turnOnBoth": "включите «{enable}» и «{switch}» на карточке {module} в {where}",
+  "pl.better-squads.live.nomodule": "на этом сервере старый SSA Bridge, в котором нет этого модуля",
+  "pl.better-squads.live.noanswer": "SSA Bridge не ответил",
+  "pl.better-squads.test.squadunknown": "Список отрядов сейчас не читается. Попробуйте через минуту.",
+  "pl.better-squads.test.allmuted": "Все игроки этого отряда в сети заглушены администратором",
+  "pl.better-squads.test.reachednobody": "Тест отправлен, но никому не дошёл"
 }

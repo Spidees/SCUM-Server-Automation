@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "저장되지 않았습니다 — {err}",
   "pl.mine-protection.btn.save": "설정 저장",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "{where}에서 \"{switch}\" 켜기."
+  "pl.mine-protection.live.turnOn": "{where}에서 \"{switch}\" 켜기.",
+  "pl.mine-protection.live.idleTitle": "아무것도 적용되지 않습니다. ",
+  "pl.mine-protection.live.idleOld": "이 매니저는 이 플러그인에 비해 너무 오래되었습니다. 매니저를 업데이트하세요.",
+  "pl.mine-protection.live.noModule": "이 서버는 이 모듈이 없는 이전 SSA Bridge를 사용합니다.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge가 응답하지 않았습니다."
 }

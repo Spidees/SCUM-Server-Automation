@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "NINCS mentve — {err}",
   "pl.mine-protection.btn.save": "Konfiguráció mentése",
   "pl.mine-protection.tab.label": "Aknavédelem",
-  "pl.mine-protection.live.turnOn": "kapcsolja be: „{switch}”, itt: {where}."
+  "pl.mine-protection.live.turnOn": "kapcsolja be: „{switch}”, itt: {where}.",
+  "pl.mine-protection.live.idleTitle": "Semmi sincs érvényesítve. ",
+  "pl.mine-protection.live.idleOld": "Ez a manager túl régi ehhez a pluginhoz. Frissítsd a managert.",
+  "pl.mine-protection.live.noModule": "ez a szerver egy régebbi SSA Bridge-et futtat, amelyben nincs ez a modul.",
+  "pl.mine-protection.live.bridgeOff": "az SSA Bridge nem válaszolt."
 }

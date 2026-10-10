@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "НЕ сохранено — {err}",
   "pl.mine-protection.btn.save": "Сохранить конфигурацию",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "включите «{switch}» в {where}."
+  "pl.mine-protection.live.turnOn": "включите «{switch}» в {where}.",
+  "pl.mine-protection.live.idleTitle": "Ничего не применяется. ",
+  "pl.mine-protection.live.idleOld": "Этот менеджер слишком стар для этого плагина. Обновите менеджер.",
+  "pl.mine-protection.live.noModule": "на этом сервере старый SSA Bridge без этого модуля.",
+  "pl.mine-protection.live.bridgeOff": "SSA Bridge не ответил."
 }

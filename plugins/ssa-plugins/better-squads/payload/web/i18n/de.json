@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Gesendet an",
   "pl.better-squads.card.activity": "Aktivität",
   "pl.better-squads.card.activity.sub": "Die zuletzt zugestellten Nachrichten. Bei Leser-Nachrichten wird die erste Kopie gezeigt.",
-  "pl.better-squads.live.turnOn": "„{switch}“ einschalten unter {where}"
+  "pl.better-squads.group.words": "Wörter in anderen Zeilen",
+  "pl.better-squads.text.mutednone": "Wort für „nichts stummgeschaltet“",
+  "pl.better-squads.text.squadnoname": "Wort für einen Squad ohne Namen",
+  "pl.better-squads.text.unknownobject": "Überfall: Wort für ein unbenanntes Objekt",
+  "pl.better-squads.text.testline": "Testnachricht von dieser Seite",
+  "pl.better-squads.live.turnOnBoth": "„{enable}“ und „{switch}“ auf der Karte {module} unter {where} einschalten",
+  "pl.better-squads.live.nomodule": "dieser Server nutzt eine ältere SSA Bridge ohne dieses Modul",
+  "pl.better-squads.live.noanswer": "die SSA Bridge hat nicht geantwortet",
+  "pl.better-squads.test.squadunknown": "Die Squad-Liste kann gerade nicht gelesen werden. Versuche es in einer Minute erneut.",
+  "pl.better-squads.test.allmuted": "Alle Online-Mitglieder dieses Squads sind von einem Admin stummgeschaltet",
+  "pl.better-squads.test.reachednobody": "Der Test wurde gesendet, hat aber niemanden erreicht"
 }

@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Inviato a",
   "pl.better-squads.card.activity": "Attività",
   "pl.better-squads.card.activity.sub": "Gli ultimi messaggi consegnati. Per quelli per lettore si vede la prima copia.",
-  "pl.better-squads.live.turnOn": "attiva \"{switch}\" in {where}"
+  "pl.better-squads.group.words": "Parole dentro altre righe",
+  "pl.better-squads.text.mutednone": "Parola per \"niente silenziato\"",
+  "pl.better-squads.text.squadnoname": "Parola per una squadra senza nome",
+  "pl.better-squads.text.unknownobject": "Raid: parola per un oggetto senza nome",
+  "pl.better-squads.text.testline": "Messaggio di prova da questa pagina",
+  "pl.better-squads.live.turnOnBoth": "attiva \"{enable}\" e \"{switch}\" nella scheda {module} in {where}",
+  "pl.better-squads.live.nomodule": "questo server usa un SSA Bridge più vecchio che non ha questo modulo",
+  "pl.better-squads.live.noanswer": "l'SSA Bridge non ha risposto",
+  "pl.better-squads.test.squadunknown": "Al momento l'elenco delle squadre non è leggibile. Riprova tra un minuto.",
+  "pl.better-squads.test.allmuted": "Tutti i membri online di quella squadra sono silenziati da un admin",
+  "pl.better-squads.test.reachednobody": "Il test è stato inviato ma non ha raggiunto nessuno"
 }

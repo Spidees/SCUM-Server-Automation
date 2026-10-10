@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Címzett",
   "pl.better-squads.card.activity": "Tevékenység",
   "pl.better-squads.card.activity.sub": "A legutóbb kézbesített üzenetek. Olvasónkénti üzenetnél az első példány látszik.",
-  "pl.better-squads.live.turnOn": "kapcsolja be: „{switch}”, itt: {where}"
+  "pl.better-squads.group.words": "Más sorokban szereplő szavak",
+  "pl.better-squads.text.mutednone": "Szó erre: „semmi sincs némítva”",
+  "pl.better-squads.text.squadnoname": "Szó a név nélküli osztagra",
+  "pl.better-squads.text.unknownobject": "Rajtaütés: szó a névtelen tárgyra",
+  "pl.better-squads.text.testline": "Tesztüzenet erről az oldalról",
+  "pl.better-squads.live.turnOnBoth": "kapcsolja be: „{enable}” és „{switch}”, a(z) {module} kártyán, itt: {where}",
+  "pl.better-squads.live.nomodule": "ez a szerver régebbi SSA Bridge-et futtat, amelyben nincs meg ez a modul",
+  "pl.better-squads.live.noanswer": "az SSA Bridge nem válaszolt",
+  "pl.better-squads.test.squadunknown": "Az osztaglista most nem olvasható. Próbálja újra egy perc múlva.",
+  "pl.better-squads.test.allmuted": "Az osztag minden online tagját egy admin némította",
+  "pl.better-squads.test.reachednobody": "A teszt elment, de senkihez sem jutott el"
 }

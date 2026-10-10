@@ -327,8 +327,11 @@ async function register(host) {
   // has happened yet". Capped, because this is a ring buffer in memory and not a log.
   const recent = [];
   const stats = { sent: 0, failed: 0, skipped: 0 };
-  const note = (kind, text, ok, why) => {
-    recent.unshift({ at: Date.now(), kind, text, ok: !!ok, why: why || '' });
+  // `why` is a CODE the screen translates (`nobody`, `failed`), never a sentence: this list is read
+  // in nineteen languages and the backend speaks none of them. `detail` is the raw failure the chat
+  // call threw (`bridge_unavailable`, …), which the screen turns into words for the ones it knows.
+  const note = (kind, text, ok, why, detail) => {
+    recent.unshift({ at: Date.now(), kind, text, ok: !!ok, why: why || '', detail: detail || '' });
     if (recent.length > 60) recent.length = 60;
     if (ok) stats.sent += 1; else stats.failed += 1;
   };
@@ -345,29 +348,36 @@ async function register(host) {
     if (!section.enabled) return;
     const text = fill(tpl, vars).trim();
     if (!text) { stats.skipped += 1; return; }
+    /**
+     * The chat HISTORY — the admin chat view, the Field Console and the Discord chat channel.
+     *
+     * ⚠ SCUM does not log a line the bridge injects, and both of those surfaces read the game's own
+     * chat log — so every line this plugin has ever sent was visible in game and nowhere else. This
+     * is the separate door the manager opens for exactly that; it needs no bridge of its own.
+     *
+     * ⚠ **IT IS WRITTEN BY `send()` ITSELF, BEFORE THE BRIDGE IS ASKED.** Recording it here after a
+     * successful send lost the line on exactly the pass the owner most wanted it kept: the bridge
+     * down, the game restarting. `send(…, { history: true })` records first and reports a history
+     * failure apart from the chat one. It arrived in the same manager release as `record()`, so the
+     * presence of `record` is how an older manager — whose `send` ignores the option — is told apart.
+     */
+    const wantHistory = section.history === true;
+    const canHistory = typeof host.chat.record === 'function';
+    if (wantHistory && !canHistory) {
+      // Feature-detected: this runs on whatever manager is installed, and an older one has no
+      // such door. Said in words rather than failing quietly.
+      log.warn('[more-chat-messages] this manager cannot write chat history; the announcement still goes to the game.');
+    }
     try {
-      const r = await host.chat.send(text, { channel: channelOf(section.channel) });
-      /**
-       * The chat HISTORY — the admin chat view, the Field Console and the Discord chat channel.
-       *
-       * ⚠ SCUM does not log a line the bridge injects, and both of those surfaces read the game's own
-       * chat log — so every line this plugin has ever sent was visible in game and nowhere else. This
-       * is the separate door the manager opens for exactly that; it needs no bridge of its own, so a
-       * line is kept even on the pass where nobody was online to hear it.
-       */
-      if (section.history) {
-        if (typeof host.chat.record === 'function') {
-          const rec = host.chat.record(text, { channel: channelOf(section.channel) });
-          if (rec && rec.ok === false) log.warn(`[more-chat-messages] the chat history was not written: ${rec.reason}`);
-        } else {
-          // Feature-detected: this runs on whatever manager is installed, and an older one has no
-          // such door. Said in words rather than failing quietly.
-          log.warn('[more-chat-messages] this manager cannot write chat history; the announcement still reached the game.');
-        }
+      const opts = { channel: channelOf(section.channel) };
+      if (wantHistory && canHistory) opts.history = true;
+      const r = await host.chat.send(text, opts);
+      if (r && r.history && r.history.ok === false) {
+        log.warn(`[more-chat-messages] the chat history was not written: ${r.history.reason}`);
       }
-      note(kind, text, true, r && r.delivered === 0 ? 'nobody online to hear it' : '');
+      note(kind, text, true, r && r.delivered === 0 ? 'nobody' : '');
     } catch (e) {
-      note(kind, text, false, e && e.message ? e.message : 'the chat call failed');
+      note(kind, text, false, 'failed', e && e.message ? e.message : '');
     }
   }
 
@@ -534,9 +544,22 @@ async function register(host) {
   //
   // Async for the sector lookup, and the listener itself stays synchronous: `host.events.on` wraps
   // a throw and an async listener that rejects is not a throw it can catch.
+  //
+  // ⚠ **`raid:alert` IS EVERY OWNER ALERT, AND ONLY ONE OF THEM IS A BASE UNDER ATTACK.** The same
+  // event carries the raid-protection status changes (an owner logging off schedules protection),
+  // a picked lock, a looted chest and a sold car — and this handler announced every one of them as
+  // "a base is under attack". The manager now says which: `type: 'raid'` + `subType: 'attack'` is
+  // the base taking damage, `protSched`/`protOn`/`protOff` are status changes, and the other kinds
+  // carry `subType: null`. An older manager sends no `subType` key at all; there the attack is the
+  // `raid` alert that names an `object` (what was destroyed), because a status change names none.
+  const isAttack = (e) => {
+    if (!e || typeof e !== 'object') return false;
+    if (Object.prototype.hasOwnProperty.call(e, 'subType')) return e.subType === 'attack';
+    return e.type === 'raid' && !!e.object;
+  };
   const onRaid = async (e) => {
     const s = cfg.raids;
-    if (!s.enabled || !e) return;
+    if (!s.enabled || !isAttack(e)) return;
     const vars = {
       owner: e.ownerName || e.owner || '',
       sector: await sectorAt(e.location),
@@ -569,7 +592,10 @@ async function register(host) {
   // Which events have already had their "sign-ups are open" line this cycle. Cleared for an
   // event the moment it is seen RUNNING, which is the only unambiguous end of a sign-up phase.
   const openSaid = new Set();
+  // `lastPollError` is a code (`no_answer`, `no_cargo_list`) the screen translates; `lastPollDetail`
+  // is the bridge's own refusal, when it gave one.
   let lastPollError = '';
+  let lastPollDetail = '';
   let lastCargoUnplaceable = 0;
 
   /**
@@ -623,8 +649,25 @@ async function register(host) {
    * announced. That is the opposite of the cargo rule above, where an empty answer is
    * indistinguishable from a refusal; here the refusal is `null` and is already gone.
    */
+  //
+  // ⚠ **AND `host.map.bunkers()` / `.secretBunkers()` ARE `safe(…, [])`, SO A READ THAT THREW ARRIVES
+  // AS `[]`, NOT `null`.** `readList`'s null only covers a manager with no such call. Two rules close
+  // the gap, one per list, because an empty answer means different things on each:
+  //
+  //   abandoned  The list is built from the game's periodic dump and only ever grows — a scheduled
+  //              bunker stays in it, active or locked, for the life of the process. So EMPTY is
+  //              never a reading: it is "the dump has not been written yet" (a server that has just
+  //              started, where the seed found nothing) or a read that failed. Neither is compared,
+  //              and neither becomes the baseline — otherwise the server's first dump announced every
+  //              already-active bunker as opening, which the README promises does not happen.
+  //   secret     Empty is the ordinary state, so it is compared — but a bunker that vanished from an
+  //              EMPTY reading before its own window ran out cannot be told apart from a failed read,
+  //              and is HELD rather than announced as closed. Its close is said when the clock it
+  //              carries passes, or when a non-empty reading (which proves the read worked) lacks it.
   function bunkerPass(section, list, last) {
     if (!section.enabled || list === null) return last;
+    const abandoned = section === cfg.bunkersAbandoned;
+    if (abandoned && list.length === 0) return last;
     const now = new Map(list.map((b) => [String(b.sector), b]));
     if (!last) return now;                       // baseline
     // ⚠ A COORDINATE OF EXACTLY 0 IS A PLACE, NOT A BLANK. `|| ''` is the same falsy-swallow as
@@ -649,8 +692,13 @@ async function register(host) {
     // Leaving the list IS closing. `getBunkers()` drops a keycard bunker whose window has elapsed
     // and `getSecretBunkers()` drops every row whose window ran out, and in both cases the bunker
     // shut -- so a row that vanished is the close, not a gap in the reading.
+    const nowSec = Math.floor(Date.now() / 1000);
     for (const [sector, was] of last) {
       if (now.has(sector)) continue;
+      // An empty reading proves nothing about a bunker whose own window is still open. See above.
+      const until = Number(was && was.activeUntilUnix);
+      const elapsed = Number.isFinite(until) && until > 0 && until <= nowSec;
+      if (list.length === 0 && was.state === 'active' && !elapsed) { now.set(sector, was); continue; }
       if (section.announceClose && was.state === 'active') {
         say('bunker', section, section.closeMessage, varsOf(sector, was));
       }
@@ -1182,7 +1230,9 @@ async function register(host) {
     // with no crate on it all look like nothing here, and announcing "gone" for all of them would
     // fire every drop as it vanished on a hiccup. The last known state is left exactly as it is.
     if (!payload || payload.ok === false) {
-      lastPollError = (payload && (payload.reason || payload.error)) || 'the bridge did not answer';
+      // A CODE for the screen to translate, and the bridge's own words beside it when it gave any.
+      lastPollError = 'no_answer';
+      lastPollDetail = String((payload && (payload.reason || payload.error)) || '');
       return;
     }
 
@@ -1194,9 +1244,10 @@ async function register(host) {
       lastEvents = await eventPass(payload.events, lastEvents, quiet);
     }
 
+    lastPollDetail = '';
     if (!doCargo) { lastPollError = ''; return; }
     if (!Array.isArray(payload.cargo)) {
-      lastPollError = 'the bridge answered without a cargo list';
+      lastPollError = 'no_cargo_list';
       return;
     }
     lastPollError = '';
@@ -1334,6 +1385,7 @@ async function register(host) {
       // Said out loud rather than left as three zeroes: an owner reading "0 sent" needs to know
       // whether that is a quiet night or a bridge that is not answering.
       pollError: lastPollError,
+      pollErrorDetail: lastPollDetail,
       // Cargo and events are not asked for while the server is known to be empty -- see `poll`.
       waitingForPlayers,
       watching: {

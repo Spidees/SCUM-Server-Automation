@@ -49,8 +49,8 @@ Everything is configured from the plugin's **admin tab** (👥 Better Squads):
 - **Command replies**: every line players can see, in any language.
 - **Silenced by players**: what players turned off for themselves in game, with a *Reset* per player.
 - **Muted by an admin**: players who receive none of these messages and cannot undo it in game.
-- **Activity**: the messages delivered, plus **Send a test**, which sends a real line to a chosen
-  player's squad.
+- **Activity**: the messages delivered, plus **Send a test**, which sends a real line to the online,
+  not admin-muted members of a chosen player's squad and reports how many it reached.
 
 ## Good to know
 - **Died** is a player's own death: the game's suicide, or their own mine or trap. A death at somebody

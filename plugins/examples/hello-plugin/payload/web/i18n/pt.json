@@ -1,0 +1,23 @@
+{
+  "pl.hello-plugin.announce": "Anunciar no jogo",
+  "pl.hello-plugin.announceAsk": "Enviar a saudação para todos no jogo?",
+  "pl.hello-plugin.empty": "Ninguém jogou neste servidor ainda.",
+  "pl.hello-plugin.greet": "Cumprimentar",
+  "pl.hello-plugin.greeting": "Saudação",
+  "pl.hello-plugin.lookup": "Procurar um item",
+  "pl.hello-plugin.name": "Nome",
+  "pl.hello-plugin.noPremium": "O Premium está desligado, então as ferramentas do jogo não vão responder.",
+  "pl.hello-plugin.online": "Online agora: {n}",
+  "pl.hello-plugin.pick": "Escolher um local",
+  "pl.hello-plugin.pickNote": "Toque no mapa onde você quer olhar.",
+  "pl.hello-plugin.players": "Jogadores",
+  "pl.hello-plugin.save": "Salvar",
+  "pl.hello-plugin.saved": "Salvo.",
+  "pl.hello-plugin.sent": "Enviado.",
+  "pl.hello-plugin.steam": "ID Steam",
+  "pl.hello-plugin.stopped": "O banco de dados do jogo não pode ser lido com o servidor parado. Todo o resto aqui funciona.",
+  "pl.hello-plugin.tab": "Olá",
+  "pl.hello-plugin.title": "Hello Plugin",
+  "pl.hello-plugin.signIn": "Entre para ver a sua própria saudação.",
+  "pl.hello-plugin.wave": "Acenar de volta"
+}

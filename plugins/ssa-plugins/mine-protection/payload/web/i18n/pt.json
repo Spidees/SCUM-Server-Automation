@@ -103,5 +103,9 @@
   "pl.mine-protection.save.notSaved": "NÃO foi salvo — {err}",
   "pl.mine-protection.btn.save": "Salvar configuração",
   "pl.mine-protection.tab.label": "Mine Protection",
-  "pl.mine-protection.live.turnOn": "ative \"{switch}\" em {where}."
+  "pl.mine-protection.live.turnOn": "ative \"{switch}\" em {where}.",
+  "pl.mine-protection.live.idleTitle": "Nada está sendo aplicado. ",
+  "pl.mine-protection.live.idleOld": "Este manager é antigo demais para este plugin. Atualize o manager.",
+  "pl.mine-protection.live.noModule": "este servidor usa um SSA Bridge mais antigo sem este módulo.",
+  "pl.mine-protection.live.bridgeOff": "o SSA Bridge não respondeu."
 }

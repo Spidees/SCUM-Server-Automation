@@ -178,5 +178,15 @@
   "pl.better-squads.col.sentto": "Enviado para",
   "pl.better-squads.card.activity": "Atividade",
   "pl.better-squads.card.activity.sub": "As últimas mensagens entregues. Nas mensagens por leitor mostra-se a primeira cópia.",
-  "pl.better-squads.live.turnOn": "ative \"{switch}\" em {where}"
+  "pl.better-squads.group.words": "Palavras dentro de outras linhas",
+  "pl.better-squads.text.mutednone": "Palavra para \"nada silenciado\"",
+  "pl.better-squads.text.squadnoname": "Palavra para um esquadrão sem nome",
+  "pl.better-squads.text.unknownobject": "Ataque: palavra para um objeto sem nome",
+  "pl.better-squads.text.testline": "Mensagem de teste a partir desta página",
+  "pl.better-squads.live.turnOnBoth": "ative \"{enable}\" e \"{switch}\" no cartão {module} em {where}",
+  "pl.better-squads.live.nomodule": "este servidor usa um SSA Bridge mais antigo que não tem este módulo",
+  "pl.better-squads.live.noanswer": "o SSA Bridge não respondeu",
+  "pl.better-squads.test.squadunknown": "A lista de esquadrões não pode ser lida agora. Tente de novo dentro de um minuto.",
+  "pl.better-squads.test.allmuted": "Todos os membros online desse esquadrão estão silenciados por um admin",
+  "pl.better-squads.test.reachednobody": "O teste foi enviado, mas não chegou a ninguém"
 }
