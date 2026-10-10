@@ -639,6 +639,42 @@ export interface Host {
     worldEvents(): Promise<{ cargo?: Array<Record<string, any>>; events?: Array<Record<string, any>> } | null>;
 
     /**
+     * The event ledger (SSA Bridge 2.41.0, the world-events module's "Event players and deaths"
+     * switch, on by default): every game event that is running or taking sign-ups, and every one that
+     * ended in the last 30 minutes, with its participants and the spans of time each was in play.
+     * The one answer to "who is in an event"; the kill feeds read the same one. null when unavailable.
+     */
+    eventLedger(): Promise<{
+      pollEveryMs: number;
+      coverSince?: number;
+      lastPoll?: number;
+      runs: Array<{
+        id: string; run: number; class: string; name?: string; locationName?: string;
+        x?: number; y?: number; z?: number;
+        phase: 'signup' | 'running' | 'ended';
+        firstSeen: number; started?: number; ended?: number; registered?: number;
+        state?: string; round?: number; roundTimeLeft?: number; teams?: number; scores?: number[];
+        participants: Array<{
+          index?: number; removed?: true; name?: string; steamId?: string; team?: number;
+          state?: string; inEvent: boolean; inPlay?: Array<[number, number]>;
+        }>;
+      }>;
+      notifications: Array<{ at: number; type?: string; event?: string; run?: number; player?: string; steamId?: string }>;
+      notificationsSeen: number;
+      cost: { polls: number; failedPolls: number; processEvents: number; processEventsLastMinute: number; pollUsAvg: number; pollUsMax: number };
+    } | null>;
+
+    /**
+     * Was this player in play in a running game event, now or at `atMs` (epoch milliseconds)?
+     * null when the ledger was not watching at that moment: "nobody can say", never "no".
+     */
+    inGameEvent(steamId: string, atMs?: number): Promise<{
+      steamId: string; at: number; inEvent: boolean;
+      event?: { id: string; run: number; class: string; name?: string; state?: string };
+      matchedBy?: 'steamId' | 'name';
+    } | null>;
+
+    /**
      * What an ONLINE player is carrying, right now.
      *
      * `items` is `null` — never `[]` — when the player is not in the world: "offline" and "carrying

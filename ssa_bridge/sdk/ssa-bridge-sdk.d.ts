@@ -342,7 +342,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 217 reads, 274 writes, 34 retired verbs, 379 settings.
+// 50 modules, 218 reads, 274 writes, 34 retired verbs, 380 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -2080,10 +2080,14 @@ export interface ModuleVocabulary {
     retired: never;
   };
   /**
-   * Live world events · 8 settings
+   * Live world events · 9 settings
    *
    * Reads (`module_data`):
    * - `events`
+   * - `ledger`
+   * - `ledger:…`
+   * - `ledger:at:…`
+   * - `ledger:player:…`
    *
    * Writes (`module_command`):
    * - `cancel`
@@ -2102,7 +2106,11 @@ export interface ModuleVocabulary {
    */
   "worldevents": {
     data:
-      | "events";
+      | "events"
+      | "ledger"
+      | `ledger:${string}`
+      | `ledger:at:${string}`
+      | `ledger:player:${string}`;
     command:
       | "cancel"
       | `cancel:${string}`
@@ -3045,6 +3053,8 @@ export interface ModuleSettingsMap {
     events?: boolean;
     /** Inside the event. Adds a running event's phase and time left, capture progress, flag carriers and winning score. (default false, applies when `events`) */
     modes?: boolean;
+    /** Event players and deaths. Keeps each running event and its players, so a death inside an event is told apart from any other. (default true) */
+    ledger?: boolean;
     /** Who is in the event. Adds the event roster: each player's name, Steam id, team, alive or not, score, kills and deaths. (default false, applies when `events`) */
     players?: boolean;
     /** The event's play area. Adds a running event's ring: state, centre, current radius and the radius it closes to. (default false, applies when `events`) */

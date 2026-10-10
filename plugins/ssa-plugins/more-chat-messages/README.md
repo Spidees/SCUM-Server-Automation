@@ -29,7 +29,8 @@ Everything ships **off**, so your server says nothing new until you turn somethi
   work without it.
 - In the bridge's **Live world events** module: *Report world events*, *Cargo drops* and
   *Deathmatch, CTF, drop zone*. The plugin's card on the **Plugins** page lists them and offers to
-  switch them on. *Who is in the event* is optional and puts a name on each sign-up.
+  switch them on. Each sign-up is named from the bridge's *Event players and deaths* switch, which
+  is on by default from SSA Bridge 2.41.0; an older bridge needs *Who is in the event* for the names.
 - Manager **5.16.2+**.
 
 ## Configuration

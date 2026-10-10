@@ -582,6 +582,43 @@ async function register(host) {
   let lastSecret = null;
   let lastEvents = null;
   let eventPlayersSeen = false;
+
+  /**
+   * WHO SIGNED UP, FROM THE BRIDGE'S EVENT LEDGER (SSA Bridge 2.41.0, `host.bridge.eventLedger()`).
+   *
+   * The ledger is the one place the bridge reads an event's roster: once per poll, each player's
+   * identity once per event. The `players` list on `worldEvents()` was the only route before it and
+   * costs the game seven calls per participant on every read, which is why it ships off and why
+   * this plugin never switched it on. So each event's `players` is filled from the ledger's open run
+   * for that event (`id` is the same actor name on both), in the same shape (`id` the Steam id, then
+   * `name`), and everything downstream reads it exactly as before.
+   *
+   * Only while the ledger is WATCHING (`coverSince`): an event with no open run then really has
+   * nobody signed up. With no ledger at all (an older manager or bridge, the switch off) the list is
+   * left exactly as `worldEvents()` gave it — `players` when that switch is on, absent otherwise.
+   */
+  async function namesFromLedger(events) {
+    if (!host.bridge || typeof host.bridge.eventLedger !== 'function') return;
+    let led = null;
+    try { led = await host.bridge.eventLedger(); } catch { led = null; }
+    if (!led || !Array.isArray(led.runs) || !led.coverSince) return;
+    const open = new Map();
+    for (const r of led.runs) if (r && r.id && r.phase !== 'ended') open.set(String(r.id), r);
+    for (const e of events) {
+      if (!e || !e.id) continue;   // a bridge older than 2.41.0 names no event: leave it as it came
+      const r = open.get(String(e.id));
+      e.players = r && Array.isArray(r.participants)
+        ? r.participants.filter((p) => p && !p.removed).map((p) => {
+          const o = {};
+          if (p.steamId) o.id = String(p.steamId);
+          if (p.name) o.name = String(p.name);
+          if (typeof p.team === 'number') o.team = p.team;
+          if (p.state) o.state = String(p.state);
+          return o;
+        })
+        : [];
+    }
+  }
   // Which events have already reported a participant the game had not named yet — once per run,
   // because the poll repeats every few seconds.
   const namelessSaid = new Set();
@@ -1241,6 +1278,7 @@ async function register(host) {
     // reads exactly like a map that has none. `eventsEmptyReason` is the module's word for it, and
     // an empty list is left uncompared rather than treated as everything having ended.
     if (doEvents && Array.isArray(payload.events) && payload.events.length) {
+      await namesFromLedger(payload.events);
       lastEvents = await eventPass(payload.events, lastEvents, quiet);
     }
 

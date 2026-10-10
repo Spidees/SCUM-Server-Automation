@@ -2,8 +2,8 @@
   "id": "more-chat-messages",
   "name": "More Chat Messages",
   "type": "manager",
-  "version": "1.3.6",
-  "updated": "2026-10-09",
+  "version": "1.3.7",
+  "updated": "2026-10-10",
   "author": "SCUMSA",
   "website": "https://scumsa.com/plugins.php?p=more-chat-messages",
   "description": "Announce what happens on your server in the game's own chat: kills, joins and leaves, cargo drops, game events, bunkers, and bases being raided. Each announcement is a separate switch with its own channel and your own wording. Everything ships off, so nothing is said until you say so.",
@@ -32,7 +32,7 @@
           "cargo",
           "events"
         ],
-        "why": "Cargo drops and the competitive game events are in no log the manager reads and in no table of SCUM.db - the only place they exist is the running game, and this module is what reports them. Without these switches those two announcements have nothing to watch and stay silent; every other announcement here reads the server's own log and is unaffected. Naming each person who signs up for an event additionally needs 'players' (\"Who is in the event\"), which is left out of this list on purpose: it costs the game a call per participant per poll, so it is an owner's choice rather than something a plugin should switch on for them."
+        "why": "Cargo drops and the competitive game events are in no log the manager reads and in no table of SCUM.db - the only place they exist is the running game, and this module is what reports them. Without these switches those two announcements have nothing to watch and stay silent; every other announcement here reads the server's own log and is unaffected. Each person who signs up for an event is named from the bridge's event ledger ('Event players and deaths', on by default from SSA Bridge 2.41.0); on an older bridge it takes 'players' (\"Who is in the event\"), which is left out of this list on purpose because it costs the game seven calls per participant per read."
       }
     ]
   },
