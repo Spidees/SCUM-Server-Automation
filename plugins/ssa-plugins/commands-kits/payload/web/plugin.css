@@ -1,0 +1,446 @@
+/* Chat Commands & Kits — admin UI (matches the manager's card + token styling). */
+.ck-wrap{display:flex;flex-direction:column;gap:14px}
+.ck-loading{color:var(--muted,#8b9099);font-size:.86rem}
+/* The whole tab could not load — a different thing from a tab with nothing configured, and the
+   whole reason the backend calls in this file no longer swallow a failure into `{}`. */
+.ck-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.ck-err-act{margin-top:.7rem}
+
+/* What the tab IS, above the sub-nav. Every other plugin here opens with a line of its own; this
+   one opened on five tab buttons and a row of zeroes, so the biggest plugin in the library was the
+   one that explained least. `max-width` in `ch` keeps it a readable measure on a wide panel. */
+.ck-lead{margin:0;color:var(--muted,#8b9099);font-size:.9rem;line-height:1.5;max-width:75ch}
+/* The first-run hint. It owns no colours of its own — it reuses `.ck-note-off`, which is the
+   neutral, non-alarming note this tab already uses for "the server is not running": a plugin nobody
+   has configured yet is an ordinary state, not a fault. */
+.ck-firstrun{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+
+/* top bar: sub-nav + save */
+.ck-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 2px}
+.ck-nav{display:flex;gap:10px;flex-wrap:wrap}
+.ck-tab{display:inline-flex;align-items:center;gap:8px;font:inherit;cursor:pointer;font-size:.82rem;padding:.5rem 1rem;border-radius:8px;border:1px solid var(--line,#24272e);background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099)}
+.ck-tab .ico{width:15px;height:15px}
+.ck-noimg .ico{width:18px;height:18px;color:var(--muted,#8b9099)}
+/* The whole sub-nav. Amber text on the amber hover fill was 1.63:1 — unreadable on every tab. */
+.ck-tab{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:var(--amber,#f0820c)}
+.ck-tab.active{color:var(--text,#f1f3f5);background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,var(--panel-2,#1c1f25));border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-tab.active .ico{color:var(--accent,var(--amber,#ff6a1a))}
+.ck-top-r{margin-left:auto;display:flex;align-items:center;gap:10px}
+.ck-status{font-size:.8rem;color:var(--muted,#8b9099)}
+.ck-view{display:flex;flex-direction:column;gap:16px}
+/* one view = a column of cards with clear separation, exactly like the mine-protection plugin */
+.ck-viewbody{display:flex;flex-direction:column;gap:16px}
+
+/* status header — same badge styling as the mine-protection plugin + the panel */
+.ck-statbar{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 4px}
+.ck-stat{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.4rem .7rem;font-size:.78rem}
+/* A stopped server is INFORMATION, not a warning: setting this up before the first start is exactly
+   right. Its own row across the strip; both halves in one rule so the pair cannot drift apart. */
+.ck-note-off{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
+/* A REQUEST that failed — a different thing from a world with nothing in it. Both halves of the
+   pair are written in the one rule so the cascade cannot leave text nobody can read on a coloured
+   ground (check-contrast). */
+.ck-note-err{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
+.ck-stat-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
+.ck-stat-l{color:var(--muted,#8b9099);letter-spacing:.02em}
+.ck-stat-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
+.ck-stat.ok{border-color:rgba(59,165,93,.4)} .ck-stat.ok .ck-stat-dot{background:#3ba55d;box-shadow:0 0 8px rgba(59,165,93,.6)}
+.ck-stat.off .ck-stat-dot{background:#8b9099}
+.ck-stat.warn{border-color:rgba(250,166,26,.45)} .ck-stat.warn .ck-stat-v{color:#f5b942}
+
+/* activity log: failed-item names next to the result tag */
+.ck-result{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.ck-failed{color:#f0a8a8;font-size:.76rem;overflow:hidden;text-overflow:ellipsis;max-width:340px;overflow-wrap:anywhere}
+
+/* buttons use the manager's NATIVE styles (plain <button> = primary, button.secondary, button.danger).
+   The unsaved-changes ring is the only custom bit, applied to the native Save button. */
+.ck-unsaved{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#ff6a1a) 45%,transparent)}
+/* content buttons pair their SVG icon + label with a consistent gap (like the native panel) */
+.ck-card button,.ck-bar button,.ck-sub button,.ck-chips button,.ck-view button{display:inline-flex;align-items:center;gap:.4rem}
+.ck-del{cursor:pointer;width:28px;height:28px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--line-2,#343943);background:transparent;color:var(--muted,#8b9099)}
+.ck-del .ico{width:14px;height:14px}
+.ck-del:hover{background:rgba(237,66,69,.16);color:#ff6b6e;border-color:transparent}
+
+/* section bar */
+.ck-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:.2rem 0 -.2rem}
+.ck-bar h3{margin:0;font-size:1rem;font-weight:600}
+.ck-spacer{flex:1}
+
+/* token palette */
+.ck-tok{background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:9px;padding:2px 12px}
+.ck-tok>summary { cursor:pointer;font-size:.78rem;color:var(--muted,#8b9099);padding:8px 0;list-style:none;user-select:none;--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a3c) }
+.ck-tok>summary:hover, .ck-adv>summary:hover { background:var(--hov-bg);color:var(--hov-fg) }
+.ck-tok>summary::-webkit-details-marker{display:none}
+.ck-tok-pal{display:flex;flex-direction:column;gap:8px;padding:4px 0 12px}
+.ck-tok-grp{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.ck-tok-lbl{font-size:.64rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099);min-width:92px}
+/* ⚠ NO `min-width: 0` HERE, AND THE TOKEN ITSELF NEVER SHRINKS. The wrap is a flex item in a
+   wrapping row, so its automatic content floor is the only thing keeping `{squadsize}` whole —
+   without it the chip lost two to eight pixels of its own name on every narrow view. The
+   description is the half with room to give. */
+.ck-tokwrap{display:inline-flex;align-items:center;gap:7px}
+.ck-tokwrap>.ck-tokbtn{flex:0 0 auto}
+.ck-tokbtn{font:inherit;cursor:pointer;font-size:.74rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:.18rem .45rem;border-radius:5px;border:1px solid var(--line-2,#343943);background:var(--bg,#0b0c0e);color:var(--accent,var(--amber,#ff6a1a))}
+.ck-tokbtn:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+/* The tooltip's text, on the screens where a tooltip cannot happen. See the note beside tokenBar(). */
+.ck-tokdesc{display:none}
+.ck-tok-tip-narrow{display:none}
+
+/* cards (collapsible command / pack) */
+/* section = a titled native card (like mine-protection); its command/pack rows sit inside as a list */
+.ck-sect{margin:0}
+.ck-sect-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 .25rem}
+.ck-sect-h .ck-card-t{margin:0}
+.ck-sect > .ck-card-sub{margin:-.05rem 0 1rem}
+.ck-sect-h .ck-search{width:170px;flex:0 1 170px;font-size:.82rem;padding:.4rem .55rem}
+.ck-list{display:flex;flex-direction:column;gap:10px}
+.ck-card{background:var(--panel,#15171b);border:1px solid var(--line,#24272e);border-radius:var(--radius-md,10px);overflow:hidden}
+/* command/pack rows nested inside a section read as raised list items */
+.ck-sect .ck-card{background:var(--panel-2,#1c1f25)}
+.ck-sect .ck-card.open .ck-card-b{background:var(--bg,#0b0c0e)}
+.ck-open-card,.ck-msgcard{padding:1.1rem 1.2rem}
+.ck-card-t{margin:0 0 .25rem;font-size:.95rem}
+.ck-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099)}
+.ck-card-h{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.ck-card.open .ck-card-h{border-bottom:1px solid var(--line,#24272e)}
+.ck-chev{cursor:pointer;background:none;border:0;color:var(--muted,#8b9099);width:22px;height:22px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.ck-chev .ico{width:14px;height:14px;transition:transform .13s}
+.ck-chev:not(.open) .ico{transform:rotate(-90deg)}
+.ck-chev{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:transparent}
+.ck-card-title{display:flex;align-items:center;gap:2px;min-width:0}
+.ck-slash{color:var(--muted,#8b9099);font-family:ui-monospace,monospace;font-size:.9rem}
+.ck-name{width:auto;max-width:200px}
+.ck-badges{display:flex;gap:6px;flex-wrap:wrap}
+.ck-badge{font-size:.66rem;font-weight:600;letter-spacing:.02em;padding:.13rem .45rem;border-radius:999px;white-space:nowrap;background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099);border:1px solid var(--line-2,#343943)}
+.ck-badge.cost{background:rgba(250,166,26,.16);color:#f5b942;border-color:transparent}
+.ck-badge.trig{background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,transparent);color:var(--accent,#ff6a1a);border-color:transparent}
+/* A kit that would give a player nothing. Dashed rather than filled: it is unfinished work, not a
+   fault, and a red badge on a kit somebody is halfway through building is an alarm about nothing.
+   Both halves of the pair are in this one rule so the cascade cannot leave unreadable text. */
+.ck-badge.empty{background:transparent;color:#e6b96a;border:1px dashed rgba(230,185,106,.55)}
+.ck-card-b{padding:14px;display:flex;flex-direction:column;gap:14px;background:var(--bg,#0b0c0e)}
+
+/* fields */
+.ck-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;align-items:start}
+.ck-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ck-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ck-f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.ck-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.ck-inl{display:flex;flex-direction:column;gap:5px;min-width:0}
+.ck-inl>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.ck-in{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.ck-card-b .ck-in,.ck-open-card .ck-in{background:var(--panel,#15171b)}
+.ck-in:focus,.ck-area:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-in.ck-bad{border-color:#ed4245}
+.ck-num{max-width:96px}
+.ck-grow{width:100%}
+.ck-area{width:100%;background:var(--panel,#15171b);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.5rem .6rem;resize:vertical;min-height:52px}
+/* A box that grows with its text: no fixed floor, no scrollbar, the height set from what is in it. */
+.ck-area.ck-growarea{min-height:0;overflow:hidden;resize:none;line-height:1.4}
+/* Fields stacked straight in a settings card get the same breathing room as the rows of a grid. */
+.ck-open-card>.ck-f{margin-top:12px}
+.ck-open-card>.ck-f+p{margin-top:12px}
+.ck-hint{color:var(--muted,#8b9099);font-size:.72rem}
+.ck-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:.2rem 0}
+.ck-cmdwrap{display:flex;align-items:center;gap:3px}
+
+/* switch */
+.ck-switch{position:relative;display:inline-flex;align-items:center;cursor:pointer;width:38px;height:22px;flex:none}
+.ck-switch input{position:absolute;opacity:0;width:0;height:0}
+.ck-switch-t{position:absolute;inset:0;border-radius:999px;background:var(--line-2,#343943);transition:background .15s}
+.ck-switch-t::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
+.ck-switch input:checked + .ck-switch-t{background:var(--accent,var(--amber,#ff6a1a))}
+.ck-switch input:checked + .ck-switch-t::after{transform:translateX(16px)}
+
+/* chips (allow/deny) */
+.ck-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ck-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.2rem .3rem .2rem .55rem;font-size:.78rem}
+.ck-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.ck-chip-x .ico{width:11px;height:11px}
+.ck-chip-x:hover{background:rgba(237,66,69,.16);color:#ed4245}
+
+/* sub-groups (actions, items, vehicles, inventories) */
+.ck-sub{background:var(--panel,#15171b);border:1px solid var(--line,#24272e);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.ck-sub-h{font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.ck-stack{display:flex;flex-direction:column;gap:8px}
+.ck-actrow{display:flex;align-items:end;gap:8px}
+.ck-itemrow{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;justify-content:space-between}
+/* name grows on the left; the qty + change + delete controls stay grouped and wrap together (never a
+   lone delete button dropping onto its own line) */
+.ck-item-main{display:flex;align-items:center;gap:8px;flex:1 1 130px;min-width:0}
+.ck-item-main .ck-picked{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-item-ctl{display:flex;align-items:center;gap:8px;flex:none}
+.ck-invrow{background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-radius:7px;padding:8px}
+.ck-thumb{width:32px;height:32px;border-radius:5px;object-fit:contain;background:var(--bg,#0b0c0e);flex:none}
+.ck-noimg{display:flex;align-items:center;justify-content:center;font-size:16px}
+.ck-picked{font-size:.82rem;min-width:80px;flex:1}
+.ck-times{color:var(--muted,#8b9099);font-size:.8rem}
+.ck-invrow .ck-num{max-width:60px}
+
+/* messages card */
+.ck-msgcard{display:flex;flex-direction:column;gap:12px}
+.ck-msggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px}
+/* one language editor per message: full width, a row of language tabs each */
+.ck-msglist{display:flex;flex-direction:column;gap:18px;min-width:0}
+
+/* advanced */
+.ck-adv{padding:14px}
+.ck-adv>summary { cursor:pointer;font-size:.85rem;color:var(--muted,#8b9099);user-select:none;--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a3c) }
+.ck-adv .ck-f{margin-top:12px}
+
+/* claims table uses the manager's NATIVE .data-table / .table-wrap / .gl-player / mono / dim classes. */
+.ck-pn{font-weight:600}
+
+/* pickers (modals) */
+.ck-ov{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px}
+.ck-modal{background:var(--panel,#15171b);border:1px solid var(--line-2,#343943);border-radius:12px;width:100%;max-width:560px;max-height:84vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+.ck-modal-h{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line,#24272e);font-size:.92rem}
+.ck-x{background:none;border:0;color:var(--muted,#8b9099);font-size:1.1rem;cursor:pointer}
+.ck-modal-search{padding:12px 16px 8px}
+.ck-row{display:flex;gap:8px}
+.ck-pick-grid{overflow:auto;padding:6px 16px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.ck-pick{display:flex;align-items:center;gap:9px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.5rem;cursor:pointer;font:inherit;color:var(--text,#f1f3f5);text-align:left}
+.ck-pick:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-pick-img{width:34px;height:34px;object-fit:contain;flex:none;border-radius:5px}
+.ck-pick-name{font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-plist{overflow:auto;padding:6px 16px 16px;display:flex;flex-direction:column;gap:6px}
+.ck-prow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:7px;padding:.5rem .7rem;cursor:pointer;font:inherit;color:var(--text,#f1f3f5)}
+.ck-prow:hover{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-prow code{color:var(--muted,#8b9099);font-size:.76rem}
+
+/* command / kit name shown as ONE input-group pill (prefix glued to the field, never a floating glyph),
+   so the Commands and Kits card headers read consistently. */
+.ck-cmdfield{display:inline-flex;align-items:center;min-width:0;border:1px solid var(--line-2,#343943);border-radius:6px;background:var(--panel,#15171b);overflow:hidden}
+.ck-cmdfield:focus-within{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-cmdfield .ck-slash{display:inline-flex;align-items:center;padding:0 .12rem 0 .5rem;color:var(--muted,#8b9099);font-family:ui-monospace,monospace;font-size:.9rem}
+.ck-cmdfield .ck-kiticon{padding:0 .1rem 0 .45rem}
+.ck-cmdfield .ck-kiticon .ico{width:13px;height:13px}
+.ck-cmdfield .ck-in{border:0;background:transparent;border-radius:0;padding:.4rem .55rem .4rem .3rem}
+.ck-cmdfield .ck-in:focus{border:0}
+
+/* quantity: “×” glued to the number so it reads as one unit (× 3), not a stray floating symbol */
+.ck-qty{display:inline-flex;align-items:center;border:1px solid var(--line-2,#343943);border-radius:6px;background:var(--panel,#15171b);overflow:hidden;flex:none}
+.ck-qty:focus-within{border-color:var(--accent,var(--amber,#ff6a1a))}
+.ck-qty-x{padding:0 .05rem 0 .5rem;color:var(--muted,#8b9099);font-size:.85rem}
+.ck-qty .ck-in{border:0;background:transparent;border-radius:0;max-width:62px;padding:.4rem .5rem .4rem .3rem}
+.ck-qty .ck-in:focus{border:0}
+
+/* token palette: leading bulb + a hover-hint tip on the right */
+.ck-tok>summary{display:flex;align-items:center;gap:7px}
+.ck-tok>summary .ico{width:14px;height:14px;color:var(--muted,#8b9099)}
+.ck-tok-tip{margin-left:auto;color:var(--muted,#8b9099);font-size:.7rem}
+
+/* live delivery queue (Activity view) */
+.ck-queue{display:flex;flex-direction:column;gap:6px}
+.ck-q-cur{display:flex;align-items:center;gap:9px;font-size:.82rem;border-radius:7px;padding:.5rem .7rem;background:color-mix(in srgb,var(--accent,#ff6a1a) 10%,var(--panel-2,#1c1f25));border:1px solid color-mix(in srgb,var(--accent,#ff6a1a) 30%,transparent)}
+.ck-q-lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck-q-spin{width:13px;height:13px;flex:none;border-radius:50%;border:2px solid color-mix(in srgb,var(--accent,#ff6a1a) 35%,transparent);border-top-color:var(--accent,#ff6a1a);animation:ck-spin .7s linear infinite}
+@keyframes ck-spin{to{transform:rotate(360deg)}}
+.ck-q-row{display:flex;align-items:center;gap:9px;font-size:.8rem;color:var(--muted,#8b9099);padding:.28rem .7rem}
+.ck-q-dot{width:6px;height:6px;border-radius:50%;background:var(--line-2,#343943);flex:none}
+@media (prefers-reduced-motion:reduce){.ck-q-spin{animation:none}}
+
+/* all-players picker (our modal over /players/all — online-marked, searchable) */
+.ck-pp-search{margin-bottom:10px}
+.ck-pp-name{display:flex;align-items:center;gap:8px;min-width:0}
+.ck-pp-dot{width:7px;height:7px;border-radius:50%;background:var(--line-2,#343943);flex:none}
+.ck-pp-dot.on{background:#3ba55d;box-shadow:0 0 7px rgba(59,165,93,.6)}
+/* The roster itself could not be read — never "no players found", which an admin looking for
+   someone they know exists would read as the roster genuinely being empty. */
+.ck-pp-err{color:#f0a8a8}
+
+@media (max-width:640px){ .ck-grid2,.ck-cols{grid-template-columns:1fr} }
+
+/* ── Time windows ───────────────────────────────────────────────────────────────
+   The same control in every plugin that offers "from when to when". Deliberately
+   identical markup and identical CSS in each, so a window looks and reads the same
+   wherever an owner meets one.
+
+   Two house rules are load-bearing here and both are mechanically checked:
+   `minmax()` is never given a bare length (it must collapse to one column on a
+   phone rather than widen the page), and no `:hover` rule ever changes only the
+   background or only the colour — both halves are retuned together on the element,
+   or the amber default hover paints dark text on a dark fill. */
+.tw { margin: 6px 0 2px; }
+.tw-rows { display: flex; flex-direction: column; gap: 6px; }
+.tw-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--border, rgba(255,255,255,.12));
+  border-radius: 8px; background: var(--panel2, rgba(255,255,255,.03));
+}
+.tw-days { display: flex; flex-wrap: wrap; gap: 3px; }
+.tw-day {
+  font-size: .72rem; line-height: 1; padding: 5px 7px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border, rgba(255,255,255,.16));
+  background: transparent; color: var(--muted, #9aa3ad);
+  /* Ghost shape: no fill, the colour change IS the affordance. Both halves declared
+     together so the panel's blanket `button:hover` cannot half-apply. */
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: currentColor;
+}
+.tw-day.on {
+  /* Tinted shape: its own soft fill with normal text, so it stays legible in both themes. */
+  background: color-mix(in srgb, var(--accent, #ff6a1a) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #ff6a1a) 55%, transparent);
+  color: var(--text, #e8edf2);
+  --hov-bg: color-mix(in srgb, var(--accent, #ff6a1a) 26%, transparent);
+  --hov-fg: var(--text, #e8edf2);
+}
+.tw-day.on:hover { background: var(--hov-bg); color: var(--hov-fg); }
+.tw-times { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted, #9aa3ad); }
+.tw-t { width: auto; max-width: 100%; min-width: 0; font-size: .8rem; padding: 4px 6px; }
+.tw-del {
+  margin-left: auto; font-size: .9rem; line-height: 1; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border, rgba(255,255,255,.16)); background: transparent;
+  color: var(--muted, #9aa3ad); cursor: pointer;
+  --hov-bg: transparent; --hov-fg: var(--danger, #ff5c5c); --hov-line: var(--danger, #ff5c5c);
+}
+.tw-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.tw-add {
+  font-size: .76rem; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed var(--border, rgba(255,255,255,.22)); background: transparent;
+  color: var(--muted, #9aa3ad);
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: var(--accent, #ff6a1a);
+}
+.tw-note { margin: 0; font-size: .76rem; color: var(--muted, #9aa3ad); flex: 1 1 12rem; min-width: 0; }
+.tw-note.ok { color: var(--ok, #54c98a); }
+.tw-note.bad { color: var(--danger, #ff5c5c); }
+/* The clock caption is not decoration: "from 20:00" is ambiguous until something on
+   the screen says whose clock, and this is that something. It stays visible even when
+   no window is set, so an owner reads it before they configure rather than after. */
+.tw-clock { margin: 4px 0 0; font-size: .72rem; color: var(--muted, #9aa3ad); opacity: .85; }
+
+/* ── a thumb, at 320px ──────────────────────────────────────────────────────
+   The panel puts a 44px floor under every control inside a plugin's tab, and it
+   can only floor a HEIGHT: a width floor on a flex item replaces the automatic
+   content minimum that is the only thing stopping a word being cut in half. So
+   the four controls here whose WIDTH was the problem state their own answer, and
+   each of the three shapes wants a different one.
+
+   A NAME BOX THAT LOST A FIGHT WITH ITS ROW. `.ck-name` is `width: auto` inside a
+   `min-width: 0` flex header, so at 320px the kit's own name field was squeezed to
+   FOURTEEN PIXELS — a text box nobody can see the caret in, let alone type into.
+   The row wraps now and the field keeps a real floor, so the name gets a line of
+   its own rather than a sliver of one.
+
+   AN ICON BUTTON HAS NO WORD TO CUT, so a square is exactly right for it.
+
+   A SWITCH IS THE ONE THAT MUST NOT GROW. The track is 38×22 by design and its
+   pieces are positioned off it, so a taller box makes a tall rounded rectangle
+   with the knob adrift in it. It opts out of the panel's height floor in one
+   declaration and takes its 44×44 hit area from transparent slop instead, so the
+   switch stays the size it is drawn and the finger gets the room. */
+@media (max-width: 760px) {
+  .ck-card-title { flex-wrap: wrap; row-gap: 6px; }
+  .ck-name { flex: 1 1 7rem; min-width: 7rem; max-width: 100%; }
+  .ck-chev, .ck-tokbtn { min-width: 44px; }
+  /* The 3px the reach goes out each side is audited rather than assumed: the manager's own render
+     check drives this tab at 310px and asks whether any control's transparent hit area covers a
+     neighbour's visible box. It does not — the switch sits at the end of its row with the card's
+     padding beside it. */
+  .ck-switch { min-height: 22px; }
+  .ck-switch::after { content: ''; position: absolute; inset: -11px -3px; border-radius: 999px; }
+  /* A TOOLTIP IS A HOVER AND A PHONE HAS NONE, so what the tooltip says becomes text. The group
+     turns into one row per token — a chip and its sentence — rather than a wrapped bed of chips
+     whose meanings are all unreachable. The caption swaps for the same reason. */
+  .ck-tok-grp { flex-direction: column; align-items: stretch; }
+  .ck-tok-lbl { min-width: 0; }
+  /* The sentence keeps its words whole: beside a long token it drops under the chip rather than
+     being squeezed until "Constitution" breaks across two lines. */
+  .ck-tokwrap { width: 100%; flex-wrap: wrap; }
+  .ck-tokdesc { display: inline; flex: 1 1 10rem; min-width: 0; font-size: .72rem; color: var(--muted, #8b9099);
+    white-space: normal; overflow-wrap: break-word; }
+  .ck-tok-tip-wide { display: none; }
+  .ck-tok-tip-narrow { display: inline; }
+}
+
+/* ── VARIANTS, THE SECOND CLOCK, AND THE TWO NEW BUTTONS ──────────────────────────────────────
+ *
+ * Every hover state below declares BOTH halves on the element (`--hov-bg` and `--hov-fg`), never
+ * one of them in a `:hover` rule. The panel's blanket `button:hover` paints every button amber with
+ * dark text, so a rule that changes only the background keeps the dark text and one that changes
+ * only the colour keeps the amber fill — both invisible, and both are what `check-contrast` exists
+ * to catch. Two shapes cover all of it: ghost (no fill, the colour change is the affordance) and
+ * tinted (its own soft fill, ordinary text).
+ *
+ * No `minmax()` here is given a bare length: every one collapses to a single column rather than
+ * widening the card, which on a phone is the difference between a control being reachable and being
+ * clipped off by the card's own `overflow: hidden`. */
+
+/* The copy button beside a delete. A link shape rather than a second icon: "copy" said in a word
+   cannot be mistaken for the ✕ next to it, which is the one mistake on this row that cannot be
+   undone. */
+.ck-link {
+  font-size: .74rem; line-height: 1; padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; background: transparent; color: var(--muted, #8b9099);
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: currentColor;
+}
+.ck-headbtns { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+
+/* A state an owner has to act on — "no variant can come up" — and it is not an error: the save
+   worked and the kit still gives its own contents. Amber rather than red for exactly that reason. */
+.ck-warn {
+  margin: 0; font-size: .74rem; color: #e6b96a;
+  border-left: 2px solid rgba(230, 185, 106, .55); padding-left: .6rem;
+}
+
+.ck-vars { gap: 8px; }
+.ck-var {
+  border: 1px solid var(--line, #24272e); border-radius: 8px;
+  background: var(--panel-2, #1c1f25); overflow: hidden;
+}
+.ck-var.open { border-color: color-mix(in srgb, var(--accent, #ff6a1a) 34%, var(--line, #24272e)); }
+.ck-varhead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+.ck-var-b {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px; border-top: 1px solid var(--line, #24272e);
+}
+/* THE ODDS, AND WHY THEY ARE ON THE ROW AT ALL: a weight is a number with no meaning until
+   something says what it is a share OF. `.bad` is the one that never comes up — stated, never left
+   for somebody to work out from a 0 in a box. */
+.ck-varodds {
+  font-size: .72rem; color: var(--muted, #8b9099); white-space: nowrap;
+  flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere;
+}
+.ck-varodds.bad { color: #e6b96a; }
+
+/* The game-clock editor shares the wall-clock editor's furniture (`.tw-note`, `.tw-times`,
+   `.tw-clock`) so the two read as one pair of settings rather than two unrelated boxes. Only the
+   left rule differs, because on this one screen a reader has to be able to tell at a glance which
+   clock they are looking at. */
+.gw { border-left: 2px solid color-mix(in srgb, var(--accent, #ff6a1a) 30%, transparent); padding-left: 10px; }
+.gw .tw-rows { gap: 8px; }
+.gw .ck-num { width: 5rem; max-width: 100%; min-width: 0; }
+
+@media (max-width: 760px) {
+  /* The odds wrap under the name instead of squeezing it: the name is what somebody is looking
+     for and the percentage is what they are checking, and a phone has room for one line each. */
+  .ck-varodds { flex: 1 1 100%; white-space: normal; }
+  .ck-varhead { row-gap: 6px; }
+  .ck-link { min-width: 44px; }
+}
+
+/* WHICH VARIANT went out, beside the kit's name in the delivery log. A pill rather than more text:
+   the column is already a name, and a second name run together with it reads as one longer name.
+   Tinted shape, so it stays legible against the row in both themes. */
+.ck-varpill {
+  margin-left: .4rem; font-size: .66rem; font-weight: 600; letter-spacing: .02em;
+  padding: .1rem .4rem; border-radius: 999px; white-space: nowrap;
+  background: color-mix(in srgb, var(--accent, #ff6a1a) 14%, transparent);
+  color: var(--accent, #ff6a1a);
+}
+
+/* On a phone a wrapping row of buttons stretches to the column instead of
+   falling into a staircase of boxes, one per line, each at its own width. */
+@media (max-width: 480px) {
+  .ck-nav > * { flex: 1 1 auto; }
+}
+
+/* The token tip is a sentence and opens with a capital in every language. */
+.ck-tok-tip::first-letter { text-transform: uppercase; }
+/* What a claim is for — kit, command or shared cooldown group — beside its name in Player claims. */
+.ck-kind {
+  margin-left: .4rem; font-size: .66rem; font-weight: 600; letter-spacing: .02em;
+  padding: .1rem .4rem; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--line, #333); color: var(--muted, #8b9099);
+}
+.ck-kind.gone { font-style: italic; }

@@ -1,0 +1,103 @@
+{
+  "kills": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "message": "{killer} killed {victim} ({weapon}) at {distance} m",
+    "messageI18n": {},
+    "messageNoKiller": "{victim} died",
+    "messageNoKillerI18n": {},
+    "selfMessage": "{victim} killed themselves",
+    "selfMessageI18n": {},
+    "minDistance": 0,
+    "announcePvp": true,
+    "announceNpc": true,
+    "npcMessage": "{victim} was killed by {killer}",
+    "npcMessageI18n": {},
+    "announceCause": true,
+    "causeMessage": "{victim} died: {cause}",
+    "causeMessageI18n": {},
+    "announceSuicide": true,
+    "announceEvent": false,
+    "eventMessage": "{killer} killed {victim} in a game event ({weapon})",
+    "eventMessageI18n": {}
+  },
+  "joins": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "message": "{name} joined the server ({sector})",
+    "messageI18n": {}
+  },
+  "leaves": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "message": "{name} left the server ({sector})",
+    "messageI18n": {}
+  },
+  "cargo": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "incomingMessage": "A cargo drop is on its way to {sector}",
+    "incomingMessageI18n": {},
+    "landedMessage": "The cargo drop has landed in {sector}",
+    "landedMessageI18n": {},
+    "goneMessage": "The cargo drop in {sector} is gone",
+    "goneMessageI18n": {},
+    "announceIncoming": true,
+    "announceLanded": true,
+    "announceGone": false
+  },
+  "events": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "announceOpen": true,
+    "openMessage": "The {event} at {location} is open: {registered} signed up. Join in!",
+    "openMessageI18n": {},
+    "announceJoin": false,
+    "joinMessage": "{player} joined the {event} — {registered} signed up",
+    "joinMessageI18n": {},
+    "announceCount": false,
+    "countMessage": "{registered} players are signed up for the {event} at {location}",
+    "countMessageI18n": {},
+    "announceStart": true,
+    "startMessage": "The {event} at {location} has started with {participants} players",
+    "startMessageI18n": {},
+    "announceEnd": false,
+    "endMessage": "The {event} at {location} has finished",
+    "endMessageI18n": {}
+  },
+  "bunkersSecret": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "openMessage": "A secret bunker has opened in {sector}",
+    "openMessageI18n": {},
+    "closeMessage": "The secret bunker in {sector} has closed",
+    "closeMessageI18n": {},
+    "announceClose": false
+  },
+  "bunkersAbandoned": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "openMessage": "The abandoned bunker in {sector} is now active",
+    "openMessageI18n": {},
+    "closeMessage": "The abandoned bunker in {sector} has locked",
+    "closeMessageI18n": {},
+    "announceClose": true
+  },
+  "raids": {
+    "enabled": false,
+    "channel": "global",
+    "history": false,
+    "message": "A base is under attack in {sector}",
+    "messageI18n": {},
+    "includeOwner": false,
+    "ownerMessage": "{owner}'s base is under attack in {sector}",
+    "ownerMessageI18n": {}
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "hello-plugin",
+  "name": "Hello Plugin",
+  "type": "manager",
+  "version": "2.0.1",
+  "updated": "2026-10-11",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "A complete reference manager plugin: config, events, HTTP routes, game-DB reads, persistence, in-game chat & a /command, Discord, an admin tab and a Field Console tab.",
+  "image": "icon.png",
+  "apiVersion": 1,
+  "minManagerVersion": "5.53.0",
+  "dependencies": [],
+  "main": "backend/index.js",
+  "web": { "script": "web/plugin.js", "style": "web/plugin.css", "i18n": "web/i18n" },
+  "fc": { "script": "fc/plugin.js" },
+  "config": "config.json",
+  "readme": "README.md"
+}

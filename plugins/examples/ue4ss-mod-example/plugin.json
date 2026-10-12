@@ -1,0 +1,15 @@
+{
+  "id": "ue4ss-example",
+  "name": "UE4SS Example Mod",
+  "type": "ue4ss",
+  "modName": "SSAExample",
+  "version": "1.0.1",
+  "updated": "2026-10-11",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com",
+  "description": "A small, safe reference UE4SS (Lua) mod. It reads its own config and counts the connected players on the game thread, without walking the world. Shows how an in-game mod is laid out, uploaded and paired with a manager plugin.",
+  "image": "icon.png",
+  "dependencies": ["ue4ss"],
+  "config": "Mods/SSAExample/example.txt",
+  "readme": "README.md"
+}

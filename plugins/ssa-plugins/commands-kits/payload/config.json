@@ -1,0 +1,141 @@
+{
+  "joinDelaySeconds": 0,
+  "commandPrefix": "/",
+  "replyChannel": "local",
+  "itemSpawnCmd": "#SpawnItem {item} {count} Location {steamid}",
+  "vehicleSpawnCmd": "#SpawnVehicle {code} {count} Location {steamid}",
+  "invSpawnCmd": "#SpawnInventoryFullOf {container} {fill}",
+  "spawnGapMs": 180,
+  "spawnTries": 3,
+  "messages": {},
+  "welcome": {
+    "enabled": true,
+    "channel": "local",
+    "message": "Welcome to {server}, {player}!\nThere are {online}/{maxplayers} players online. Type /info for details.",
+    "messageI18n": {}
+  },
+  "commands": [
+    {
+      "name": "info",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "requireLinked": false,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Welcome, {player}!\nPlayers online: {online}/{maxplayers}\nType /rules to read the server rules.",
+      "responseI18n": {}
+    },
+    {
+      "name": "discord",
+      "enabled": false,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "requireLinked": false,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Join our Discord: discord.gg/yourserver",
+      "responseI18n": {}
+    },
+    {
+      "name": "rules",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "requireLinked": false,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Server rules:\n1) No cheating\n2) Be respectful\n3) Have fun!",
+      "responseI18n": {}
+    },
+    {
+      "name": "ping",
+      "enabled": true,
+      "channel": "local",
+      "broadcast": false,
+      "cooldownHours": 0,
+      "requireLinked": false,
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "actions": [],
+      "response": "Your ping: {ping} ms",
+      "responseI18n": {}
+    }
+  ],
+  "packs": [
+    {
+      "id": "welcome",
+      "name": "Welcome Pack",
+      "enabled": false,
+      "trigger": "welcome",
+      "command": "",
+      "cooldownHours": 0,
+      "requireLinked": false,
+      "maxClaims": 0,
+      "group": "",
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "items": [],
+      "vehicles": [],
+      "actions": [],
+      "replyChannel": "local",
+      "message": "Welcome to {server}, {player}! Enjoy your starter pack.",
+      "messageI18n": {}
+    },
+    {
+      "id": "daily",
+      "name": "Daily Kit",
+      "enabled": false,
+      "trigger": "command",
+      "command": "daily",
+      "cooldownHours": 24,
+      "requireLinked": false,
+      "maxClaims": 0,
+      "group": "",
+      "cost": {
+        "currency": "free",
+        "amount": 0
+      },
+      "allow": [],
+      "deny": [],
+      "items": [],
+      "vehicles": [],
+      "actions": [],
+      "replyChannel": "local",
+      "message": "Here's your daily kit, {player}! Come back in 24h.",
+      "messageI18n": {}
+    }
+  ],
+  "discord": {
+    "channelId": "",
+    "buttonLabel": "",
+    "title": "",
+    "description": ""
+  }
+}

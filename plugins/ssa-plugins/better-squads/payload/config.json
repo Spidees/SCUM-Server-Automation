@@ -1,0 +1,155 @@
+{
+  "enabled": true,
+  "channel": "squad",
+  "includeSelf": false,
+  "cooldownSeconds": 3,
+  "maxIndividualSends": 12,
+  "maxPerMinute": 300,
+  "rosterPollSeconds": 60,
+  "quietHours": {
+    "enabled": false,
+    "from": 2,
+    "to": 8
+  },
+  "mutedSteamIds": [],
+  "eventDeaths": false,
+  "events": {
+    "join": {
+      "enabled": true,
+      "message": "{player} just connected.",
+      "messageI18n": {}
+    },
+    "leave": {
+      "enabled": true,
+      "message": "{player} went offline.",
+      "messageI18n": {}
+    },
+    "death": {
+      "enabled": true,
+      "message": "{player} was killed by {killer}[ in {sector}] — {weapon}[, {shotdistance} m].[ {distance} m {direction} of you.]",
+      "messageI18n": {}
+    },
+    "suicide": {
+      "enabled": true,
+      "message": "{player} died[ in {sector}].",
+      "messageI18n": {}
+    },
+    "causeDeath": {
+      "enabled": true,
+      "message": "{player} died[ in {sector}][ — {cause}].[ {distance} m {direction} of you.]",
+      "messageI18n": {}
+    },
+    "kill": {
+      "enabled": false,
+      "message": "{player} killed {victim}[ in {sector}] — {weapon}[, {shotdistance} m].",
+      "messageI18n": {}
+    },
+    "raid": {
+      "enabled": true,
+      "message": "Base under attack — {object}.[ {sector}.][ {distance} m {direction} of you.]",
+      "messageI18n": {}
+    },
+    "squadJoin": {
+      "enabled": true,
+      "message": "{player} joined the squad.",
+      "messageI18n": {}
+    },
+    "squadLeave": {
+      "enabled": true,
+      "message": "{player} left the squad.",
+      "messageI18n": {}
+    }
+  },
+  "commands": {
+    "enabled": true,
+    "root": "squad",
+    "subs": {
+      "help": {
+        "enabled": true,
+        "name": "help"
+      },
+      "off": {
+        "enabled": true,
+        "name": "off"
+      },
+      "on": {
+        "enabled": true,
+        "name": "on"
+      },
+      "mute": {
+        "enabled": true,
+        "name": "mute"
+      },
+      "here": {
+        "enabled": true,
+        "name": "here"
+      },
+      "msg": {
+        "enabled": true,
+        "name": "msg"
+      },
+      "base": {
+        "enabled": true,
+        "name": "base"
+      },
+      "info": {
+        "enabled": true,
+        "name": "info"
+      }
+    },
+    "texts": {
+      "rosterHeader": "{squad} — {squadonline}/{squadsize} online",
+      "rosterHeaderI18n": {},
+      "rosterLine": "  {player}[ — {sector}][, {distance} m {direction}]",
+      "rosterLineI18n": {},
+      "rosterEmpty": "Nobody else from {squad} is online.",
+      "rosterEmptyI18n": {},
+      "notInSquad": "You are not in a squad.",
+      "notInSquadI18n": {},
+      "squadUnknown": "I can’t read the server’s squad list right now — try again in a minute.",
+      "squadUnknownI18n": {},
+      "help": "Squad commands: {list}",
+      "helpI18n": {},
+      "mutedOn": "Squad alerts are OFF for you. Use {root} {on} to turn them back on.",
+      "mutedOnI18n": {},
+      "mutedOff": "Squad alerts are ON for you.",
+      "mutedOffI18n": {},
+      "muteUsage": "Use: {root} {mute} <{events}|all|none>. Currently muted: {muted}",
+      "muteUsageI18n": {},
+      "muteSet": "Muted: {muted}",
+      "muteSetI18n": {},
+      "muteUnknown": "Didn't recognise: {unknown}. Try {events}, all or none.",
+      "muteUnknownI18n": {},
+      "sendFailed": "Could not reach your squad just now — try again in a moment.",
+      "sendFailedI18n": {},
+      "here": "{player} is[ at {sector}] — rally up.",
+      "hereI18n": {},
+      "hereOk": "Told the squad where you are.",
+      "hereOkI18n": {},
+      "msgUsage": "Use: {root} {msg} <your message>",
+      "msgUsageI18n": {},
+      "msgLine": "{player}: {text}",
+      "msgLineI18n": {},
+      "msgOk": "Sent to {count} squadmate(s).",
+      "msgOkI18n": {},
+      "base": "Your base is[ in {sector}][, {distance} m {direction} away].",
+      "baseI18n": {},
+      "baseNone": "No squad base found on the map.",
+      "baseNoneI18n": {},
+      "info": "{squad} — {squadonline}/{squadsize} online, score {score}.",
+      "infoI18n": {},
+      "infoMotd": "MOTD: {motd}",
+      "infoMotdI18n": {},
+      "nobodyOnline": "Nobody else from the squad is online.",
+      "nobodyOnlineI18n": {},
+      "mutedNone": "none",
+      "mutedNoneI18n": {},
+      "squadNoName": "your squad",
+      "squadNoNameI18n": {},
+      "unknownObject": "something",
+      "unknownObjectI18n": {},
+      "testLine": "[{squad}] Better Squads test — if you can read this, it works.",
+      "testLineI18n": {}
+    }
+  }
+}

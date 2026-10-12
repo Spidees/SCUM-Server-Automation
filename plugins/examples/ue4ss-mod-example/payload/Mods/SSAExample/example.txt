@@ -1,0 +1,9 @@
+# SSAExample config. Plain key = value; '#' starts a comment.
+# The mod reads this file again on every pass, so an edit applies without a restart.
+# In the manager, edit it from the plugin card's Config button.
+
+# How often the mod counts the connected players, in milliseconds (1000 at the least).
+interval_ms = 10000
+
+# 1 = print to the UE4SS console, 0 = stay silent.
+debug = 1

@@ -1,0 +1,47 @@
+{
+  "id": "better-squads",
+  "name": "Better Squads",
+  "type": "manager",
+  "version": "2.5.2",
+  "updated": "2026-10-12",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com/plugins.php?p=better-squads",
+  "description": "Gives every squad its own private chat: alerts when a squadmate connects, dies or has their base raided, plus in-game commands players run themselves. Each line is yours to word, and can tell every member how far the event is from where they are standing. Nobody outside the squad sees any of it.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "6.0.0",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
+  },
+  "config": "config.json",
+  "dependencies": [
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "live",
+        "switches": [
+          "enabled",
+          "where"
+        ],
+        "why": "Reads where each squadmate is standing NOW, so {distance} and {direction} tell a player which way to walk rather than where somebody was at the last game save."
+      },
+      {
+        "module": "squads",
+        "switches": [
+          "enabled",
+          "members"
+        ],
+        "why": "Reads the squad roster the game itself holds, so a player who has just joined starts receiving the squad's private messages and one who has just left stops, without waiting for a save. The joined/left announcements themselves still come from the saved roster."
+      }
+    ]
+  },
+  "premium": true
+}

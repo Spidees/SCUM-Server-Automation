@@ -1,0 +1,45 @@
+{
+  "id": "mine-protection",
+  "name": "Mine Protection",
+  "type": "manager",
+  "version": "1.8.2",
+  "updated": "2026-10-12",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com/plugins.php?p=mine-protection",
+  "description": "Punishes players who arm a mine or trap outside their own or their squad's flag area: a chat warning first, then a teleport onto their own mine. Squad-aware, never acts on a guess, and deals with an offline placer the moment they reconnect. You pick which mines and traps to watch.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "6.0.0",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
+  },
+  "dependencies": [
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "items",
+        "switches": [
+          "enabled"
+        ],
+        "why": "Confirms a mine is STILL armed in the running game in the moment before its placer is teleported onto it. Without this, 'armed' is whatever the last game save recorded, so a mine defused since then still counts as one."
+      },
+      {
+        "module": "squads",
+        "switches": [
+          "enabled",
+          "members"
+        ],
+        "why": "Checks who is in the placer's squad right now. Squad membership also comes from the last save, so a player who joined a squad since then is punished for a mine legally placed inside their new teammate's base."
+      }
+    ]
+  },
+  "premium": true
+}

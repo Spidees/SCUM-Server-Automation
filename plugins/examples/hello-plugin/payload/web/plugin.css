@@ -1,0 +1,4 @@
+/* Hello Plugin — admin-panel styles. Loaded automatically (manifest web.style).
+   Reuse the panel's CSS tokens (--amber, --panel, --text, --muted, --line, …) so your UI matches the
+   rest of the panel, and prefix your classes to avoid clashes. */
+.hello-live { margin-top: 0.6rem; color: var(--amber); font-variant-numeric: tabular-nums; }

@@ -1,0 +1,1630 @@
+'use strict';
+
+/**
+ * Better Squads — a squad layer for in-game chat.
+ *
+ * Two halves that share one idea: a squad should know what is happening to its own people, and be
+ * able to ask, without anyone else on the server hearing a word of it.
+ *
+ *   NOTIFICATIONS — connect / disconnect / killed / died / got a kill / base raided, plus squad
+ *   roster changes. Every line is a template with live tokens, and tokens that are RELATIVE to the
+ *   reader ({distance}, {direction}) are rendered per recipient, so each player is told how far the
+ *   event is from where THEY are standing.
+ *
+ *   COMMANDS — players run the whole thing from chat: see the roster with sectors and distances,
+ *   call a rally, message the squad, find their base, and silence any part of it for themselves
+ *   without an admin touching anything.
+ *
+ * Everything is delivered through the SSA Bridge, addressed to individual recipients — that
+ * targeting is what makes "squad-only" real rather than cosmetic.
+ */
+
+const DEFAULTS = {
+  enabled: true,
+  channel: 'squad',
+  includeSelf: false,
+  cooldownSeconds: 3,
+  maxIndividualSends: 12,
+  maxPerMinute: 300,
+  quietHours: { enabled: false, from: 2, to: 8 },
+  mutedSteamIds: [],
+  rosterPollSeconds: 60,
+  // A death inside a game event (a tournament, a ring) is part of that event. Off, the squad hears
+  // nothing about it; on, it is told with the same lines as any other death.
+  eventDeaths: false,
+  events: {
+    join:       { enabled: true,  message: '{player} just connected.', messageI18n: {} },
+    leave:      { enabled: true,  message: '{player} went offline.', messageI18n: {} },
+    death:      { enabled: true,  message: '{player} was killed by {killer}[ in {sector}] — {weapon}[, {shotdistance} m].[ {distance} m {direction} of you.]', messageI18n: {} },
+    suicide:    { enabled: true,  message: '{player} died[ in {sector}].', messageI18n: {} },
+    // A death nobody killed them in: the cold, a fall, bleeding out, a trap, or nothing recorded.
+    // `{cause}` is a word in the reader's language and is empty when the game named no cause, which
+    // is why it sits in an optional part.
+    causeDeath: { enabled: true,  message: '{player} died[ in {sector}][ — {cause}].[ {distance} m {direction} of you.]', messageI18n: {} },
+    kill:      { enabled: false, message: '{player} killed {victim}[ in {sector}] — {weapon}[, {shotdistance} m].', messageI18n: {} },
+    raid:       { enabled: true,  message: 'Base under attack — {object}.[ {sector}.][ {distance} m {direction} of you.]', messageI18n: {} },
+    squadJoin:  { enabled: true,  message: '{player} joined the squad.', messageI18n: {} },
+    squadLeave: { enabled: true,  message: '{player} left the squad.', messageI18n: {} },
+  },
+  commands: {
+    enabled: true,
+    root: 'squad',
+    subs: {
+      help:  { enabled: true, name: 'help' },
+      off:   { enabled: true, name: 'off' },
+      on:    { enabled: true, name: 'on' },
+      mute:  { enabled: true, name: 'mute' },
+      here:  { enabled: true, name: 'here' },
+      msg:   { enabled: true, name: 'msg' },
+      base:  { enabled: true, name: 'base' },
+      info:  { enabled: true, name: 'info' },
+    },
+    texts: {
+      rosterHeader: '{squad} — {squadonline}/{squadsize} online',
+      rosterLine:   '  {player}[ — {sector}][, {distance} m {direction}]',
+      rosterEmpty:  'Nobody else from {squad} is online.',
+      notInSquad:   'You are not in a squad.',
+      // …and the one that is NOT that. With the game's save unreadable — the server stopped, or
+      // restarting — the roster came back empty, which is indistinguishable from being in no squad,
+      // and the line above was said as a fact to people who have a squad. "I could not find out" is
+      // its own answer and gets its own sentence.
+      squadUnknown: 'I can’t read the server’s squad list right now — try again in a minute.',
+      help:         'Squad commands: {list}',
+      mutedOn:      'Squad alerts are OFF for you. Use {root} {on} to turn them back on.',
+      mutedOff:     'Squad alerts are ON for you.',
+      muteUsage:    'Use: {root} {mute} <{events}|all|none>. Currently muted: {muted}',
+      muteSet:      'Muted: {muted}',
+      // ── THE TWO LINES THAT WERE LITERALS, AND WERE THE ONLY ENGLISH LEFT ON THIS COMMAND ───────
+      //
+      // Every other line a player reads here is a field an owner writes in their own language, which
+      // is what makes this plugin translatable at all. These two were string expressions down in the
+      // handler, so a Czech or Russian server answered its players in English on exactly the two
+      // paths that only ever fire when something went wrong: a word in `{root} mute` that nobody
+      // recognises, and a squad line the bridge would not deliver. Both are what a player takes to
+      // an admin, and neither could be edited anywhere.
+      muteUnknown:  "Didn't recognise: {unknown}. Try {events}, all or none.",
+      sendFailed:   'Could not reach your squad just now — try again in a moment.',
+      here:         '{player} is[ at {sector}] — rally up.',
+      hereOk:       'Told the squad where you are.',
+      msgUsage:     'Use: {root} {msg} <your message>',
+      msgLine:      '{player}: {text}',
+      msgOk:        'Sent to {count} squadmate(s).',
+      base:         'Your base is[ in {sector}][, {distance} m {direction} away].',
+      baseNone:     'No squad base found on the map.',
+      info:         '{squad} — {squadonline}/{squadsize} online, score {score}.',
+      infoMotd:     'MOTD: {motd}',
+      nobodyOnline: 'Nobody else from the squad is online.',
+      // ── WORDS THAT FILL A TOKEN, AND THE ADMIN'S TEST LINE ───────────────────────────────────────
+      //
+      // These were English literals down in the code, so an owner writing every line in their own
+      // language still had "none", "your squad" and "something" land inside them, and the test an
+      // admin sends from the panel arrived in English on a Czech server. Owner data like every other
+      // line here; the shipped wording reads exactly as the literals did.
+      mutedNone:     'none',
+      squadNoName:   'your squad',
+      unknownObject: 'something',
+      testLine:      '[{squad}] Better Squads test — if you can read this, it works.',
+    },
+  },
+};
+
+// Every text a player reads has a per-language sibling (`help` + `helpI18n`): language code -> text.
+// Empty means every player reads the text itself, or while that is still the shipped English, the
+// plugin's own translation of it. Added here rather than written out 26 times above.
+for (const k of Object.keys(DEFAULTS.commands.texts)) DEFAULTS.commands.texts[`${k}I18n`] = {};
+
+// The four channels this plugin offers; anything else falls back to squad. The bridge delivers a
+// targeted line and a broadcast through the same per-player RPC, and it refuses CommandsOnly outright.
+// `server` (ServerMessage) is accepted by the bridge too — the old "server does not display" report
+// was the bridge's own feedback suppression eating the line, fixed there — it is simply not offered.
+const TARGET_OK = { local: 1, global: 1, squad: 1, admin: 1 };
+const EVENT_KEYS = Object.keys(DEFAULTS.events);
+const SUB_KEYS = Object.keys(DEFAULTS.commands.subs);
+// Tokens whose value depends on WHO is reading the line — their presence forces per-recipient
+// rendering (and therefore one send per player instead of one send for the whole squad).
+const RELATIVE_TOKENS = /\{(distance|direction)\}/i;
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+module.exports = {
+  async register(host) {
+    const offs = [];
+    const clear = () => { while (offs.length) { try { offs.pop()(); } catch { /* ignore */ } } };
+
+    function cfg() {
+      const c = host.config.get() || {};
+      const events = {};
+      for (const k of EVENT_KEYS) events[k] = Object.assign({}, DEFAULTS.events[k], (c.events || {})[k]);
+      const cc = c.commands || {};
+      const subs = {};
+      for (const k of SUB_KEYS) subs[k] = Object.assign({}, DEFAULTS.commands.subs[k], (cc.subs || {})[k]);
+      return Object.assign({}, DEFAULTS, c, {
+        events,
+        quietHours: Object.assign({}, DEFAULTS.quietHours, c.quietHours),
+        commands: Object.assign({}, DEFAULTS.commands, cc, {
+          subs,
+          texts: Object.assign({}, DEFAULTS.commands.texts, cc.texts),
+        }),
+      });
+    }
+
+    const sidOf = (pl) => String((pl && (pl.SteamID || pl.steamId || pl.steamid || pl.steam_id || pl.user_id)) || '');
+    const nmOf = (pl) => (pl && (pl.PlayerName || pl.name || pl.playerName)) || '';
+    const safeChannel = (ch) => (ch && TARGET_OK[ch] ? ch : 'squad');
+    // ── languages ────────────────────────────────────────────────────────────
+    // Every line goes out in the language its READER chose (/lang in game, the Field Console or
+    // Discord), else the server's. The owner writes each text once per language in the panel
+    // (`message` + `messageI18n`, `help` + `helpI18n`); a text still reading as shipped, with no
+    // language written for it, goes out in this plugin's own translation, so a fresh install already
+    // speaks every language. A manager without `host.i18n` sends the owner's text, exactly as before.
+    //
+    // Lines are filled HERE, per language, with this plugin's own `fill()`: a value can itself depend
+    // on the language (the compass word, "your squad"), and handing the host a LocText whose
+    // variants are already filled keeps the bracket rules exactly what owners have been writing to.
+    function langOf(sid) {
+      if (!host.i18n) return '';
+      return host.i18n.playerLang(String(sid || ''));
+    }
+    function serverLang() {
+      if (!host.i18n) return '';
+      return host.i18n.serverLang();
+    }
+    const cleanI18n = (m) => {
+      const out = {};
+      if (!m || typeof m !== 'object' || Array.isArray(m)) return out;
+      for (const k of Object.keys(m)) {
+        const code = String(k).toLowerCase();
+        if (/^[a-z]{2}(?:-[a-z]{2})?$/.test(code) && typeof m[k] === 'string' && m[k].trim()) out[code] = m[k];
+      }
+      return out;
+    };
+    /** The plugin's own translation of a shipped text, from its locale files; null when there is none. */
+    function shippedText(key, lang) {
+      if (!host.i18n) return null;
+      switch (key) {
+        case 'events.join': return host.i18n.t('pl.better-squads.default.events.join', '{player} just connected.', lang);
+        case 'events.leave': return host.i18n.t('pl.better-squads.default.events.leave', '{player} went offline.', lang);
+        case 'events.death': return host.i18n.t('pl.better-squads.default.events.death', '{player} was killed by {killer}[ in {sector}] — {weapon}[, {shotdistance} m].[ {distance} m {direction} of you.]', lang);
+        case 'events.suicide': return host.i18n.t('pl.better-squads.default.events.suicide', '{player} died[ in {sector}].', lang);
+        case 'events.causeDeath': return host.i18n.t('pl.better-squads.default.events.causeDeath', '{player} died[ in {sector}][ — {cause}].[ {distance} m {direction} of you.]', lang);
+        case 'events.kill': return host.i18n.t('pl.better-squads.default.events.kill', '{player} killed {victim}[ in {sector}] — {weapon}[, {shotdistance} m].', lang);
+        case 'events.raid': return host.i18n.t('pl.better-squads.default.events.raid', 'Base under attack — {object}.[ {sector}.][ {distance} m {direction} of you.]', lang);
+        case 'events.squadJoin': return host.i18n.t('pl.better-squads.default.events.squadJoin', '{player} joined the squad.', lang);
+        case 'events.squadLeave': return host.i18n.t('pl.better-squads.default.events.squadLeave', '{player} left the squad.', lang);
+        case 'texts.rosterHeader': return host.i18n.t('pl.better-squads.default.texts.rosterHeader', '{squad} — {squadonline}/{squadsize} online', lang);
+        case 'texts.rosterLine': return host.i18n.t('pl.better-squads.default.texts.rosterLine', '  {player}[ — {sector}][, {distance} m {direction}]', lang);
+        case 'texts.rosterEmpty': return host.i18n.t('pl.better-squads.default.texts.rosterEmpty', 'Nobody else from {squad} is online.', lang);
+        case 'texts.notInSquad': return host.i18n.t('pl.better-squads.default.texts.notInSquad', 'You are not in a squad.', lang);
+        case 'texts.squadUnknown': return host.i18n.t('pl.better-squads.default.texts.squadUnknown', 'I can’t read the server’s squad list right now — try again in a minute.', lang);
+        case 'texts.help': return host.i18n.t('pl.better-squads.default.texts.help', 'Squad commands: {list}', lang);
+        case 'texts.mutedOn': return host.i18n.t('pl.better-squads.default.texts.mutedOn', 'Squad alerts are OFF for you. Use {root} {on} to turn them back on.', lang);
+        case 'texts.mutedOff': return host.i18n.t('pl.better-squads.default.texts.mutedOff', 'Squad alerts are ON for you.', lang);
+        case 'texts.muteUsage': return host.i18n.t('pl.better-squads.default.texts.muteUsage', 'Use: {root} {mute} <{events}|all|none>. Currently muted: {muted}', lang);
+        case 'texts.muteSet': return host.i18n.t('pl.better-squads.default.texts.muteSet', 'Muted: {muted}', lang);
+        case 'texts.muteUnknown': return host.i18n.t('pl.better-squads.default.texts.muteUnknown', "Didn't recognise: {unknown}. Try {events}, all or none.", lang);
+        case 'texts.sendFailed': return host.i18n.t('pl.better-squads.default.texts.sendFailed', 'Could not reach your squad just now — try again in a moment.', lang);
+        case 'texts.here': return host.i18n.t('pl.better-squads.default.texts.here', '{player} is[ at {sector}] — rally up.', lang);
+        case 'texts.hereOk': return host.i18n.t('pl.better-squads.default.texts.hereOk', 'Told the squad where you are.', lang);
+        case 'texts.msgUsage': return host.i18n.t('pl.better-squads.default.texts.msgUsage', 'Use: {root} {msg} <your message>', lang);
+        case 'texts.msgLine': return host.i18n.t('pl.better-squads.default.texts.msgLine', '{player}: {text}', lang);
+        case 'texts.msgOk': return host.i18n.t('pl.better-squads.default.texts.msgOk', 'Sent to {count} squadmate(s).', lang);
+        case 'texts.base': return host.i18n.t('pl.better-squads.default.texts.base', 'Your base is[ in {sector}][, {distance} m {direction} away].', lang);
+        case 'texts.baseNone': return host.i18n.t('pl.better-squads.default.texts.baseNone', 'No squad base found on the map.', lang);
+        case 'texts.info': return host.i18n.t('pl.better-squads.default.texts.info', '{squad} — {squadonline}/{squadsize} online, score {score}.', lang);
+        case 'texts.infoMotd': return host.i18n.t('pl.better-squads.default.texts.infoMotd', 'MOTD: {motd}', lang);
+        case 'texts.nobodyOnline': return host.i18n.t('pl.better-squads.default.texts.nobodyOnline', 'Nobody else from the squad is online.', lang);
+        case 'texts.mutedNone': return host.i18n.t('pl.better-squads.default.texts.mutedNone', 'none', lang);
+        case 'texts.squadNoName': return host.i18n.t('pl.better-squads.default.texts.squadNoName', 'your squad', lang);
+        case 'texts.unknownObject': return host.i18n.t('pl.better-squads.default.texts.unknownObject', 'something', lang);
+        case 'texts.testLine': return host.i18n.t('pl.better-squads.default.texts.testLine', '[{squad}] Better Squads test — if you can read this, it works.', lang);
+        default: return null;
+      }
+    }
+    /** A compass point as the reader writes it. `i` is 0..7 from north, clockwise; -1 is none. */
+    function compassWord(i, lang) {
+      if (!(i >= 0 && i < 8)) return '';
+      if (!host.i18n) return COMPASS[i];
+      switch (i) {
+        case 0: return host.i18n.t('pl.better-squads.game.compass.n', 'N', lang);
+        case 1: return host.i18n.t('pl.better-squads.game.compass.ne', 'NE', lang);
+        case 2: return host.i18n.t('pl.better-squads.game.compass.e', 'E', lang);
+        case 3: return host.i18n.t('pl.better-squads.game.compass.se', 'SE', lang);
+        case 4: return host.i18n.t('pl.better-squads.game.compass.s', 'S', lang);
+        case 5: return host.i18n.t('pl.better-squads.game.compass.sw', 'SW', lang);
+        case 6: return host.i18n.t('pl.better-squads.game.compass.w', 'W', lang);
+        default: return host.i18n.t('pl.better-squads.game.compass.nw', 'NW', lang);
+      }
+    }
+    /**
+     * A cause of death in one language, or '' for a token this build has no word for.
+     *
+     * The tokens are the manager's (the SSA Bridge's death record, and `mine` / `trap` from the
+     * game's trap line). A token with no word is never printed: a raw token in a squad's chat is a
+     * worse line than one that says only that they died, which is what an empty `{cause}` reads as.
+     */
+    // A host with no `host.i18n` reads every word in English; named `host` so each call below is the
+    // literal `host.i18n.t('pl.…', 'English')` the locale check reads.
+    const wordHost = host.i18n ? host : { i18n: { t: (k, en) => en } };
+    function causeWord(token, lang) { return causeWordIn(wordHost, token, lang || undefined); }
+    function causeWordIn(host, token, lang) {
+      if (!token || !host.i18n) return '';
+      switch (String(token)) {
+        case 'bleeding': return host.i18n.t('pl.better-squads.cause.bleeding', 'blood loss', lang);
+        case 'hypothermia': return host.i18n.t('pl.better-squads.cause.hypothermia', 'the cold', lang);
+        case 'hyperthermia': return host.i18n.t('pl.better-squads.cause.hyperthermia', 'the heat', lang);
+        case 'dehydration': return host.i18n.t('pl.better-squads.cause.dehydration', 'thirst', lang);
+        case 'starvation': return host.i18n.t('pl.better-squads.cause.starvation', 'hunger', lang);
+        case 'radiation': return host.i18n.t('pl.better-squads.cause.radiation', 'radiation', lang);
+        case 'suffocation': return host.i18n.t('pl.better-squads.cause.suffocation', 'suffocation', lang);
+        case 'poisoning': return host.i18n.t('pl.better-squads.cause.poisoning', 'poisoning', lang);
+        case 'burns': return host.i18n.t('pl.better-squads.cause.burns', 'burns', lang);
+        case 'infection': return host.i18n.t('pl.better-squads.cause.infection', 'infection', lang);
+        case 'fall': return host.i18n.t('pl.better-squads.cause.fall', 'a fall', lang);
+        case 'drowning': return host.i18n.t('pl.better-squads.cause.drowning', 'drowning', lang);
+        case 'explosion': return host.i18n.t('pl.better-squads.cause.explosion', 'an explosion', lang);
+        case 'environment': return host.i18n.t('pl.better-squads.cause.environment', 'the environment', lang);
+        case 'weapon': return host.i18n.t('pl.better-squads.cause.weapon', 'a weapon', lang);
+        case 'condition': return host.i18n.t('pl.better-squads.cause.condition', 'an illness', lang);
+        case 'mine': return host.i18n.t('pl.better-squads.cause.mine', 'a mine', lang);
+        case 'trap': return host.i18n.t('pl.better-squads.cause.trap', 'a trap', lang);
+        default: return '';
+      }
+    }
+    /** `{ value, map, shipped }` for an `events.<kind>` or `texts.<name>` slot. */
+    function slot(c, key) {
+      const [grp, name] = String(key).split('.');
+      if (grp === 'events') {
+        const e = c.events[name] || {};
+        return { value: e.message, map: e.messageI18n, shipped: (DEFAULTS.events[name] || {}).message };
+      }
+      const t = c.commands.texts || {};
+      return { value: t[name], map: t[`${name}I18n`], shipped: DEFAULTS.commands.texts[name] };
+    }
+    /** The template one reader gets: their language's variant, the shipped translation, or the text. */
+    function textIn(c, key, lang) {
+      const s = slot(c, key);
+      // The admin's test line is the one text that falls back when left blank: a test that sends
+      // nothing proves nothing.
+      const blankTest = key === 'texts.testLine' && !String(s.value == null ? '' : s.value).trim();
+      const value = String(s.value == null || blankTest ? (blankTest ? s.shipped : '') : s.value);
+      if (!host.i18n || !lang) return value;
+      const map = cleanI18n(s.map);
+      // Per language: the owner's own line, else the plugin's translation while the text is still
+      // the shipped one, else the owner's text. A language left empty keeps its built-in line even
+      // when another language has one, which is what the language editor shows for that tab.
+      if (lang !== host.i18n.serverLang() && map[lang]) return map[lang];
+      if (value === s.shipped) return shippedText(key, lang) || value;
+      return value;
+    }
+    /** Every template one slot can produce, for tests that ask "does this line use {x}". */
+    function templates(c, key) {
+      const s = slot(c, key);
+      return [String(s.value == null ? '' : s.value)].concat(Object.values(cleanI18n(s.map)))
+        .concat(host.i18n && s.value === s.shipped ? [shippedText(key, serverLang()) || ''] : []);
+    }
+    // A var may be a function of the reader's language — a word, not a value.
+    const varsIn = (vars, lang) => {
+      const o = {};
+      for (const k of Object.keys(vars || {})) { const v = vars[k]; o[k] = typeof v === 'function' ? v(lang) : v; }
+      return o;
+    };
+    const say = (c, key, vars, lang) => fill(textIn(c, key, lang), varsIn(vars, lang));
+    /**
+     * One slot filled for these readers: `{ text, i18n }`, `text` in the server's language and one
+     * variant per other language among `langs`. Handed to the host as a LocText, each reader gets
+     * theirs; on an older manager only `text` is sent.
+     */
+    function linesFor(c, key, vars, langs) {
+      const srv = serverLang();
+      const out = { text: say(c, key, vars, srv), i18n: {} };
+      if (!host.i18n) return out;
+      for (const l of new Set(langs || [])) {
+        if (!l || l === srv) continue;
+        out.i18n[l] = say(c, key, vars, l) || out.text;
+      }
+      return out;
+    }
+    /** Two lines read as one sentence, per language. */
+    function joined(a, b) {
+      const out = { text: `${a.text} ${b.text}`.trim(), i18n: {} };
+      for (const l of new Set(Object.keys(a.i18n).concat(Object.keys(b.i18n)))) {
+        out.i18n[l] = `${a.i18n[l] || a.text} ${b.i18n[l] || b.text}`.trim();
+      }
+      return out;
+    }
+
+    // The squad's name as a line prints it: the game's own, or the owner's word for a squad that has
+    // none — in the reader's language.
+    const sqName = (c, squad) => (lang) => (squad && squad.name) || say(c, 'texts.squadNoName', {}, lang) || '';
+    /**
+     * How many players a send really reached: a number, or `null` when the reply does not say.
+     *
+     * ⚠ `Number(null)` IS 0, so `Number.isFinite(Number(res.delivered))` reads an absent count as
+     * "reached nobody". A reply carrying no `delivered` at all is an older manager or bridge, not a
+     * failure, and only a real number is believed.
+     */
+    const deliveredOf = (res) => {
+      const v = res && res.delivered;
+      if (v == null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    /**
+     * The in-game command prefix, as players type it. Every reply that tells a player what to type
+     * carries it: "Use squad on" is not a command anybody can run. An older manager without
+     * `host.chat.prefix()` answers the manager's own default.
+     */
+    const cmdPrefix = () => {
+      try {
+        if (host.chat && typeof host.chat.prefix === 'function') {
+          const p = host.chat.prefix();
+          if (p != null && String(p) !== '') return String(p);
+        }
+      } catch { /* fall through to the default */ }
+      return '/';
+    };
+    // Every timer through the host's scheduler, which clears it on unload and isolates a throw. An
+    // older host without one gets a plain interval that does not hold the process open.
+    const every = (ms, fn) => {
+      if (host.schedule && typeof host.schedule.every === 'function') return host.schedule.every(ms, fn);
+      const t = setInterval(fn, ms);
+      if (t.unref) t.unref();
+      return () => clearInterval(t);
+    };
+
+    // ── persisted state ──────────────────────────────────────────────────────
+    // `failed` counts alerts that reached NOBODY. It is listed here rather than only being created
+    // on the first failure, so the panel can show a real 0 instead of a blank.
+    let stats = Object.assign({ sent: 0, suppressed: 0, commands: 0, failed: 0 }, host.store.get('stats') || {});
+    let recent = host.store.get('recent') || [];
+    // Per-player preferences set BY THE PLAYER in game: { steamId: { off, muted: {event:true} } }.
+    // Kept separate from the admin's mute list so neither side silently overwrites the other.
+    let prefs = host.store.get('prefs') || {};
+    // Debounced: a busy fight fires many messages a second and each one used to write the store.
+    // Coalesce into at most one write per second; flushNow() covers unload so nothing is lost.
+    let persistTimer = null;
+    const flushNow = () => {
+      if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+      try { host.store.set('stats', stats); host.store.set('recent', recent.slice(0, 60)); host.store.set('prefs', prefs); } catch { /* ignore */ }
+    };
+    const persist = () => { if (!persistTimer) persistTimer = setTimeout(flushNow, 1000); };
+    function note(kind, actor, text, recipients) {
+      recent.unshift({ at: Date.now(), kind, actor, text, recipients });
+      if (recent.length > 60) recent.length = 60;
+      persist();
+    }
+    // Read without creating: this is called for every candidate recipient of every message, and an
+    // auto-vivifying getter would quietly persist an empty record for every player who ever played.
+    const EMPTY_PREF = Object.freeze({ off: false, muted: Object.freeze({}) });
+    const prefOf = (sid) => prefs[String(sid)] || EMPTY_PREF;
+    const prefFor = (sid) => prefs[String(sid)] || (prefs[String(sid)] = { off: false, muted: {} });
+
+    // ── squad lookup ─────────────────────────────────────────────────────────
+    // host.players.squad() deliberately withholds Steam IDs (it's a player-facing view), but
+    // targeting chat needs them — so read membership straight from the game DB.
+    //
+    // Both halves start FROM user_profile on purpose: excludeDeleted() rewrites exactly that, so
+    // written this way the "dead character" filter actually applies. Behind a JOIN it would be a
+    // silent no-op and squads would keep listing deleted profiles.
+    const SQUAD_SQL = host.db.scum.excludeDeleted(`
+      SELECT u.user_id AS steamId, u.name AS name, sm.rank AS rank, s.name AS squadName, s.id AS squadId
+      FROM user_profile u
+      JOIN squad_member sm ON sm.user_profile_id = u.id
+      JOIN squad s ON s.id = sm.squad_id
+      WHERE sm.squad_id = (
+        SELECT sm2.squad_id
+        FROM user_profile u2
+        JOIN squad_member sm2 ON sm2.user_profile_id = u2.id
+        WHERE u2.user_id = ? LIMIT 1
+      )`);
+
+    // The bridge cannot name a player who has already disconnected — its leave event carries an
+    // EMPTY name, because the controller it would read is gone. Falling back to the Steam ID put a
+    // 17-digit number in front of the whole squad, so names are resolved against the database
+    // instead, which still knows them long after they log off.
+    const NAME_SQL = host.db.scum.excludeDeleted('SELECT name AS name FROM user_profile WHERE user_id = ? LIMIT 1');
+    const nameCache = new Map();   // steamId -> { at, name }
+    const looksLikeSteamId = (v) => /^\d{15,20}$/.test(String(v || '').trim());
+    function nameFromDb(steamId) {
+      const key = String(steamId || '');
+      if (!key) return '';
+      const hit = nameCache.get(key);
+      if (hit && Date.now() - hit.at < 300000) return hit.name;
+      const row = host.db.scum.get(NAME_SQL, key);
+      const name = (row && row.name) || '';
+      nameCache.set(key, { at: Date.now(), name });
+      return name;
+    }
+    // given -> still online -> database. Never a raw Steam ID.
+    function displayName(steamId, given) {
+      const g = String(given || '').trim();
+      if (g && !looksLikeSteamId(g)) return g;
+      const on = onlineIndex().get(String(steamId));
+      if (on && !looksLikeSteamId(on)) return on;
+      return nameFromDb(steamId);
+    }
+    /**
+     * The same, for a name that might not belong to a PLAYER at all.
+     *
+     * `displayName` hands back anything that is not a Steam ID untouched, which is right for a join,
+     * a leave or a squad roster — every one of those is a person. A kill event is the exception: its
+     * killer and its victim are a player's name OR a spawn class carrying its runtime instance
+     * number (`BP_Guard_Lvl_5_C_2146943462`, `BP_Bear_C_2147201044`). Those went out to the squad
+     * exactly like that, so being killed by a puppet read as a line of code — while the manager's
+     * own kill feed, reading the same event, said "Guard (Lvl 5)".
+     *
+     * `items.actorName()` is the one rule that tells a player's name from a class; `items.name()`
+     * answers about an ITEM code and is the wrong question for both. Kept separate from
+     * `displayName` on purpose: a squad roster must never be run through a class-name rule, because
+     * a player is free to call themselves something that looks like one.
+     *
+     * Guarded although the manifest's floor (5.16.2) is past 5.3.0, where this arrived: a resolver that
+     * is missing or throws must leave the value exactly what it was rather than lose the name.
+     */
+    function actorDisplayName(steamId, given) {
+      const g = String(given || '').trim();
+      if (g && !looksLikeSteamId(g)) {
+        try {
+          if (host.items && typeof host.items.actorName === 'function') return host.items.actorName(g) || g;
+        } catch (e) { /* a resolver that threw must not lose the name */ }
+        return g;
+      }
+      return displayName(steamId, given);
+    }
+
+    const squadCache = new Map();   // steamId -> { at, squad }
+    function squadOf(steamId, fresh) {
+      const key = String(steamId || '');
+      if (!key) return null;
+      const hit = squadCache.get(key);
+      if (!fresh && hit && Date.now() - hit.at < 20000) return hit.squad;
+      // ⚠ **`[]` IS NOT "NO SQUAD" WHEN THE SAVE COULD NOT BE OPENED AT ALL.** `host.db.scum.all`
+      // answers `[]` and never throws, so a stopped or restarting server produced an empty roster
+      // that read exactly like a player who has joined nobody — and the command then told them so,
+      // in a sentence, as a fact. That is the distinction `squadLive()` below takes such care over,
+      // lost one layer down. `undefined` means "could not say" and nothing is cached, so the next
+      // attempt asks again rather than remembering a gap as an answer.
+      if (typeof host.db.scum.available === 'function' && !host.db.scum.available()) return undefined;
+      const rows = host.db.scum.all(SQUAD_SQL, key) || [];
+      const squad = rows.length
+        // A squad with no name keeps an EMPTY one here; the owner's word for it (`squadNoName`) is
+        // filled in where a line is written, so it is in their language rather than in ours.
+        ? { id: rows[0].squadId, name: rows[0].squadName || '', members: rows.map((r) => ({ steamId: String(r.steamId), name: r.name })) }
+        : null;
+      squadCache.set(key, { at: Date.now(), squad });
+      return squad;
+    }
+
+    function onlineIndex() {
+      const byId = new Map();
+      try { (host.players.online() || []).forEach((p) => { const s = sidOf(p); if (s) byId.set(s, nmOf(p)); }); } catch { /* server offline */ }
+      return byId;
+    }
+
+    // ── the running game, where the last save is not good enough ─────────────
+    //
+    // Everything above reads SCUM.db, which is the state as of the last SAVE. Two of the things this
+    // plugin puts in front of a player are simply wrong while that lags:
+    //
+    //   WHERE a squadmate is. {distance} and {direction} tell somebody which way to walk, and the
+    //   roster sorts by it — a saved position can predate the fight they are being told about.
+    //
+    //   WHO is in the squad. Membership decides who receives a line nobody outside the squad is meant
+    //   to hear. A player who joined since the save gets nothing; one who left keeps hearing it.
+    //
+    // Both are asked of the running game, per event, and fall back to the database when it cannot
+    // answer — naming the switch an owner has to find. Neither adds a timer: the live read is
+    // memoised for two seconds, the same window the position index already used, so one event costs
+    // one read however many recipients it has.
+    //
+    // Identity stays in the database and has to: no reply from the bridge carries a Steam ID, and the
+    // squads module says none ever will. A profile id never changes hands, so that join is identity
+    // rather than state and the save is the right place for it.
+    const liveNote = { players: null, squads: null };
+    const liveSaid = { players: 0, squads: 0 };
+    // The bridge schema's own captions, each one separately: the module card, its master switch and
+    // the one setting this plugin needs. The panel builds the sentence and the route in front of them
+    // out of its own keys, so it is right in every language and survives a renamed tab.
+    const LIVE_LABELS = {
+      players: { module: 'Live player data', enable: 'Read live player data', switch: 'Position, facing and speed' },
+      squads: { module: 'Live squads', enable: 'Read live squads, and allow the changes below', switch: 'Include the member list' },
+    };
+    // `code` is what the panel translates. `text` is English for the log and for a panel that does
+    // not know the code; `reason` is the module's own refusal, passed through as it said it.
+    function noteLive(key, q) {
+      const code = (q && q.code) || 'bridge_off';
+      const L = LIVE_LABELS[key];
+      let text;
+      if (code === 'refused') text = (q && q.reason) || null;
+      else if (code === 'module_off') text = `the in-game module is switched off — turn on '${L.enable}' and '${L.switch}'`;
+      else if (code === 'no_module') text = 'this server runs an older SSA Bridge that does not have this module';
+      else text = 'the SSA Bridge did not answer';
+      liveNote[key] = {
+        code, text, at: Date.now(),
+        reason: code === 'refused' ? ((q && q.reason) || null) : undefined,
+        module: code === 'module_off' ? L.module : undefined,
+        enable: code === 'module_off' ? L.enable : undefined,
+        switch: code === 'module_off' ? L.switch : undefined,
+      };
+      // `bridge_off` is the ordinary state and deserves silence; the rest are one switch or one
+      // update away. Said once an hour, because this sits on the path of every squad message.
+      if (code === 'bridge_off' || !text) return;
+      if (Date.now() - liveSaid[key] < 3600000) return;
+      liveSaid[key] = Date.now();
+      host.logger.warn(`the live ${key === 'players' ? 'position' : 'squad'} read could not run: ${text}. Better Squads uses the last save meanwhile.`);
+    }
+    const canQuery = () => !!(host.bridge && typeof host.bridge.query === 'function');
+
+    // The PROMISE is what is shared, not the answer. One kill asks for two positions at once, and
+    // with the answer shared the second caller arrived while the first read was still out, found
+    // the memo already stamped and empty, and fell back to the save for no reason.
+    let liveMemoP = null, liveMemoAt = 0;
+    /** Every online player as the game has them this instant: `{ pos, names }`, or null. */
+    function liveSnapshot() {
+      if (liveMemoP && Date.now() - liveMemoAt < 2000) return liveMemoP;
+      liveMemoAt = Date.now();
+      liveMemoP = readLive().catch(() => null);
+      return liveMemoP;
+    }
+    async function readLive() {
+      if (!canQuery()) return null;
+      const q = await host.bridge.query('live', 'players');
+      if (!q || !q.ok) { noteLive('players', q); return null; }
+      // ⚠ BOTH SHAPES. `mod_live` answers with a BARE ARRAY, and this read only `data.players` — so
+      // the list was never found, every position and name fell back to the save, and each event
+      // still paid for a walk of the game's player controllers to fetch the answer it threw away.
+      // `host.bridge.livePlayers()` in the manager accepts both for the same reason.
+      const list = Array.isArray(q.data) ? q.data
+        : ((q.data && Array.isArray(q.data.players)) ? q.data.players : null);
+      if (!list) return null;
+      liveNote.players = null;
+      const pos = new Map(); const names = new Map();
+      for (const p of list) {
+        // The live payload spells it `steamid`, all lower case — that is the game's own wire key, not
+        // the manager's `steamId`. Both are read so this keeps working whichever a bridge sends.
+        const sid = String((p && (p.steamid || p.steamId)) || '');
+        if (!sid) continue;
+        if (p.name) names.set(sid, String(p.name));
+        // Position rides on its own owner switch. ABSENT means the game did not send it — never
+        // 0,0,0, which is a real place on this map, in the sea.
+        if (Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) pos.set(sid, { x: Number(p.x), y: Number(p.y), z: Number(p.z) });
+      }
+      return { pos, names };
+    }
+
+    /**
+     * Positions, live where the game could answer and saved where it could not — merged PER PLAYER,
+     * not all-or-nothing. Somebody the game has no pawn for (a loading screen) keeps their saved
+     * position rather than losing the distance token altogether.
+     *
+     * `wanted` is the Steam IDs the caller is actually going to look up. When the live read covers
+     * every one of them the saved world is not read at all: `host.map.world()` is a scan of the whole
+     * save (players, bases, vehicles, chests), and it used to be paid on every join, leave, death and
+     * raid only to be overwritten by the live positions a line later. Without `wanted` — or with
+     * anybody in it the game did not place — it merges exactly as before. `world` is a snapshot the
+     * caller already holds, so the roster command does not scan twice.
+     */
+    async function positions(wanted, world) {
+      const live = await liveSnapshot();
+      const livePos = live && live.pos.size ? live.pos : null;
+      if (livePos && Array.isArray(wanted) && wanted.every((sid) => livePos.has(String(sid)))) return livePos;
+      const saved = positionIndex(world);
+      if (!livePos) return saved;
+      const out = new Map(saved);
+      for (const [sid, p] of livePos) out.set(sid, p);
+      return out;
+    }
+
+    const PROFILE_ID_SQL = host.db.scum.excludeDeleted('SELECT id AS profileId FROM user_profile WHERE user_id = ? LIMIT 1');
+    const PROFILE_ROW_SQL = host.db.scum.excludeDeleted('SELECT user_id AS steamId, name AS name FROM user_profile WHERE id = ? LIMIT 1');
+    const profileIdCache = new Map();   // steamId -> profile id | null
+    const profileRowCache = new Map();  // profile id -> { steamId, name } | null
+    function profileIdOf(steamId) {
+      const key = String(steamId || '');
+      if (!key) return null;
+      if (profileIdCache.has(key)) return profileIdCache.get(key);
+      let id = null;
+      try { const r = host.db.scum.get(PROFILE_ID_SQL, key); id = (r && r.profileId != null) ? Number(r.profileId) : null; }
+      catch { return null; }             // a query that failed is not an answer worth caching
+      profileIdCache.set(key, id);
+      return id;
+    }
+    function profileRow(profileId) {
+      const key = Number(profileId);
+      if (!Number.isFinite(key) || key <= 0) return null;
+      if (profileRowCache.has(key)) return profileRowCache.get(key);
+      let row = null;
+      try { const r = host.db.scum.get(PROFILE_ROW_SQL, key); row = (r && r.steamId) ? { steamId: String(r.steamId), name: r.name || '' } : null; }
+      catch { return null; }
+      profileRowCache.set(key, row);
+      return row;
+    }
+
+    /**
+     * The squad as the GAME holds it, or `undefined` when it could not say.
+     *
+     * `undefined` and not `null`, because "the game has no squad for this profile" is an answer this
+     * deliberately does NOT act on: the module's own wording is "not in any loaded squad", and a
+     * squad can be unloaded. Trusting that would silence a real squad, which is worse than the
+     * staleness it would fix. So this only ever returns a POSITIVE roster — which is enough, because
+     * it is asked about the player the event is about, and their roster is what decides recipients.
+     * A member who has left is not in it; one who has just joined is.
+     *
+     * A roster that could only be half resolved also answers `undefined`. Dropping the members whose
+     * profile ids did not resolve would silently drop recipients, which is the exact failure this
+     * path exists to prevent.
+     */
+    async function squadLive(steamId) {
+      if (!canQuery()) return undefined;
+      const pid = profileIdOf(steamId);
+      if (!pid) return undefined;
+      const q = await host.bridge.query('squads', `member:${pid}`);
+      if (!q || !q.ok) {
+        // A solo player is a real answer and not a fault, so it is not worth a note on the panel.
+        if (!(q && q.code === 'refused' && /not in any/i.test(String(q.reason || '')))) noteLive('squads', q);
+        return undefined;
+      }
+      // The roster rides on the module's own "Include the member list" switch, which is what carries
+      // the profile ids. Counts alone cannot name a recipient.
+      const members = (q.data && Array.isArray(q.data.members)) ? q.data.members : null;
+      if (!members || !members.length) { noteLive('squads', { code: 'module_off' }); return undefined; }
+      liveNote.squads = null;
+      const out = [];
+      for (const m of members) {
+        const row = profileRow(Number(m && m.profileId));
+        if (!row) return undefined;      // incomplete → the database has all of them, use that
+        out.push({ steamId: row.steamId, name: row.name });
+      }
+      return { id: q.data.id != null ? q.data.id : null, name: q.data.name || '', members: out, source: 'live' };
+    }
+
+    /** Live membership where the game will say, the database where it will not. */
+    async function squadFor(steamId, fresh) {
+      const live = await squadLive(steamId);
+      return live !== undefined ? live : squadOf(steamId, fresh);
+    }
+
+    function worldSnapshot() {
+      try { return host.map.world() || {}; } catch { return {}; }
+    }
+    // One kill event asks for positions three times (victim, killer, then again inside announce).
+    // host.map.world() is memoised upstream, but rebuilding the index each time is pure waste.
+    let posCache = null, posCacheAt = 0;
+    function positionIndex(world) {
+      if (posCache && Date.now() - posCacheAt < 2000) return posCache;
+      // Read HERE, after the cache has had its say — reading it first scanned the save on every call
+      // and then threw the scan away whenever the index was still fresh.
+      const w = world || worldSnapshot();
+      const byId = new Map();
+      ((w || {}).players || []).forEach((p) => {
+        const s = String(p.steamId || '');
+        if (s) byId.set(s, { x: Number(p.x), y: Number(p.y), z: Number(p.z) });
+      });
+      posCache = byId; posCacheAt = Date.now();
+      return byId;
+    }
+
+    // ── geography ────────────────────────────────────────────────────────────
+    // Calibration comes from the host (maps.json → map_meta) and is what the panel's live map uses.
+    // We cache it here because it is asked for on every message; when the host has none we return
+    // null and the geography tokens render empty rather than pointing somewhere invented.
+    let calib = null, calibAt = 0;
+    async function calibration() {
+      if (calib && Date.now() - calibAt < 300000) return calib;
+      if (!host.map || typeof host.map.calibration !== 'function') return null;   // older manager
+      try {
+        const meta = await host.map.calibration();
+        calib = (meta && meta.world && typeof meta.world.minX === 'number') ? meta.world : null;
+        calibAt = Date.now();
+      } catch { calib = null; }
+      return calib;
+    }
+    async function sectorOf(x, y) {
+      if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return '';
+      if (host.map && typeof host.map.sector === 'function') {
+        try { return (await host.map.sector(x, y)) || ''; } catch { return ''; }
+      }
+      return '';
+    }
+    // Bearing as the player READS IT ON THE MAP: up = the top of the map, not a guess about which
+    // world axis is north. Computed in map-percent space so it always matches what they're looking at.
+    // The answer is a compass INDEX (0 = N, clockwise), and `direction()` turns it into the word in
+    // each reader's language; -1 when there is no answer.
+    async function bearing(from, to) {
+      const w = await calibration();
+      if (!w || !from || !to) return -1;
+      if (![from.x, from.y, to.x, to.y].every(Number.isFinite)) return -1;
+      const pctX = (v) => ((v - w.minX) / (w.maxX - w.minX));
+      const pctY = (v) => ((v - w.minY) / (w.maxY - w.minY));
+      const dx = pctX(to.x) - pctX(from.x);
+      const dy = pctY(to.y) - pctY(from.y);
+      if (!dx && !dy) return -1;
+      const deg = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+      return Math.round(deg / 45) % 8;
+    }
+    /** `{direction}` as a token value: the compass word in whichever language the line is for. */
+    const direction = (i) => (i >= 0 ? (lang) => compassWord(i, lang) : '');
+    const metres = (a, b) => {
+      if (!a || !b) return null;
+      // A map row can carry a null/undefined coordinate, and Number(undefined) is NaN — which would
+      // render as the literal "NaN" in a player's chat. Refuse rather than print nonsense.
+      if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) return null;
+      return Math.round(Math.hypot(b.x - a.x, b.y - a.y) / 100);
+    };
+
+    // ── templating ───────────────────────────────────────────────────────────
+    // Two problems with templates: a token can have no value, and the words around it then read as
+    // debris ("killed in — AK", "m of you"). So:
+    //   [ ... ]  an OPTIONAL segment. If any token inside it is empty the whole segment disappears,
+    //            which is how a message drops "in {sector}" cleanly when there is no calibration.
+    //   then a tidy pass collapses the gaps, separators and stray punctuation that are left.
+    function fill(tpl, vars) {
+      const val = (k) => {
+        const v = vars[String(k).toLowerCase()];
+        return v == null || v === '' ? '' : String(v);
+      };
+      return String(tpl || '')
+        .replace(/\[([^[\]]*)\]/g, (m, inner) => {
+          const toks = inner.match(/\{(\w+)\}/g) || [];
+          return toks.some((t) => val(t.slice(1, -1)) === '') ? '' : inner;
+        })
+        .replace(/\{(\w+)\}/g, (m, k) => val(k))
+        .replace(/\s{2,}/g, ' ')
+        .replace(/([,;:—–-])\s*(?=[,;:—–.!?])/g, '')
+        .replace(/\s+([,.!?;:])/g, '$1')
+        .replace(/^[\s,;:—–]+/, '')
+        .replace(/[\s,;:—–-]+$/, '')
+        .trim();
+    }
+
+    // ── suppression ──────────────────────────────────────────────────────────
+    const lastSent = new Map();
+    function onCooldown(key, seconds) {
+      if (!seconds) return false;
+      const now = Date.now();
+      if (now - (lastSent.get(key) || 0) < seconds * 1000) return true;
+      lastSent.set(key, now);
+      return false;
+    }
+    // squadCache and lastSent both key on Steam ID, so on a long-running server they would grow with
+    // every player who has ever been seen. Neither is worth keeping once it's stale.
+    function pruneMaps() {
+      const now = Date.now();
+      for (const [k, v] of squadCache) if (now - v.at > 300000) squadCache.delete(k);
+      for (const [k, at] of lastSent) if (now - at > 900000) lastSent.delete(k);
+      for (const [k, v] of nameCache) if (now - v.at > 900000) nameCache.delete(k);
+      // The two identity maps hold one entry per player ever seen and their answers never change, so
+      // there is nothing to expire — only a ceiling, so a server with years of players cannot grow
+      // them without limit. Dropped whole rather than aged: rebuilding one is a single indexed read.
+      if (profileIdCache.size > 5000) profileIdCache.clear();
+      if (profileRowCache.size > 5000) profileRowCache.clear();
+    }
+    const stopMaint = every(300000, pruneMaps);
+
+    // A hard ceiling on outbound messages. Nothing normal comes close to it; it exists so a
+    // pathological burst (a mass event, a runaway loop in a future edit) can never turn into a chat
+    // flood on a live server. Over the limit we drop and count it, rather than queue for ever.
+    let rateWindow = 0, rateCount = 0;
+    function rateOk(n, perMinute) {
+      if (!perMinute) return true;
+      const now = Date.now();
+      if (now - rateWindow > 60000) { rateWindow = now; rateCount = 0; }
+      if (rateCount + n > perMinute) return false;
+      rateCount += n;
+      return true;
+    }
+
+    function inQuietHours(c) {
+      if (!c.quietHours || !c.quietHours.enabled) return false;
+      const h = new Date().getHours(), { from, to } = c.quietHours;
+      // A window that wraps past midnight (22 → 6) is the normal case, so handle both orders.
+      return from <= to ? (h >= from && h < to) : (h >= from || h < to);
+    }
+
+    // ── delivery ─────────────────────────────────────────────────────────────
+    // `at` is where the event happened (used for the reader-relative tokens); omit it and those
+    // tokens simply render empty.
+    // `actorSteamId` picks the squad AND is normally the person the line is about. They differ for
+    // "left the squad": the leaver is no longer a member, so the message has to be routed through
+    // someone still in it — pass `subjectSteamId` so that router isn't mistaken for the subject and
+    // filtered out of its own announcement by `includeSelf`.
+    async function announce(kind, actorSteamId, vars, at, subjectSteamId) {
+      try { await announceInner(kind, actorSteamId, vars, at, subjectSteamId); }
+      catch (e) { host.logger.debug(`announce(${kind}) failed: ${e && e.message}`); }
+    }
+
+    async function announceInner(kind, actorSteamId, vars, at, subjectSteamId) {
+      const subject = String(subjectSteamId != null ? subjectSteamId : actorSteamId);
+      const c = cfg();
+      if (!c.enabled) return;
+      const evc = c.events[kind];
+      if (!evc || !evc.enabled || !evc.message) return;
+      const key = `events.${kind}`;
+      if (inQuietHours(c)) { stats.suppressed++; persist(); return; }
+      if (onCooldown(`${kind}:${subject}`, c.cooldownSeconds)) { stats.suppressed++; persist(); return; }
+
+      // If the line names someone and we could not work out who, say nothing. A message reading
+      // "76561198... was killed" is worse to a squad than no message at all. Asked before the squad
+      // read below, because it depends on nothing that read returns.
+      if (templates(c, key).some((t) => /\{player\}/i.test(t)) && !vars.player) {
+        host.logger.debug('no name for ' + actorSteamId + ' - "' + kind + '" not sent');
+        return;
+      }
+
+      // Who COULD hear this, before asking the game who is in the squad. A recipient has to be online,
+      // not admin-muted and not self-muted, whichever roster answers — so when nobody online passes
+      // those tests the roster cannot produce a single target, and the per-event `squads` read the
+      // bridge answers would be paid for a line that goes nowhere. An online list that could not be
+      // read is empty here and empties `targets` below just the same, so this skips nothing that
+      // would have been sent.
+      const online = onlineIndex();
+      const adminMuted = new Set((c.mutedSteamIds || []).map(String));
+      const canHear = (sid) => (
+        online.has(sid)
+        && !adminMuted.has(sid)
+        && !prefOf(sid).off
+        && !prefOf(sid).muted[kind]
+        && (c.includeSelf || sid !== subject)
+      );
+      if (![...online.keys()].some(canHear)) return;
+
+      // Live where the game will say who is in this squad, saved where it will not. This is the
+      // decision the whole plugin turns on: it is who hears a line nobody else is meant to.
+      const squad = await squadFor(actorSteamId);
+      if (!squad) return;                                   // solo player — nobody to tell
+
+      const targets = squad.members.map((m) => m.steamId).filter(canHear);
+      if (!targets.length) return;
+
+      // Where it happened is read only NOW, once a line is really going to somebody. The handlers
+      // used to fetch it first, and asking the running game where everybody is walks its player
+      // controllers — paid on every join, leave and death on the server, while most of them were
+      // solo players, switched-off events or squads with nobody else online, and went no further.
+      if (typeof at === 'function') at = await at();
+
+      const base = Object.assign({
+        squad: sqName(c, squad),
+        squadsize: squad.members.length,
+        squadonline: squad.members.filter((m) => online.has(m.steamId)).length,
+        // The manager's own sector for the event when no position could be read here.
+        sector: (at ? await sectorOf(at.x, at.y) : '') || (vars && vars.eventsector) || '',
+        x: at ? Math.round(at.x) : '', y: at ? Math.round(at.y) : '',
+      }, vars);
+
+      const channel = safeChannel(c.channel);
+      // A reader-relative message costs ONE bridge call per recipient. That is fine for a normal
+      // squad and wasteful for a huge one, so past a threshold we send a single shared copy instead
+      // — the relative tokens then resolve empty and their optional segments drop out cleanly.
+      const maxIndiv = Number(c.maxIndividualSends) || 0;
+      const relative = templates(c, key).some((t) => RELATIVE_TOKENS.test(t)) && (!maxIndiv || targets.length <= maxIndiv);
+      // Where each READER is, and only when a line is going to be measured from them. A shared copy
+      // carries no reader-relative token, so it needs nobody's position.
+      const pos = relative ? await positions(targets) : new Map();
+      const cost = relative ? targets.length : 1;
+      if (!rateOk(cost, Number(c.maxPerMinute) || 0)) {
+        stats.suppressed++; persist();
+        host.logger.warn(`rate limit hit — dropped a "${kind}" message for ${targets.length} player(s)`);
+        return;
+      }
+      try {
+        if (!relative) {
+          // One line per language among the recipients; a manager without `host.i18n` gets one.
+          const set = linesFor(c, key, base, targets.map(langOf));
+          const text = set.text;
+          if (!text) return;
+          const res = await host.chat.send(host.i18n ? { text: set.text, i18n: set.i18n } : text, { channel, targets });
+          // The bridge reports how many players it actually reached. A call can succeed and deliver
+          // to nobody — everyone logged off in the same instant, or the channel refused them — and
+          // counting that as sent is how the panel ends up disagreeing with what the squad saw.
+          const said = deliveredOf(res);
+          const delivered = said == null ? targets.length : said;
+          if (delivered <= 0) {
+            host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s).`);
+            stats.failed = (stats.failed || 0) + 1; persist();
+            return;
+          }
+          stats.sent++;
+          note(kind, vars.player || actorSteamId, text, delivered);
+        } else {
+          // One send per reader: {distance}/{direction} mean "from where YOU are".
+          let first = '';
+          let reached = 0;
+          const failedFor = [];
+          for (const sid of targets) {
+            const me = pos.get(sid);
+            const lang = langOf(sid);
+            const set = linesFor(c, key, Object.assign({}, base, {
+              distance: at && me ? metres(me, at) : '',
+              direction: at && me ? direction(await bearing(me, at)) : '',
+            }), [lang]);
+            const text = set.i18n[lang] || set.text;
+            if (!text) continue;
+            // Per recipient, so a failure to reach ONE player must not abort the loop and silence
+            // everyone after them.
+            //
+            // ⚠ **A SEND THAT DID NOT THROW HAS NOT NECESSARILY ARRIVED.** The bridge answers how many
+            // players it really reached, and a line to somebody who logged off that instant comes
+            // back `delivered: 0`. That used to count as reached, so a line nobody read went into
+            // the feed and the "Reached nobody" counter stayed at 0. An answer with no count at all
+            // is an older manager and is believed, as before.
+            try {
+              const res = await host.chat.send(host.i18n ? { text: set.text, i18n: set.i18n } : text, { channel, targets: [sid] });
+              const n = deliveredOf(res);
+              if (n == null || n > 0) { reached++; if (!first) first = set.text; }
+              else failedFor.push(sid);
+            } catch (e) { failedFor.push(sid); host.logger.debug(`chat send failed (${kind} → ${sid}): ${e && e.message}`); }
+          }
+          // `stats.sent++` used to run whatever happened, so a message that reached NOBODY was
+          // counted as sent and written into the activity feed with empty text. The squad got
+          // nothing, the panel said otherwise, and the only trace was a debug line nobody reads.
+          if (!reached) {
+            host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s) — every individual send failed.`);
+            stats.failed = (stats.failed || 0) + 1; persist();
+            return;
+          }
+          if (failedFor.length) host.logger.warn(`"${kind}" reached ${reached} of ${targets.length} — ${failedFor.length} player(s) did not get it.`);
+          stats.sent++;
+          note(kind, vars.player || actorSteamId, first, reached);
+        }
+      } catch (e) {
+        host.logger.debug(`chat send failed (${kind}): ${e && e.message}`);
+      }
+    }
+
+    // ── events ───────────────────────────────────────────────────────────────
+    // WHERE the event happened. Live for anyone the game can answer for — a player is killed where
+    // they were standing, not where they were at the last save — and never allowed to reject: this
+    // sits directly on an event handler.
+    async function posOf(steamId) {
+      try {
+        const p = (await positions([String(steamId)])).get(String(steamId));
+        return p && Number.isFinite(p.x) ? p : null;
+      } catch { return null; }
+    }
+
+    function onJoin(p) {
+      const sid = String((p && (p.steamId || p.SteamID)) || '');
+      if (sid) announce('join', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, () => posOf(sid));
+    }
+    function onLeave(p) {
+      const sid = String((p && (p.steamId || p.SteamID)) || '');
+      if (sid) announce('leave', sid, { player: displayName(sid, p && (p.playerName || p.name)) }, () => posOf(sid));
+    }
+    // Prefer the bridge's live join/leave: it fires the moment the player is actually in-game,
+    // where the log-derived event can be many seconds late (SCUM writes its log in batches).
+    if (typeof host.players.onJoin === 'function') { host.players.onJoin(onJoin); host.players.onLeave(onLeave); }
+    else { host.events.on('player:join', onJoin); host.events.on('player:leave', onLeave); }
+
+    // ── deaths ───────────────────────────────────────────────────────────────
+    //
+    // ⚠ **THE KILL EVENT IS EVERY DEATH NOW, NOT ONLY A KILL.** A manager from 5.46 on hands this
+    // event a cause death (the cold, a fall, a mine), a death an NPC or an animal caused, and a
+    // death inside a game event, each marked with `kind` (`host.events.killKinds()`). The handler
+    // below used to assume a killer on everything that was not a suicide, so those would have gone
+    // out as "Petr was killed by  — ." A death is sorted by its kind first:
+    //
+    //   player    the death line (and the kill line to the killer's squad), as always
+    //   npc       the death line, the killer being the guard, puppet or animal by its game name
+    //   cause     the cause line, `{cause}` a word in the reader's language
+    //   nokiller  the cause line with no cause, which reads "Petr died in B3."
+    //   suicide   the suicide line, as always
+    //   event     nothing, unless the owner switched `eventDeaths` on; then by what the death was
+    //
+    // An older manager sends no `kind` and only kills and suicides, so `killKindOf` reads the same
+    // answer off `type` and nothing changes there.
+    const KILL_KINDS = { player: 1, npc: 1, cause: 1, nokiller: 1, suicide: 1, event: 1 };
+    /** What the death WAS, whether or not it happened inside a game event. */
+    function baseKindOf(e) {
+      if (e.type === 'suicide') return 'suicide';
+      if (e.type === 'npc_death') return 'npc';
+      if (e.type === 'death') return e.cause ? 'cause' : 'nokiller';
+      // A kill, or an event kill's own shapes (ranged, melee, explosion): a killer makes it a kill.
+      return String(e.killerName || '').trim() || e.killerSteamId ? 'player' : (e.cause ? 'cause' : 'nokiller');
+    }
+    function killKindOf(e) {
+      if (e.kind && KILL_KINDS[e.kind]) return e.kind;
+      if (e.inEvent === true || e.inGameEvent === true || e.isGameEvent === true) return 'event';
+      return baseKindOf(e);
+    }
+
+    /** A death nobody killed them in: `{cause}` is a word, or empty when the game named none. */
+    function announceCause(e) {
+      const sid = String(e.victimSteamId || e.steamId || '');
+      // A token this build has no word for is never printed; the line then says only "died".
+      const token = causeWord(e.cause, null) ? e.cause : '';
+      announce('causeDeath', sid, {
+        player: displayName(sid, e.victimName || e.playerName),
+        cause: token ? (lang) => causeWord(token, lang) : '',
+        eventsector: e.sector || '',
+      }, () => posOf(sid));
+    }
+
+    function onKillEvent(e) {
+      if (!e || typeof e !== 'object') return;
+      let kind = killKindOf(e);
+      if (kind === 'event') {
+        // Part of the event unless the owner asked for it; then told as what it was.
+        if (cfg().eventDeaths !== true) return;
+        kind = baseKindOf(e);
+      }
+      if (kind === 'suicide') {
+        const sid = String(e.steamId || e.victimSteamId || '');
+        announce('suicide', sid, { player: displayName(sid, e.playerName || e.victimName), eventsector: e.sector || '' }, () => posOf(sid));
+        return;
+      }
+      if (kind === 'cause' || kind === 'nokiller') { announceCause(e); return; }
+
+      // The kill event carries the weapon as its raw game code ("Mine_01_C"), which is what the
+      // message printed. host.items.name() is the manager's one item resolver — it already knows
+      // every shape a code arrives in — so this reads "Anti-personnel mine". The raw code stays as
+      // the fallback for anything the item database has never heard of.
+      //
+      // shotdistance is EMPTY, not 0, when there is no shot: a mine, a fall or an explosion has no
+      // distance, and 0 is a value the optional-segment syntax cannot drop (it only drops empty
+      // ones), so "— Anti-personnel mine, 0 m." could not be avoided from a template. With this,
+      // writing it as `[, {shotdistance} m]` makes the whole clause disappear for those deaths.
+      const dist = Number(e.distance);
+      let weapon = '';
+      if (e.weaponName) {
+        try { weapon = (host.items && typeof host.items.name === 'function' && host.items.name(e.weaponName)) || e.weaponName; }
+        catch { weapon = e.weaponName; }
+      }
+      const shared = { weapon, shotdistance: Number.isFinite(dist) && dist > 0 ? dist : '', eventsector: e.sector || '' };
+
+      if (kind === 'npc') {
+        // The guard, the puppet or the bear by the game's own name ("Guard (Lvl 2)") — the class
+        // the event names goes through the one actor resolver. A record that named nobody is a
+        // death with no killer, and "was killed by ." is not a line anybody should read.
+        const killer = actorDisplayName(e.killerSteamId, e.killerName || e.causeBy);
+        if (!killer) { announceCause(Object.assign({}, e, { cause: null })); return; }
+        announce('death', String(e.victimSteamId || ''), Object.assign({
+          player: actorDisplayName(e.victimSteamId, e.victimName), victim: actorDisplayName(e.victimSteamId, e.victimName),
+          killer,
+        }, shared), () => posOf(e.victimSteamId));
+        return;
+      }
+
+      // A player kill. One whose killer has no name left is told as a death, not as "killed by ".
+      const killer = actorDisplayName(e.killerSteamId, e.killerName);
+      if (!killer) { announceCause(Object.assign({}, e, { cause: null })); return; }
+      const vSquad = squadOf(e.victimSteamId), kSquad = squadOf(e.killerSteamId);
+      const sameSquad = vSquad && kSquad && vSquad.id === kSquad.id;
+
+      announce('death', String(e.victimSteamId || ''), Object.assign({
+        player: actorDisplayName(e.victimSteamId, e.victimName), victim: actorDisplayName(e.victimSteamId, e.victimName),
+        killer,
+      }, shared), () => posOf(e.victimSteamId));
+
+      // On friendly fire both templates describe the same event to the same people — the death
+      // line already names the killer, so the kill line would be it told twice.
+      if (!sameSquad) {
+        announce('kill', String(e.killerSteamId || ''), Object.assign({
+          player: killer, killer,
+          victim: actorDisplayName(e.victimSteamId, e.victimName),
+        }, shared), () => posOf(e.killerSteamId));
+      }
+    }
+    host.events.on('kill', (e) => { try { onKillEvent(e); } catch (err) { host.logger.debug(`kill handler failed: ${err && err.message}`); } });
+
+    host.events.on('raid:alert', (e) => {
+      if (!e || !e.ownerSteamId) return;
+      const obj = e.object || {};
+      // raid:alert carries location as an OBJECT {x,y,z} — not the "X=… Y=…" string the log feeds
+      // use. Accept both so the sector/distance tokens work either way.
+      let at = null;
+      const loc = e.location;
+      if (loc && typeof loc === 'object' && Number.isFinite(Number(loc.x)) && Number.isFinite(Number(loc.y))) at = { x: Number(loc.x), y: Number(loc.y) };
+      else if (typeof loc === 'string') {
+        const m = /X=(-?[\d.]+)\s*Y=(-?[\d.]+)/i.exec(loc);
+        if (m) at = { x: Number(m[1]), y: Number(m[2]) };
+      }
+      announce('raid', String(e.ownerSteamId), {
+        player: displayName(e.ownerSteamId, e.ownerName),
+        // The owner's word for an object the alert does not name, in their own language.
+        object: obj.customName || obj.name || ((lang) => say(cfg(), 'texts.unknownObject', {}, lang)),
+        type: e.type || '',
+      }, at);
+    });
+
+    // ── squad roster changes ─────────────────────────────────────────────────
+    // There is no event for "joined/left a squad", so diff the membership of squads that have
+    // someone online. Only those: polling every squad on a big server would be pointless work.
+    let rosters = new Map();   // squadId -> { name, at, members: Map(steamId -> name) }
+    const ROSTER_TTL_MS = 15 * 60 * 1000;
+    let rosterTimer = null;
+    function pollRosters() {
+      try {
+        const online = onlineIndex();
+        const seen = new Set();
+        const handled = new Set();
+        const stamp = Date.now();
+        for (const sid of online.keys()) {
+          if (handled.has(sid)) continue;             // already covered by a squad we just read
+          const sq = squadOf(sid, true);              // fresh: a cached read would lag a whole cycle
+          if (!sq) { handled.add(sid); continue; }
+          // The query returns the WHOLE squad, so mark every member handled — otherwise a five-man
+          // squad costs five identical queries every cycle.
+          sq.members.forEach((m) => handled.add(m.steamId));
+          if (seen.has(sq.id)) continue;
+          seen.add(sq.id);
+          const members = new Map(sq.members.map((m) => [m.steamId, m.name || m.steamId]));
+          const prev = rosters.get(sq.id);
+          rosters.set(sq.id, { name: sq.name, at: stamp, members });
+
+          // No baseline, or the name behind this id changed: a squad id can come back after a disband
+          // (`squad.id` is a plain INTEGER PRIMARY KEY, so the highest one is free again once deleted),
+          // and a rename means the snapshot describes a different group. Diffing either against the
+          // old membership would announce a flood of joins and leaves that never happened — so the
+          // new snapshot simply becomes the baseline and we compare from the next cycle.
+          if (!prev || prev.name !== sq.name) continue;
+
+          const joined = sq.members.filter((m) => !prev.members.has(m.steamId));
+          const left = [...prev.members].filter(([id]) => !members.has(id));
+
+          // Invalidate BEFORE announcing, not after. announce() resolves the squad through the
+          // cache, and someone who just joined is cached as "no squad" from an earlier sweep — so
+          // announcing first silently dropped their own join for up to the cache TTL. The leaver is
+          // invalidated for the opposite reason: they'd keep receiving this squad's messages.
+          if (joined.length || left.length) {
+            joined.forEach((m) => squadCache.delete(m.steamId));
+            left.forEach(([id]) => squadCache.delete(id));
+            sq.members.forEach((m) => squadCache.delete(m.steamId));
+          }
+
+          joined.forEach((m) => announce('squadJoin', m.steamId, { player: displayName(m.steamId, m.name) }));
+          for (const [id, oldName] of left) {
+            // They're gone from this squad, so squadOf(them) no longer resolves here — route the
+            // line through someone still in it. The snapshot keeps their name so the message reads
+            // "Petr left" rather than a bare 17-digit ID.
+            const anchor = sq.members[0];
+            if (anchor) announce('squadLeave', anchor.steamId, { player: displayName(id, oldName) }, null, id);
+          }
+        }
+        // Drop snapshots we haven't confirmed in a while — a disbanded squad, or one whose members
+        // stopped playing. Without this the map grows for the life of the process, and a reused
+        // squad id would be diffed against a dead roster.
+        for (const [id, snap] of rosters) if (stamp - snap.at > ROSTER_TTL_MS) rosters.delete(id);
+      } catch (e) { host.logger.debug(`roster poll: ${e && e.message}`); }
+    }
+    // `rosterTimer` holds the STOP function of the running poll. `wire()` clears `offs` before it
+    // calls this, which stops the old one; stopping it here as well covers any other caller.
+    function startRosterPoll() {
+      if (rosterTimer) { rosterTimer(); rosterTimer = null; }
+      const c = cfg();
+      const secs = Math.max(5, Number(c.rosterPollSeconds) || 60);
+      const anyOn = c.events.squadJoin.enabled || c.events.squadLeave.enabled;
+      if (!anyOn) return;
+      const stop = every(secs * 1000, pollRosters);
+      rosterTimer = stop;
+      offs.push(() => { stop(); if (rosterTimer === stop) rosterTimer = null; });
+    }
+
+    // ── player commands ──────────────────────────────────────────────────────
+    function subName(c, key) { return String((c.commands.subs[key] || {}).name || key).toLowerCase(); }
+    function subOn(c, key) { return !!(c.commands.subs[key] || {}).enabled; }
+
+    // The roster as lines in the reader's language `lang`, each a `{ text, i18n }`.
+    async function rosterLines(c, me, squad, online, pos, lang) {
+      const mine = pos.get(me);
+      const mates = [];
+      for (const m of squad.members) {
+        if (m.steamId === me || !online.has(m.steamId)) continue;
+        const p = pos.get(m.steamId);
+        mates.push({
+          name: displayName(m.steamId, m.name) || online.get(m.steamId) || '',
+          distance: metres(mine, p),
+          sector: p ? await sectorOf(p.x, p.y) : '',
+          direction: (mine && p) ? direction(await bearing(mine, p)) : '',
+        });
+      }
+      mates.sort((a, b) => (a.distance == null ? 1e9 : a.distance) - (b.distance == null ? 1e9 : b.distance));
+      const base = {
+        squad: sqName(c, squad), squadsize: squad.members.length,
+        squadonline: squad.members.filter((m) => online.has(m.steamId)).length,
+      };
+      if (!mates.length) return [linesFor(c, 'texts.rosterEmpty', base, [lang])];
+      return [linesFor(c, 'texts.rosterHeader', base, [lang])].concat(mates.map((m) => linesFor(c, 'texts.rosterLine', Object.assign({
+        player: m.name, distance: m.distance == null ? '' : m.distance, sector: m.sector, direction: m.direction,
+      }, base), [lang])));
+    }
+
+    async function handleCommand(ctx) {
+      const c = cfg();
+      if (!c.enabled) return;
+      stats.commands++; persist();
+      const me = String(ctx.steamId || '');
+      // The language this player reads: the manager hands it over as `ctx.lang`.
+      const L = ctx.lang || langOf(me);
+      // One of the owner's texts, filled for this player: `{ text, i18n }`.
+      const line = (name, vars) => linesFor(c, `texts.${name}`, vars || {}, [L]);
+      const sub = String((ctx.args && ctx.args[0]) || '').toLowerCase();
+      let rest = (ctx.argString || '').split(/\s+/).slice(1).join(' ').trim();
+      // What a player TYPES, prefix included: every reply that tells them what to type uses this,
+      // because "Use squad on" is a command nobody can run.
+      const root = cmdPrefix() + c.commands.root;
+      const squad = await squadFor(me);
+
+      // A LocText carrying this player's language. `ctx.lang` arrived with LocText replies, so a
+      // context without it takes the line already rendered for this player as a plain string.
+      const reply = (set) => ((set && (set.text || set.i18n[L]))
+        ? ctx.reply(host.i18n && ctx.lang ? { text: set.text, i18n: set.i18n } : (set.i18n[L] || set.text), { channel: safeChannel(c.channel) })
+        : Promise.resolve());
+      const mutedList = (p) => (lang) => Object.keys(p.muted).join(', ') || say(c, 'texts.mutedNone', {}, lang) || '';
+
+      // Self-service switches work even without a squad — a player can pre-silence things.
+      if (sub && subOn(c, 'off') && sub === subName(c, 'off')) { prefFor(me).off = true; persist(); return reply(line('mutedOn', { root, on: subName(c, 'on') })); }
+      if (sub && subOn(c, 'on') && sub === subName(c, 'on')) { prefFor(me).off = false; persist(); return reply(line('mutedOff')); }
+      if (sub && subOn(c, 'mute') && sub === subName(c, 'mute')) {
+        const p = prefFor(me);
+        const arg = rest.toLowerCase();
+        if (!arg) return reply(line('muteUsage', { root, mute: subName(c, 'mute'), events: EVENT_KEYS.join('|'), muted: mutedList(p) }));
+        const unknown = [];
+        if (arg === 'none') p.muted = {};
+        else if (arg === 'all') EVENT_KEYS.forEach((k) => { p.muted[k] = true; });
+        else {
+          // A list toggles exactly what was named and leaves the rest alone.
+          arg.split(/[,\s]+/).filter(Boolean).forEach((k) => {
+            const key = EVENT_KEYS.filter((e) => e.toLowerCase() === k)[0];
+            // A name we do not recognise used to be dropped in silence, so a typo — `mute kils` —
+            // did nothing at all and the confirmation below still listed the unchanged state, which
+            // reads exactly like it worked. The player then wonders why they are still being
+            // pinged. Say which words were not understood.
+            if (key) { if (p.muted[key]) delete p.muted[key]; else p.muted[key] = true; }
+            else unknown.push(k);
+          });
+        }
+        persist();
+        const done = line('muteSet', { muted: mutedList(p) });
+        return reply(unknown.length
+          ? joined(done, line('muteUnknown', { unknown: unknown.join(', '), events: EVENT_KEYS.join('|') }))
+          : done);
+      }
+      if (sub && subOn(c, 'help') && sub === subName(c, 'help')) {
+        const list = SUB_KEYS.filter((k) => subOn(c, k)).map((k) => `${root} ${subName(c, k)}`).join(', ');
+        return reply(line('help', { root, list }));
+      }
+
+      // `undefined` is "the save could not be read"; `null` is "this player is in no squad". Only the
+      // second is something we may state.
+      if (squad === undefined) return reply(line('squadUnknown'));
+      if (!squad) return reply(line('notInSquad'));
+
+      const online = onlineIndex();
+      const world = worldSnapshot();
+      // "Where is everyone" is the whole point of the roster and of /squad here — live where the
+      // game can say, saved where it cannot. `world` is still the source for BASES below, which do
+      // not move and have no live equivalent that carries an owner.
+      const pos = await positions([me].concat(squad.members.map((m) => m.steamId).filter((sid) => sid !== me && online.has(sid))), world);
+      const mine = pos.get(me);
+      const mates = squad.members.filter((m) => m.steamId !== me && online.has(m.steamId));
+      const chan = safeChannel(c.channel);
+
+      // Admin mute is a moderation decision, so it applies to player-initiated traffic as well.
+      // A player's own /squad off does NOT: they silenced automated alerts, not their squad talking.
+      const adminMuted = new Set((c.mutedSteamIds || []).map(String));
+      const reachable = mates.filter((m) => !adminMuted.has(m.steamId));
+
+      // Sending to the squad can fail, and `host.chat.send` throws when it does. Uncaught, the throw
+      // skipped the confirmation below and was swallowed by the caller's debug catch — so the player
+      // saw NOTHING: no "sent", no error, just a command that appeared to be ignored. Both player
+      // commands answer either way now.
+      //
+      // ⚠ **AND "IT DID NOT THROW" IS NOT "THEY HEARD IT".** `host.chat.send` resolves
+      // `{ channel, delivered }`, and this plugin already knows that — `announceInner` refuses to
+      // call an announcement delivered when `delivered <= 0`, with a warning saying the bridge
+      // accepted it and handed it to nobody. The PLAYER-driven path never asked, so
+      // `{root} msg regroup at B2` answered "Sent to 3 squadmate(s)." while three people heard
+      // nothing. It is the one lie on this surface a player then acts on, and the answer was one
+      // screen up in the same file.
+      //
+      // A reply with no `delivered` field at all is an older bridge, not a failure — so the count is
+      // only believed when it is really a number.
+      // `name`/`vars` is the text sent; each recipient reads it in their own language.
+      const sendToSquad = async (name, vars, targets, kind, who) => {
+        // ⚠ **THE ONE PATH A PERSON DRIVES WAS THE ONE WITH NO CEILING.** `rateOk` exists so that a
+        // "pathological burst … can never turn into a chat flood on a live server", and it was
+        // consulted only inside `announceInner` — where the SERVER chooses both the content and the
+        // volume. Here a PLAYER chooses both, and the dispatcher's own de-duplication only drops
+        // identical text, which varying one character defeats. Same ceiling, same counter, so a
+        // squad spammer and a runaway loop are bounded by the same number the owner set.
+        if (!rateOk(targets.length, Number(c.maxPerMinute) || 0)) {
+          host.logger.warn(`"${root} ${kind}" from ${who} was dropped — the outbound ceiling (${c.maxPerMinute}/min) is already reached.`);
+          return 0;
+        }
+        try {
+          const set = linesFor(c, `texts.${name}`, vars, targets.map(langOf));
+          const res = await host.chat.send(host.i18n ? { text: set.text, i18n: set.i18n } : set.text, { channel: chan, targets });
+          const said = deliveredOf(res);
+          const n = said == null ? targets.length : said;
+          if (n <= 0) {
+            host.logger.warn(`"${root} ${kind}" from ${who} reached none of its ${targets.length} recipient(s).`);
+            return 0;
+          }
+          note(kind, who, set.text, n);
+          return n;
+        } catch (e) {
+          host.logger.warn(`"${root} ${kind}" from ${who} could not be delivered: ${e && e.message}`);
+          return 0;
+        }
+      };
+
+      if (sub && subOn(c, 'here') && sub === subName(c, 'here')) {
+        if (!reachable.length) return reply(line('nobodyOnline'));
+        const who = displayName(me, ctx.name);
+        const vars = { player: who, sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: sqName(c, squad) };
+        const sent = await sendToSquad('here', vars, reachable.map((m) => m.steamId), 'here', who);
+        return reply(sent > 0 ? line('hereOk') : line('sendFailed'));
+      }
+
+      if (sub && subOn(c, 'msg') && sub === subName(c, 'msg')) {
+        if (!rest) return reply(line('msgUsage', { root, msg: subName(c, 'msg') }));
+        // Free text from one player shown to others: keep it to one readable line. Braces are
+        // stripped so a message can't smuggle a token into the template it gets rendered into.
+        rest = rest.replace(/[\u0000-\u001f{}]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
+        if (!rest) return reply(line('msgUsage', { root, msg: subName(c, 'msg') }));
+        if (!reachable.length) return reply(line('nobodyOnline'));
+        const who = displayName(me, ctx.name);
+        const vars = { player: who, text: rest, squad: sqName(c, squad) };
+        // …and the count the player is told is the number the BRIDGE delivered to, never the number
+        // we aimed at. "Sent to 3 squadmate(s)" when one was mid-reconnect is the same defect in
+        // miniature.
+        const sent = await sendToSquad('msgLine', vars, reachable.map((m) => m.steamId), 'msg', who);
+        return reply(sent > 0 ? line('msgOk', { count: sent }) : line('sendFailed'));
+      }
+
+      if (sub && subOn(c, 'base') && sub === subName(c, 'base')) {
+        const names = new Set(squad.members.map((m) => (m.name || '').toLowerCase()));
+        const bases = (world.bases || []).filter((b) => (
+          (b.squad && squad.name && String(b.squad).toLowerCase() === String(squad.name).toLowerCase())
+          || (b.owner && names.has(String(b.owner).toLowerCase()))
+        ));
+        if (!bases.length) return reply(line('baseNone'));
+        // Nearest one: a squad often has several, and "your base" means the one you'd walk to.
+        let best = bases[0], bestD = mine ? metres(mine, bases[0]) : null;
+        for (const b of bases) { const d = mine ? metres(mine, b) : null; if (d != null && (bestD == null || d < bestD)) { best = b; bestD = d; } }
+        const bSector = await sectorOf(best.x, best.y);
+        // Knowing a base exists but nothing about WHERE would render "Your base is." — say we
+        // couldn't locate it instead of sending a sentence with no content in it.
+        if (!bSector && bestD == null) return reply(line('baseNone'));
+        return reply(line('base', {
+          sector: bSector,
+          distance: bestD == null ? '' : bestD,
+          direction: mine ? direction(await bearing(mine, best)) : '',
+          name: best.name || '',
+        }));
+      }
+
+      if (sub && subOn(c, 'info') && sub === subName(c, 'info')) {
+        let extra = null;
+        try { extra = host.players.squad(me); } catch { /* ignore */ }
+        const base = {
+          squad: sqName(c, squad), squadsize: squad.members.length,
+          squadonline: squad.members.filter((m) => online.has(m.steamId)).length,
+          // squad.score is a float in the database; nobody wants "score 1234.5678".
+          score: (extra && extra.score) != null ? Math.round(Number(extra.score)) : '',
+        };
+        await reply(line('info', base));
+        if (extra && extra.message) await reply(line('infoMotd', Object.assign({ motd: extra.message }, base)));
+        return undefined;
+      }
+
+      // No subcommand (or an unknown one) → the roster, which is what /squad should do by default.
+      const lines = await rosterLines(c, me, squad, online, pos, L);
+      for (const set of lines) await reply(set);
+      return undefined;
+    }
+
+    function registerCommand() {
+      const c = cfg();
+      if (!c.commands.enabled || !c.commands.root) return;
+      offs.push(host.chat.onCommand(c.commands.root, (ctx) => handleCommand(ctx).catch((e) => host.logger.debug(`command: ${e && e.message}`))));
+    }
+
+    function wire() { clear(); registerCommand(); startRosterPoll(); }
+    wire();
+    host.config.onChange(() => { squadCache.clear(); calib = null; wire(); });
+
+    // ── admin API ────────────────────────────────────────────────────────────
+    host.routes.get('/config', (req, res) => res.json(cfg()));
+    // The shipped line of every text in every player language, keyed like `slot()`, for the
+    // language editor: each tab shows what its readers get while nobody has written one, and
+    // "Reset to default" brings it back.
+    host.routes.get('/text-defaults', (req, res) => {
+      const english = {};
+      for (const k of Object.keys(DEFAULTS.events)) english[`events.${k}`] = DEFAULTS.events[k].message;
+      for (const k of Object.keys(DEFAULTS.commands.texts)) {
+        if (!/I18n$/.test(k) && typeof DEFAULTS.commands.texts[k] === 'string') english[`texts.${k}`] = DEFAULTS.commands.texts[k];
+      }
+      const byLang = {};
+      try {
+        for (const l of (host.i18n && typeof host.i18n.languages === 'function' ? host.i18n.languages() : [])) {
+          if (!l || !l.code) continue;
+          byLang[l.code] = {};
+          for (const k of Object.keys(english)) { const t = shippedText(k, l.code); if (t) byLang[l.code][k] = t; }
+        }
+      } catch { /* the editor works without them */ }
+      res.json({ english, byLang });
+    });
+    /**
+     * A caller's body laid over what is already STORED, one level deep.
+     *
+     * ⚠ **A SETTING NOBODY SENT IS NOT A SETTING TO RESET.** Every field below is rebuilt from the
+     * body with a DEFAULTS fallback, which is what makes an older config safe to read — and it means
+     * a body naming ONE key resets all the others. The first line is the worst of them:
+     * `enabled: !!b.enabled` on a body with no `enabled` key SWITCHES THE PLUGIN OFF, and the save
+     * answers `ok`. The panel POSTs the whole object so nothing has done it yet; a script, a second
+     * screen or a future partial save would.
+     *
+     * By KEY PRESENCE, never truthiness — `"mutedSteamIds": []` is an owner who cleared the list.
+     * An ARRAY replaces rather than merging; merging two lists by index is never what was meant.
+     */
+    function overlay(stored, body) {
+      const out = Object.assign({}, (stored && typeof stored === 'object') ? stored : {});
+      if (!body || typeof body !== 'object') return out;
+      for (const k of Object.keys(body)) {
+        const v = body[k]; const cur = out[k];
+        if (v && typeof v === 'object' && !Array.isArray(v)
+            && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, v);
+        else out[k] = v;
+      }
+      return out;
+    }
+
+    host.routes.post('/config', (req, res) => {
+      const b = overlay(host.config.get() || {}, req.body || {});
+      const events = {};
+      for (const k of EVENT_KEYS) {
+        const src = (b.events || {})[k] || {};
+        events[k] = {
+          // By key presence: an event this body does not mention (one added by a newer version)
+          // keeps its default rather than being switched off by a save that never saw it.
+          enabled: src.enabled == null ? DEFAULTS.events[k].enabled : !!src.enabled,
+          message: String(src.message == null ? DEFAULTS.events[k].message : src.message),
+          // Sent whole and stored whole: a language cleared in the panel stays cleared.
+          messageI18n: cleanI18n(src.messageI18n),
+        };
+      }
+      const subs = {};
+      for (const k of SUB_KEYS) {
+        const src = ((b.commands || {}).subs || {})[k] || {};
+        subs[k] = {
+          enabled: !!src.enabled,
+          name: String(src.name || k).toLowerCase().replace(/[^\w-]/g, '').slice(0, 16) || k,
+        };
+      }
+      const texts = {};
+      for (const k of Object.keys(DEFAULTS.commands.texts)) {
+        const v = ((b.commands || {}).texts || {})[k];
+        texts[k] = /I18n$/.test(k) ? cleanI18n(v) : String(v == null ? DEFAULTS.commands.texts[k] : v);
+      }
+      host.config.set({
+        enabled: !!b.enabled,
+        channel: safeChannel(b.channel),
+        includeSelf: !!b.includeSelf,
+        cooldownSeconds: Math.max(0, Math.min(600, Number(b.cooldownSeconds) || 0)),
+        maxIndividualSends: Math.max(0, Math.min(100, Number(b.maxIndividualSends) || 0)),
+        maxPerMinute: Math.max(0, Math.min(5000, Number(b.maxPerMinute) || 0)),
+        rosterPollSeconds: Math.max(5, Math.min(3600, Number(b.rosterPollSeconds) || 60)),
+        eventDeaths: b.eventDeaths === true,
+        quietHours: {
+          enabled: !!(b.quietHours && b.quietHours.enabled),
+          from: Math.max(0, Math.min(23, Number(b.quietHours && b.quietHours.from) || 0)),
+          to: Math.max(0, Math.min(23, Number(b.quietHours && b.quietHours.to) || 0)),
+        },
+        mutedSteamIds: Array.isArray(b.mutedSteamIds) ? b.mutedSteamIds.map(String).slice(0, 500) : [],
+        events,
+        commands: {
+          enabled: !!(b.commands && b.commands.enabled),
+          root: String((b.commands && b.commands.root) || 'squad').toLowerCase().replace(/[^\w-]/g, '').slice(0, 16) || 'squad',
+          subs, texts,
+        },
+      });
+      res.json({ ok: true });
+    });
+
+    host.routes.get('/status', (req, res) => {
+      const online = onlineIndex();
+      // How many squads currently have 2+ members online — i.e. how many would actually receive
+      // anything. A server full of solo players will legitimately see nothing.
+      const seen = new Set();
+      let activeSquads = 0;
+      for (const sid of online.keys()) {
+        const sq = squadOf(sid);
+        if (!sq || seen.has(sq.id)) continue;
+        seen.add(sq.id);
+        if (sq.members.filter((m) => online.has(m.steamId)).length > 1) activeSquads++;
+      }
+      res.json({
+        stats, recent: recent.slice(0, 40), online: online.size, activeSquads,
+        geography: !!(host.map && typeof host.map.sector === 'function'),
+        // Every number above is a photograph of a running world, so with the server stopped they are
+        // all a truthful 0 — and a screenful of zeroes with no caption reads as "this plugin is not
+        // working", which is the one thing it does not mean. The panel says so instead of leaving the
+        // owner to guess. An older manager has no `isRunning`, so this is a feature-detect, not a call.
+        serverRunning: (host.server && typeof host.server.isRunning === 'function') ? !!host.server.isRunning() : null,
+        // Which of the two live reads could not run, and why in the module's own words. `null` for a
+        // read means it answered last time it was asked. An owner has to be able to tell "live" from
+        // "quietly back on the last save"; without this they cannot.
+        live: { players: liveNote.players, squads: liveNote.squads },
+        // The in-game command prefix, so the panel's "Players type" preview shows what they really type.
+        prefix: cmdPrefix(),
+      });
+    });
+
+    host.routes.get('/players', (req, res) => {
+      const online = onlineIndex();
+      const out = [];
+      const seen = new Set();
+      online.forEach((name, steamId) => {
+        seen.add(String(steamId));
+        const sq = squadOf(steamId);
+        const p = prefs[steamId] || {};
+        out.push({ steamId, name, squad: sq ? sq.name : null, off: !!p.off, muted: Object.keys(p.muted || {}), online: true });
+      });
+      // …and anyone OFFLINE who has silenced something.
+      //
+      // A preference is set in game and then persists. Listing only who is online meant a player who
+      // muted their alerts and logged off vanished from the panel while their setting kept working —
+      // so "reset it if someone asks" was impossible for exactly the person most likely to ask,
+      // since they are asking on Discord rather than standing in game. The `/prefs` route was
+      // written for this and the panel never called it; folding it in here means one list instead of
+      // two, and the reset button already works on any steamId.
+      for (const steamId of Object.keys(prefs)) {
+        if (seen.has(String(steamId))) continue;
+        const p = prefs[steamId] || {};
+        const muted = Object.keys(p.muted || {});
+        if (!p.off && !muted.length) continue;              // nothing silenced — nothing to show
+        const sq = squadOf(steamId);
+        // `displayName` already knows the rule for this: whoever is online, else the game database,
+        // never a raw Steam ID. An offline player is exactly the case it was written for.
+        out.push({ steamId, name: displayName(steamId, '') || steamId, squad: sq ? sq.name : null, off: !!p.off, muted, online: false });
+      }
+      out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      res.json(out);
+    });
+    host.routes.post('/prefs/reset', (req, res) => {
+      const sid = String((req.body || {}).steamId || '');
+      if (sid) delete prefs[sid]; else prefs = {};
+      persist();
+      res.json({ ok: true });
+    });
+
+    host.routes.post('/clear-log', (req, res) => { recent = []; persist(); res.json({ ok: true }); });
+
+    // Fire a real message at one player's squad so an admin can confirm the whole chain works
+    // (bridge → squad channel → the right recipients) without waiting for someone to die.
+    host.routes.post('/test', async (req, res) => {
+      const sid = String((req.body || {}).steamId || '');
+      if (!sid) { res.status(400).json({ ok: false, error: 'steamId required' }); return; }
+      const c = cfg();
+      // The SAME roster an alert would use — live where the game says, saved where it cannot — so the
+      // test proves the path a real alert takes. `undefined` is "could not read", never "no squad":
+      // with the save unreadable the old read answered `not_in_squad` about a player who has one.
+      const squad = await squadFor(sid, true);
+      if (squad === undefined) { res.json({ ok: false, error: 'squad_unknown' }); return; }
+      if (!squad) { res.json({ ok: false, error: 'not_in_squad' }); return; }
+      const online = onlineIndex();
+      const inGame = squad.members.map((m) => m.steamId).filter((s) => online.has(s));
+      if (!inGame.length) { res.json({ ok: false, error: 'nobody_online' }); return; }
+      // An admin mute holds for the test too: the panel promises a muted player gets none of these.
+      const adminMuted = new Set((c.mutedSteamIds || []).map(String));
+      const targets = inGame.filter((s) => !adminMuted.has(s));
+      if (!targets.length) { res.json({ ok: false, error: 'all_muted' }); return; }
+      try {
+        // Each recipient reads the test in their own language, the way every alert reaches them.
+        const set = linesFor(c, 'texts.testLine', { squad: sqName(c, squad) }, targets.map(langOf));
+        const out = await host.chat.send(host.i18n ? { text: set.text, i18n: set.i18n } : set.text,
+          { channel: safeChannel(c.channel), targets });
+        // What the bridge says it reached, never the number we aimed at. A reply with no count is
+        // an older manager and the aim is all there is to report.
+        const n = deliveredOf(out);
+        if (n != null && n <= 0) { res.json({ ok: false, error: 'reached_nobody', targets: targets.length }); return; }
+        res.json({ ok: true, delivered: n == null ? targets.length : n, targets: targets.length });
+      } catch (e) {
+        res.json({ ok: false, error: (e && e.message) || 'send_failed' });
+      }
+    });
+
+    host.onUnload(() => { clear(); stopMaint(); flushNow(); });
+    host.logger.info('Better Squads ready');
+  },
+};

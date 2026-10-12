@@ -1,0 +1,47 @@
+{
+  "id": "raid-window",
+  "name": "Raid Window",
+  "type": "manager",
+  "version": "1.5.6",
+  "updated": "2026-10-12",
+  "author": "SCUMSA",
+  "website": "https://scumsa.com/plugins.php?p=raid-window",
+  "description": "Stops defenders ending a raid by logging out. While a base is taking real raid damage, its offline protection is kept from switching on mid-raid. Works with offline and flag-specific protection, changes no server setting, touches only the base under attack, and stops once the base is quiet.",
+  "image": "icon.png",
+  "readme": "README.md",
+  "apiVersion": 1,
+  "minManagerVersion": "6.0.0",
+  "main": "backend/index.js",
+  "web": {
+    "script": "web/plugin.js",
+    "style": "web/plugin.css",
+    "i18n": "web/i18n"
+  },
+  "config": "config.json",
+  "dependencies": [
+    {
+      "id": "ssa-bridge"
+    }
+  ],
+  "bridge": {
+    "needs": [
+      {
+        "module": "raid",
+        "switches": [
+          "enabled"
+        ],
+        "why": "Tells the plugin when a base is taking real raid damage, with decay, upgrades and admin clearing already left out. Without it the plugin never knows a raid is going on, and nothing is pushed."
+      },
+      {
+        "module": "protect",
+        "switches": [
+          "enabled",
+          "set",
+          "postpone"
+        ],
+        "why": "Reads a base's protection and pushes its start back. On offline raid protection the write is 'Postpone offline protection', which only ever moves the start later. On flag-specific raid protection it is 'Set a flag's protection window', which cannot be undone. The tab names the one your server uses."
+      }
+    ]
+  },
+  "premium": true
+}

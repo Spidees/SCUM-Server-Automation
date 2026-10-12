@@ -1,0 +1,158 @@
+/* Vehicle Rental — admin config UI */
+.vr-head{margin:0 0 1rem}
+#vr-body{display:flex;flex-direction:column;gap:1rem}
+.vr-card{margin:0}
+.vr-card-t{margin:0 0 .9rem;font-size:.95rem}
+/* `align-items:end` so a label that wraps to two lines (or three, in German) does not push its box
+   below its neighbours: the boxes of one row share a baseline and the labels above them hang. */
+.vr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;align-items:end}
+.vr-stack{display:flex;flex-direction:column;gap:12px}
+.vr-f{display:flex;flex-direction:column;gap:4px;min-width:0}
+/* Without `min-width:0` a grid or flex child cannot shrink below the intrinsic width of the
+   input inside it — about 173px in Chrome. Four of those in one row demand ~460px inside a
+   ~300px card, nothing above has `overflow-x`, and so the whole DOCUMENT widens: that is the
+   sideways scroll people report on a phone. */
+.vr-f > input, .vr-f > select{min-width:0;max-width:100%}
+.vr-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
+.vr-f input,.vr-f select,.vr-f textarea{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.vr-veh{position:relative;border:1px solid var(--line,#24272e);border-radius:8px;background:var(--bg,#0b0c0e);padding:12px;margin-bottom:12px}
+.vr-x{background:none;border:0;color:var(--alarm,#ff5c5c);cursor:pointer;font-size:1rem}
+.vr-x-top{position:absolute;top:8px;right:8px}
+.vr-opt-hd{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);margin:12px 0 6px;font-family:var(--ui,inherit)}
+.vr-opts{display:flex;flex-direction:column;gap:8px}
+.vr-opt{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}
+.vr-opt.vr-opt-free{grid-template-columns:1fr auto}
+.vr-btn{font:inherit;cursor:pointer;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--line-2,#343943);background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);font-size:.82rem}
+.vr-btn.primary { border:0;background:var(--accent,var(--amber,#ff6a1a));color:#1a0d02;--hov-bg:var(--amber-hi,#ff9a3c);--hov-fg:#1a0d02;--hov-line:var(--amber-hi,#ff9a3c) }
+.vr-btn.primary:hover { background:var(--hov-bg);color:var(--hov-fg) }
+.vr-btn.add{border-style:dashed;width:100%;margin-top:8px}
+.vr-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0}
+.vr-checks{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+.vr-chk{display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
+.vr-chk input{width:16px;height:16px;cursor:pointer}
+/* vehicle spawn-code typeahead */
+.vr-ac{position:relative}
+.vr-ac-menu{display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:40;max-height:280px;overflow:auto;background:var(--panel,#15171b);border:1px solid var(--line-2,#343943);border-radius:8px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.vr-ac-row{display:flex;align-items:center;gap:9px;padding:.4rem .6rem;cursor:pointer;border-bottom:1px solid var(--line,#20242b)}
+.vr-ac-row:last-child{border-bottom:0}
+.vr-ac-row:hover{background:rgba(230,185,106,.12)}
+.vr-ac-row img,.vr-ac-ph{width:34px;height:26px;object-fit:contain;flex:0 0 auto;border-radius:4px;background:rgba(255,255,255,.03)}
+.vr-ac-n{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem;color:var(--text,#f1f3f5)}
+.vr-ac-c{flex:0 0 auto;font-size:.72rem;color:var(--muted,#8b9099);font-family:var(--mono,monospace)}
+/* While the spawn-code box holds search text rather than a blueprint id, it says so: that text is
+   NOT what will be saved, and the field looked identical whether it held a code or a half-typed
+   word. Colour and border move together so the state reads on either theme. */
+.vr-ac input.vr-ac-bad{border-color:var(--warn,#e0a63a);color:var(--warn,#e0a63a)}
+/* vehicles toolbar: add + find, on one line */
+.vr-vbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.vr-vbar .vr-btn.add{width:auto;margin-top:0;flex:0 0 auto}
+.vr-search{flex:1 1 180px;min-width:140px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.vr-search:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+/* what Discord will silently drop, said before it happens */
+.vr-warn{border:1px solid rgba(230,178,58,.4);background:rgba(230,178,58,.08);border-radius:8px;padding:8px 12px;margin-bottom:12px}
+/* Live state of sector detection. Three states, and the neutral one must not read as either of the
+   other two — so it keeps the ordinary muted colour rather than a paler warning. */
+.vr-secstat{font-size:.78rem;margin:8px 0 0;color:var(--muted,#8b9099)}
+.vr-secstat.ok{color:var(--ok,#54c98a)}
+.vr-secstat.bad{color:var(--warn,#e0a63a)}
+.vr-warn p{margin:.25rem 0;font-size:.82rem;color:var(--text,#f1f3f5)}
+/* Destructive action. The hover PAIR is retuned on the element, never one half of it: the panel's
+   own `button:hover` paints every button amber with dark text, so changing only the colour leaves an
+   amber fill and changing only the fill leaves dark text — both unreadable. */
+.vr-btn.danger{--hov-bg:var(--alarm,#ff5c5c);--hov-fg:#1a0505;--hov-line:var(--alarm,#ff5c5c);color:var(--alarm,#ff5c5c);border-color:rgba(255,92,92,.45);padding:.3rem .7rem;font-size:.78rem}
+/* Where a FIRST load failure goes. Without a slot, a throwing client only moves the silence: the
+   promise rejects, nothing renders, and the tab sits on "Loading…" forever — which reads as slow
+   rather than as broken. A harder colour than `.vr-warn` on purpose: that one flags something the
+   owner can fix on this page, this one means the tab could not even draw itself. */
+.vr-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#ff5c5c);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.vr-err-act{margin-top:.7rem}
+/* A search that could not run, inside the vehicle typeahead menu — not "no results", which reads
+   as the same thing a real empty search gives. */
+.vr-ac-msg{padding:.5rem .6rem;font-size:.8rem;color:var(--muted,#8b9099)}
+/* The active/finished rental lists have stopped updating. Same severity as `.vr-err` — this is a
+   live view failing, not a configuration note — but a paragraph rather than a boxed panel, since
+   it sits above two tables that are still showing their last good data. */
+.vr-live-err{margin:0 0 10px;font-size:.82rem;color:var(--alarm,#ff5c5c)}
+
+/* Phones. One plan per line: three number/select boxes side by side are unreadable under 560px,
+   and the delete button needs a real target rather than a bare glyph. */
+@media (max-width: 560px){
+  .vr-opt{grid-template-columns:minmax(0,1fr) auto}
+  .vr-grid{grid-template-columns:1fr}
+  .vr-checks{gap:10px}
+  .vr-vbar{flex-direction:column;align-items:stretch}
+  .vr-vbar .vr-btn.add{width:100%}
+}
+/* A destructive control must be reachable with a thumb. 44px is the accessibility floor; the
+   glyph stays the same size, the hit area does not. */
+.vr-x{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.vr-x-top{top:2px;right:2px}
+@media (max-width: 640px){ .vr-btn.danger{min-height:44px;padding:.3rem .9rem} }
+
+/* ── Time windows ───────────────────────────────────────────────────────────────
+   The same control in every plugin that offers "from when to when". Deliberately
+   identical markup and identical CSS in each, so a window looks and reads the same
+   wherever an owner meets one.
+
+   Two house rules are load-bearing here and both are mechanically checked:
+   `minmax()` is never given a bare length (it must collapse to one column on a
+   phone rather than widen the page), and no `:hover` rule ever changes only the
+   background or only the colour — both halves are retuned together on the element,
+   or the amber default hover paints dark text on a dark fill. */
+.tw { margin: 6px 0 2px; }
+.tw-rows { display: flex; flex-direction: column; gap: 6px; }
+.tw-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--border, rgba(255,255,255,.12));
+  border-radius: 8px; background: var(--panel2, rgba(255,255,255,.03));
+}
+.tw-days { display: flex; flex-wrap: wrap; gap: 3px; }
+.tw-day {
+  font-size: .72rem; line-height: 1; padding: 5px 7px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border, rgba(255,255,255,.16));
+  background: transparent; color: var(--muted, #9aa3ad);
+  /* Ghost shape: no fill, the colour change IS the affordance. Both halves declared
+     together so the panel's blanket `button:hover` cannot half-apply. */
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: currentColor;
+}
+.tw-day.on {
+  /* Tinted shape: its own soft fill with normal text, so it stays legible in both themes. */
+  background: color-mix(in srgb, var(--accent, #ff6a1a) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #ff6a1a) 55%, transparent);
+  color: var(--text, #e8edf2);
+  --hov-bg: color-mix(in srgb, var(--accent, #ff6a1a) 26%, transparent);
+  --hov-fg: var(--text, #e8edf2);
+}
+.tw-day.on:hover { background: var(--hov-bg); color: var(--hov-fg); }
+.tw-times { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted, #9aa3ad); }
+.tw-t { width: auto; max-width: 100%; min-width: 0; font-size: .8rem; padding: 4px 6px; }
+.tw-del {
+  margin-left: auto; font-size: .9rem; line-height: 1; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border, rgba(255,255,255,.16)); background: transparent;
+  color: var(--muted, #9aa3ad); cursor: pointer;
+  --hov-bg: transparent; --hov-fg: var(--danger, #ff5c5c); --hov-line: var(--danger, #ff5c5c);
+}
+.tw-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.tw-add {
+  font-size: .76rem; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed var(--border, rgba(255,255,255,.22)); background: transparent;
+  color: var(--muted, #9aa3ad);
+  --hov-bg: transparent; --hov-fg: var(--text, #e8edf2); --hov-line: var(--accent, #ff6a1a);
+}
+.tw-note { margin: 0; font-size: .76rem; color: var(--muted, #9aa3ad); flex: 1 1 12rem; min-width: 0; }
+.tw-note.ok { color: var(--ok, #54c98a); }
+.tw-note.bad { color: var(--danger, #ff5c5c); }
+/* The clock caption is not decoration: "from 20:00" is ambiguous until something on
+   the screen says whose clock, and this is that something. It stays visible even when
+   no window is set, so an owner reads it before they configure rather than after. */
+.tw-clock { margin: 4px 0 0; font-size: .72rem; color: var(--muted, #9aa3ad); opacity: .85; }
+/* the sentence over the per-language editors */
+.vr-langs{font-size:.8rem;margin:0}
+/* An editor's caption reads like every other field caption on this tab. */
+.vr-card .ssa-lt-label{font-size:.68rem;font-weight:400;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099);font-family:var(--ui,inherit)}
+/* A text people read grows with its words and takes the whole row under its caption, never a
+   narrow column beside other fields (`area()`). */
+.vr-f-wide{grid-column:1/-1}
+.vr-f textarea.vr-area{min-width:0;max-width:100%;resize:vertical;line-height:1.4;overflow:hidden;min-height:2.2rem}
+/* A date or a time is one value: it never breaks inside itself. */
+.vr-nowrap{white-space:nowrap}
