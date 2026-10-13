@@ -2819,8 +2819,8 @@ export type ItemsRead_Where =
  * - `attachment`
  * - also `attach:eid:<weapon>:<ItemCode>`
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: both items must be loaded; the `attach:eid:<weapon>:<ItemCode>` form spawns the part through an online player. The fit is saved with the weapon, and a weapon left on the ground expires like any loose item.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: both items must be loaded; the `attach:eid:<weapon>:<ItemCode>` form spawns the part through an online player. The fit is saved with the weapon and lasts as long as the weapon does; a weapon left on the ground expires like any loose item.
+ * After a restart: Survives. Measured to be in the save after a restart.
  *
  * Live inventories, `module_command`.
  */
@@ -18234,7 +18234,7 @@ export interface ModuleWriteNeeds {
     "zone": { needs: "no-player"; persists: "lost" };
   };
   "items": {
-    "attach": { needs: "loaded-target"; persists: "unmeasured" };
+    "attach": { needs: "loaded-target"; persists: "survives" };
     "condition": { needs: "loaded-target"; persists: "unmeasured" };
     "destroy": { needs: "loaded-target"; persists: "unmeasured" };
     "detach": { needs: "loaded-target"; persists: "unmeasured" };
