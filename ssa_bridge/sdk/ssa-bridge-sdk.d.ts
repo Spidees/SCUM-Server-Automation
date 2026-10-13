@@ -8940,13 +8940,13 @@ export interface ModuleSettingsMap {
     enabled?: boolean;
     /** Longest a wider vehicle distance may last (seconds). A wider vehicle distance ends by itself after this; a smaller one is refused, it removes vehicles. (default 600, min 10, max 3600) */
     maxSeconds?: number;
-    /** Longest a visitor may stay (seconds). Every visitor is removed by itself after this, or sooner when the caller asks. (default 600, min 10, max 3600) */
+    /** Longest a visitor may stay (seconds). Every visitor is parked out of the way after this, or sooner when the caller asks. (default 600, min 10, max 3600) */
     visitorSeconds?: number;
     /** Visitor reach when none is given (cm). How far around a visitor the game builds world items, when the caller names no reach. (default 500, min 100, max 7500) */
     visitorBoundsCm?: number;
     /** Largest visitor reach (cm). The widest reach a caller may ask for; a player wakes 7500 cm on this game. (default 5000, min 100, max 7500) */
     maxVisitorBoundsCm?: number;
-    /** Most visitors at once. Each visitor costs the server like the items around one more player. (default 4, min 1, max 16) */
+    /** Most visitors at once. Each visitor costs the server like one more player; parked ones count until a restart. (default 4, min 1, max 16) */
     maxVisitors?: number;
   };
   "wildlife": {
@@ -16730,6 +16730,8 @@ export interface ReadingWake_Visitors {
   nudge?: Record<string, unknown>;
   /** Unit: ms. Absent when the game did not give it. On each item of a list. */
   outAfterMs?: number;
+  /** On each item of a list. Type not readable from the source. */
+  parked?: unknown;
   /** On each item of a list. */
   pawn?: string;
   /** On each item of a list. Type not readable from the source. */
@@ -16738,6 +16740,8 @@ export interface ReadingWake_Visitors {
   secondsLeft?: number;
   /** On each item of a list. */
   state?: string;
+  /** On each item of a list. */
+  uses?: number;
   /** On each item of a list. Type not readable from the source. */
   visitorLive?: unknown;
   visitors?: unknown[];
