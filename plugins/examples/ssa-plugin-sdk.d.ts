@@ -307,9 +307,16 @@ export interface Host {
      *
      * `opts.executor` is a SteamID to run the command THROUGH that online player, which is required
      * for commands that have no location argument and land on whoever ran them
-     * (`#SpawnInventoryFullOf`). `opts.caller` is the label written into the bridge's activity log
-     * so an owner can see who asked (defaults to `plugin:<your-id>`). `opts.hide` (default `true`)
-     * keeps the command's own echo out of the executing player's chat.
+     * (`#SpawnInventoryFullOf`). `opts.hide` (default `true`) keeps the command's own echo out of
+     * the executing player's chat.
+     *
+     * The bridge's activity log always names the command `plugin:<your-id>`, so an owner can see
+     * which plugin asked. A plugin cannot change that: `opts.caller` is kept for older code and
+     * travels beside it as `label`, a note of your own that does not replace your id.
+     *
+     * When the owner enforces plugin capabilities and your plugin.json declares `capabilities`
+     * without this command (`cmd` or `cmd:<Verb>`), the call answers
+     * `{ ok: false, code: 'not_permitted', error: 'capability_refused', reason }` and nothing is sent.
      *
      * **`ok: true` does not always mean it worked.** On a normal run `output` carries the lines the
      * game printed back. But on an EMPTY server — and only when the owner has switched that on —
@@ -333,7 +340,7 @@ export interface Host {
     command(cmd: string, opts?: { executor?: string; caller?: string; hide?: boolean }): Promise<
       { ok: true; executor: string; output: string[] | null; dispatched?: boolean; confirmed?: boolean;
         status?: 'spawned' | 'refused' | 'unknown'; item?: string; spawned?: number; requested?: number }
-      | { ok: false; error: string }>;
+      | { ok: false; error: string; code?: 'not_permitted'; reason?: string }>;
     /**
      * SSA Bridge health for a pre-flight check before spawning or charging.
      *
@@ -470,11 +477,16 @@ export interface Host {
     raids(includeFinished?: boolean): Promise<Array<Record<string, any>> | null>;
 
     /**
-     * Game events since the LAST call: kills, trades, squad joins and leaves, flag takeovers,
-     * vehicles destroyed, item pickups and drops.
+     * Game events: kills, trades, squad joins and leaves, flag takeovers, vehicles destroyed, item
+     * pickups and drops. Every plugin sees every event.
      *
-     * This DRAINS — each event is handed out exactly once, so two plugins polling it will each see
-     * half. If more than one thing needs these, read them once and fan them out yourself.
+     * With no argument: an array of what is new since THIS plugin's last call. `[]` when nothing
+     * happened; `null` when the bridge could not answer and nothing new was waiting.
+     *
+     * With `{ since: n }` (or a bare number): the cursor shape, {@link BridgeEventsSince}. Keep
+     * `latest` and pass it next time; `0` takes everything the manager still holds. An older
+     * manager ignores the argument and answers the array, so test `Array.isArray(r)` before
+     * reading `r.latest`.
      *
      * Several have no log line at all: trades, squad changes, and a flag changing hands are
      * invisible to `SCUM.log`.
@@ -483,6 +495,7 @@ export interface Host {
      * is left out when the read could not be made. Read `eventKinds()` for what each kind puts where.
      */
     events(): Promise<Array<BridgeGameEvent> | null>;
+    events(opts: { since: number } | number): Promise<BridgeEventsSince<BridgeGameEvent> | Array<BridgeGameEvent> | null>;
     /** The same list WITHOUT draining it — for a diagnostic screen, never for a consumer. */
     peekEvents(): Promise<Array<Record<string, any>> | null>;
     /**
@@ -1215,13 +1228,18 @@ export interface Host {
     /** Fishing state. Mass and size carry a `Raw` suffix because the units are genuinely unknown. */
     fishing(): Promise<Record<string, any> | null>;
     /**
-     * Crafting and fishing events since the last call — `fish.caught`, `craft.start`, `cook.collect`
-     * and the rest.
+     * Crafting and fishing events — `fish.caught`, `craft.start`, `cook.collect` and the rest.
+     * Every plugin sees every event, as with `events()`.
      *
-     * **This DRAINS**, like `events()`: two consumers polling it each see half. `slotId: -1` is never
-     * emitted, so an absent key means the event has no slot — a different thing from slot 0.
+     * With no argument: the module's payload, with `events` holding what is new since THIS plugin's
+     * last call. With `{ since: n }` (or a bare number): the cursor shape,
+     * {@link BridgeEventsSince}, with a `seq` on every event. An older manager ignores the argument.
+     *
+     * `slotId: -1` is never emitted, so an absent key means the event has no slot — a different
+     * thing from slot 0.
      */
     craftEvents(): Promise<Record<string, any> | null>;
+    craftEvents(opts: { since: number } | number): Promise<BridgeEventsSince<Record<string, any>> | Record<string, any> | null>;
 
     // ── removing things from the world ───────────────────────────────────────────────────────────
     // ⚠ An object id here uses a DOT (`<index>.<serial>`), where `ai` uses a hyphen. Everything is
@@ -2344,8 +2362,13 @@ export interface Host {
      * `frame` deliberately does not pick a side: `unconfirmed` means either the epicentre is local to
      * a transform this module will not guess at, OR the running server does not evaluate radiation
      * from this asset at all. A sample that could not be TAKEN is never reported as zero.
+     *
+     * The bridge measures in the background, and this waits for its job (two minutes at most). The
+     * finished list carries `complete: true` and the job beside it as `job`. If the wait runs out or
+     * the job fails, the answer is the list as declared, unmeasured, and `job.state` says which. An
+     * older bridge answers without `job`.
      */
-    radiationMeasured(): Promise<Record<string, any> | null>;
+    radiationMeasured(): Promise<(Record<string, any> & { complete?: boolean; job?: HazardJob }) | null>;
     /** Every online player's radiation exposure. `radiationRate` is OMITTED, never zeroed, when the
      *  sample could not be taken. */
     radiationExposure(): Promise<Record<string, any> | null>;
@@ -2365,8 +2388,16 @@ export interface Host {
      * nothing changes. `restoreRadiation()` and a restart are both undos.
      */
     radiationEvent(multiplier: number): Promise<BridgeCommandResult>;
-    /** Put back what this module changed — one zone, or all of them. */
-    restoreRadiation(index?: number): Promise<BridgeCommandResult>;
+    /**
+     * Put back what this module changed — one zone, or all of them.
+     *
+     * The bridge does it as a background job, and this waits for it (two minutes at most).
+     * Finished, it answers `restored` and `stuck` (zones it changed and could not put back; a
+     * restart restores them). A failed job answers `ok: false` with the bridge's `reason`. Still
+     * running when the wait ends is `ok: true, pending: true` with `job`. An older bridge answers
+     * once it has finished, without these keys.
+     */
+    restoreRadiation(index?: number): Promise<BridgeCommandResult & { restored?: number; stuck?: number; pending?: boolean; job?: HazardJob }>;
 
     // ── ambushes and spawn waves ─────────────────────────────────────────────────────────────────
 
@@ -3296,8 +3327,10 @@ export interface Host {
      */
     /**
      * REJECTS when nothing was sent, with the code as the message: `bridge_unavailable` (no bridge, or
-     * the server is stopped), `empty_message`, or the bridge's own code. Catch it: an unhandled
-     * rejection in a timer is logged as your plugin's fault.
+     * the server is stopped), `empty_message`, `capability_refused` (the owner enforces plugin
+     * capabilities and your plugin.json `capabilities` has no `chat`; the error's `reason` says so),
+     * or the bridge's own code. Catch it: an unhandled rejection in a timer is logged as your
+     * plugin's fault.
      */
     /**
      * `text` may be a {@link LocText}: each player then reads their own language. With `targets`
@@ -3440,8 +3473,12 @@ export interface Host {
  *  • `module_off`  the module is there and the owner has it switched off. Say so BY NAME in your UI.
  *  • `refused`     the module answered and said no. `reason` is its own sentence, or `null` when it
  *                  refused without saying why.
+ *  • `not_permitted` the manager did not send the call: the owner enforces plugin capabilities and
+ *                  your plugin.json `capabilities` does not cover it. `error` is
+ *                  `capability_refused` and `reason` names what is missing. Never seen by a plugin
+ *                  that declares no `capabilities`.
  */
-export type BridgeFailureCode = 'bridge_off' | 'no_module' | 'module_off' | 'refused';
+export type BridgeFailureCode = 'bridge_off' | 'no_module' | 'module_off' | 'refused' | 'not_permitted';
 
 /**
  * The verbs `host.bridge.act()` accepts, grouped by the owner switch that gates them. Each family
@@ -3488,6 +3525,11 @@ export interface BridgeGameEvent {
   kind: string;
   /** How long ago the event fired, measured when you asked. */
   agoMs: number;
+  /**
+   * The manager's sequence number for this event, counting from 1 each time the manager starts.
+   * The cursor that `events({ since })` takes. Absent on an older manager.
+   */
+  seq?: number;
   a?: number;
   b?: number;
   c?: number;
@@ -3506,6 +3548,59 @@ export interface BridgeGameEvent {
   inEvent?: boolean;
   /** The event it happened in, when `inEvent` is true. */
   event?: { id: string; run?: number; class?: string; name?: string };
+}
+
+/**
+ * The cursor shape of `host.bridge.events({ since })` and `craftEvents({ since })`.
+ *
+ * The bridge's own drop counters (`dropped`, `droppedBeforeDrain`, `droppedBeforeRead` and the
+ * rest of its payload) ride beside the four keys that are always there.
+ */
+export interface BridgeEventsSince<E = BridgeGameEvent> {
+  /** Everything newer than the cursor you passed, oldest first, each with its `seq`. */
+  events: Array<E & { seq: number }>;
+  /** The newest `seq` the manager has handed out. Pass it as `since` next time. */
+  latest: number;
+  /** Events that left the manager's buffer (2,048 per queue) before you asked for them. */
+  missed: number;
+  /** `true` when your cursor came from before a manager restart; it was read as `0`. */
+  reset: boolean;
+  /** Events the bridge lost before anything could read them. */
+  dropped?: number;
+  /** Of those, lost because the server was busier than the bridge's budget for one frame. */
+  droppedBeforeDrain?: number;
+  /** Of those, lost because the bridge's kept list filled before the manager collected it. */
+  droppedBeforeRead?: number;
+  [key: string]: any;
+}
+
+/**
+ * The radiation module's background job, as `radiationMeasured()` and `restoreRadiation()` carry it
+ * beside their answer. Its result is not repeated here; it is the answer itself.
+ */
+export interface HazardJob {
+  id: number;
+  kind: 'measure' | 'restore';
+  state: 'running' | 'done' | 'failed';
+  zonesDone?: number;
+  zonesInRange?: number;
+  /** Restore only. */
+  zonesToRestore?: number;
+  /** Restore only. */
+  restored?: number;
+  /** Restore only. */
+  stuck?: number;
+  /** Measure only. */
+  samplesTaken?: number;
+  /** How many server ticks the job took. */
+  slices?: number;
+  /** The longest of those ticks, in microseconds. */
+  maxSliceUs?: number;
+  busyUs?: number;
+  elapsedMs?: number;
+  note?: string;
+  /** Why it failed, in the bridge's own words. */
+  why?: string;
 }
 
 /**
@@ -3886,6 +3981,17 @@ export interface PluginManifest {
   fc?: { script?: string; style?: string; requireLogin?: boolean };
   /** What must be switched on in the SSA Bridge. The owner applies `needs` in one click; `wants` is never written. */
   bridge?: { needs?: Array<{ module: string; switches: string[]; why: string }>; wants?: Array<{ module: string; switches: string[]; why: string }> };
+  /**
+   * What the plugin will ask the bridge for. Each entry is a bridge module id (`"live"`, read and
+   * write), `"<module>:read"` or `"<module>:write"`, `"cmd"` for any admin command or
+   * `"cmd:<Verb>"` for one, `"chat"`, `"module_data"` / `"module_command"` for any module, or `"*"`.
+   *
+   * Every call still goes through by default; one outside the list is logged once and shown on
+   * the plugin's card. When the owner sets `plugins.capabilities` to `enforce`, such a call is
+   * refused with `code: 'not_permitted'` (a chat call rejects with `capability_refused`). A
+   * plugin without this key is never refused or warned about. Older managers ignore it.
+   */
+  capabilities?: string[];
   /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`. */
   modName?: string;
 }
