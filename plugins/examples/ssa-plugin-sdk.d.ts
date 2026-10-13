@@ -478,8 +478,11 @@ export interface Host {
      *
      * Several have no log line at all: trades, squad changes, and a flag changing hands are
      * invisible to `SCUM.log`.
+     *
+     * Every slot but `kind` and `agoMs` is optional: a kind carries only some of them, and a slot
+     * is left out when the read could not be made. Read `eventKinds()` for what each kind puts where.
      */
-    events(): Promise<Array<{ kind: string; agoMs: number; a: number; b: number; c: number; s1?: string; s2?: string }> | null>;
+    events(): Promise<Array<BridgeGameEvent> | null>;
     /** The same list WITHOUT draining it — for a diagnostic screen, never for a consumer. */
     peekEvents(): Promise<Array<Record<string, any>> | null>;
     /**
@@ -3471,6 +3474,39 @@ export type BridgeActVerb =
   /** the rest — check the bridge's own Actions settings for which switch each sits behind */
   | 'detonate' | 'repossess' | 'spawnscreen' | 'save' | 'load'
   | (string & {});
+
+/**
+ * One game event from `host.bridge.events()`.
+ *
+ * Every kind travels on the same slots, and what each slot holds changes with the kind: switch on
+ * `kind` before reading any of them, and read `host.bridge.eventKinds()` for the map. A slot a kind
+ * does not carry is ABSENT, never zero, because `0` is a real-looking profile id and `0,0,0` a real
+ * place on the map. Test for the key.
+ */
+export interface BridgeGameEvent {
+  /** The kind, such as `kill`, `squad.join` or `container.open`. */
+  kind: string;
+  /** How long ago the event fired, measured when you asked. */
+  agoMs: number;
+  a?: number;
+  b?: number;
+  c?: number;
+  d?: number;
+  /** A player or object name. Absent on every kind while the bridge's name resolving is off. */
+  s1?: string;
+  /** A player or object name, as `s1`. */
+  s2?: string;
+  /** The inventory an item came out of or went into; on some kinds the game's own type name. */
+  s3?: string;
+  /** Only on the kinds that carry a position. */
+  x?: number;
+  y?: number;
+  z?: number;
+  /** Whether it happened inside a running competitive event. Absent when that could not be told. */
+  inEvent?: boolean;
+  /** The event it happened in, when `inEvent` is true. */
+  event?: { id: string; run?: number; class?: string; name?: string };
+}
 
 /**
  * What is inside a competitive event, per element of `worldEvents()`.
