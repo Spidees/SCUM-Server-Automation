@@ -342,7 +342,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 222 reads, 280 writes, 34 retired verbs, 386 settings.
+// 50 modules, 222 reads, 279 writes, 34 retired verbs, 386 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -5238,19 +5238,6 @@ export type StorageRead_Storage =
   | "storage";
 
 /**
- * `allow:<player>`
- *
- * - `player`
- *
- * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- *
- * Live storage, `module_command`.
- */
-export type StorageWrite_Allow =
-  | `allow:${string}`;
-
-/**
  * `destroy:<containerId>,<itemId>[,<steamid>]`
  *
  * - `containerId,itemId,steamid`: containerId, itemId and steamid, separated by commas
@@ -7801,7 +7788,6 @@ export interface ModuleVocabulary {
    * - `storage`
    *
    * Writes (`module_command`):
-   * - `allow:<player>`
    * - `destroy:<containerId>,<itemId>[,<steamid>]`
    * - `drop:<container>,<item>[,<steamid>]`
    * - `move:<containerId>,<itemId>,<targetContainerId>[,<steamid>]`
@@ -7816,7 +7802,6 @@ export interface ModuleVocabulary {
       | StorageRead_Lockboxes
       | StorageRead_Storage;
     command:
-      | StorageWrite_Allow
       | StorageWrite_Destroy
       | StorageWrite_Drop
       | StorageWrite_Move
@@ -18384,7 +18369,6 @@ export interface ModuleWriteNeeds {
     "skilllevel": { needs: "player-target"; persists: "unmeasured" };
   };
   "storage": {
-    "allow": { needs: "player-target"; persists: "unmeasured" };
     "destroy": { needs: "player-channel"; persists: "unmeasured" };
     "drop": { needs: "player-channel"; persists: "unmeasured" };
     "move": { needs: "player-channel"; persists: "unmeasured" };
