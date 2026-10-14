@@ -391,7 +391,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 222 reads, 279 writes, 34 retired verbs, 386 settings.
+// 50 modules, 223 reads, 281 writes, 34 retired verbs, 386 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -1615,9 +1615,8 @@ export type BuildWrite_Catalogue =
  * - `z`
  * - `CONFIRM`: the word `CONFIRM`
  *
- * Needs: No player needed. Works with nobody online.
- * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Needs: No player needed. Works with nobody online. Note: this clears the base record's owner; the owner players see is the flag's, which overtake moves.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Base building, `module_command`.
@@ -1668,6 +1667,22 @@ export type BuildWrite_Destroy =
   | `destroy:${string}:${string}:${string}:${string}:${string}:${string}:${string}`;
 
 /**
+ * `fill:<placementId>:craft|godmode`
+ *
+ * - `placementId`
+ * - `craft|godmode`: one of `craft`, `godmode`
+ *
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * Creates: The game's own route. Made through the game's own command or logic, so the game keeps it exactly as it keeps one it made itself. Whether that kind gets a save row was not measured here. Note: the game's own Craft or GodModeFill finishes the piece the way a player's does; whether it gets a save row is not measured yet.
+ *
+ * Base building, `module_command`.
+ */
+export type BuildWrite_Fill =
+  | `fill:${string}:${string}`;
+
+/**
  * `chown:<old>:<new>`
  *
  * - `old`
@@ -1715,6 +1730,31 @@ export type BuildWrite_Overtake =
   | `overtake:${string}:${string}:${string}:${string}:${string}`;
 
 /**
+ * `seedbase:<baseId>:<name>:<locX>:<locY>:<sizeX>:<sizeY>:<minX>:<minY>:<maxX>:<maxY>:<owner>:<ownedByPlayer>`
+ *
+ * - `baseId`
+ * - `name`
+ * - `locX`
+ * - `locY`
+ * - `sizeX`
+ * - `sizeY`
+ * - `minX`
+ * - `minY`
+ * - `maxX`
+ * - `maxY`
+ * - `owner`
+ * - `ownedByPlayer`
+ *
+ * Needs: Bridge records only. Changes the bridge's own bookkeeping, not the game.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * Base building, `module_command`.
+ */
+export type BuildWrite_Seedbase =
+  | `seedbase:${string}:${string}:${string}:${string}:${string}:${string}:${string}:${string}:${string}:${string}:${string}:${string}`;
+
+/**
  * `setowner:<baseId>:<x>:<y>:<z>:<newOwnerProfileId>`
  *
  * - `baseId`
@@ -1723,9 +1763,8 @@ export type BuildWrite_Overtake =
  * - `z`
  * - `newOwnerProfileId`
  *
- * Needs: No player needed. Works with nobody online.
- * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Needs: No player needed. Works with nobody online. Note: this is the base record's owner; the owner players see is the flag's, which overtake moves.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Base building, `module_command`.
@@ -1746,10 +1785,10 @@ export type BuildWrite_Setowner =
  * - `owner` (optional)
  * - `creator` (optional)
  *
- * Needs: Needs a condition. Works with nobody online, but only once the condition its note names holds. Note: a piece must have been built in that base since the server started.
+ * Needs: Needs a condition. Works with nobody online, but only once the condition its note names holds. Note: the base's data must be known: a piece built there since the server started, or its save row given with seedbase.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
- * Creates: Not registered. No route in the game registers it: it has no entity id and no save row, and the reply says so. Note: the game wrote no save row for a piece placed this way, and none of its own routes builds one.
+ * Creates: Not registered. No route in the game registers it: it has no entity id and no save row, and the reply says so. Note: the game wrote no save row for a piece placed this way, with the caller's id or with -1, and none of its own routes builds one.
  *
  * Base building, `module_command`.
  */
@@ -2133,6 +2172,14 @@ export type DoorsRead_Door =
   | `door:${string}`;
 
 /**
+ * - `interact`
+ *
+ * Door Shuffle, `module_data`.
+ */
+export type DoorsRead_Interact =
+  | "interact";
+
+/**
  * - `levels`
  *
  * Door Shuffle, `module_data`.
@@ -2146,9 +2193,9 @@ export type DoorsRead_Levels =
  * - `Level`: Level
  * - `Actor`: Door
  *
- * Needs: No player needed. Works with nobody online.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Not kept on request: open and shut are saved for nobody, a player's change included, so the game decides each door again at a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Door Shuffle, `module_command`.
@@ -2177,9 +2224,9 @@ export type DoorsWrite_Lock =
  * - `Level`: Level
  * - `Actor`: Door
  *
- * Needs: No player needed. Works with nobody online.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Not kept on request: open and shut are saved for nobody, a player's change included, so the game decides each door again at a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Door Shuffle, `module_command`.
@@ -2207,7 +2254,7 @@ export type DoorsWrite_Save =
  *
  * Needs: No player needed. Works with nobody online.
  * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Not kept on request: a seal is the door's own may-open flag, which the game saves for nobody.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Door Shuffle, `module_command`.
@@ -2239,7 +2286,7 @@ export type DoorsWrite_Unlock =
  *
  * Needs: No player needed. Works with nobody online.
  * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Not kept on request: a seal is the door's own may-open flag, which the game saves for nobody.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Door Shuffle, `module_command`.
@@ -3347,7 +3394,7 @@ export type LocksRead_Saved =
  * - also `access:<target>:<level>`
  * - also `access:<target>:<public|private|rank1|rank2|rank3|rank4>`
  *
- * Needs: No player needed. Works with nobody online.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
  * Creates: Nothing. Creates nothing new in the world.
@@ -3409,7 +3456,7 @@ export type LocksWrite_Hp =
  *
  * - `target`: Lock or door
  *
- * Needs: No player needed. Works with nobody online.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Not measured. Nobody has measured whether it survives a restart.
  * Not kept on request: a base lock is named by its door's instance number, which held across the restarts measured but is not promised once a base is built or destroyed, and the wrong door is somebody else's base.
  * Creates: Nothing. Creates nothing new in the world.
@@ -3455,7 +3502,7 @@ export type LocksWrite_Tries =
  *
  * - `target`: Lock or door
  *
- * Needs: No player needed. Works with nobody online.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Not measured. Nobody has measured whether it survives a restart.
  * Not kept on request: a base lock is named by its door's instance number, which held across the restarts measured but is not promised once a base is built or destroyed, and the wrong door is somebody else's base.
  * Creates: Nothing. Creates nothing new in the world.
@@ -4129,7 +4176,7 @@ export type PowerWrite_Devicecharge =
  * - `x,y,z`: x, y and z, separated by commas
  * - `amount`
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: add :via:<steamId> or :via:any to pour the canister that player holds through the game's own AddFuel; without one the field write runs.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
  * Creates: Nothing. Creates nothing new in the world.
@@ -4176,7 +4223,7 @@ export type PowerWrite_Generatoron =
  * - `value`
  * - also `lightintensity:<x>,<y>,<z>`
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
  * Creates: Nothing. Creates nothing new in the world.
@@ -4191,9 +4238,9 @@ export type PowerWrite_Lightintensity =
  *
  * - `x,y,z`: x, y and z, separated by commas
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Not kept on request: a lamp's switch is saved for nobody, a player's change included.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Fire, power and cooking, `module_command`.
@@ -4206,9 +4253,9 @@ export type PowerWrite_Lightoff =
  *
  * - `x,y,z`: x, y and z, separated by commas
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
  * After a restart: Lost. Measured to revert, or never saved.
- * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
+ * Not kept on request: a lamp's switch is saved for nobody, a player's change included.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Fire, power and cooking, `module_command`.
@@ -7238,9 +7285,11 @@ export interface ModuleVocabulary {
    * - `clearowner:<baseId>:<x>:<y>:<z>:CONFIRM`
    * - `demolish:<x>:<y>:<z>:<radius>:<elementType>:CONFIRM`
    * - `destroy:<baseId>:<elementId>:<x>:<y>:<z>[:<reason>[:<cascade>]]`
+   * - `fill:<placementId>:craft|godmode`
    * - `chown:<old>:<new>`
    * - `learn:<full class path>`
    * - `overtake:<elementId>:<x>:<y>:<z>:<newOwnerProfileId>`
+   * - `seedbase:<baseId>:<name>:<locX>:<locY>:<sizeX>:<sizeY>:<minX>:<minY>:<maxX>:<maxY>:<owner>:<ownedByPlayer>`
    * - `setowner:<baseId>:<x>:<y>:<z>:<newOwnerProfileId>`
    * - `spawn:<baseId>:<class>:<x>:<y>:<z>:<yaw>:<elementId>[:<owner>[:<creator>]]`
    * - `transfer:<old>:<new>`
@@ -7257,9 +7306,11 @@ export interface ModuleVocabulary {
       | BuildWrite_Clearowner
       | BuildWrite_Demolish
       | BuildWrite_Destroy
+      | BuildWrite_Fill
       | BuildWrite_Chown
       | BuildWrite_Learn
       | BuildWrite_Overtake
+      | BuildWrite_Seedbase
       | BuildWrite_Setowner
       | BuildWrite_Spawn
       | BuildWrite_Transfer;
@@ -7375,6 +7426,7 @@ export interface ModuleVocabulary {
    * Reads (`module_data`):
    * - `classes`
    * - `door:<Level>:<Actor>`
+   * - `interact`
    * - `levels`
    *
    * Writes (`module_command`):
@@ -7390,6 +7442,7 @@ export interface ModuleVocabulary {
     data:
       | DoorsRead_Classes
       | DoorsRead_Door
+      | DoorsRead_Interact
       | DoorsRead_Levels;
     command:
       | DoorsWrite_Close
@@ -18705,13 +18758,15 @@ export interface ModuleWriteNeeds {
   };
   "build": {
     "catalogue": { needs: "own-records"; persists: "n-a"; creates: "none" };
-    "clearowner": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
+    "clearowner": { needs: "no-player"; persists: "survives"; creates: "none" };
     "demolish": { needs: "no-player"; persists: "survives"; creates: "none" };
     "destroy": { needs: "no-player"; persists: "survives"; creates: "none" };
+    "fill": { needs: "player-channel"; persists: "unmeasured"; creates: "game-route"; persistable: false };
     "chown": { needs: "no-player"; persists: "survives"; creates: "none" };
     "learn": { needs: "own-records"; persists: "n-a"; creates: "none" };
     "overtake": { needs: "no-player"; persists: "survives"; creates: "none" };
-    "setowner": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
+    "seedbase": { needs: "own-records"; persists: "n-a"; creates: "none" };
+    "setowner": { needs: "no-player"; persists: "survives"; creates: "none" };
     "spawn": { needs: "condition"; persists: "lost"; creates: "unregistered"; persistable: false };
     "transfer": { needs: "no-player"; persists: "survives"; creates: "none" };
   };
