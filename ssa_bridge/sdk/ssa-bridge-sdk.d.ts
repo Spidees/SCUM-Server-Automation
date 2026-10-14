@@ -728,7 +728,7 @@ export type ActionsWrite_Fade =
  * - also `<steamid>:fakename`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -761,7 +761,7 @@ export type ActionsWrite_Fame =
  * - `on`: On
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -899,7 +899,7 @@ export type ActionsWrite_Killfeed =
  * - `on`: On
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -982,7 +982,7 @@ export type ActionsWrite_Nightvision =
  * - `pace`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3402,7 +3402,7 @@ export type LocksWrite_Access =
  * - `via`: the word `via`
  * - `steamId`
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>, the player holding the lock to fit; the game's own Lock interaction, or SetAndConnectBCULock for a BCU lock.
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>, the player holding the lock to fit; the game's lock-slot drop (AddUpgrade with that item), which the game's menu does not list.
  * After a restart: Not measured. Nobody has measured whether it survives a restart.
  * Not kept on request: a one-off act on a player's own lock, so a replay would fit or remove a lock again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
@@ -3444,13 +3444,14 @@ export type LocksWrite_Code =
   | `code:${string}:${string}`;
 
 /**
- * `detach:<target>:via:<steamId>`
+ * `detach:<target>[:<n>]:via:<steamId>`
  *
  * - `target`: Lock or door
+ * - `n` (optional)
  * - `via`: the word `via`
  * - `steamId`
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>; the game's own RemoveLocks, or RemoveLocksAdmin when only that is offered.
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>; the game's own RemoveLocks, the lock numbered as in the game's menu (first by default).
  * After a restart: Not measured. Nobody has measured whether it survives a restart.
  * Not kept on request: a one-off act on a player's own lock, so a replay would fit or remove a lock again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
@@ -3458,7 +3459,8 @@ export type LocksWrite_Code =
  * Doors and locks, `module_command`.
  */
 export type LocksWrite_Detach =
-  | `detach:${string}`;
+  | `detach:${string}`
+  | `detach:${string}:${string}`;
 
 /**
  * `hp:<target>:<value>`
@@ -3786,7 +3788,7 @@ export type MedicalWrite_Feed =
  * - `true|false`: one of `true`, `false`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3802,7 +3804,7 @@ export type MedicalWrite_Incubation =
  * - `true|false`: one of `true`, `false`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3818,7 +3820,7 @@ export type MedicalWrite_Infiniteoxygen =
  * - `true|false`: one of `true`, `false`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3850,7 +3852,7 @@ export type MedicalWrite_Knockout =
  * - `speed`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3924,7 +3926,7 @@ export type MedicalWrite_Set =
  * - also `severity:<id>:<name>:inf`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -5792,8 +5794,7 @@ export type StorageWrite_Move =
  * - `containerId,steamid`: containerId and steamid, separated by commas
  *
  * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Live storage, `module_command`.
@@ -7778,7 +7779,7 @@ export interface ModuleVocabulary {
    * - `attach:<target>:via:<steamId>`
    * - `close:<target>`
    * - `code:<target>:<combination>`
-   * - `detach:<target>:via:<steamId>`
+   * - `detach:<target>[:<n>]:via:<steamId>`
    * - `hp:<target>:<value>`
    * - `lock:<target>`
    * - `open:<target>`
@@ -18733,9 +18734,9 @@ export interface ModuleWriteNeeds {
     "detonate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "disarm": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "fade": { needs: "player-target"; persists: "n-a"; creates: "none" };
-    "fakename": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "fakename": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "fame": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "freelook": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "freelook": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "gender": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "godmode": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "gold": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
@@ -18743,12 +18744,12 @@ export interface ModuleWriteNeeds {
     "immortal": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "kick": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "killfeed": { needs: "player-target"; persists: "n-a"; creates: "none" };
-    "limp": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "limp": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "limpclear": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "load": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "money": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "nightvision": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "pace": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "pace": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "repossess": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "revive": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "save": { needs: "player-target"; persists: "survives"; creates: "none" };
@@ -18899,15 +18900,15 @@ export interface ModuleWriteNeeds {
     "cure": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "exhaustion": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "feed": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "incubation": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "infiniteoxygen": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "infinitestamina": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "incubation": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
+    "infiniteoxygen": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
+    "infinitestamina": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "knockout": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "metabolism": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "metabolism": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "radiation": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "remove": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "set": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "severity": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "severity": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "stamina": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "wellbeing": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
   };
@@ -19007,7 +19008,7 @@ export interface ModuleWriteNeeds {
     "destroy": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "drop": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "move": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "observe": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "observe": { needs: "player-channel"; persists: "n-a"; creates: "none" };
     "take": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
   };
   "teleport": {
