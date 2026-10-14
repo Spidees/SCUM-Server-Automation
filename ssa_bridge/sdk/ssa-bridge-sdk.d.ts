@@ -4328,9 +4328,8 @@ export type ProtectRead_Protections =
  * - `duration s|forever`: one of `duration s`, `forever`
  * - the parser accepts a field count no usage spells; send a wrong one to read what it wants
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * Needs: No player needed. Works with nobody online. Note: offline raid protection only.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Raid protection control, `module_command`.
@@ -4383,9 +4382,8 @@ export type ProtectWrite_Reset =
  * - also `set:<flag>`
  * - the parser accepts a field count no usage spells; send a wrong one to read what it wants
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * Needs: No player needed. Works with nobody online. Note: under flag-specific raid protection it needs a player online.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Raid protection control, `module_command`.
@@ -18900,10 +18898,10 @@ export interface ModuleWriteNeeds {
     "lighton": { needs: "loaded-target"; persists: "lost"; creates: "none"; persistable: false };
   };
   "protect": {
-    "grant": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "grant": { needs: "no-player"; persists: "survives"; creates: "none" };
     "postpone": { needs: "no-player"; persists: "survives"; creates: "none" };
     "reset": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "set": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "set": { needs: "no-player"; persists: "survives"; creates: "none" };
     "snapshot": { needs: "own-records"; persists: "n-a"; creates: "none" };
   };
   "quests": {
