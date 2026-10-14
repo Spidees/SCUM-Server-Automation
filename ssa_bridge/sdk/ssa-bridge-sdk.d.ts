@@ -2192,7 +2192,7 @@ export type DoorsRead_Levels =
  * - `Level`: Level
  * - `Actor`: Door
  *
- * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player; run that way with the player kilometres from the door, the game offered only the move the door's state allows and applied it.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: open and shut are saved for nobody, a player's change included, so the game decides each door again at a restart.
  * Creates: Nothing. Creates nothing new in the world.
@@ -2223,7 +2223,7 @@ export type DoorsWrite_Lock =
  * - `Level`: Level
  * - `Actor`: Door
  *
- * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player; run that way with the player kilometres from the door, the game offered only the move the door's state allows and applied it.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: open and shut are saved for nobody, a player's change included, so the game decides each door again at a restart.
  * Creates: Nothing. Creates nothing new in the world.
@@ -4220,7 +4220,7 @@ export type PowerWrite_Generatoron =
  * - `value`
  * - also `lightintensity:<x>,<y>,<z>`
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player; the chandelier tested (Chandelier_WFP_C) offered no brightness steps, on or off, so it answered not_offered there.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
  * Creates: Nothing. Creates nothing new in the world.
@@ -4235,7 +4235,7 @@ export type PowerWrite_Lightintensity =
  *
  * - `x,y,z`: x, y and z, separated by commas
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player; run that way with the player near a powered lamp it switched, and on an unpowered lamp the game takes the switch, nothing happens and the reply is not_confirmed.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a lamp's switch is saved for nobody, a player's change included.
  * Creates: Nothing. Creates nothing new in the world.
@@ -4250,7 +4250,7 @@ export type PowerWrite_Lightoff =
  *
  * - `x,y,z`: x, y and z, separated by commas
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player; run that way with the player near a powered lamp it switched, and on an unpowered lamp the game takes the switch, nothing happens and the reply is not_confirmed.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a lamp's switch is saved for nobody, a player's change included.
  * Creates: Nothing. Creates nothing new in the world.
