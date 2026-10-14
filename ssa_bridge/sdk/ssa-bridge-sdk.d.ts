@@ -497,8 +497,7 @@ export type ActionsWrite_Ammo =
  * - `intensity`: How hard (%)
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -712,8 +711,7 @@ export type ActionsWrite_Disarm =
  * - `seconds`: Seconds
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -747,8 +745,7 @@ export type ActionsWrite_Fakename =
  * - `fame`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the player's fame itself, so a replay would put an old figure back.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -817,7 +814,7 @@ export type ActionsWrite_Godmode =
  * - `amount`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the balance itself, so a replay would change it again.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -886,8 +883,7 @@ export type ActionsWrite_Kick =
  * - `prefix|name|suffix|ping`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -952,7 +948,7 @@ export type ActionsWrite_Load =
  * - `amount`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps the balance itself, so a replay would change it again.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -1034,8 +1030,7 @@ export type ActionsWrite_Revive =
  * - `steamid`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1069,8 +1064,7 @@ export type ActionsWrite_Silence =
  * - `intensity`: How hard (%)
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -18687,7 +18681,7 @@ export type VerbCreates = "none" | "registered" | "game-route" | "unregistered";
 export interface ModuleWriteNeeds {
   "actions": {
     "ammo": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "cough": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cough": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "crouch": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cuffpart": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cufftight": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
@@ -18700,28 +18694,28 @@ export interface ModuleWriteNeeds {
     "defecate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "detonate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "disarm": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "fade": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "fade": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "fakename": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "fame": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "fame": { needs: "player-target"; persists: "survives"; creates: "none" };
     "freelook": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "gender": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "godmode": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "gold": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "gold": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "hud": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "immortal": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "kick": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "killfeed": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "killfeed": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "limp": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "limpclear": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "load": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "money": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "money": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "nightvision": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "pace": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "repossess": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "revive": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "save": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "save": { needs: "player-target"; persists: "survives"; creates: "none" };
     "silence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "sneeze": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "sneeze": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "spawnscreen": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "squadcreate": { needs: "player-target"; persists: "unmeasured"; creates: "game-route"; persistable: false };
     "squaddemote": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
