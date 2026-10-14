@@ -391,7 +391,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 223 reads, 281 writes, 34 retired verbs, 386 settings.
+// 50 modules, 223 reads, 283 writes, 34 retired verbs, 386 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -3385,7 +3385,7 @@ export type LocksRead_Saved =
  * - also `access:<target>:<level>`
  * - also `access:<target>:<public|private|rank1|rank2|rank3|rank4>`
  *
- * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player.
+ * Needs: No player needed. Works with nobody online. Note: with :via:<steamId> or :via:any it runs as the game's own interaction through an online player, and the game saves that change and keeps it across a restart.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
  * Creates: Nothing. Creates nothing new in the world.
@@ -3394,6 +3394,23 @@ export type LocksRead_Saved =
  */
 export type LocksWrite_Access =
   | `access:${string}:${string}`;
+
+/**
+ * `attach:<target>:via:<steamId>`
+ *
+ * - `target`: Lock or door
+ * - `via`: the word `via`
+ * - `steamId`
+ *
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>, the player holding the lock to fit; the game's own Lock interaction, or SetAndConnectBCULock for a BCU lock.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Not kept on request: a one-off act on a player's own lock, so a replay would fit or remove a lock again at every boot.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * Doors and locks, `module_command`.
+ */
+export type LocksWrite_Attach =
+  | `attach:${string}`;
 
 /**
  * `close:<target>`
@@ -3425,6 +3442,23 @@ export type LocksWrite_Close =
  */
 export type LocksWrite_Code =
   | `code:${string}:${string}`;
+
+/**
+ * `detach:<target>:via:<steamId>`
+ *
+ * - `target`: Lock or door
+ * - `via`: the word `via`
+ * - `steamId`
+ *
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>; the game's own RemoveLocks, or RemoveLocksAdmin when only that is offered.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Not kept on request: a one-off act on a player's own lock, so a replay would fit or remove a lock again at every boot.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * Doors and locks, `module_command`.
+ */
+export type LocksWrite_Detach =
+  | `detach:${string}`;
 
 /**
  * `hp:<target>:<value>`
@@ -4167,7 +4201,7 @@ export type PowerWrite_Devicecharge =
  * - `x,y,z`: x, y and z, separated by commas
  * - `amount`
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: add :via:<steamId> to pour the canister that player holds through the game's own AddFuel (:via:any is refused, since it spends one named player's canister); without via the field write runs.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: add :via:<steamId> to pour the canister that player holds through the game's own interaction: AddFuel or Refuel on the generator, or the canister's own fill when the generator refuses it (:via:any is refused, since it spends one named player's canister); without via the field write runs.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps this state itself when a player does it, so the answer is the game's own route rather than a replay.
  * Creates: Nothing. Creates nothing new in the world.
@@ -7741,8 +7775,10 @@ export interface ModuleVocabulary {
    *
    * Writes (`module_command`):
    * - `access:<base door>:private`
+   * - `attach:<target>:via:<steamId>`
    * - `close:<target>`
    * - `code:<target>:<combination>`
+   * - `detach:<target>:via:<steamId>`
    * - `hp:<target>:<value>`
    * - `lock:<target>`
    * - `open:<target>`
@@ -7758,8 +7794,10 @@ export interface ModuleVocabulary {
       | LocksRead_Saved;
     command:
       | LocksWrite_Access
+      | LocksWrite_Attach
       | LocksWrite_Close
       | LocksWrite_Code
+      | LocksWrite_Detach
       | LocksWrite_Hp
       | LocksWrite_Lock
       | LocksWrite_Open
@@ -9138,7 +9176,7 @@ export interface ModuleSettingsMap {
     detail?: boolean;
     /** Open and close a door. Opens or closes one named door and asks it afterwards whether it agreed. It does not unlock anything. (default false, applies when `enabled`) */
     doors?: boolean;
-    /** Lock and unlock a door. Locks and unlocks one named door. A door with no lock fitted is never locked. (default false, applies when `enabled`) */
+    /** Lock and unlock a door. Locks, unlocks, fits or removes the lock on one named door. A door with no lock fitted is never locked. (default false, applies when `enabled`) */
     lockstate?: boolean;
     /** Set who may open a door. Sets who may open a door: everybody, its owner, or a squad rank. May not survive a restart. (default false, applies when `enabled`) */
     access?: boolean;
@@ -18840,8 +18878,10 @@ export interface ModuleWriteNeeds {
   };
   "locks": {
     "access": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
+    "attach": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "close": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
     "code": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "detach": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "hp": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "lock": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "open": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
