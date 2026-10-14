@@ -1667,10 +1667,12 @@ export type BuildWrite_Destroy =
   | `destroy:${string}:${string}:${string}:${string}:${string}:${string}:${string}`;
 
 /**
- * `fill:<placementId>:craft|godmode`
+ * `fill:<placementId>:craft|godmode:via:<executor>`
  *
  * - `placementId`
  * - `craft|godmode`: one of `craft`, `godmode`
+ * - `via`: the word `via`
+ * - `executor`
  *
  * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
  * After a restart: Not measured. Nobody has measured whether it survives a restart.
@@ -7285,7 +7287,7 @@ export interface ModuleVocabulary {
    * - `clearowner:<baseId>:<x>:<y>:<z>:CONFIRM`
    * - `demolish:<x>:<y>:<z>:<radius>:<elementType>:CONFIRM`
    * - `destroy:<baseId>:<elementId>:<x>:<y>:<z>[:<reason>[:<cascade>]]`
-   * - `fill:<placementId>:craft|godmode`
+   * - `fill:<placementId>:craft|godmode:via:<executor>`
    * - `chown:<old>:<new>`
    * - `learn:<full class path>`
    * - `overtake:<elementId>:<x>:<y>:<z>:<newOwnerProfileId>`
