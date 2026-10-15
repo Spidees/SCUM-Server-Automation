@@ -2734,7 +2734,7 @@ export type GiveWrite_Drop =
  * - `selector`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -2788,8 +2788,7 @@ export type GiveWrite_Equipswap =
  * - `selector`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it gives an item the game then keeps, so a replay would give it again.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -2805,8 +2804,7 @@ export type GiveWrite_Hands =
  * - `selector`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it gives an item the game then keeps, so a replay would give it again.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -3402,8 +3400,7 @@ export type LocksWrite_Access =
  * - `steamId`
  *
  * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>, the player holding the lock to fit; the game's lock-slot drop (AddUpgrade with that item), which the game's menu does not list.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act on a player's own lock, so a replay would fit or remove a lock again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Doors and locks, `module_command`.
@@ -3451,8 +3448,7 @@ export type LocksWrite_Code =
  * - `steamId`
  *
  * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: needs :via:<steamId>; the game's own RemoveLocks, the lock numbered as in the game's menu (first by default).
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act on a player's own lock, so a replay would fit or remove a lock again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Doors and locks, `module_command`.
@@ -3737,8 +3733,7 @@ export type MedicalWrite_Burn =
  * - also `cure:<steamid>:FootAbrasions`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -5443,8 +5438,7 @@ export type StashWrite_Detonate =
  * - also `fill:<tag>:player:<steamId>:<Code>*<n>[,…]`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it adds items to a container the game keeps, so a replay would add them again.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: The game's own route. Made through the game's own command or logic, so the game keeps it exactly as it keeps one it made itself. Whether that kind gets a save row was not measured here. Note: the game's own inventory command makes each item.
  *
  * Placed containers and items, `module_command`.
@@ -6635,7 +6629,7 @@ export type WorldeventsWrite_Cooldown =
  * - `eventmove`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -6649,7 +6643,7 @@ export type WorldeventsWrite_Eventmove =
  * - `eventradius`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -18837,11 +18831,11 @@ export interface ModuleWriteNeeds {
   };
   "give": {
     "drop": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "dropat": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "dropat": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "equip": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "equipswap": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "hands": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "inventory": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "hands": { needs: "player-target"; persists: "survives"; creates: "none" };
+    "inventory": { needs: "player-target"; persists: "survives"; creates: "none" };
     "inventoryall": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "inventoryn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
@@ -18870,10 +18864,10 @@ export interface ModuleWriteNeeds {
   };
   "locks": {
     "access": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
-    "attach": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "attach": { needs: "player-channel"; persists: "survives"; creates: "none" };
     "close": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
     "code": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "detach": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "detach": { needs: "player-channel"; persists: "survives"; creates: "none" };
     "hp": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "lock": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "open": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
@@ -18888,7 +18882,7 @@ export interface ModuleWriteNeeds {
     "bladder": { needs: "player-target"; persists: "survives"; creates: "none" };
     "bleed": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "burn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "cure": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cure": { needs: "player-target"; persists: "survives"; creates: "none" };
     "exhaustion": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "feed": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "incubation": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
@@ -18983,7 +18977,7 @@ export interface ModuleWriteNeeds {
   };
   "stash": {
     "detonate": { needs: "loaded-target"; persists: "n-a"; creates: "none" };
-    "fill": { needs: "admin-command"; persists: "unmeasured"; creates: "game-route"; persistable: false };
+    "fill": { needs: "admin-command"; persists: "survives"; creates: "game-route" };
     "place": { needs: "admin-command"; persists: "survives"; creates: "registered" };
   };
   "stats": {
@@ -19045,8 +19039,8 @@ export interface ModuleWriteNeeds {
     "cargodrop": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "clearscores": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cooldown": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "eventmove": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "eventradius": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "eventmove": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
+    "eventradius": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
     "join": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "kick": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "leave": { needs: "player-target"; persists: "n-a"; creates: "none" };
