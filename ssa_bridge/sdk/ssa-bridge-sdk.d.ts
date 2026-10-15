@@ -3764,8 +3764,7 @@ export type MedicalWrite_Exhaustion =
  * - `amount in ml or SU, or a %`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -5570,8 +5569,7 @@ export type StatsRead_Stats =
  * - also `attributes:<steamid>`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's skills and attributes itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Survival stats, `module_command`.
@@ -5672,8 +5670,7 @@ export type StatsWrite_Skill =
  * - `experience`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's skills and attributes itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Survival stats, `module_command`.
@@ -5794,8 +5791,7 @@ export type StorageWrite_Observe =
  * - `containerId,itemId,steamid`: containerId, itemId and steamid, separated by commas
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Live storage, `module_command`.
@@ -5844,8 +5840,7 @@ export type TeleportRead_Origins =
  * - the parser accepts a field count no usage spells; send a wrong one to read what it wants
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a move; the game keeps where a player or squad stands.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Teleport, `module_command`.
@@ -18884,7 +18879,7 @@ export interface ModuleWriteNeeds {
     "burn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cure": { needs: "player-target"; persists: "survives"; creates: "none" };
     "exhaustion": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "feed": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "feed": { needs: "player-target"; persists: "survives"; creates: "none" };
     "incubation": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "infiniteoxygen": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "infinitestamina": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
@@ -18981,23 +18976,23 @@ export interface ModuleWriteNeeds {
     "place": { needs: "admin-command"; persists: "survives"; creates: "registered" };
   };
   "stats": {
-    "attributes": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "attributes": { needs: "player-target"; persists: "survives"; creates: "none" };
     "clear": { needs: "own-records"; persists: "n-a"; creates: "none" };
     "forgive": { needs: "condition"; persists: "unmeasured"; creates: "none"; persistable: false };
     "rank": { needs: "player-channel"; persists: "n-a"; creates: "none" };
     "refresh": { needs: "player-channel"; persists: "n-a"; creates: "none" };
     "skill": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "skilllevel": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "skilllevel": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "storage": {
     "destroy": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
     "drop": { needs: "player-channel"; persists: "lost"; creates: "none"; persistable: false };
     "move": { needs: "player-channel"; persists: "survives"; creates: "none" };
     "observe": { needs: "player-channel"; persists: "n-a"; creates: "none" };
-    "take": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "take": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "teleport": {
-    "back": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "back": { needs: "player-target"; persists: "survives"; creates: "none" };
     "corpse": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "face": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "item": { needs: "loaded-target"; persists: "survives"; creates: "none" };
