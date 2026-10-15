@@ -391,7 +391,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 223 reads, 283 writes, 34 retired verbs, 386 settings.
+// 50 modules, 223 reads, 284 writes, 34 retired verbs, 386 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -1313,8 +1313,7 @@ export type ActionsWrite_Unsilence =
  * - `natural`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1330,8 +1329,7 @@ export type ActionsWrite_Urinate =
  * - `natural`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1347,8 +1345,7 @@ export type ActionsWrite_Vomit =
  * - `part`: Limb
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1724,6 +1721,26 @@ export type BuildWrite_Learn =
  */
 export type BuildWrite_Overtake =
   | `overtake:${string}:${string}:${string}:${string}:${string}`;
+
+/**
+ * `place:<recipeName>:<x>:<y>:<z>:via:<steamId>`
+ *
+ * - `recipeName`
+ * - `x`
+ * - `y`
+ * - `z`
+ * - `via`: the word `via`
+ * - `steamId`
+ *
+ * Needs: That player online. Acts on the named player, who must be online. Note: the recipe must be one the game holds in memory and both classes it names resident; the point within 10 m of the named player.
+ * After a restart: Lost. Measured to revert, or never saved.
+ * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * Creates: The game's own route. Made through the game's own command or logic, so the game keeps it exactly as it keeps one it made itself. Whether that kind gets a save row was not measured here. Note: the game's own placement call makes the blueprint preview a player sees while choosing a spot; the game numbers and saves it only when that player confirms it in game.
+ *
+ * Base building, `module_command`.
+ */
+export type BuildWrite_Place =
+  | `place:${string}:${string}:${string}:${string}`;
 
 /**
  * `seedbase:<baseId>:<name>:<locX>:<locY>:<sizeX>:<sizeY>:<minX>:<minY>:<maxX>:<maxY>:<owner>:<ownedByPlayer>`
@@ -2361,8 +2378,7 @@ export type EncountersWrite_Bb =
  * - `draw`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: The game's own route. Made through the game's own command or logic, so the game keeps it exactly as it keeps one it made itself. Whether that kind gets a save row was not measured here. Note: the game's encounter makes whatever it spawns.
  *
  * Encounters and spawn waves, `module_command`.
@@ -2375,8 +2391,7 @@ export type EncountersWrite_Draw =
  * - `dump`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Encounters and spawn waves, `module_command`.
@@ -2474,8 +2489,7 @@ export type EntitiesWrite_Heal =
  * - `id,property,type,value`: id, property, type and value, separated by commas
  *
  * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Live world, `module_command`.
@@ -3166,7 +3180,7 @@ export type ItemsWrite_Destroy =
  * - `attachment`
  *
  * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps a weapon's parts itself, as a measured fit shows.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3827,8 +3841,7 @@ export type MedicalWrite_Infinitestamina =
  * - `seconds`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -3947,9 +3960,8 @@ export type MedicalWrite_Stamina =
  * - `steamid`
  * - `stomach ml or %`
  *
- * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * Needs: That player online. Acts on the named player, who must be online. Note: the stomach survives a restart; the exhaustion it sets resets at a boot, as the exhaustion verb does.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -4762,16 +4774,13 @@ export type RepairWrite_Damage =
   | `${string}:damage:${string}`;
 
 /**
- * `e<id>:destroy:wheel`
+ * `<target>:destroy:CONFIRM`
  *
- * - `eid`
- * - `wheel`: the word `wheel`
- * - also `<target>:destroy`
- * - also `<target>:destroy:CONFIRM`
+ * - `target`
+ * - `CONFIRM`: the word `CONFIRM`
  *
  * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Vehicle condition, `module_command`.
@@ -4854,8 +4863,7 @@ export type RepairWrite_Pattern =
  * - `Name`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Vehicle condition, `module_command`.
@@ -4889,7 +4897,7 @@ export type RepairWrite_Repair =
  * - `wheel`
  *
  * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -5113,7 +5121,7 @@ export type SpawnRead_Persistence =
  * - `type`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: The game's own route. Made through the game's own command or logic, so the game keeps it exactly as it keeps one it made itself. Whether that kind gets a save row was not measured here. Note: a vehicle gets an entity id and a save row; the game gives a creature neither, even from its own command.
  *
  * Precise spawning, `module_data`.
@@ -5957,8 +5965,7 @@ export type TeleportWrite_Player =
  * - the parser accepts a field count no usage spells; send a wrong one to read what it wants
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a move; the game keeps where a player or squad stands.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Teleport, `module_command`.
@@ -6610,7 +6617,7 @@ export type WorldeventsWrite_Clearscores =
  * - `cooldown`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a countdown, so a replay would start it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -7291,6 +7298,7 @@ export interface ModuleVocabulary {
    * - `chown:<old>:<new>`
    * - `learn:<full class path>`
    * - `overtake:<elementId>:<x>:<y>:<z>:<newOwnerProfileId>`
+   * - `place:<recipeName>:<x>:<y>:<z>:via:<steamId>`
    * - `seedbase:<baseId>:<name>:<locX>:<locY>:<sizeX>:<sizeY>:<minX>:<minY>:<maxX>:<maxY>:<owner>:<ownedByPlayer>`
    * - `setowner:<baseId>:<x>:<y>:<z>:<newOwnerProfileId>`
    * - `spawn:<baseId>:<class>:<x>:<y>:<z>:<yaw>:<elementId>[:<owner>[:<creator>]]`
@@ -7312,6 +7320,7 @@ export interface ModuleVocabulary {
       | BuildWrite_Chown
       | BuildWrite_Learn
       | BuildWrite_Overtake
+      | BuildWrite_Place
       | BuildWrite_Seedbase
       | BuildWrite_Setowner
       | BuildWrite_Spawn
@@ -8097,7 +8106,7 @@ export interface ModuleVocabulary {
    * - `<target>:battery:<amount|percent%>`
    * - `<target>:colors:<uint32>[:<part>]`
    * - `<target>:damage:<amount>:<part>`
-   * - `e<id>:destroy:wheel`
+   * - `<target>:destroy:CONFIRM`
    * - `<target>:fuel:<litres|percent%>`
    * - `<target>:mileage:<km>[:<part>]`
    * - `<target>:owner:<profileId>`
@@ -18749,9 +18758,9 @@ export interface ModuleWriteNeeds {
     "uncuff": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "unmount": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "unsilence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "urinate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "vomit": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "wetness": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "urinate": { needs: "player-target"; persists: "n-a"; creates: "none" };
+    "vomit": { needs: "player-target"; persists: "n-a"; creates: "none" };
+    "wetness": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "ai": {
     "health": { needs: "loaded-target"; persists: "lost"; creates: "none"; persistable: false };
@@ -18771,6 +18780,7 @@ export interface ModuleWriteNeeds {
     "chown": { needs: "no-player"; persists: "survives"; creates: "none" };
     "learn": { needs: "own-records"; persists: "n-a"; creates: "none" };
     "overtake": { needs: "no-player"; persists: "survives"; creates: "none" };
+    "place": { needs: "player-target"; persists: "lost"; creates: "game-route"; persistable: false };
     "seedbase": { needs: "own-records"; persists: "n-a"; creates: "none" };
     "setowner": { needs: "no-player"; persists: "survives"; creates: "none" };
     "spawn": { needs: "condition"; persists: "lost"; creates: "unregistered"; persistable: false };
@@ -18804,14 +18814,14 @@ export interface ModuleWriteNeeds {
   };
   "encounters": {
     "bb": { needs: "admin-command"; persists: "unmeasured"; creates: "game-route"; persistable: false };
-    "draw": { needs: "admin-command"; persists: "unmeasured"; creates: "game-route"; persistable: false };
-    "dump": { needs: "admin-command"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "draw": { needs: "admin-command"; persists: "n-a"; creates: "game-route" };
+    "dump": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "zone": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
     "zonerestore": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
   };
   "entities": {
     "heal": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "set": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "set": { needs: "loaded-target"; persists: "survives"; creates: "none" };
   };
   "fortifications": {
     "add": { needs: "refuses"; persists: "n-a"; creates: "none" };
@@ -18847,7 +18857,7 @@ export interface ModuleWriteNeeds {
     "attach": { needs: "loaded-target"; persists: "survives"; creates: "registered" };
     "condition": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "destroy": { needs: "loaded-target"; persists: "survives"; creates: "none" };
-    "detach": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "detach": { needs: "loaded-target"; persists: "lost"; creates: "none"; persistable: false };
     "drop": { needs: "player-channel"; persists: "lost"; creates: "none"; persistable: false };
   };
   "killbox": {
@@ -18883,14 +18893,14 @@ export interface ModuleWriteNeeds {
     "incubation": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "infiniteoxygen": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "infinitestamina": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "knockout": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "knockout": { needs: "player-target"; persists: "survives"; creates: "none" };
     "metabolism": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "radiation": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
     "set": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "severity": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "stamina": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "wellbeing": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "wellbeing": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "notify": {
     "alert": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18936,14 +18946,14 @@ export interface ModuleWriteNeeds {
     "battery": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "colors": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "damage": { needs: "loaded-target"; persists: "survives"; creates: "none" };
-    "destroy": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "destroy": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "fuel": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "mileage": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "owner": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "pattern": { needs: "loaded-target"; persists: "survives"; creates: "none" };
-    "rename": { needs: "admin-command"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "rename": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "repair": { needs: "loaded-target"; persists: "survives"; creates: "none" };
-    "tyre": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "tyre": { needs: "loaded-target"; persists: "lost"; creates: "none"; persistable: true };
   };
   "resources": {
     "near": { needs: "admin-command"; persists: "survives"; creates: "none" };
@@ -18997,7 +19007,7 @@ export interface ModuleWriteNeeds {
     "face": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "item": { needs: "loaded-target"; persists: "survives"; creates: "none" };
     "player": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "squad": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "squad": { needs: "player-target"; persists: "survives"; creates: "none" };
     "swap": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "toplayer": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "vehicle": { needs: "loaded-target"; persists: "survives"; creates: "none" };
@@ -19033,7 +19043,7 @@ export interface ModuleWriteNeeds {
     "cargodetonate": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cargodrop": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "clearscores": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "cooldown": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cooldown": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "eventmove": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
     "eventradius": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
     "join": { needs: "player-target"; persists: "n-a"; creates: "none" };
