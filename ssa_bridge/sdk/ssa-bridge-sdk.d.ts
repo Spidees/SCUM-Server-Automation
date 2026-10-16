@@ -2168,7 +2168,7 @@ export type DespawnWrite_Kind =
  * - also `stow:mapsentry:<x>,<y>,<z>,<radius>:<index>.<serial>`
  *
  * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: its target is a live object number that a restart does not keep.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -2489,7 +2489,7 @@ export type EntitiesRead_Kinds =
  * - `id,ratio`: id and ratio, separated by commas
  *
  * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -18819,7 +18819,7 @@ export interface ModuleWriteNeeds {
   };
   "despawn": {
     "<kind>": { needs: "loaded-target"; persists: "survives"; creates: "none" };
-    "stow": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "stow": { needs: "loaded-target"; persists: "lost"; creates: "none"; persistable: false };
   };
   "doors": {
     "close": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
@@ -18838,7 +18838,7 @@ export interface ModuleWriteNeeds {
     "zonerestore": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
   };
   "entities": {
-    "heal": { needs: "loaded-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "heal": { needs: "loaded-target"; persists: "lost"; creates: "none"; persistable: true };
     "set": { needs: "loaded-target"; persists: "survives"; creates: "none" };
   };
   "fortifications": {
