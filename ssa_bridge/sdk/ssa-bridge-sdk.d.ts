@@ -796,8 +796,7 @@ export type ActionsWrite_Freelook =
  * - `gender`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1029,8 +1028,7 @@ export type ActionsWrite_Repossess =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1212,8 +1210,7 @@ export type ActionsWrite_Squadquit =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -2799,8 +2796,7 @@ export type GiveWrite_Equip =
  * - `newEntityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps what a player carries and wears itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -2848,8 +2844,7 @@ export type GiveWrite_Inventory =
  * - `selector`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it gives an item the game then keeps, so a replay would give it again.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -2866,8 +2861,7 @@ export type GiveWrite_Inventoryall =
  * - `selector`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it gives an item the game then keeps, so a replay would give it again.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -2923,8 +2917,7 @@ export type GiveWrite_Shoulder =
  * - `entityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps what a player carries and wears itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -3885,8 +3878,7 @@ export type MedicalWrite_Metabolism =
  * - `rate`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -6582,8 +6574,8 @@ export type WorldeventsWrite_Cancelforce =
  * - `cargodetonate`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Lost. Measured to revert, or never saved.
+ * Not kept on request: a one-off act on a crate the game does not save, so a replay would find no crate.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Live world events, `module_command`.
@@ -6596,8 +6588,8 @@ export type WorldeventsWrite_Cargodetonate =
  * - `cargodrop`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Lost. Measured to revert, or never saved.
+ * Not kept on request: a one-off act on a crate the game does not save, so a replay would find no crate.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Live world events, `module_command`.
@@ -18744,7 +18736,7 @@ export interface ModuleWriteNeeds {
     "fakename": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "fame": { needs: "player-target"; persists: "survives"; creates: "none" };
     "freelook": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
-    "gender": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "gender": { needs: "player-target"; persists: "survives"; creates: "none" };
     "godmode": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "gold": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "hud": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18758,7 +18750,7 @@ export interface ModuleWriteNeeds {
     "nightvision": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "pace": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "repossess": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "revive": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "revive": { needs: "player-target"; persists: "survives"; creates: "none" };
     "save": { needs: "player-target"; persists: "survives"; creates: "none" };
     "silence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "sneeze": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18769,7 +18761,7 @@ export interface ModuleWriteNeeds {
     "squadleave": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "squadpromote": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "squadquit": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "strip": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "strip": { needs: "player-target"; persists: "survives"; creates: "none" };
     "suicide": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "suicidetime": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "superjump": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
@@ -18856,14 +18848,14 @@ export interface ModuleWriteNeeds {
     "drop": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "dropat": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "equip": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "equipswap": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "equipswap": { needs: "player-target"; persists: "survives"; creates: "none" };
     "hands": { needs: "player-target"; persists: "survives"; creates: "none" };
     "inventory": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "inventoryall": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "inventoryn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "inventoryall": { needs: "player-target"; persists: "survives"; creates: "none" };
+    "inventoryn": { needs: "player-target"; persists: "survives"; creates: "none" };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
     "shoulder": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "unequip": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "unequip": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "hazard": {
     "event": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
@@ -18913,7 +18905,7 @@ export interface ModuleWriteNeeds {
     "infinitestamina": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "knockout": { needs: "player-target"; persists: "survives"; creates: "none" };
     "metabolism": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "radiation": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "radiation": { needs: "player-target"; persists: "survives"; creates: "none" };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
     "set": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "severity": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
@@ -19058,8 +19050,8 @@ export interface ModuleWriteNeeds {
   "worldevents": {
     "cancel": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cancelforce": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "cargodetonate": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "cargodrop": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cargodetonate": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
+    "cargodrop": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
     "clearscores": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cooldown": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "eventmove": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
