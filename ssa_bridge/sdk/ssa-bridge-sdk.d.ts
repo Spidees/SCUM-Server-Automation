@@ -391,7 +391,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 223 reads, 285 writes, 34 retired verbs, 386 settings.
+// 50 modules, 223 reads, 286 writes, 34 retired verbs, 386 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -531,8 +531,7 @@ export type ActionsWrite_Crouch =
  * - `entityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -679,8 +678,7 @@ export type ActionsWrite_Dbmoneyadd =
  * - `diarrhea`: The worse version; the word `diarrhea`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -712,8 +710,7 @@ export type ActionsWrite_Detonate =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -2899,8 +2896,7 @@ export type GiveWrite_Remove =
  * - `entityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps what a player carries and wears itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -6694,6 +6690,20 @@ export type WorldeventsWrite_Leave =
   | `leave:${string}`;
 
 /**
+ * - `minparticipants`
+ *
+ * Needs: No player needed. Works with nobody online.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * Live world events, `module_command`.
+ */
+export type WorldeventsWrite_Minparticipants =
+  | "minparticipants"
+  | `minparticipants:${string}`;
+
+/**
  * - `resetarea`
  *
  * Needs: No player needed. Works with nobody online.
@@ -8629,6 +8639,7 @@ export interface ModuleVocabulary {
    * - `join`
    * - `kick`
    * - `leave`
+   * - `minparticipants`
    * - `resetarea`
    * - `schedule`
    */
@@ -8648,6 +8659,7 @@ export interface ModuleVocabulary {
       | WorldeventsWrite_Join
       | WorldeventsWrite_Kick
       | WorldeventsWrite_Leave
+      | WorldeventsWrite_Minparticipants
       | WorldeventsWrite_Resetarea
       | WorldeventsWrite_Schedule;
     retired: never;
@@ -9579,7 +9591,7 @@ export interface ModuleSettingsMap {
     border?: boolean;
     /** Abandoned bunkers. Adds each abandoned bunker's activation window, the previous one and any admin override, plus its powered rooms, alarm and noise. (default true) */
     bunkers?: boolean;
-    /** Allow events to be started and stopped. Lets events be run rather than only watched: schedule, cancel or reset one, zero its scores, and move, re-target, resize or detonate a cargo drop. Player verbs need that player online. */
+    /** Allow events to be started and stopped. Lets events be run, not only watched: schedule, cancel or reset one, zero its scores, set player minimum, and move, re-target, resize or detonate a cargo drop. Player verbs need them online. */
     writes?: boolean;
   };
   "zones": {
@@ -17941,8 +17953,12 @@ export interface ReadingWorldevents_Events {
   lockersTruncated?: boolean;
   /** Unit: min. Absent when the game did not give it. */
   maxMinutes?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  maxParticipants?: number;
   /** Unit: min. Absent when the game did not give it. */
   minMinutes?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  minParticipants?: number;
   /** Absent when the game did not give it. On each item of a list. */
   name?: string;
   /** Absent when the game did not give it. */
@@ -18720,7 +18736,7 @@ export interface ModuleWriteNeeds {
     "ammo": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cough": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "crouch": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "cuff": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cuff": { needs: "player-target"; persists: "survives"; creates: "none" };
     "cuffpart": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cufftight": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "dbfame": { needs: "admin-command"; persists: "survives"; creates: "none" };
@@ -18729,9 +18745,9 @@ export interface ModuleWriteNeeds {
     "dbgoldadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbmoney": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbmoneyadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
-    "defecate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "defecate": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "detonate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "disarm": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "disarm": { needs: "player-target"; persists: "survives"; creates: "none" };
     "fade": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "fakename": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "fame": { needs: "player-target"; persists: "survives"; creates: "none" };
@@ -18854,7 +18870,7 @@ export interface ModuleWriteNeeds {
     "inventoryall": { needs: "player-target"; persists: "survives"; creates: "none" };
     "inventoryn": { needs: "player-target"; persists: "survives"; creates: "none" };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "shoulder": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "shoulder": { needs: "player-target"; persists: "survives"; creates: "none" };
     "unequip": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "hazard": {
@@ -19059,6 +19075,7 @@ export interface ModuleWriteNeeds {
     "join": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "kick": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "leave": { needs: "player-target"; persists: "n-a"; creates: "none" };
+    "minparticipants": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: true };
     "resetarea": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "schedule": { needs: "no-player"; persists: "unmeasured"; creates: "game-route"; persistable: false };
   };
