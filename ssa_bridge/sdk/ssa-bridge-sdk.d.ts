@@ -547,7 +547,7 @@ export type ActionsWrite_Cuff =
  * - `hands|feet`: one of `hands`, `feet`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -564,7 +564,7 @@ export type ActionsWrite_Cuffpart =
  * - `value`: Amount
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -1272,8 +1272,7 @@ export type ActionsWrite_Superjump =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -6693,7 +6692,7 @@ export type WorldeventsWrite_Leave =
  * - `minparticipants`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -18737,8 +18736,8 @@ export interface ModuleWriteNeeds {
     "cough": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "crouch": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "cuff": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "cuffpart": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "cufftight": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "cuffpart": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
+    "cufftight": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "dbfame": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbfameadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbgold": { needs: "admin-command"; persists: "survives"; creates: "none" };
@@ -18781,7 +18780,7 @@ export interface ModuleWriteNeeds {
     "suicide": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "suicidetime": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "superjump": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
-    "uncuff": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "uncuff": { needs: "player-target"; persists: "survives"; creates: "none" };
     "unmount": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "unsilence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "urinate": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -19075,7 +19074,7 @@ export interface ModuleWriteNeeds {
     "join": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "kick": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "leave": { needs: "player-target"; persists: "n-a"; creates: "none" };
-    "minparticipants": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "minparticipants": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
     "resetarea": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
     "schedule": { needs: "no-player"; persists: "unmeasured"; creates: "game-route"; persistable: false };
   };
