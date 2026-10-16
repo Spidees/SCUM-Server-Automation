@@ -513,7 +513,7 @@ export type ActionsWrite_Cough =
  * - `value`: Amount (optional)
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -661,8 +661,7 @@ export type ActionsWrite_Dbmoneyadd =
  * - `diarrhea`: The worse version; the word `diarrhea`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -832,8 +831,7 @@ export type ActionsWrite_Gold =
  * - also `<steamId>:hud:<text>`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Kept on request: send it with `persist: true` and the bridge applies it again after every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -915,8 +913,7 @@ export type ActionsWrite_Limp =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -931,8 +928,7 @@ export type ActionsWrite_Limpclear =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1014,8 +1010,7 @@ export type ActionsWrite_Repossess =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -2766,8 +2761,7 @@ export type GiveWrite_Dropat =
  * - `entityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps what a player carries and wears itself.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Move items, `module_command`.
@@ -2909,7 +2903,7 @@ export type GiveWrite_Shoulder =
  * - `entityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: the game keeps what a player carries and wears itself.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3709,8 +3703,7 @@ export type MedicalWrite_Bladder =
  * - `bloodLossRate`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -3726,8 +3719,7 @@ export type MedicalWrite_Bleed =
  * - `damage`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -4395,8 +4387,7 @@ export type ProtectWrite_Postpone =
  * - the parser accepts a field count no usage spells; send a wrong one to read what it wants
  *
  * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it puts the game's own values back, which a restart already does.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Raid protection control, `module_command`.
@@ -5741,8 +5732,7 @@ export type StorageRead_Storage =
  * - also `destroy:CONFIRM:eid:<this>`
  *
  * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Live storage, `module_command`.
@@ -6102,8 +6092,7 @@ export type TradeWrite_Economy =
  * - `randomizeprices`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Trade outposts, `module_command`.
@@ -6115,8 +6104,7 @@ export type TradeWrite_Randomizeprices =
  * - `reseteconomy`
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: it puts the game's own values back, which a restart already does.
+ * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Trade outposts, `module_command`.
@@ -9198,7 +9186,7 @@ export interface ModuleSettingsMap {
     write?: boolean;
     /** Allow adding and removing effects (uses the game's admin command). Adds or deletes a whole effect on the player you name, using the game's admin commands. (default false, applies when `write`) */
     admin?: boolean;
-    /** Ask the game how bad each effect is. Reads how bad each effect is and its penalty, using a game admin command run as that player. (default false, applies when `enabled`) */
+    /** Ask the game how bad each effect is. Reads how bad each effect is, its penalty and one player's stamina, with an admin command run as them. (default false, applies when `enabled`) */
     severities?: boolean;
     /** Feed and rest a player (uses the game's admin commands). Sets a player's stomach, bladder, stamina, exhaustion and metabolism speed with game admin commands, and confirms each. (default false, applies when `write`) */
     metabolic?: boolean;
@@ -13543,6 +13531,10 @@ export interface ReadingMedical_Player {
   severityScaleNote?: string;
   /** Absent when the game did not give it. */
   spawned?: boolean;
+  /** Absent when the game did not give it. */
+  stamina?: number;
+  /** Absent when the game did not give it. */
+  staminaNote?: string;
   steamid?: string;
   /** Absent when the game did not give it. */
   stomachFullnessByte?: number;
@@ -18710,7 +18702,7 @@ export interface ModuleWriteNeeds {
   "actions": {
     "ammo": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cough": { needs: "player-target"; persists: "n-a"; creates: "none" };
-    "crouch": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "crouch": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "cuffpart": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cufftight": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "dbfame": { needs: "admin-command"; persists: "survives"; creates: "none" };
@@ -18719,7 +18711,7 @@ export interface ModuleWriteNeeds {
     "dbgoldadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbmoney": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbmoneyadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
-    "defecate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "defecate": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "detonate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "disarm": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "fade": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18729,18 +18721,18 @@ export interface ModuleWriteNeeds {
     "gender": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "godmode": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "gold": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "hud": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
+    "hud": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "immortal": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "kick": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "killfeed": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "limp": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
-    "limpclear": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "load": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "limpclear": { needs: "player-target"; persists: "n-a"; creates: "none" };
+    "load": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "money": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "nightvision": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "pace": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "repossess": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "revive": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "revive": { needs: "player-target"; persists: "survives"; creates: "none" };
     "save": { needs: "player-target"; persists: "survives"; creates: "none" };
     "silence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "sneeze": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18837,7 +18829,7 @@ export interface ModuleWriteNeeds {
   "give": {
     "drop": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "dropat": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "equip": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "equip": { needs: "player-target"; persists: "survives"; creates: "none" };
     "equipswap": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "hands": { needs: "player-target"; persists: "survives"; creates: "none" };
     "inventory": { needs: "player-target"; persists: "survives"; creates: "none" };
@@ -18845,7 +18837,7 @@ export interface ModuleWriteNeeds {
     "inventoryn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
     "shoulder": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "unequip": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "unequip": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
   };
   "hazard": {
     "event": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
@@ -18885,8 +18877,8 @@ export interface ModuleWriteNeeds {
   "medical": {
     "add": { needs: "player-target"; persists: "survives"; creates: "none" };
     "bladder": { needs: "player-target"; persists: "survives"; creates: "none" };
-    "bleed": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "burn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "bleed": { needs: "player-target"; persists: "survives"; creates: "none" };
+    "burn": { needs: "player-target"; persists: "survives"; creates: "none" };
     "cure": { needs: "player-target"; persists: "survives"; creates: "none" };
     "exhaustion": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "feed": { needs: "player-target"; persists: "survives"; creates: "none" };
@@ -18925,7 +18917,7 @@ export interface ModuleWriteNeeds {
   "protect": {
     "grant": { needs: "no-player"; persists: "survives"; creates: "none" };
     "postpone": { needs: "no-player"; persists: "survives"; creates: "none" };
-    "reset": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "reset": { needs: "player-channel"; persists: "n-a"; creates: "none" };
     "set": { needs: "no-player"; persists: "survives"; creates: "none" };
     "snapshot": { needs: "own-records"; persists: "n-a"; creates: "none" };
   };
@@ -18995,7 +18987,7 @@ export interface ModuleWriteNeeds {
     "skilllevel": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "storage": {
-    "destroy": { needs: "player-channel"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "destroy": { needs: "player-channel"; persists: "survives"; creates: "none" };
     "drop": { needs: "player-channel"; persists: "lost"; creates: "none"; persistable: false };
     "move": { needs: "player-channel"; persists: "survives"; creates: "none" };
     "observe": { needs: "player-channel"; persists: "n-a"; creates: "none" };
@@ -19014,8 +19006,8 @@ export interface ModuleWriteNeeds {
   };
   "trade": {
     "economy": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
-    "randomizeprices": { needs: "admin-command"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "reseteconomy": { needs: "admin-command"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "randomizeprices": { needs: "admin-command"; persists: "survives"; creates: "none" };
+    "reseteconomy": { needs: "admin-command"; persists: "survives"; creates: "none" };
   };
   "vote": {
     "tournamentend": { needs: "no-player"; persists: "n-a"; creates: "none" };
