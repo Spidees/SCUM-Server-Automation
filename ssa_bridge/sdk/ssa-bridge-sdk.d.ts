@@ -3949,8 +3949,8 @@ export type MedicalWrite_Severity =
  * - `amount in ml or SU, or a %`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: the game keeps the character's body and profile itself, so a replay would apply it again over what changed since.
+ * After a restart: Lost. Measured to revert, or never saved.
+ * Not kept on request: a refilling live value the game resets on its own, so a replay would set it once and the body would move on.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Medical state, `module_command`.
@@ -18909,7 +18909,7 @@ export interface ModuleWriteNeeds {
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
     "set": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "severity": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
-    "stamina": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "stamina": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "wellbeing": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "notify": {
