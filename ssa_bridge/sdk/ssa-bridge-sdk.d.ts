@@ -6541,7 +6541,7 @@ export type WorldeventsRead_Ledger =
  * - `cancel`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -6555,7 +6555,7 @@ export type WorldeventsWrite_Cancel =
  * - `cancelforce`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -6597,7 +6597,7 @@ export type WorldeventsWrite_Cargodrop =
  * - `clearscores`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -6706,7 +6706,7 @@ export type WorldeventsWrite_Minparticipants =
  * - `resetarea`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -6720,9 +6720,8 @@ export type WorldeventsWrite_Resetarea =
  * - `schedule`
  *
  * Needs: No player needed. Works with nobody online.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
- * Creates: The game's own route. Made through the game's own command or logic, so the game keeps it exactly as it keeps one it made itself. Whether that kind gets a save row was not measured here. Note: the game runs the event and makes what it brings.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
+ * Creates: Nothing. Creates nothing new in the world.
  *
  * Live world events, `module_command`.
  */
@@ -19063,11 +19062,11 @@ export interface ModuleWriteNeeds {
     "unstream": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
   };
   "worldevents": {
-    "cancel": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "cancelforce": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cancel": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
+    "cancelforce": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
     "cargodetonate": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
     "cargodrop": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
-    "clearscores": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "clearscores": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
     "cooldown": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
     "eventmove": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
     "eventradius": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
@@ -19075,8 +19074,8 @@ export interface ModuleWriteNeeds {
     "kick": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "leave": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "minparticipants": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
-    "resetarea": { needs: "no-player"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "schedule": { needs: "no-player"; persists: "unmeasured"; creates: "game-route"; persistable: false };
+    "resetarea": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: false };
+    "schedule": { needs: "no-player"; persists: "n-a"; creates: "none" };
   };
   "zones": {
     "assign": { needs: "player-channel"; persists: "survives"; creates: "none" };
