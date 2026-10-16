@@ -391,7 +391,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 223 reads, 284 writes, 34 retired verbs, 386 settings.
+// 50 modules, 223 reads, 285 writes, 34 retired verbs, 386 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -522,6 +522,24 @@ export type ActionsWrite_Cough =
 export type ActionsWrite_Crouch =
   | `${string}:crouch`
   | `${string}:crouch:${string}`;
+
+/**
+ * `<steamid>:cuff:eid:<entityId>`
+ *
+ * - `steamid`
+ * - `eid`: the word `eid`
+ * - `entityId`
+ *
+ * Needs: That player online. Acts on the named player, who must be online.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * In-game actions, `module_command`.
+ */
+export type ActionsWrite_Cuff =
+  | `${string}:cuff`
+  | `${string}:cuff:${string}`;
 
 /**
  * `<steamid>:cuffpart:<hands|feet>`
@@ -661,7 +679,8 @@ export type ActionsWrite_Dbmoneyadd =
  * - `diarrhea`: The worse version; the word `diarrhea`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -1010,7 +1029,8 @@ export type ActionsWrite_Repossess =
  * - `steamId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Survives. Measured to be in the save after a restart.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
+ * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * In-game actions, `module_command`.
@@ -2903,7 +2923,7 @@ export type GiveWrite_Shoulder =
  * - `entityId`
  *
  * Needs: That player online. Acts on the named player, who must be online.
- * After a restart: Lost. Measured to revert, or never saved.
+ * After a restart: Not measured. Nobody has measured whether it survives a restart.
  * Not kept on request: the game keeps what a player carries and wears itself.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -4543,8 +4563,7 @@ export type QuestsWrite_Abandontask =
  * - the parser accepts a field count no usage spells; send a wrong one to read what it wants
  *
  * Needs: Any player online (admin command). Runs one of the game's admin commands, which the game only runs through an online player.
- * After a restart: Not measured. Nobody has measured whether it survives a restart.
- * Not kept on request: a one-off act, so a replay would do it again at every boot.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
  * Creates: Nothing. Creates nothing new in the world.
  *
  * Quests, `module_command`.
@@ -7103,6 +7122,7 @@ export interface ModuleVocabulary {
    * - `<steamId>:ammo:<on>`
    * - `<steamId>:cough:<intensity>`
    * - `<steamid>:crouch[:<value>]`
+   * - `<steamid>:cuff:eid:<entityId>`
    * - `<steamid>:cuffpart:<hands|feet>`
    * - `<steamid>:cufftight:<value>`
    * - `<steamId>:dbfame:<amount>`
@@ -7163,6 +7183,7 @@ export interface ModuleVocabulary {
       | ActionsWrite_Ammo
       | ActionsWrite_Cough
       | ActionsWrite_Crouch
+      | ActionsWrite_Cuff
       | ActionsWrite_Cuffpart
       | ActionsWrite_Cufftight
       | ActionsWrite_Dbfame
@@ -8742,7 +8763,7 @@ export interface ModuleSettingsMap {
     database?: boolean;
     /** Kick a player. Removes a player from the server with a reason they can read, through the game's own kick. */
     kick?: boolean;
-    /** Equipment, cuffs, night vision, free look, limp, disarm, unmount. Strips, disarms, uncuffs, adjusts cuffs, toggles night vision, free look or a limp, and pulls a player off what they are riding. */
+    /** Equipment, cuffs, night vision, free look, limp, disarm, unmount. Strips, disarms, cuffs with rope or wire, uncuffs, adjusts cuffs, toggles night vision, free look or a limp, and unmounts. */
     gear?: boolean;
     /** Squad membership. Joins, leaves, promotes, demotes and creates squads, without the player being asked. */
     squads?: boolean;
@@ -9270,7 +9291,7 @@ export interface ModuleSettingsMap {
     history?: number;
     /** Allow quests to be abandoned or tracked. Abandons a player's quest or task, or re-points their tracker. Player must be online. Abandoning: no undo. (applies when `enabled`) */
     writes?: boolean;
-    /** Allow the quest cycle to be reset. Resets or ends the quest cycle, refreshes pools, toggles quest limits, lists fetch quests. (applies when `enabled`) */
+    /** Allow the quest cycle to be reset. Toggles quest limits and lists fetch quests. This game build refuses reset, end cycle and refresh. (applies when `enabled`) */
     cycle?: boolean;
   };
   "raid": {
@@ -11982,12 +12003,16 @@ export interface ReadingGive_Last {
   locationAfter?: number;
   /** Absent when the game did not give it. */
   locationBefore?: number;
+  /** How many of the confirmed items joined a stack the player already carried. Absent when the game did not give it. */
+  merged?: number;
   /** Absent when the game did not give it. */
   nowIn?: string;
   /** Absent when the game did not give it. Type not readable from the source. */
   refused?: unknown;
   result?: string;
   selected?: number;
+  /** The count of the stack they joined, after the move. Absent when the game did not give it. */
+  stackNow?: number;
   swept?: number;
   /** Type not readable from the source. */
   truncated?: unknown;
@@ -18703,6 +18728,7 @@ export interface ModuleWriteNeeds {
     "ammo": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cough": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "crouch": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
+    "cuff": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "cuffpart": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "cufftight": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "dbfame": { needs: "admin-command"; persists: "survives"; creates: "none" };
@@ -18711,7 +18737,7 @@ export interface ModuleWriteNeeds {
     "dbgoldadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbmoney": { needs: "admin-command"; persists: "survives"; creates: "none" };
     "dbmoneyadd": { needs: "admin-command"; persists: "survives"; creates: "none" };
-    "defecate": { needs: "player-target"; persists: "n-a"; creates: "none" };
+    "defecate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "detonate": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "disarm": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "fade": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18732,7 +18758,7 @@ export interface ModuleWriteNeeds {
     "nightvision": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: true };
     "pace": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: true };
     "repossess": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "revive": { needs: "player-target"; persists: "survives"; creates: "none" };
+    "revive": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "save": { needs: "player-target"; persists: "survives"; creates: "none" };
     "silence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "sneeze": { needs: "player-target"; persists: "n-a"; creates: "none" };
@@ -18837,7 +18863,7 @@ export interface ModuleWriteNeeds {
     "inventoryn": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "remove": { needs: "player-target"; persists: "survives"; creates: "none" };
     "shoulder": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "unequip": { needs: "player-target"; persists: "lost"; creates: "none"; persistable: false };
+    "unequip": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
   };
   "hazard": {
     "event": { needs: "no-player"; persists: "lost"; creates: "none"; persistable: true };
@@ -18924,7 +18950,7 @@ export interface ModuleWriteNeeds {
   "quests": {
     "abandon": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "abandontask": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
-    "cycle": { needs: "admin-command"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "cycle": { needs: "admin-command"; persists: "n-a"; creates: "none" };
     "track": { needs: "player-target"; persists: "survives"; creates: "none" };
   };
   "raid": {
