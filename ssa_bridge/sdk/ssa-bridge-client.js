@@ -51,9 +51,16 @@ function toReply(msg) {
     ? { ok: false, code: err, reason: msg.reason ? String(msg.reason) : err }
     : { ok: false, code: (msg && msg.reasonCode) ? String(msg.reasonCode) : 'module_refused', reason: err };
   if (msg && msg.reasonCode) out.reasonCode = String(msg.reasonCode);
+  if (msg && Number.isFinite(msg.retryAfterMs)) out.retryAfterMs = msg.retryAfterMs;
   if (msg && msg.reach) out.reach = msg.reach;
   return out;
 }
+
+/**
+ * `rate_limited` with `reasonCode` `locked_out` is not a wait: too many wrong tokens came from this
+ * address, the bridge has closed the connection, and resending would only be refused again.
+ */
+const isLockout = (msg) => !!msg && msg.reasonCode === 'locked_out';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -136,7 +143,7 @@ class BridgeClient extends EventEmitter {
       let msg;
       for (let attempt = 0; ; attempt++) {
         msg = await this._send(action, fields);
-        if (msg.ok === false && RETRYABLE.has(msg.error) && attempt < this._opts.retries) {
+        if (msg.ok === false && RETRYABLE.has(msg.error) && !isLockout(msg) && attempt < this._opts.retries) {
           await sleep(this._opts.backoffMs * (attempt + 1));
           continue;
         }
@@ -183,9 +190,20 @@ async function connect(opts) {
   }
   const sock = await openSocket(o.host, o.port, o.timeoutMs);
   const c = new BridgeClient(sock, o);
-  const fail = (r) => { c.close(); throw Object.assign(new Error(r.reason), { code: r.code, reason: r.reason }); };
+  const fail = (r) => {
+    c.close();
+    const e = Object.assign(new Error(r.reason), { code: r.code, reason: r.reason });
+    if (r.reasonCode) e.reasonCode = r.reasonCode;
+    if (Number.isFinite(r.retryAfterMs)) e.retryAfterMs = r.retryAfterMs;
+    throw e;
+  };
   if (o.token) {
     const a = await c.request('auth', { token: o.token });
+    if (!a.ok && a.reasonCode === 'locked_out') {
+      const wait = Number.isFinite(a.retryAfterMs) ? a.retryAfterMs : null;
+      fail(Object.assign({}, a, { reason: `too many wrong tokens from this address; the bridge closed the connection`
+        + (wait !== null ? ` and accepts auth again in ${wait} ms (retryAfterMs)` : '') }));
+    }
     if (!a.ok) fail(a);
   }
   const st = await c.request('status');

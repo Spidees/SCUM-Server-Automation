@@ -178,6 +178,8 @@ export interface BridgeRefusal {
   reason: string;
   /** Present when the bridge or a module named a more specific case, e.g. `needs_player`. */
   reasonCode?: string;
+  /** With `rate_limited` on `auth`: how long until this address may send `auth` again. */
+  retryAfterMs?: number;
   /** A refusal after a partial write still reports what was written. */
   reach?: BridgeReach;
 }
@@ -201,7 +203,11 @@ export type BridgeErrorCode =
   | 'bad_token'
   /** The `instance` names a different run of the bridge. Read the status file again. */
   | 'wrong_instance'
-  /** Too many `auth` attempts too quickly. Wait a second and send it again. */
+  /**
+   * Too many `auth` attempts from your address. With `reasonCode` `rate_limited` the client waits and
+   * sends again. With `locked_out` (five wrong tokens in a minute) the bridge has closed the connection;
+   * the client does not resend, and `retryAfterMs` says when this address may try again.
+   */
   | 'rate_limited'
   /** 1024 requests are already queued. Arrives with id "0", so the request it dropped times out. */
   | 'busy'
@@ -376,7 +382,8 @@ export declare class BridgeClient {
 /**
  * Open one connection, send `auth` when a token is given, then `status`. Rejects only when there is
  * no usable connection: the socket failed, `auth` was refused, or the bridge speaks a protocol below
- * `minProtocol`. The error carries `code` and `reason`.
+ * `minProtocol`. The error carries `code` and `reason`, and for an address locked out of `auth` also
+ * `reasonCode` `locked_out` and `retryAfterMs`.
  */
 export declare function connect(opts: BridgeConnectOptions & { minProtocol?: number }): Promise<BridgeClient>;
 

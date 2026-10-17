@@ -36,10 +36,12 @@ ADMIN_ACTIONS = {"cmd", "spawn", "batch"}
 class BridgeError(Exception):
     """Raised by connect() only, when there is no usable connection."""
 
-    def __init__(self, code, reason):
+    def __init__(self, code, reason, reason_code=None, retry_after_ms=None):
         super().__init__(reason)
         self.code = code
         self.reason = reason
+        self.reason_code = reason_code
+        self.retry_after_ms = retry_after_ms
 
 
 def bare_command(command):
@@ -61,9 +63,17 @@ def to_reply(msg):
         out = {"ok": False, "code": str(msg.get("reasonCode") or "module_refused"), "reason": err}
     if msg.get("reasonCode"):
         out["reasonCode"] = str(msg["reasonCode"])
+    if isinstance(msg.get("retryAfterMs"), (int, float)) and not isinstance(msg.get("retryAfterMs"), bool):
+        out["retryAfterMs"] = msg["retryAfterMs"]
     if "reach" in msg:
         out["reach"] = msg["reach"]
     return out
+
+
+def is_lockout(msg):
+    """`rate_limited` with `reasonCode` `locked_out` is not a wait: too many wrong tokens came from
+    this address, the bridge has closed the connection, and resending would only be refused again."""
+    return msg.get("reasonCode") == "locked_out"
 
 
 class BridgeClient:
@@ -160,7 +170,7 @@ class BridgeClient:
             attempt = 0
             while True:
                 msg = self._send(action, fields)
-                if msg.get("ok") is False and msg.get("error") in RETRYABLE and attempt < self._retries:
+                if msg.get("ok") is False and msg.get("error") in RETRYABLE and not is_lockout(msg) and attempt < self._retries:
                     attempt += 1
                     time.sleep(self._backoff * attempt)
                     continue
@@ -230,10 +240,14 @@ def connect(port, host="127.0.0.1", token=None, instance=None, caller=None,
 
     def fail(r):
         c.close()
-        raise BridgeError(r["code"], r["reason"])
+        raise BridgeError(r["code"], r["reason"], r.get("reasonCode"), r.get("retryAfterMs"))
 
     if token:
         a = c.request("auth", {"token": token})
+        if not a["ok"] and a.get("reasonCode") == "locked_out":
+            wait = a.get("retryAfterMs")
+            a = dict(a, reason="too many wrong tokens from this address; the bridge closed the connection"
+                     + ("" if wait is None else " and accepts auth again in %d ms (retryAfterMs)" % wait))
         if not a["ok"]:
             fail(a)
     st = c.request("status")

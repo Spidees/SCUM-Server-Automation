@@ -70,6 +70,7 @@ The bridge allows **15 cost units a second with a burst of 30**, and at most **2
 - **Over budget is not an error.** The request waits in a queue and runs later. Use your own timeout and treat expiry as unknown, because the request may still run.
 - **Keep one connection open.** Every request goes through one queue, so more connections add nothing.
 - **`rate_limited`** answers too many `auth` attempts. The clients wait and send again.
+- **`rate_limited` with `reasonCode` `locked_out`** means too many wrong tokens came from your address. The bridge closes the connection, so the clients do not resend: `connect()` fails with `retryAfterMs`, the time until that address may try again.
 
 ## Examples
 
