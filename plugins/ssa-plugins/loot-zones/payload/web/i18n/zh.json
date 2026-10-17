@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "更好的战利品仍在：{zones}。",
   "pl.loot-zones.game.noZoneSample": "（目前没有开启的区域 —— 这里展示的是它的效果）",
   "pl.loot-zones.msg.langs": "玩家读取自己语言的标签（游戏内 /lang），否则读取默认。默认为空则关闭该消息。",
-  "pl.loot-zones.msg.shipped": "内置文字：在你修改之前，每位玩家都会以自己的语言看到它。"
+  "pl.loot-zones.msg.shipped": "内置文字：在你修改之前，每位玩家都会以自己的语言看到它。",
+  "pl.loot-zones.variants.running": "本次会话使用第 {i}/{n} 个变体“{label}”。每次服务器停止时会重新挑选。",
+  "pl.loot-zones.variants.unpicked": "此区域有 {n} 个变体。每次服务器会话挑选一个。",
+  "pl.loot-zones.variants.note": "变体会用自己的设置替换下方的守卫和热闹程度设置。变体在 config.json 中编辑。"
 }

@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "Besseren Loot gibt es immer noch hier: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(keine Zone ist live — so würde es aussehen)",
   "pl.loot-zones.msg.langs": "Ein Spieler liest den Tab seiner Sprache (/lang im Spiel), sonst Standard. Ein leerer Standard schaltet die Nachricht ab.",
-  "pl.loot-zones.msg.shipped": "Mitgelieferter Text: Jeder Spieler liest ihn in seiner eigenen Sprache, bis du ihn änderst."
+  "pl.loot-zones.msg.shipped": "Mitgelieferter Text: Jeder Spieler liest ihn in seiner eigenen Sprache, bis du ihn änderst.",
+  "pl.loot-zones.variants.running": "Diese Sitzung läuft mit Variante {i} von {n}, „{label}“. Bei jedem Serverstopp wird eine neue gewählt.",
+  "pl.loot-zones.variants.unpicked": "Diese Zone hat {n} Varianten. Für jede Serversitzung wird eine gewählt.",
+  "pl.loot-zones.variants.note": "Eine Variante ersetzt die Wachen- und Betriebsamkeitseinstellungen unten durch ihre eigenen. Varianten werden in config.json bearbeitet."
 }

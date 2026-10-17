@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "Jobb loot még mindig itt van: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(egy zóna sem aktív — így nézne ki)",
   "pl.loot-zones.msg.langs": "A játékos a saját nyelve fülét olvassa (/lang a játékban), különben az Alapértelmezettet. Üres Alapértelmezett kikapcsolja az üzenetet.",
-  "pl.loot-zones.msg.shipped": "Gyári szöveg: minden játékos a saját nyelvén olvassa, amíg meg nem változtatod."
+  "pl.loot-zones.msg.shipped": "Gyári szöveg: minden játékos a saját nyelvén olvassa, amíg meg nem változtatod.",
+  "pl.loot-zones.variants.running": "Ez a munkamenet a(z) {i}. változatot futtatja a(z) {n} közül: „{label}”. Minden szerverleállításkor újat választ.",
+  "pl.loot-zones.variants.unpicked": "Ennek a zónának {n} változata van. Minden szervermunkamenetre egyet választ.",
+  "pl.loot-zones.variants.note": "Egy változat a lenti őr- és forgalombeállításokat a sajátjaival váltja fel. A változatokat a config.json fájlban lehet szerkeszteni."
 }

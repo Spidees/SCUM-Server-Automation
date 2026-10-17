@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "Daha iyi loot hâlâ burada: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(şu an aktif bölge yok — mesaj böyle görünecek)",
   "pl.loot-zones.msg.langs": "Oyuncu kendi dilinin sekmesini okur (oyunda /lang), yoksa Varsayılan. Boş Varsayılan mesajı kapatır.",
-  "pl.loot-zones.msg.shipped": "Hazır metin: sen değiştirene kadar her oyuncu bunu kendi dilinde okur."
+  "pl.loot-zones.msg.shipped": "Hazır metin: sen değiştirene kadar her oyuncu bunu kendi dilinde okur.",
+  "pl.loot-zones.variants.running": "Bu oturum {n} varyanttan {i}. olanı, \"{label}\" ile çalışıyor. Sunucu her durduğunda yenisi seçilir.",
+  "pl.loot-zones.variants.unpicked": "Bu bölgenin {n} varyantı var. Her sunucu oturumu için biri seçilir.",
+  "pl.loot-zones.variants.note": "Bir varyant aşağıdaki muhafız ve hareketlilik ayarlarını kendi ayarlarıyla değiştirir. Varyantlar config.json içinde düzenlenir."
 }

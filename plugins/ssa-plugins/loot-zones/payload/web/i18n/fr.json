@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "Le meilleur butin est toujours ici : {zones}.",
   "pl.loot-zones.game.noZoneSample": "(aucune zone active — voici à quoi ça ressemblerait)",
   "pl.loot-zones.msg.langs": "Le joueur lit l'onglet de sa langue (/lang en jeu), sinon Par défaut. Un Par défaut vide désactive le message.",
-  "pl.loot-zones.msg.shipped": "Texte d'origine : chaque joueur le lit dans sa propre langue tant qu'il n'est pas modifié."
+  "pl.loot-zones.msg.shipped": "Texte d'origine : chaque joueur le lit dans sa propre langue tant qu'il n'est pas modifié.",
+  "pl.loot-zones.variants.running": "Cette session utilise la variante {i} sur {n}, « {label} ». Une nouvelle est choisie à chaque arrêt du serveur.",
+  "pl.loot-zones.variants.unpicked": "Cette zone a {n} variantes. Une est choisie pour chaque session du serveur.",
+  "pl.loot-zones.variants.note": "Une variante remplace par les siens les réglages de gardes et d’activité ci-dessous. Les variantes se modifient dans config.json."
 }

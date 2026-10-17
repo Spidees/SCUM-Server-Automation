@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "O loot melhor continua em: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(nenhuma zona no ar — é assim que ficaria)",
   "pl.loot-zones.msg.langs": "O jogador lê a aba do seu idioma (/lang no jogo); senão, a Padrão. Uma Padrão vazia desativa a mensagem.",
-  "pl.loot-zones.msg.shipped": "Texto original: cada jogador lê no próprio idioma até você mudar."
+  "pl.loot-zones.msg.shipped": "Texto original: cada jogador lê no próprio idioma até você mudar.",
+  "pl.loot-zones.variants.running": "Esta sessão usa a variante {i} de {n}, “{label}”. Uma nova é escolhida a cada paragem do servidor.",
+  "pl.loot-zones.variants.unpicked": "Esta zona tem {n} variantes. É escolhida uma para cada sessão do servidor.",
+  "pl.loot-zones.variants.note": "Uma variante substitui pelas suas as definições de guardas e de movimento abaixo. As variantes editam-se em config.json."
 }

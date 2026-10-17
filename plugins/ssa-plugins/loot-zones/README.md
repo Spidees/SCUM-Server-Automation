@@ -19,6 +19,11 @@ told in your own words. Inside a zone you can also **keep sentries and zombies o
   files stay the set's, so a larger area is the same loot inside a bigger circle, and the tab says
   how much ground each of the two covers. Sizes are **half-spans in centimetres**, the way the game
   itself stores them, and every box shows the distance you would pace out underneath it.
+- **A zone can have variants, and a new one is picked at every server restart.** Each variant is
+  its own set of guards, protection and spawn settings for the same place and the same loot, so
+  players know where the loot is and not what is waiting there. The pick is made as the server
+  stops, written in the manager's log by zone and variant, and kept if only the manager restarts.
+  Variants are written in the plugin's `config.json`; the tab shows which one is running.
 - **Your own loot overrides are never touched.** The plugin writes and removes only its own
   `LOOT_ZONES_` folders.
 - **Works with the server stopped.** Running, the rectangle is drawn live and the loot can be
@@ -155,7 +160,9 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
 - **Every class is loaded by the bridge when the zone first needs it**, bosses included: a Razor or a
   Brenner is placed at its post with nobody having met one first. Loading pauses the server for
   about a fifth of a second, once per kind. It needs **Load a class the game has not made yet**
-  on the bridge's **Precise spawning** card, which is on unless you turned it off. A Dropship, a Sentry and a
+  on the bridge's **Precise spawning** card, which the bridge ships **off**; the Bridge box at the top of
+  the tab lists it. Without it an armed NPC's first one comes through the game's own command, and a
+  Razor waits until the game has made one or you name a point for it. A Dropship, a Sentry and a
   drone are still placed only once the game has made one.
 - **Only places the zone chose ever move.** A point you named stays exactly where you typed it, and
   a random guard or one placed without an id is not moved by *Move a standing guard after*, because
@@ -181,6 +188,15 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
   speed. A schedule that crosses midnight belongs to the day it starts. A guard window decides when
   a guard is *sent* — one that closes never removes a guard already standing — and if the game's
   clock cannot be read the window is not applied at all, which the zone says every round.
+- **A variant changes only the guards, what is kept out and how busy the zone is.** The loot set,
+  the name and the area stay the zone's own, and the tab says so if a variant tries to change them.
+  A zone without variants behaves exactly as before. Since "Keep zombies out" belongs to the zone's
+  configuration, a variant that turns it on or off moves the rectangle to the other configuration
+  before the next server start.
+- **Night-only guards use the game's clock.** Give a guard game hours from 21 to 5 and it is sent
+  only at night; it needs "Time of day and day length" on the bridge's Live player data card, and
+  without it the window is open all day. A guard already standing when the window closes stays
+  until players leave.
 - **The zone name prefix can never be empty**: it is how the plugin tells its zones from yours, so
   a save with an empty one is refused.
 - **Two zones with the same full name are one zone to the game**, so a repeated name orphans a

@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "更好的戰利品還在：{zones}。",
   "pl.loot-zones.game.noZoneSample": "（目前沒有開啟中的區塊 —— 這裡示範它會怎麼顯示）",
   "pl.loot-zones.msg.langs": "玩家讀取自己語言的分頁（遊戲內 /lang），否則讀取預設。預設為空則關閉該訊息。",
-  "pl.loot-zones.msg.shipped": "內建文字：在你修改之前，每位玩家都會以自己的語言看到它。"
+  "pl.loot-zones.msg.shipped": "內建文字：在你修改之前，每位玩家都會以自己的語言看到它。",
+  "pl.loot-zones.variants.running": "本次工作階段使用第 {i}/{n} 個變體「{label}」。每次伺服器停止時會重新挑選。",
+  "pl.loot-zones.variants.unpicked": "此區塊有 {n} 個變體。每次伺服器工作階段挑選一個。",
+  "pl.loot-zones.variants.note": "變體會以自己的設定取代下方的守衛與熱鬧程度設定。變體在 config.json 中編輯。"
 }

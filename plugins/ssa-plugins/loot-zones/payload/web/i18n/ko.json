@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "여전히 더 좋은 전리품이 있는 곳: {zones}",
   "pl.loot-zones.game.noZoneSample": "(진행 중인 존 없음 — 이렇게 표시됩니다)",
   "pl.loot-zones.msg.langs": "플레이어는 자기 언어 탭을 읽습니다(게임 내 /lang). 없으면 기본 탭을 읽습니다. 기본이 비어 있으면 메시지가 꺼집니다.",
-  "pl.loot-zones.msg.shipped": "기본 제공 문구: 바꾸기 전까지 모든 플레이어가 각자의 언어로 읽습니다."
+  "pl.loot-zones.msg.shipped": "기본 제공 문구: 바꾸기 전까지 모든 플레이어가 각자의 언어로 읽습니다.",
+  "pl.loot-zones.variants.running": "이번 세션은 {n}개 중 {i}번째 변형 \"{label}\"(으)로 실행됩니다. 서버가 멈출 때마다 새로 고릅니다.",
+  "pl.loot-zones.variants.unpicked": "이 구역에는 변형이 {n}개 있습니다. 서버 세션마다 하나를 고릅니다.",
+  "pl.loot-zones.variants.note": "변형은 아래의 경비 및 활동 설정을 자신의 설정으로 바꿉니다. 변형은 config.json에서 편집합니다."
 }

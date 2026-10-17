@@ -1934,6 +1934,27 @@
     var k = 'z-' + z.id;
     return Object.prototype.hasOwnProperty.call(shut, k) ? !!shut[k] : n > 3;
   }
+  /**
+   * A zone with VARIANTS runs one of them per server session, laid over the settings on this card.
+   * Said above the guard controls, because without it the card shows the zone's own guards while
+   * the server runs somebody else's — the one screen that would mislead an owner into editing the
+   * wrong thing. Variants are written in `config.json`; this tab does not edit them.
+   */
+  function variantNote(z, st) {
+    var n = Array.isArray(z.variants) ? z.variants.length : 0;
+    if (!n) return null;
+    var run = st && st.variants ? st.variants[String(z.id)] : null;
+    return h('div', { class: 'lz-note' }, [
+      h('strong', {}, run
+        ? T('pl.loot-zones.variants.running', 'This session runs variant {i} of {n}, "{label}". A new one is picked at every server stop.',
+          { i: Number(run.index) + 1, n: n, label: String(run.label || '') })
+        : T('pl.loot-zones.variants.unpicked', 'This zone has {n} variants. One is picked for each server session.', { n: n })),
+      h('br'),
+      h('small', {}, T('pl.loot-zones.variants.note',
+        'A variant replaces the guard and busy settings below with its own. Variants are edited in config.json.')),
+    ]);
+  }
+
   function zoneBlock(z, i, c, sets, st) {
     var live = (st.active || []).filter(function (a) { return String(a.id) === String(z.id); })[0];
     var set = sets.filter(function (s) { return s.name === z.set; })[0];
@@ -2223,7 +2244,7 @@
       [h('h4', { class: 'lz-group' }, T('pl.loot-zones.area.title', 'Where this zone is'))]
         .concat(areaBlock(z, set, pat)));
     var guards = h('div', { class: 'lz-when' },
-      guardControls(z.sentries, z.id, pat, zoneRectSource(z, set)));
+      [variantNote(z, st)].concat(guardControls(z.sentries, z.id, pat, zoneRectSource(z, set))));
     var busy = h('div', { class: 'lz-when' }, [
       h('h4', { class: 'lz-group' }, cardActivity()),
       /**

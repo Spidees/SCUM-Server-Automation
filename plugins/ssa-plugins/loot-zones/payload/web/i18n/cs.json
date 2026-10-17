@@ -803,5 +803,8 @@
   "pl.loot-zones.default.reminder": "Lepší loot je pořád tady: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(žádná zóna teď neběží — takhle by to vypadalo)",
   "pl.loot-zones.msg.langs": "Hráč čte záložku svého jazyka (/lang ve hře), jinak Výchozí. Prázdná Výchozí zprávu vypne.",
-  "pl.loot-zones.msg.shipped": "Původní znění: každý hráč ho čte ve svém jazyce, dokud ho nezměníš."
+  "pl.loot-zones.msg.shipped": "Původní znění: každý hráč ho čte ve svém jazyce, dokud ho nezměníš.",
+  "pl.loot-zones.variants.running": "Toto sezení běží varianta {i} z {n}, „{label}“. Nová se vybere při každém zastavení serveru.",
+  "pl.loot-zones.variants.unpicked": "Tato zóna má {n} variant. Pro každé sezení serveru se vybere jedna.",
+  "pl.loot-zones.variants.note": "Varianta nahradí nastavení stráží a ruchu níže svým vlastním. Varianty se upravují v config.json."
 }

@@ -2,8 +2,8 @@
   "id": "loot-zones",
   "name": "Loot Zones",
   "type": "manager",
-  "version": "1.10.3",
-  "updated": "2026-10-12",
+  "version": "1.11.0",
+  "updated": "2026-10-17",
   "author": "SCUMSA",
   "website": "https://scumsa.com/plugins.php?p=loot-zones",
   "description": "Rotate loot around the island. Each zone is a rectangle with its own loot, drawn on the players' map and live on the ground straight away. Switch zones by hand, on a schedule or once per server restart, tell players in your own words, and keep the sentries and zombies out or post guards of your own.",
@@ -78,9 +78,10 @@
           "enabled",
           "creatures",
           "bosses",
-          "persistent"
+          "persistent",
+          "makeResident"
         ],
-        "why": "Puts the guard of your choosing where a sentry stood, and puts a new one there when it dies, an armed NPC, a puppet or an animal, whichever you pick. Used only if you set the sentries inside a zone to be replaced rather than simply cleared. 'Bosses' is a separate switch because the bridge decides what a boss is from the CLASS NAME and not from the kind you picked: a Brenner, a Razor, a Dropship or a Sentry is refused without it however it was asked for, and the refusal names no switch you can see on this plugin's tab."
+        "why": "Puts the guard of your choosing where a sentry stood, and puts a new one there when it dies, an armed NPC, a puppet or an animal, whichever you pick. Used only if you set the sentries inside a zone to be replaced rather than simply cleared. 'Bosses' is a separate switch because the bridge decides what a boss is from the CLASS NAME and not from the kind you picked: a Brenner, a Razor, a Dropship or a Sentry is refused without it however it was asked for, and the refusal names no switch you can see on this plugin's tab. 'Load a class the game has not made yet' lets a guard of a kind the game has not made since it started be placed straight away; the bridge ships it off, and without it a Razor waits until the game has made one."
       },
       {
         "module": "despawn",

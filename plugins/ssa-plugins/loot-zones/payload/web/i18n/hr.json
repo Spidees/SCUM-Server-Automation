@@ -803,5 +803,8 @@
   "pl.loot-zones.default.reminder": "Bolji loot je i dalje ovdje: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(nijedna zona trenutno nije aktivna — ovako bi izgledalo)",
   "pl.loot-zones.msg.langs": "Igrač čita karticu svog jezika (/lang u igri), inače Zadano. Prazno Zadano isključuje poruku.",
-  "pl.loot-zones.msg.shipped": "Ugrađeni tekst: svaki ga igrač čita na svom jeziku dok ga ne promijeniš."
+  "pl.loot-zones.msg.shipped": "Ugrađeni tekst: svaki ga igrač čita na svom jeziku dok ga ne promijeniš.",
+  "pl.loot-zones.variants.running": "Ova sesija koristi varijantu {i} od {n}, „{label}”. Nova se bira pri svakom zaustavljanju servera.",
+  "pl.loot-zones.variants.unpicked": "Ova zona ima {n} varijanti. Za svaku sesiju servera bira se jedna.",
+  "pl.loot-zones.variants.note": "Varijanta zamjenjuje postavke straže i aktivnosti ispod svojima. Varijante se uređuju u config.json."
 }

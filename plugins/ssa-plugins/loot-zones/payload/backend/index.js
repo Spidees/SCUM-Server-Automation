@@ -773,11 +773,22 @@ module.exports = {
      * and a fresh process has read nothing and must not refuse a first-ever save.
      */
     let sawConfig = false;
-    const cfg = () => {
+    /**
+     * The configuration AS THE OWNER WROTE IT, defaults merged in. This is what the tab is handed and
+     * what a save is laid over, so a zone's `variants` reach the screen and come back untouched.
+     */
+    const cfgRaw = () => {
       const stored = host.config.get() || {};
       if (stored && typeof stored === 'object' && Object.keys(stored).length) sawConfig = true;
       return merge(stored, DEFAULTS);
     };
+    /**
+     * The configuration AS THIS SERVER SESSION RUNS IT: every zone that has variants carries the one
+     * picked for this session over its own settings (see `withVariants`, below the store). Every
+     * reader that WORKS a zone reads this one; only the config routes read `cfgRaw`.
+     */
+    let withVariants = (c) => c;
+    const cfg = () => withVariants(cfgRaw());
 
     /** A caller's body laid over what is STORED, so a save naming one key does not reset the rest. */
     function overlay(stored, body) {
@@ -1315,6 +1326,13 @@ module.exports = {
        * manager restart does not forget what it still owes.
        */
       sweepDue: 'zoneSweepDue',
+      /**
+       * Which VARIANT of each zone this server session runs: `{ "<zoneId>": { i, label, of, at, why } }`.
+       * In the store, because a manager that restarts under a running server must go on running the
+       * variant the game session started with — a guard set that changes while players stand in the
+       * zone is exactly the surprise the feature is not for. Picked again only when the server stops.
+       */
+      variants: 'variantPicks',
     };
 
     /**
@@ -1425,6 +1443,136 @@ module.exports = {
       return Array.isArray(v) ? v : [];
     };
     const setActive = (list) => st.set(K.active, list);
+
+    // ── variants: one zone, several ways it can turn out, one picked per server session ──────────
+    /**
+     * ⚠ **A VARIANT CHANGES HOW A ZONE IS GUARDED, NEVER WHICH LOOT OR WHICH GROUND.** A zone may
+     * carry `variants: [{ label, weight, enabled, sentries, activity }, …]`; each one is laid over
+     * the zone's own `sentries` and `activity` by key presence — the same merge everything here uses
+     * — and the zone's set, name and area stay the zone's. That is the whole promise of the feature:
+     * players know WHERE the loot is, and not what is waiting for them there.
+     *
+     * A zone with no `variants`, or an empty list, is exactly the zone it was before the key existed:
+     * nothing is picked, nothing is stored, nothing is logged for it.
+     *
+     * ⚠ **PICKED WHEN THE SERVER STOPS, NOT WHEN THE MANAGER STARTS.** A manager restart under a
+     * running server is not a new session, and re-rolling there would swap a garrison under players'
+     * feet. So a pick is made the first time a zone with variants is seen and again at every server
+     * stop, and nowhere else; the zone's posts are let go when its variant changes, because a post
+     * remembers which guard stood on it and the new variant may have none of that kind.
+     */
+    const VARIANT_KEYS = ['sentries', 'activity'];
+    function variantList(z) {
+      const raw = (z && Array.isArray(z.variants)) ? z.variants : [];
+      const out = [];
+      raw.forEach((v, i) => {
+        if (!v || typeof v !== 'object' || Array.isArray(v) || v.enabled === false) return;
+        out.push({
+          i,
+          label: String(v.label || '').trim() || `variant ${i + 1}`,
+          weight: Math.max(1, Math.min(100, Math.round(nz(v.weight, 1)))),
+          v,
+        });
+      });
+      return out;
+    }
+    /** One variant by weight. `Math.random` on purpose: the point is that nobody can predict it. */
+    function drawVariant(list) {
+      const total = list.reduce((n, o) => n + o.weight, 0);
+      let at = Math.random() * total;
+      for (const o of list) {
+        if (at < o.weight) return o;
+        at -= o.weight;
+      }
+      return list[list.length - 1];
+    }
+    function variantPicks() {
+      const p = st.get(K.variants, {});
+      return (p && typeof p === 'object' && !Array.isArray(p)) ? p : {};
+    }
+    /** The zone with one variant laid over it — the shape every reader below already understands. */
+    function zoneAs(z, o, of) {
+      const out = Object.assign({}, z);
+      for (const k of VARIANT_KEYS) {
+        const v = o.v[k];
+        if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+        const own = (z[k] && typeof z[k] === 'object' && !Array.isArray(z[k])) ? z[k] : {};
+        out[k] = merge(v, own);
+      }
+      out.variant = { index: o.i, label: o.label, count: of };
+      return out;
+    }
+    /**
+     * Pick a variant for every zone that needs one. `force` re-rolls every zone (a server stop);
+     * without it only a zone with no valid pick is rolled — a zone just added, or one whose picked
+     * variant was removed or switched off. Each pick is LOGGED, with the zone's own name, because the
+     * owner has to be able to answer "what was at Small Port last night" from the manager's log.
+     */
+    function pickVariants(why, force) {
+      const c = cfgRaw();
+      const was = variantPicks();
+      const next = {};
+      const changed = [];
+      for (const z of (c.zones || [])) {
+        if (!z || z.id == null) continue;
+        const list = variantList(z);
+        if (!list.length) continue;
+        const id = String(z.id);
+        const had = was[id];
+        const valid = had && Number.isInteger(had.i) && list.some((o) => o.i === had.i);
+        if (valid && !force) { next[id] = had; continue; }
+        const o = drawVariant(list);
+        next[id] = { i: o.i, label: o.label, of: z.variants.length, at: Date.now(), why: String(why || '') };
+        changed.push({ z, from: valid ? had.i : null, to: o.i });
+        log.info(`"${z.name || z.set}" — ${why}: this server session runs variant ${o.i + 1} of `
+          + `${z.variants.length}, "${o.label}"`);
+      }
+      if (JSON.stringify(next) !== JSON.stringify(was)) st.set(K.variants, next);
+      for (const ch of changed) {
+        // A post holds the word of the guard it was given. A different variant starts from no posts,
+        // so a rifleman's post is never kept waiting for a rifleman the new variant does not have.
+        if (ch.from !== null && ch.from !== ch.to) setPosts(ch.z.id, []);
+      }
+      return changed;
+    }
+    withVariants = (c) => {
+      if (!c || !Array.isArray(c.zones) || !c.zones.some((z) => z && Array.isArray(z.variants) && z.variants.length)) return c;
+      let picks = variantPicks();
+      const missing = c.zones.some((z) => {
+        const list = variantList(z);
+        if (!list.length) return false;
+        const p = picks[String(z && z.id)];
+        return !(p && Number.isInteger(p.i) && list.some((o) => o.i === p.i));
+      });
+      if (missing) { pickVariants('first pick', false); picks = variantPicks(); }
+      return Object.assign({}, c, {
+        zones: c.zones.map((z) => {
+          const list = variantList(z);
+          if (!list.length) return z;
+          const p = picks[String(z.id)];
+          const o = p ? list.find((q) => q.i === p.i) : null;
+          return o ? zoneAs(z, o, z.variants.length) : z;
+        }),
+      });
+    };
+    /** Every variant of a zone as a zone, for a reader that must cover all of them (the switch list). */
+    function everyVariantOf(z) {
+      const list = variantList(z);
+      return list.length ? list.map((o) => zoneAs(z, o, z.variants.length)) : [z];
+    }
+    /** What each zone runs this session, for the screen. */
+    function variantsForScreen() {
+      const out = {};
+      const picks = variantPicks();
+      for (const z of (cfg().zones || [])) {
+        if (!z || !z.variant) continue;
+        const p = picks[String(z.id)] || {};
+        out[String(z.id)] = { index: z.variant.index, label: z.variant.label, count: z.variant.count, at: p.at || null, why: p.why || null };
+      }
+      return out;
+    }
+    // Once at load, so a zone with variants has its pick (and its log line) before the first patrol.
+    try { pickVariants('first pick', false); } catch (e) { log.warn(`variants: ${e && e.message}`); }
 
     // ── the ledger: what this plugin really drew ─────────────────────────────────────────────────
     /**
@@ -8525,7 +8673,91 @@ module.exports = {
     let seenUp = false;
     try { if (host.server && typeof host.server.isRunning === 'function' && host.server.isRunning() === true) seenUp = true; } catch { /* unknown */ }
     function markDown() { if (downSince == null) downSince = Date.now(); }
-    function markUp() { downSince = null; stopRotation = null; seenUp = true; }
+    function markUp() { downSince = null; stopRotation = null; variantStop = null; seenUp = true; }
+    /**
+     * ── A NEW VARIANT FOR EVERY ZONE, ONCE PER STOP ──────────────────────────────────────────────
+     *
+     * Whichever arrives first, `server:offline` or the manager's own start, rolls every zone that has
+     * variants; the second finds it done. Not gated on `seenUp`, unlike the rotation: a manager that
+     * booted onto a stopped server and is now starting it is starting a NEW session, and that session
+     * gets a new roll too. Independent of the rotation mode — variants are a property of a zone, and
+     * a zone that is always on is the ordinary case for them.
+     */
+    let variantStop = null;
+    function repickForStop() {
+      if (variantStop) return variantStop;
+      if (!cfgRaw().enabled) return Promise.resolve(null);
+      variantStop = Promise.resolve().then(() => {
+        const changed = pickVariants('the server stopped', true);
+        if (changed.length) log.info(`the server stopped — ${changed.length} zone(s) picked their variant for the next session`);
+        // The live check of which configuration each rectangle points at runs again once the game
+        // can be asked, in case the save could not be written while it was down.
+        if (changed.length) sizesChecked = false;
+        return changed;
+      }).catch((e) => { log.warn(`variants: ${e && e.message}`); return []; });
+      return variantStop;
+    }
+    /**
+     * ⚠ **"KEEP ZOMBIES OUT" IS A PROPERTY OF THE ZONE'S CONFIGURATION, SO A NEW VARIANT CAN MOVE A
+     * RECTANGLE TO THE OTHER ONE.** The game reads its availability grid off the configuration, and
+     * this plugin keeps two (`<name>` and `<name> (no zombies)`); a variant that turns the rule on or
+     * off has to put the zone's rectangle on the other one before the game loads the save, or the
+     * game goes on blocking — or allowing — zombies by the previous session's choice. One write per
+     * configuration, only for rectangles that point at the wrong one, with the server stopped. Where
+     * the save cannot be written the live check (`syncOwnConfig`) moves them once the game is up.
+     */
+    async function settleVariantConfigs() {
+      const c = cfg();
+      if (c.zone.configMode !== 'own' || !prefixUsable()) return { ok: true, moved: 0 };
+      const m = host.map || {};
+      if (typeof m.writeZones !== 'function' || typeof m.zonesWritable !== 'function') return { ok: false, moved: 0 };
+      const byId = new Map((c.zones || []).map((z) => [String(z.id), z]));
+      const active = getActive().filter((a) => a.drawn === true && byId.get(String(a.id)) && byId.get(String(a.id)).variant);
+      if (!active.length) return { ok: true, moved: 0 };
+      const pre = await m.zonesWritable().catch(() => null);
+      const regions = saveRegionsOf(pre);
+      const configs = saveConfigsOf(pre);
+      if (!regions || !configs) {
+        sizesChecked = false;
+        return { ok: false, moved: 0, why: (pre && (pre.reason || pre.code)) || 'the save cannot be read just now' };
+      }
+      const groups = new Map();
+      for (const a of active) {
+        const e = byId.get(String(a.id));
+        const conf = saveConfigFor(e, pre);
+        if (!conf.configName) continue;
+        const r = zoneRects(e);
+        if (!r.ok) continue;
+        // The WHOLE region, exactly as `drawIntoSave` writes it, rather than the configuration alone:
+        // the writer treats shape and size as one change, and the zone's own geometry is the one
+        // that belongs in the save anyway.
+        r.rects.forEach((rect, i) => {
+          const name = zoneNameAt(e, i, r.rects.length);
+          const reg = regions.find((q) => q.name === name);
+          if (!reg) return;
+          const cur = configs.find((q) => Number(q && q.index) === reg.configIndex);
+          if (cur && String(cur.name) === conf.configName) return;
+          if (!groups.has(conf.configName)) groups.set(conf.configName, { make: conf.make, update: [] });
+          groups.get(conf.configName).update.push({
+            name, x: rect.x, y: rect.y, shape: shapeOf(rect), width: halfOf(rect).w, height: halfOf(rect).h,
+            configName: conf.configName,
+          });
+        });
+      }
+      let moved = 0;
+      for (const [name, g] of groups) {
+        const res = await writeSaveRegions({ update: g.update }, g.make);
+        if (res.ok) {
+          moved += g.update.length;
+          log.info(`${g.update.length} rectangle(s) moved to the configuration "${name}" for this session's `
+            + `variants${res.backup ? `, backup ${res.backup}` : ''}`);
+        } else {
+          sizesChecked = false;
+          log.warn(`the rectangles for "${name}" could not be moved in the save (${res.why}); they are moved once the server is up`);
+        }
+      }
+      return { ok: true, moved };
+    }
     function rotateForStop() {
       if (stopRotation) return stopRotation;
       const c = cfg();
@@ -8549,8 +8781,11 @@ module.exports = {
         // The manager calls this only with the server confirmed stopped, so the save is free.
         markDown();
         if (!cfg().enabled) return;
+        // FIRST, so a zone switched on below is written with the configuration its new variant needs.
+        await repickForStop();
         if (cfg().rotation === 'restart' && (stopRotation || seenUp)) await rotateForStop();
         stopChasingOwed();
+        await settleVariantConfigs().catch((e) => log.warn(`variants: ${e && e.message}`));
         // Whatever the save still owes — a leftover rectangle, a zone not drawn yet — now, while it
         // can still be written. The game reads the save as it starts.
         if (owedWork()) await settleOwed();
@@ -8573,9 +8808,12 @@ module.exports = {
        */
       host.events.on('server:offline', () => {
         markDown();
-        const c = cfg();
-        if (!c.enabled || c.rotation !== 'restart') return;
-        rotateForStop().then(() => chaseOwed()).catch((e) => log.warn(`${e && e.message}`));
+        const c = cfgRaw();
+        if (!c.enabled) return;
+        // The variants are rolled whatever the rotation is; the rotation only in its own mode.
+        repickForStop()
+          .then(() => (c.rotation === 'restart' ? rotateForStop().then(() => chaseOwed()) : null))
+          .catch((e) => log.warn(`${e && e.message}`));
       });
       // Still up, and about to go down: the stop that follows is a real end of a session.
       host.events.on('server:stopping', () => { seenUp = true; });
@@ -8659,7 +8897,9 @@ module.exports = {
     // ── admin API ────────────────────────────────────────────────────────────────────────────────
     // Mounted unconditionally: a `register()` that stands down takes the whole tab with it, and
     // every read below answers with the server stopped.
-    host.routes.get('/config', (req, res) => res.json(cfg()));
+    // As the owner wrote it: the tab edits a zone's own settings, and a variant laid over them here
+    // would be saved back into the zone as if the owner had typed it.
+    host.routes.get('/config', (req, res) => res.json(cfgRaw()));
     // The shipped wording of each message in every player language, for the language editor: each
     // tab shows what its readers get while nobody has written one, and "Reset to default" brings it
     // back.
@@ -8832,8 +9072,34 @@ module.exports = {
           ? `the guard setting every zone falls back to can do nothing: ${defaultTrouble.text}`
           : `the guard setting every zone falls back to: ${defaultTrouble.text}`);
       }
+      /**
+       * Every variant is judged as the zone it turns into, because each of them is a session some
+       * night: a variant that can do nothing is a zone that stands empty one restart in four, and
+       * nobody would ever connect that to a setting. A key a variant cannot change is said too —
+       * the loot set, the name and the area are the zone's, never the variant's.
+       */
+      for (const z of (cfgRaw().zones || [])) {
+        const list = variantList(z);
+        if (!list.length) continue;
+        for (const o of list) {
+          const extra = Object.keys(o.v).filter((k) => !VARIANT_KEYS.includes(k) && !['label', 'weight', 'enabled'].includes(k));
+          if (extra.length) {
+            warn.push(`"${z.name || z.set}", variant "${o.label}": ${extra.join(', ')} cannot change per variant `
+              + 'and is ignored; a variant changes the guards and how busy the zone is, never the loot set, name or area.');
+          }
+          const e = zoneAs(z, o, z.variants.length);
+          if (!e.sentries) continue;
+          const t = guardTrouble(guardsFor(e));
+          if (t) {
+            warn.push(t.dead
+              ? `"${z.name || z.set}", variant "${o.label}", can do nothing: ${t.text}`
+              : `"${z.name || z.set}", variant "${o.label}": ${t.text}`);
+          }
+        }
+      }
       for (const z of (c.zones || [])) {
         if (!z || !z.sentries) continue;         // follows the default, already judged above
+        if (z.variant) continue;                 // judged per variant, above
         // ⚠ THE SAME MERGE THE RUNTIME USES. A shallow one judged a zone naming only
         // `{replace: {count: 3}}` against a `replace` with no class path in it, and warned "no guard
         // has been chosen" at every save about a zone that works perfectly — which is the
@@ -8854,7 +9120,10 @@ module.exports = {
           warn.push(`the "${k}" message goes to the kill feed, which refuses "|". Remove it from the text.`);
         }
       }
-      res.json({ ok: true, config: c, warnings: warn });
+      // A zone added with variants, or a variant removed, gets its pick now rather than at the next
+      // read — so the log line saying what it runs is written at the save that caused it.
+      try { pickVariants('the configuration changed', false); } catch { /* the next read picks */ }
+      res.json({ ok: true, config: cfgRaw(), warnings: warn });
     });
 
     /**
@@ -9138,6 +9407,9 @@ module.exports = {
          * appears on the row without anybody editing the tab.
          */
         guardOverridable: GUARD_OVERRIDABLE.slice(),
+        // Which variant each zone that has them runs this server session: `{ id: { index, label,
+        // count, at, why } }`. Absent for a zone with none.
+        variants: variantsForScreen(),
         active: getActive(),
         // `known: false` is the bridge saying the game has not sent its zone list, which is not the
         // same as "there are no zones" and is drawn differently.
@@ -9384,8 +9656,11 @@ module.exports = {
       const want = new Map();
       const add = (forWhat, keys) => { for (const k of keys) if (!want.has(k)) want.set(k, forWhat); };
       if ((c.zones || []).length) add('Drawing the zone on the map', ['zones.enabled', 'zones.write']);
+      // ⚠ EVERY VARIANT, not the one this session runs: the switch a Razor variant needs has to be on
+      // before the night it is picked, and the list is read with the server stopped.
       const blocks = [{ entry: null, s: c.sentries || {} }]
-        .concat((c.zones || []).filter((z) => z && z.sentries).map((z) => ({ entry: z, s: guardsFor(z) || {} })));
+        .concat([].concat(...(cfgRaw().zones || []).map((z) => everyVariantOf(z)))
+          .filter((z) => z && z.sentries).map((z) => ({ entry: z, s: guardsFor(z) || {} })));
       for (const { entry, s } of blocks) {
         const kinds = Array.isArray(s.kinds) ? s.kinds : [];
         if (s.mode !== 'remove' && s.mode !== 'replace') continue;
@@ -9402,6 +9677,11 @@ module.exports = {
           // need off the list, which is the case where nothing appears and the checklist is green.
           if (types.some((t) => routeOf(t) === 'game')) add('Sending guards', ['spawn.persistent']);
           if (types.some((t) => routeOf(t) === 'engine')) add('Sending guards', ['spawn.creatures', 'entities.enabled']);
+          // ⚠ THE CLASS LOADER SHIPS OFF on the bridge (`makeResident`, default false), and after a
+          // restart almost nothing is resident: without it a Razor with no named point waits for the
+          // game to make one, measured on the dev bridge 2026-10-17 (`load_disabled`). Listed so the
+          // one switch that decides whether a boss guard ever appears is on the screen.
+          if (types.some((t) => routeOf(t) === 'engine')) add('Sending guards', ['spawn.makeResident']);
           // A Brenner, a Razor, a dropship or a sentry needs the bridge's "Bosses" switch, and the
           // bridge decides that from the CLASS NAME rather than from the kind it was asked for —
           // so the test here is the same one it makes, or the two can disagree and an owner is
@@ -9412,6 +9692,10 @@ module.exports = {
           // the bridge will judge it by.
           if (types.some((t) => routeOf(t) === 'engine' && /brenner|razor|dropship|sentry/i.test(classPathFor(t))))
             add('Sending guards', ['spawn.bosses']);
+          // A guard with game hours is held to them only while the game's clock can be read; with
+          // the switch off the window is open all day, which is the opposite of "only at night".
+          const zoneWin = windowOf((s.replace || {}).gameTime);
+          if (zoneWin.on || types.some((t) => windowOf(t.gameTime).on)) add('Guard hours on the game clock', ['live.enabled', 'live.time']);
         }
         if (s.globalRespawn && s.globalRespawn.enabled) add('Slowing the sentry respawn', ['zones.guarded', 'zones.guardedwrite']);
       }

@@ -817,5 +817,8 @@
   "pl.loot-zones.default.reminder": "Lepszy loot nadal jest tutaj: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(żadna strefa teraz nie działa — tak by to wyglądało)",
   "pl.loot-zones.msg.langs": "Gracz czyta zakładkę swojego języka (/lang w grze), inaczej Domyślną. Pusta Domyślna wyłącza wiadomość.",
-  "pl.loot-zones.msg.shipped": "Wbudowana treść: każdy gracz czyta ją w swoim języku, dopóki jej nie zmienisz."
+  "pl.loot-zones.msg.shipped": "Wbudowana treść: każdy gracz czyta ją w swoim języku, dopóki jej nie zmienisz.",
+  "pl.loot-zones.variants.running": "Ta sesja używa wariantu {i} z {n}, „{label}”. Nowy jest losowany przy każdym zatrzymaniu serwera.",
+  "pl.loot-zones.variants.unpicked": "Ta strefa ma {n} warianty. Dla każdej sesji serwera wybierany jest jeden.",
+  "pl.loot-zones.variants.note": "Wariant zastępuje poniższe ustawienia wartowników i ruchu własnymi. Warianty edytuje się w config.json."
 }

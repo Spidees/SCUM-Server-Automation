@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "Bättre loot finns fortfarande här: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(ingen zon är aktiv — så här skulle det se ut)",
   "pl.loot-zones.msg.langs": "Spelaren läser fliken för sitt språk (/lang i spelet), annars Standard. En tom Standard stänger av meddelandet.",
-  "pl.loot-zones.msg.shipped": "Medföljande text: varje spelare läser den på sitt eget språk tills du ändrar den."
+  "pl.loot-zones.msg.shipped": "Medföljande text: varje spelare läser den på sitt eget språk tills du ändrar den.",
+  "pl.loot-zones.variants.running": "Den här sessionen kör variant {i} av {n}, ”{label}”. En ny väljs vid varje serverstopp.",
+  "pl.loot-zones.variants.unpicked": "Den här zonen har {n} varianter. En väljs för varje serversession.",
+  "pl.loot-zones.variants.note": "En variant ersätter vakt- och aktivitetsinställningarna nedan med sina egna. Varianter redigeras i config.json."
 }

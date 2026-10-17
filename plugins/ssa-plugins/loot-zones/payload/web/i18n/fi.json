@@ -789,5 +789,8 @@
   "pl.loot-zones.default.reminder": "Parempi loot on yhä täällä: {zones}.",
   "pl.loot-zones.game.noZoneSample": "(mikään vyöhyke ei ole käynnissä — tältä se näyttäisi)",
   "pl.loot-zones.msg.langs": "Pelaaja lukee oman kielensä välilehden (/lang pelissä), muuten Oletus. Tyhjä Oletus kytkee viestin pois.",
-  "pl.loot-zones.msg.shipped": "Valmis teksti: jokainen pelaaja lukee sen omalla kielellään, kunnes muutat sitä."
+  "pl.loot-zones.msg.shipped": "Valmis teksti: jokainen pelaaja lukee sen omalla kielellään, kunnes muutat sitä.",
+  "pl.loot-zones.variants.running": "Tämä istunto käyttää muunnelmaa {i}/{n}, ”{label}”. Uusi valitaan aina, kun palvelin pysähtyy.",
+  "pl.loot-zones.variants.unpicked": "Tällä alueella on {n} muunnelmaa. Jokaiselle palvelinistunnolle valitaan yksi.",
+  "pl.loot-zones.variants.note": "Muunnelma korvaa alla olevat vartija- ja vilkkausasetukset omillaan. Muunnelmia muokataan tiedostossa config.json."
 }
