@@ -2,6 +2,7 @@
 
 Punishes players who **arm a mine or trap outside their own or their squad's flag area**. The first
 offences earn a chat **warning**; after that the placer is **teleported onto their own armed mine**.
+Optionally it also **removes the mines a fallen flag leaves behind** when no new flag is built in time.
 
 ## How it works
 - Every few seconds the plugin reads the manager's **world scan** for placed, **armed** mines and traps
@@ -20,6 +21,14 @@ offences earn a chat **warning**; after that the placer is **teleported onto the
 - **State survives restarts:** handled mines, offence counts and the action history are saved, so a
   restart never punishes the same mine twice. Mines that were already placed when the plugin first
   ran are never punished.
+- **Fallen flags (off until you switch it on):** when a flag disappears from the world, a **timer**
+  starts (10 minutes by default). If no new flag stands in the **original flag area** when it runs
+  out, every placed mine inside that area is removed through the bridge, one by one, and the log
+  gets one line per area with the counts.
+- **Only the same owner or their squad keeps the mines** with a new flag, by default. A raider who
+  builds a flag on the ruins does not keep the old owner's mines alive inside their base.
+- **A mine counts as removed only when the game confirms it.** A refusal is logged in the bridge's
+  own words and tried again until the grace period runs out. Timers survive a manager restart.
 
 ## Requirements
 - The **SSA Bridge** plugin, for the teleport and the chat message.
@@ -29,6 +38,8 @@ offences earn a chat **warning**; after that the placer is **teleported onto the
   - **Live inventories**: *Read live inventories*, which confirms a mine is still armed.
   - **Live squads**: *Read live squads, and allow the changes below* and *Include the member list*,
     which confirm the placer's current squad.
+- For **fallen-flag removal**: *Destroy an item* in the **Live inventories** module. To clear an
+  area with nobody near it, also the **Far from players** module (*Work far from players*).
 - Manager **6.0.0+**.
 
 ## Configuration
@@ -46,6 +57,10 @@ Everything is configured from the plugin's **admin tab** (🛡️ Mine Protectio
 - **Every player's language**: each message has a tab per language, and every player reads the
   one for the language they chose with `/lang` in game, on the Field Console or on Discord. An
   empty tab sends the default text.
+- **Mines of a fallen flag**: the on/off switch (off by default), the delay before removal, how long
+  to keep trying after it, whether every mine and trap or only the watched types are removed, whose
+  new flag keeps the mines, loading an empty area, an owner alert, and a chat announcement in every
+  player's language. The list below it shows each fallen flag, its state and a *Keep mines* button.
 - **Exemptions**: players who are never punished. Type a Steam ID or pick an online player.
 - **Placed mines**: every watched mine in the server's last save, who armed it, where, and its status.
 - **Recent actions**: every warning and teleport, with *Reset warnings* and *Clear history*.
@@ -59,6 +74,11 @@ Everything is configured from the plugin's **admin tab** (🛡️ Mine Protectio
   does nothing about those mines until it can.
 - The placer is whoever **armed** the mine, not whoever crafted or placed it.
 - Everything can be configured with the server stopped; only the live lists need it running.
+- **A mine can only be removed while the game has its area loaded**, which means a player nearby or
+  the bridge's *Work far from players* visitor. Without either, removal waits and says so.
+- A flag is seen as fallen when the **server's save** (or the game's own flag log) no longer has it,
+  so the timer starts up to one autosave after the flag really fell.
+- Switching fallen-flag removal on only starts watching: flags that fell before that are left alone.
 - **A new install already speaks every player's language.** A message you have not changed goes out
   in the plugin's own translation; once you edit it, players read your wording. On a manager without
   per-language chat, everyone gets the one text.

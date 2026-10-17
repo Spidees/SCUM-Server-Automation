@@ -17,6 +17,9 @@
     message: 'Arming a mine outside your own or your squad\'s flag area is not allowed. Enjoy your own trap.',
     warnMessage: 'Warning: arm mines only inside your own or your squad\'s flag area. The next one takes you with it.',
     messageI18n: {}, warnMessageI18n: {},
+    fallenFlagCleanup: false, fallenFlagDelayMinutes: 10, fallenFlagGraceMinutes: 120, fallenFlagTypes: 'all',
+    fallenFlagCancelBy: 'owner', fallenFlagWake: true, fallenFlagAlert: true, fallenFlagAnnounce: false,
+    fallenFlagMessage: 'The mines left in a fallen flag\'s area have been removed.', fallenFlagMessageI18n: {},
   };
 
   // ── backend calls ───────────────────────────────────────────────────────────
@@ -194,7 +197,7 @@
       Promise.all([api('/status'), api('/mines')]).then(function (rr) {
         if (mpOnEvent !== onEvent) return;               // superseded while the request was in flight
         pollErr = null;
-        var s = rr[0]; if (s && s.enabled != null) { status = s; renderStatusBar(); renderRecent(); }
+        var s = rr[0]; if (s && s.enabled != null) { status = s; renderStatusBar(); renderRecent(); renderFallen(); }
         mines = (rr[1] && rr[1].mines) || []; renderMines();
         mpLiveTimer = setTimeout(refreshStatusLoop, 8000);
       }).catch(pollFailed);
@@ -404,14 +407,59 @@
         sort: { key: 'at', dir: 'desc' }, pageSize: 12, toolbar: [reset, clear],
         columns: [
           { key: 'at', label: SSA.t('pl.mine-protection.col.when', 'When'), sort: true, sortVal: function (r) { return r.at || 0; }, tdClass: 'dim', render: function (r) { return document.createTextNode(ago(r.at)); } },
-          { key: 'action', label: SSA.t('pl.mine-protection.col.action', 'Action'), sort: true, sortVal: function (r) { return r.action; }, render: function (r) { var w = r.action === 'warn'; return SSA.cell.tag(w ? SSA.t('pl.mine-protection.recent.warned', 'Warned') : SSA.t('pl.mine-protection.recent.teleported', 'Teleported'), w ? 'warn' : 'bad'); } },
+          { key: 'action', label: SSA.t('pl.mine-protection.col.action', 'Action'), sort: true, sortVal: function (r) { return r.action; }, render: function (r) { if (r.action === 'cleared') return SSA.cell.tag(SSA.t('pl.mine-protection.recent.cleared', 'Mines removed'), 'ok'); var w = r.action === 'warn'; return SSA.cell.tag(w ? SSA.t('pl.mine-protection.recent.warned', 'Warned') : SSA.t('pl.mine-protection.recent.teleported', 'Teleported'), w ? 'warn' : 'bad'); } },
           { key: 'player', label: SSA.t('pl.mine-protection.col.player', 'Player'), sort: true, sortVal: function (r) { return (r.player || r.steamId || '').toLowerCase(); }, render: function (r) { return SSA.cell.player(r.player, r.steamId); } },
-          { key: 'mine', label: SSA.t('pl.mine-protection.col.mine', 'Mine'), sort: true, sortVal: function (r) { return (r.mine || r.type || '').toLowerCase(); }, render: function (r) { return SSA.cell.item(r.code || r.type ? mineCode(r) : null, r.mine || r.type || SSA.t('pl.mine-protection.recent.mineFallback', 'mine')); } },
+          { key: 'mine', label: SSA.t('pl.mine-protection.col.mine', 'Mine'), sort: true, sortVal: function (r) { return (r.mine || r.type || '').toLowerCase(); }, render: function (r) { if (r.action === 'cleared') return document.createTextNode(SSA.t('pl.mine-protection.ff.removedCount', '{n} removed', { n: r.mine })); return SSA.cell.item(r.code || r.type ? mineCode(r) : null, r.mine || r.type || SSA.t('pl.mine-protection.recent.mineFallback', 'mine')); } },
           { key: 'loc', label: SSA.t('pl.mine-protection.col.location', 'Location'), render: function (r) { return r.loc ? SSA.cell.location(r.loc.x, r.loc.y, r.loc.z) : document.createTextNode(''); } },
         ],
       });
     }
     function renderRecent() { if (recentTbl) recentTbl.refresh(); }
+
+    // ── fallen flags: what is waiting, being removed, and what happened to the last ones ──
+    var fallenTbl = null;
+    function renderFallen() { if (fallenTbl) fallenTbl.refresh(); }
+    var FF_STATE = {
+      waiting: function () { return [SSA.t('pl.mine-protection.ff.state.waiting', 'Waiting'), 'warn']; },
+      removing: function () { return [SSA.t('pl.mine-protection.ff.state.removing', 'Removing'), 'warn']; },
+      cleared: function () { return [SSA.t('pl.mine-protection.ff.state.cleared', 'Cleared'), 'ok']; },
+      partial: function () { return [SSA.t('pl.mine-protection.ff.state.partial', 'Partly cleared'), 'bad']; },
+      kept: function () { return [SSA.t('pl.mine-protection.ff.state.kept', 'Kept'), 'muted']; },
+      gaveup: function () { return [SSA.t('pl.mine-protection.ff.state.gaveup', 'Gave up'), 'bad']; },
+      off: function () { return [SSA.t('pl.mine-protection.ff.state.off', 'Switched off'), 'muted']; },
+    };
+    function fallenState(r) {
+      var m = FF_STATE[r.state] ? FF_STATE[r.state]() : [String(r.state || ''), 'muted'];
+      // The reason a pass could not act is the backend's own sentence, shown under the state.
+      return h('span', {}, [SSA.cell.tag(m[0], m[1]), r.note ? h('small', { class: 'mp-hint' }, ' ' + r.note) : null]);
+    }
+    function fallenWhen(r) {
+      if (r.state === 'waiting') return document.createTextNode(SSA.t('pl.mine-protection.ff.inMinutes', 'in {n} min', { n: Math.max(0, Math.ceil(((r.deadline || 0) - Date.now()) / 60000)) }));
+      return document.createTextNode(ago(r.endedAt || r.startedAt || r.fellAt || Date.now()));
+    }
+    function keepFallen(r) {
+      api('/fallen-keep', { method: 'POST', body: { id: r.id } }).then(function (res) {
+        if (res && res.ok) { toast(SSA.t('pl.mine-protection.toast.kept', 'The mines stay')); refreshStatusLoop(); }
+        else toast(SSA.t('pl.mine-protection.toast.notKept', 'Nothing changed — {err}', { err: (res && (res.reason || res.error)) || SSA.t('pl.mine-protection.save.noReason', 'the manager did not say why') }), 'error');
+      }).catch(function (err) { toast(SSA.t('pl.mine-protection.toast.notKept', 'Nothing changed — {err}', { err: why(err) }), 'error'); });
+    }
+    function buildFallenTable() {
+      return SSA.table({
+        rows: function () { return (status && status.fallen && status.fallen.areas) || []; },
+        empty: SSA.t('pl.mine-protection.ff.empty', 'No flag has fallen since this was switched on.'),
+        columns: [
+          { key: 'flag', label: SSA.t('pl.mine-protection.col.flag', 'Flag'), render: function (r) { return document.createTextNode((r.name || ('#' + (r.flagId != null ? r.flagId : r.baseId))) + (r.owner ? ' · ' + r.owner : '')); } },
+          { key: 'loc', label: SSA.t('pl.mine-protection.col.location', 'Location'), render: function (r) { return SSA.cell.location(r.x, r.y, r.z); } },
+          { key: 'when', label: SSA.t('pl.mine-protection.col.when', 'When'), sort: true, sortVal: function (r) { return r.deadline || 0; }, tdClass: 'dim', render: fallenWhen },
+          { key: 'state', label: SSA.t('pl.mine-protection.col.status', 'Status'), render: fallenState },
+          { key: 'mines', label: SSA.t('pl.mine-protection.col.mine', 'Mine'), tdClass: 'mono', render: function (r) { return document.createTextNode((r.removed || 0) + ' / ' + (r.total || 0)); } },
+          { key: 'act', label: '', render: function (r) {
+            if (r.state !== 'waiting' && r.state !== 'removing') return document.createTextNode('');
+            return h('button', { type: 'button', class: 'secondary', onclick: function () { keepFallen(r); } }, SSA.t('pl.mine-protection.btn.keep', 'Keep mines'));
+          } },
+        ],
+      });
+    }
 
     // ── full render ──
     function render() {
@@ -453,6 +501,38 @@
         h('div', { class: 'mp-checks' }, [
           checkbox(SSA.t('pl.mine-protection.chk.requireOnline', 'Only act while the placer is online'), function () { return config.requireOnline; }, function (v) { config.requireOnline = v; }),
         ]),
+      ]));
+
+      // 2b) the mines a fallen flag leaves behind
+      var ffTypes = h('select', { onchange: function () { config.fallenFlagTypes = ffTypes.value; } }, [
+        h('option', { value: 'all' }, SSA.t('pl.mine-protection.ff.types.all', 'Every mine and trap')),
+        h('option', { value: 'watched' }, SSA.t('pl.mine-protection.ff.types.watched', 'Only the watched types above')),
+      ]);
+      ffTypes.value = config.fallenFlagTypes === 'watched' ? 'watched' : 'all';
+      var ffCancel = h('select', { onchange: function () { config.fallenFlagCancelBy = ffCancel.value; } }, [
+        h('option', { value: 'owner' }, SSA.t('pl.mine-protection.ff.cancel.owner', 'The same owner or their squad')),
+        h('option', { value: 'any' }, SSA.t('pl.mine-protection.ff.cancel.any', 'Any new flag')),
+      ]);
+      ffCancel.value = config.fallenFlagCancelBy === 'any' ? 'any' : 'owner';
+      fallenTbl = buildFallenTable();
+      body.appendChild(card(SSA.t('pl.mine-protection.card.fallen.title', 'Mines of a fallen flag'), SSA.t('pl.mine-protection.card.fallen.sub', 'When a flag falls and no new one is built in time, the mines left in its area are removed.'), [
+        h('div', { class: 'mp-checks' }, [
+          checkbox(SSA.t('pl.mine-protection.ff.on', 'Remove the mines of a fallen flag'), function () { return config.fallenFlagCleanup; }, function (v) { config.fallenFlagCleanup = v; }),
+        ]),
+        h('div', { class: 'mp-grid' }, [
+          field(SSA.t('pl.mine-protection.ff.delay', 'Delay before removal (min)'), numInput(function () { return config.fallenFlagDelayMinutes; }, function (v) { config.fallenFlagDelayMinutes = Math.max(1, Math.min(1440, Number(v) || 1)); }, { min: 1, max: 1440 }), SSA.t('pl.mine-protection.ff.delay.hint', 'A new flag in the area before then keeps the mines')),
+          field(SSA.t('pl.mine-protection.ff.grace', 'Keep trying after that (min)'), numInput(function () { return config.fallenFlagGraceMinutes; }, function (v) { config.fallenFlagGraceMinutes = Math.max(5, Math.min(10080, Number(v) || 5)); }, { min: 5, max: 10080 }), SSA.t('pl.mine-protection.ff.grace.hint', 'Mines can only be removed while the game has the area loaded')),
+          field(SSA.t('pl.mine-protection.ff.types', 'What is removed'), ffTypes),
+          field(SSA.t('pl.mine-protection.ff.cancel', 'Whose new flag keeps the mines'), ffCancel),
+        ]),
+        h('div', { class: 'mp-checks' }, [
+          checkbox(SSA.t('pl.mine-protection.ff.wake', 'Load the area when nobody is near'), function () { return config.fallenFlagWake; }, function (v) { config.fallenFlagWake = v; }),
+          checkbox(SSA.t('pl.mine-protection.ff.alert', 'Send an owner alert'), function () { return config.fallenFlagAlert; }, function (v) { config.fallenFlagAlert = v; }),
+          checkbox(SSA.t('pl.mine-protection.ff.announce', 'Announce it in game chat'), function () { return config.fallenFlagAnnounce; }, function (v) { config.fallenFlagAnnounce = v; }),
+        ]),
+        h('small', { class: 'mp-hint' }, SSA.t('pl.mine-protection.ff.needs', 'Needs "Destroy an item" in {where}. Loading an empty area needs "Work far from players".', { where: bridgeWhere() })),
+        h('div', { class: 'mp-stack' }, [messageEditor(config, 'fallenFlagMessage', SSA.t('pl.mine-protection.ff.message', 'Chat announcement'))]),
+        fallenTbl.el,
       ]));
 
       // 3) messages

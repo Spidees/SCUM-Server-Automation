@@ -85,6 +85,18 @@ const DEFAULTS = {
   // above, or, while that is still the shipped English, the plugin's own translation of it.
   messageI18n: {},
   warnMessageI18n: {},
+  // ── the mines a fallen flag leaves behind ──
+  // OFF as shipped, so every config written before this existed behaves exactly as it did.
+  fallenFlagCleanup: false,
+  fallenFlagDelayMinutes: 10,         // a new flag in the area before this keeps the mines
+  fallenFlagGraceMinutes: 120,        // how long removal keeps trying after the delay
+  fallenFlagTypes: 'all',             // 'all' | 'watched' (only the watched types above)
+  fallenFlagCancelBy: 'owner',        // 'owner' (the same owner or their squad) | 'any' (any new flag)
+  fallenFlagWake: true,               // ask the bridge's "Work far from players" to load an empty area
+  fallenFlagAlert: true,              // an owner alert (Discord + panel) when mines are removed
+  fallenFlagAnnounce: false,          // a line in game chat when mines are removed
+  fallenFlagMessage: 'The mines left in a fallen flag\'s area have been removed.',
+  fallenFlagMessageI18n: {},
 };
 // Channels a targeted DM can be delivered to for one player.
 const CHANNELS = ['local', 'global', 'squad', 'admin', 'server'];
@@ -145,7 +157,26 @@ function normalizeConfig(raw) {
   c.warnMessage = String(c.warnMessage || DEFAULTS.warnMessage);
   c.messageI18n = cleanI18n(r.messageI18n);
   c.warnMessageI18n = cleanI18n(r.warnMessageI18n);
+  // Fallen flags. Only an explicit `true` switches removal on: it is irreversible, and a config that
+  // never named the key is an owner who never chose it. Numbers are validated, never `|| default`,
+  // and an unreadable one falls back to the DEFAULT rather than to a bound.
+  c.fallenFlagCleanup = r.fallenFlagCleanup === true;
+  c.fallenFlagDelayMinutes = boundedNumber(r.fallenFlagDelayMinutes, 1, 1440, DEFAULTS.fallenFlagDelayMinutes);
+  c.fallenFlagGraceMinutes = boundedNumber(r.fallenFlagGraceMinutes, 5, 10080, DEFAULTS.fallenFlagGraceMinutes);
+  c.fallenFlagTypes = c.fallenFlagTypes === 'watched' ? 'watched' : 'all';
+  c.fallenFlagCancelBy = c.fallenFlagCancelBy === 'any' ? 'any' : 'owner';
+  c.fallenFlagWake = c.fallenFlagWake !== false;
+  c.fallenFlagAlert = c.fallenFlagAlert !== false;
+  c.fallenFlagAnnounce = c.fallenFlagAnnounce === true;
+  c.fallenFlagMessage = String(c.fallenFlagMessage || DEFAULTS.fallenFlagMessage);
+  c.fallenFlagMessageI18n = cleanI18n(r.fallenFlagMessageI18n);
   return c;
+}
+
+/** A number inside [min, max], or `dflt` when the value is not a number at all. */
+function boundedNumber(v, min, max, dflt) {
+  const n = (v === null || v === undefined || v === '') ? NaN : Number(v);
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : dflt;
 }
 
 /** A per-language map as it is stored: a language code to a text that is not blank. */
@@ -197,6 +228,7 @@ module.exports = {
     function shippedText(field, lang) {
       if (!host.i18n) return null;
       if (field === 'warnMessage') return host.i18n.t('pl.mine-protection.default.warnMessage', 'Warning: arm mines only inside your own or your squad\'s flag area. The next one takes you with it.', lang);
+      if (field === 'fallenFlagMessage') return host.i18n.t('pl.mine-protection.default.fallenFlagMessage', 'The mines left in a fallen flag\'s area have been removed.', lang);
       return host.i18n.t('pl.mine-protection.default.message', 'Arming a mine outside your own or your squad\'s flag area is not allowed. Enjoy your own trap.', lang);
     }
     // Per language: the owner's own line, else the plugin's translation while the text is still the
@@ -217,7 +249,7 @@ module.exports = {
     }
     /** The shipped lines in every player language, for the language editor's built-in text. */
     function textDefaults() {
-      const fields = ['message', 'warnMessage'];
+      const fields = ['message', 'warnMessage', 'fallenFlagMessage'];
       const english = {};
       for (const f of fields) english[f] = DEFAULTS[f];
       const byLang = {};
@@ -610,6 +642,422 @@ module.exports = {
       persistHandled();
     }
 
+    // ── the mines a FALLEN FLAG leaves behind ───────────────────────────────────────────────────────
+    //
+    // A player can arm mines inside their own flag area, lose the flag (destroyed by a raid, taken
+    // down, decayed) and the mines stay: armed, ownerless, firing for anybody. When the owner switches
+    // `fallenFlagCleanup` on, a flag that disappears starts a timer; if no new flag stands in the
+    // ORIGINAL area when it runs out, every placed mine inside that area is removed.
+    //
+    // ── how each half is known ──────────────────────────────────────────────────────────────────
+    //
+    //   • A FLAG FALLING is a flag the world scan listed and no longer lists. `host.map.world().bases`
+    //     is the save's base layer, which drops a base whose flag element is gone (the `base` row
+    //     itself outlives its flag: `check-base-flag`), and before the next autosave it also drops one
+    //     the game has logged `[Flag] Destroyed` for. No bridge read reports whether a base still has
+    //     a flag, so this is the only reading there is. The flags last seen are kept in the store, so a
+    //     flag that falls while the manager is down is seen at the first scan after it comes back.
+    //   • THE AREA is the square the flag stood for: its element's position and the scan's own
+    //     offsets (a fixed 100 x 100 m, `FLAG_HALF_CM` in the manager), copied when the flag was last
+    //     seen and kept with the timer, because the flag is exactly what is gone.
+    //   • A NEW FLAG IN THE AREA is any flag in the scan whose position is inside that square. By
+    //     default only the same owner or a member of their squad keeps the mines: a raider who builds
+    //     their own flag on the ruins is the case this exists for, and letting their flag cancel the
+    //     removal would leave the old owner's mines live inside the raider's base. `fallenFlagCancelBy:
+    //     'any'` makes every new flag keep them. The same flag id coming back (a save rolled back)
+    //     always keeps them.
+    //
+    // ── removing, and why nothing is claimed that was not seen ──────────────────────────────────
+    //
+    // The targets are the placed mines the SAVE holds inside the square (armed or not, of every type
+    // or only the watched ones). Each one is removed with the bridge's `items destroy:eid:<id>`, the
+    // one verb that names a placed trap by its entity id, and only once the running game has it
+    // loaded: a trap far from every player is not an actor at all (`items traps` says so in its own
+    // scope note). With nobody near, the bridge's "Work far from players" visitor can load the area,
+    // when the owner has that module on.
+    //
+    // A destroy of a deployable is confirmed on a LATER frame (2.4-3.3 s measured), so the call's
+    // answer is never the verdict. A mine counts as removed on positive evidence only: the module's
+    // own confirmed-destroy counter moving past what it read before the call, the live row reporting
+    // `destroyed`, or a later save no longer holding the entity. A refusal is logged in the module's
+    // own words and the mine is tried again on a later pass, until the delay plus the grace runs out;
+    // whatever is still standing then is reported as left, never as removed.
+    const FF_HALF_CM = 5000;               // the flag square's half side, the manager's FLAG_HALF_CM
+    const FF_TICK_MS = 15000;              // how often flags are compared while nothing is in flight
+    const FF_RETRY_MS = 30000;             // a pass that could not act looks again after this
+    const FF_CONFIRM_MS = 4000;            // the bridge confirms a deployable's destroy within ~3.3 s
+    const FF_PENDING_MAX_MS = 20000;       // ...and gives up its own re-check well before this
+    const FF_RESEND_MS = 30000;            // a mine still standing this long after a destroy is tried again
+    const FF_SAVE_SETTLE_MS = 15 * 60000;  // a mine that vanished from the live list waits this long for a save
+    const FF_WAKE_SETTLE_MS = 20000;       // a placed visitor nudges and loads its reach in about 15 s
+    const FF_MAX_TRIES = 5;                // destroy calls per mine before it is reported as failed
+    const FF_KEEP_DONE = 30;               // finished areas kept for the panel
+    const FF_SAY_EVERY_MS = 10 * 60000;    // the same reason is logged again at most this often
+    const FF_LIVE_STATES = new Set(['waiting', 'removing']);
+    // The labels the bridge panel shows for the switches a refusal can point at.
+    const FF_SWITCH = { items: 'Read live inventories', wake: 'Work far from players' };
+
+    let ffSeeded = host.store.get('ffSeeded', false) === true;
+    let ffFlags = (() => { const f = host.store.get('ffFlags', {}); return (f && typeof f === 'object' && !Array.isArray(f)) ? f : {}; })();
+    let ffAreas = (() => { const a = host.store.get('ffAreas', []); return Array.isArray(a) ? a.filter((x) => x && typeof x === 'object') : []; })();
+    let ffFlagsSig = Object.keys(ffFlags).sort().join(',');
+    let ffDirty = false;
+    let ffBusy = false, ffNextRun = 0;
+
+    function ffPersist() {
+      const sig = Object.keys(ffFlags).sort().join(',');
+      try {
+        if (sig !== ffFlagsSig) { ffFlagsSig = sig; host.store.set('ffFlags', ffFlags); }
+        if (ffDirty) {
+          ffDirty = false;
+          const live = ffAreas.filter((a) => FF_LIVE_STATES.has(a.state));
+          const done = ffAreas.filter((a) => !FF_LIVE_STATES.has(a.state)).slice(0, FF_KEEP_DONE);
+          ffAreas = live.concat(done);
+          host.store.set('ffAreas', ffAreas);
+        }
+      } catch (e) { /* the store logs its own refusal */ }
+    }
+
+    /**
+     * Every flag the world scan lists now, or null when that cannot be told.
+     *
+     * Each layer of the scan is caught on its own, so a base query that failed arrives as an EMPTY
+     * list rather than as an error. Read as "every flag fell", that would start a timer on every base
+     * on the server. So an empty list is believed only when the save itself says it holds no flag.
+     */
+    function ffScan() {
+      if (!mapOk) return null;
+      let w;
+      try { w = host.map.world(); } catch (e) { return null; }
+      if (!w || !Array.isArray(w.bases)) return null;
+      if (!w.bases.length) {
+        let r = null;
+        try { r = host.db.scum.get("SELECT COUNT(*) AS n FROM base_element WHERE asset LIKE '%BP_Base_Flag%'"); } catch (e) { r = null; }
+        if (!r || Number(r.n) !== 0) return null;
+      }
+      const flags = {};
+      for (const b of w.bases) {
+        const x = Number(b && b.x), y = Number(b && b.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const key = (b.flagId !== null && b.flagId !== undefined) ? `f${b.flagId}` : `b${b.id}`;
+        const off = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+        flags[key] = {
+          flagId: (b.flagId !== null && b.flagId !== undefined) ? Number(b.flagId) : null,
+          baseId: (b.id !== null && b.id !== undefined) ? Number(b.id) : null,
+          name: b.name || null, x: Math.round(x), y: Math.round(y), z: Math.round(off(b.z, 0)),
+          minX: off(b.minX, -FF_HALF_CM), maxX: off(b.maxX, FF_HALF_CM), minY: off(b.minY, -FF_HALF_CM), maxY: off(b.maxY, FF_HALF_CM),
+          ownerId: Number(b.ownerId) > 0 ? Number(b.ownerId) : null, owner: b.owner || null,
+          squadId: (b.squadId !== null && b.squadId !== undefined) ? b.squadId : null,
+        };
+      }
+      return { flags, traps: Array.isArray(w.traps) ? w.traps : null };
+    }
+
+    const ffIn = (a, x, y) => Number.isFinite(x) && Number.isFinite(y)
+      && x >= a.x + a.minX && x <= a.x + a.maxX && y >= a.y + a.minY && y <= a.y + a.maxY;
+    const ffLabel = (a) => `${a.flagId !== null && a.flagId !== undefined ? `#${a.flagId}` : `of base ${a.baseId}`}`
+      + `${a.owner ? ` (${a.owner})` : ''}${a.sector ? ` in ${a.sector}` : ''}`;
+    const ffCount = (a, st) => Object.values(a.mines || {}).filter((m) => m.state === st).length;
+    // Same owner, or a member of the squad that owned the fallen flag. An owner the save could not
+    // name is nobody's, so it keeps the mines only under 'any'.
+    const ffSameSide = (f, a) => (f.ownerId !== null && f.ownerId === a.ownerId)
+      || (f.squadId !== null && f.squadId !== undefined && a.squadId !== null && a.squadId !== undefined && String(f.squadId) === String(a.squadId));
+
+    /** Say why a pass could not act, once per reason, and keep it for the panel. */
+    function ffNote(a, text) {
+      const now = Date.now();
+      if (a.note !== text) ffDirty = true;
+      a.note = text;
+      if (a.said === text && now - (a.saidAt || 0) < FF_SAY_EVERY_MS) return;
+      a.said = text; a.saidAt = now;
+      host.logger.warn(`fallen flag ${ffLabel(a)}: ${text}. Trying again.`);
+    }
+
+    /** A bridge failure in the module's own words, or the switch an owner has to find. */
+    function ffWhy(mod, q) {
+      const code = (q && q.code) || 'bridge_off';
+      if (code === 'refused') return (q && q.reason) || `the bridge's ${mod} module refused without a reason`;
+      if (code === 'module_off') {
+        const off = q && q.switchTo && Array.isArray(q.switchTo.off) && q.switchTo.off[0];
+        return `turn on '${(off && off.label) || FF_SWITCH[mod] || mod}' in the SSA Bridge`;
+      }
+      if (code === 'no_module') return `this server's SSA Bridge has no '${mod}' module`;
+      return 'the SSA Bridge did not answer';
+    }
+
+    function ffTypeOk(c) {
+      if (c.fallenFlagTypes !== 'watched') return () => true;
+      const watch = new Set(c.watchedTypes);
+      return (t) => watch.has(t && t.type);
+    }
+
+    /** Does the save still hold this entity as a placed item? `null` when the save cannot answer. */
+    function ffStillPlaced(id) {
+      let r = null;
+      try { r = host.db.scum.get('SELECT COUNT(*) AS n FROM entity WHERE id = ? AND owning_entity_id IS NULL', Number(id)); } catch (e) { r = null; }
+      if (!r || !Number.isFinite(Number(r.n))) return null;
+      return Number(r.n) > 0;
+    }
+
+    /** The live row for one saved mine: by entity id, else the nearest within 1.5 m. */
+    function ffLiveRow(live, id, m) {
+      let best = null, bestD = Infinity;
+      for (const t of live) {
+        if (t && t.entityLo !== undefined && t.entityLo !== null) { if (String(t.entityLo) === String(id)) return t; continue; }
+        const d = Math.hypot(Number(t && t.x) - m.x, Number(t && t.y) - m.y);
+        if (Number.isFinite(d) && d < bestD) { bestD = d; best = t; }
+      }
+      return (best && bestD <= TRAP_MATCH_CM) ? best : null;
+    }
+
+    /** The module's count of confirmed destroys, or null when it could not be read. */
+    async function ffDestroyedCount() {
+      const q = await host.bridge.query('items', 'last');
+      const n = q && q.ok && q.data ? Number(q.data.destroyed) : NaN;
+      return Number.isFinite(n) ? { n, data: q.data } : null;
+    }
+
+    /** Hand the bridge's visitor back (it parks; its lease ends it anyway). Best effort. */
+    async function ffReleaseWake(a) {
+      if (!a.wake) return;
+      const w = a.wake; a.wake = null; ffDirty = true;
+      try {
+        const v = await host.bridge.query('wake', 'visitors');
+        const list = v && v.ok && v.data && Array.isArray(v.data.visitors) ? v.data.visitors : [];
+        const mine = list.find((x) => x && x.parked !== true && Math.abs(Number(x.x) - w.x) < 1000 && Math.abs(Number(x.y) - w.y) < 1000);
+        if (mine && mine.id !== undefined) await host.bridge.command('wake', `remove:${mine.id}`);
+      } catch (e) { /* the lease removes it */ }
+    }
+
+    /** Ask the bridge to load an area nobody is near. True when a visitor is (now) there. */
+    async function ffWake(a, c, now) {
+      if (!c.fallenFlagWake) return false;
+      if (a.wake && a.wake.until > now) return true;
+      if (!canQuery()) return false;
+      const v = await host.bridge.query('wake', 'visitors');
+      if (!v || !v.ok) { a.wakeWhy = ffWhy('wake', v); return false; }
+      const reach = Math.max(100, Math.min(7500, Number(v.data && v.data.maxBoundsCm) || 5000));
+      const secs = Math.max(30, Math.min(300, Number(v.data && v.data.maxSeconds) || 300));
+      const x = Math.round(a.x), y = Math.round(a.y), z = Math.round(a.z + 200);
+      const r = await host.bridge.command('wake', `place:${x}:${y}:${z}:${reach}:${secs}`);
+      if (!r || !r.ok) { a.wakeWhy = ffWhy('wake', r); return false; }
+      a.wake = { x, y, placedAt: now, until: now + secs * 1000 };
+      a.wakeWhy = null;
+      ffDirty = true;
+      host.logger.info(`fallen flag ${ffLabel(a)}: nobody is near, so a bridge visitor is loading its area`);
+      return true;
+    }
+
+    async function ffFinish(a, c, state, now) {
+      const removed = ffCount(a, 'removed'), gone = ffCount(a, 'gone'), failed = ffCount(a, 'failed');
+      const left = ffCount(a, 'pending') + ffCount(a, 'sent');
+      a.state = state; a.endedAt = now; a.removed = removed; a.gone = gone; a.failed = failed; a.left = left;
+      a.total = Object.keys(a.mines || {}).length;
+      ffDirty = true;
+      await ffReleaseWake(a);
+      const counts = `removed ${removed} of ${a.total} mine(s), ${gone} already gone, ${failed + left} not removed`;
+      if (state === 'gaveup') host.logger.warn(`fallen flag ${ffLabel(a)}: gave up after the grace period; ${counts}${a.note ? ` (last reason: ${a.note})` : ''}`);
+      else if (failed) host.logger.warn(`fallen flag ${ffLabel(a)}: ${counts}${a.note ? ` (last reason: ${a.note})` : ''}`);
+      else host.logger.info(`fallen flag ${ffLabel(a)}: ${counts}`);
+      if (!removed) return;
+      pushRecent({ at: now, player: a.owner || null, steamId: null, mine: String(removed), type: null, code: null, action: 'cleared',
+        loc: { x: a.x, y: a.y, z: a.z } });
+      if (c.fallenFlagAlert) {
+        try { host.notify('admin.alert', { message: `Mine Protection: removed ${removed} mine(s) left at fallen flag ${ffLabel(a)}.`, severity: 'info' }); } catch (e) { /* alerts optional */ }
+      }
+      if (c.fallenFlagAnnounce) {
+        const vars = { count: removed };
+        try {
+          if (host.i18n) await host.chat.broadcast(playerText(c, 'fallenFlagMessage'), { channel: 'global', vars });
+          else await host.chat.broadcast(String(c.fallenFlagMessage || DEFAULTS.fallenFlagMessage).replace(/\{count\}/gi, String(removed)), { channel: 'global' });
+        } catch (e) { host.logger.debug('the fallen-flag announcement was not sent: ' + e.message); }
+      }
+    }
+
+    async function ffCancel(a, now, why) {
+      const removed = ffCount(a, 'removed');
+      a.state = 'kept'; a.endedAt = now; a.keptBy = why; a.removed = removed; a.total = Object.keys(a.mines || {}).length;
+      ffDirty = true;
+      await ffReleaseWake(a);
+      host.logger.info(`fallen flag ${ffLabel(a)}: ${why}; its mines stay${removed ? ` (${removed} were already removed)` : ''}`);
+    }
+
+    /** Compare the flags now against the flags last seen: start timers, cancel them. */
+    async function ffCompare(scan, c, now) {
+      const flags = scan.flags;
+      if (!ffSeeded) {
+        // The first readable scan with the feature on only LEARNS the flags: a flag that fell before
+        // the owner switched this on is not a flag this plugin watched fall.
+        ffFlags = flags; ffSeeded = true;
+        try { host.store.set('ffSeeded', true); } catch (e) { /* ignore */ }
+        host.logger.info(`fallen-flag removal is on: watching ${Object.keys(flags).length} flag(s)`);
+        return;
+      }
+      const delayMs = c.fallenFlagDelayMinutes * 60000;
+      for (const key of Object.keys(ffFlags)) {
+        if (flags[key]) continue;
+        const f = ffFlags[key];
+        if (ffAreas.some((a) => FF_LIVE_STATES.has(a.state) && a.key === key)) continue;
+        const a = Object.assign({ id: `${key}-${now}`, key }, f, {
+          fellAt: now, deadline: now + delayMs, giveUpAt: now + delayMs + c.fallenFlagGraceMinutes * 60000,
+          state: 'waiting', mines: {}, sector: null,
+        });
+        if (typeof host.map.sector === 'function') {
+          try { a.sector = (await host.map.sector(a.x, a.y)) || null; } catch (e) { a.sector = null; }
+        }
+        ffAreas.unshift(a); ffDirty = true;
+        host.logger.info(`fallen flag ${ffLabel(a)}: its mines are removed in ${c.fallenFlagDelayMinutes} min unless a new flag is built there`);
+      }
+      for (const a of ffAreas) {
+        if (!FF_LIVE_STATES.has(a.state)) continue;
+        if (flags[a.key]) { await ffCancel(a, now, 'the flag is back'); continue; }
+        for (const k of Object.keys(flags)) {
+          const f = flags[k];
+          if (!ffIn(a, f.x, f.y)) continue;
+          if (c.fallenFlagCancelBy === 'any' || ffSameSide(f, a)) {
+            await ffCancel(a, now, `a new flag${f.flagId !== null ? ` #${f.flagId}` : ''}${f.owner ? ` by ${f.owner}` : ''} stands in its area`);
+            break;
+          }
+        }
+      }
+      ffFlags = flags;
+    }
+
+    /** One removal pass for one area. */
+    async function ffWork(a, c, now, scan) {
+      if (a.state === 'waiting') {
+        if (now < a.deadline) return;
+        a.state = 'removing'; a.startedAt = now; ffDirty = true;
+        host.logger.info(`fallen flag ${ffLabel(a)}: no new flag in time, removing the mines in its area`);
+      }
+      if (a.state !== 'removing') return;
+      if (now >= a.giveUpAt) { await ffFinish(a, c, 'gaveup', now); return; }
+      if (a.nextAt && now < a.nextAt) return;
+      a.nextAt = now + FF_RETRY_MS;
+      const mines = a.mines || (a.mines = {});
+
+      // 1. What the SAVE holds inside the square. An empty trap layer is not "no mines": each layer
+      //    is caught on its own, so only a mine the save positively no longer holds changes state.
+      if (scan && Array.isArray(scan.traps)) {
+        const want = ffTypeOk(c);
+        const inside = new Set();
+        for (const t of scan.traps) {
+          const tx = Number(t && t.x), ty = Number(t && t.y);
+          if (!want(t) || !ffIn(a, tx, ty)) continue;
+          const id = String(t.id);
+          inside.add(id);
+          if (!mines[id]) { mines[id] = { type: t.type || null, x: Math.round(tx), y: Math.round(ty), z: Math.round(Number(t.z) || 0), state: 'pending', tries: 0 }; ffDirty = true; }
+        }
+        for (const id of Object.keys(mines)) {
+          const m = mines[id];
+          if (inside.has(id) || (m.state !== 'pending' && m.state !== 'sent')) continue;
+          if (ffStillPlaced(id) !== false) continue;
+          m.state = m.state === 'sent' ? 'removed' : 'gone';      // ours once we had destroyed it
+          if (m.state === 'removed') m.by = 'save';
+          ffDirty = true;
+        }
+        a.listed = true;
+      }
+      if (!a.listed) { ffNote(a, 'the game database cannot be read yet'); return; }
+      const open = Object.keys(mines).filter((id) => mines[id].state === 'pending' || mines[id].state === 'sent');
+      if (!open.length) { await ffFinish(a, c, ffCount(a, 'failed') ? 'partial' : 'cleared', now); return; }
+
+      // 2. What the RUNNING GAME has loaded. Nothing is destroyed or believed without this answer.
+      if (!canQuery()) { ffNote(a, 'the SSA Bridge did not answer'); return; }
+      const q = await host.bridge.query('items', 'traps');
+      if (!q || !q.ok) { ffNote(a, ffWhy('items', q)); return; }
+      const live = (q.data && Array.isArray(q.data.traps)) ? q.data.traps : [];
+
+      // 3. The destroy in flight: confirmed, still pending, or still standing.
+      for (const id of open) {
+        const m = mines[id];
+        if (m.state !== 'sent') continue;
+        const row = ffLiveRow(live, id, m);
+        if (row && row.destroyed === true) { m.state = 'removed'; m.by = 'bridge'; ffDirty = true; continue; }
+        if (a.inflight === id) {
+          if (now - m.sentAt < FF_CONFIRM_MS) { a.nextAt = m.sentAt + FF_CONFIRM_MS; return; }
+          const after = await ffDestroyedCount();
+          if (after && Number.isFinite(m.before) && after.n > m.before && after.data.confirmed === true) {
+            m.state = 'removed'; m.by = 'bridge'; a.inflight = null; ffDirty = true; continue;
+          }
+          if (after && after.data.destroyPending === true && now - m.sentAt < FF_PENDING_MAX_MS) { a.nextAt = now + 2000; return; }
+          a.inflight = null; ffDirty = true;
+        }
+        if (row && now - m.sentAt >= FF_RESEND_MS) { m.state = 'pending'; ffDirty = true; }        // still standing: again
+        else if (!row && now - m.sentAt >= FF_SAVE_SETTLE_MS) { m.state = 'pending'; ffDirty = true; } // no save settled it
+      }
+
+      // 4. The next loaded mine, one destroy per pass so its confirmation is unambiguous.
+      let unloaded = 0;
+      for (const id of Object.keys(mines)) {
+        const m = mines[id];
+        if (m.state !== 'pending') continue;
+        const row = ffLiveRow(live, id, m);
+        if (row && row.destroyed === true) { m.state = 'removed'; m.by = 'bridge'; ffDirty = true; continue; }
+        if (!row) { unloaded++; continue; }
+        const before = await ffDestroyedCount();
+        const r = await host.bridge.destroyItem(`eid:${id}`);
+        m.tries = (m.tries || 0) + 1; ffDirty = true;
+        if (r && r.ok) {
+          m.state = 'sent'; m.sentAt = now; m.before = before ? before.n : null; a.inflight = id;
+          a.nextAt = now + FF_CONFIRM_MS;
+          return;
+        }
+        const why = ffWhy('items', r);
+        m.why = why;
+        if (m.tries >= FF_MAX_TRIES) m.state = 'failed';
+        ffNote(a, `a mine could not be removed: ${why}`);
+        return;
+      }
+      if (ffCount(a, 'pending') + ffCount(a, 'sent') === 0) { await ffFinish(a, c, ffCount(a, 'failed') ? 'partial' : 'cleared', now); return; }
+
+      // 5. What is left is not loaded: nobody is near. The bridge's visitor can load it.
+      if (unloaded) {
+        const placed = await ffWake(a, c, now);
+        if (placed) { if (a.wake && now - a.wake.placedAt < FF_WAKE_SETTLE_MS) a.nextAt = a.wake.placedAt + FF_WAKE_SETTLE_MS; return; }
+        ffNote(a, `${unloaded} mine(s) are not loaded because nobody is near${c.fallenFlagWake && a.wakeWhy ? `, and the area could not be loaded: ${a.wakeWhy}` : ''}`);
+      }
+    }
+
+    /** Switched off: drop every timer, so switching on again starts from the flags of that moment. */
+    async function ffStandDown(now) {
+      const live = ffAreas.filter((a) => FF_LIVE_STATES.has(a.state));
+      if (!ffSeeded && !live.length && !Object.keys(ffFlags).length) return;
+      for (const a of live) { a.state = 'off'; a.endedAt = now; await ffReleaseWake(a); }
+      if (live.length) host.logger.info(`fallen-flag removal is off: ${live.length} waiting area(s) dropped, their mines stay`);
+      ffSeeded = false; ffFlags = {}; ffDirty = true;
+      try { host.store.set('ffSeeded', false); } catch (e) { /* ignore */ }
+    }
+
+    async function ffTick(now) {
+      const c = cfg();
+      ffNextRun = now + FF_TICK_MS;
+      if (!c.enabled || !c.fallenFlagCleanup) { await ffStandDown(now); ffPersist(); return; }
+      const scan = ffScan();
+      if (scan) await ffCompare(scan, c, now);
+      for (const a of ffAreas.slice()) {
+        if (!FF_LIVE_STATES.has(a.state)) continue;
+        await ffWork(a, c, now, scan);
+        if (a.state === 'removing' && a.nextAt) ffNextRun = Math.min(ffNextRun, a.nextAt);
+        else if (a.state === 'waiting') ffNextRun = Math.min(ffNextRun, Math.max(now + 1000, a.deadline));
+      }
+      ffPersist();
+    }
+    async function ffHeartbeat() {
+      if (ffBusy) return;
+      const now = Date.now();
+      if (now < ffNextRun) return;
+      ffBusy = true;
+      try { await ffTick(now); } catch (e) { host.logger.warn('fallen-flag pass error: ' + e.message); } finally { ffBusy = false; }
+    }
+    const ffSummary = (a) => ({
+      id: a.id, flagId: a.flagId, baseId: a.baseId, name: a.name || null, owner: a.owner || null, sector: a.sector || null,
+      x: a.x, y: a.y, z: a.z, fellAt: a.fellAt, deadline: a.deadline, giveUpAt: a.giveUpAt, state: a.state,
+      total: Object.keys(a.mines || {}).length, removed: ffCount(a, 'removed'), gone: ffCount(a, 'gone'),
+      failed: ffCount(a, 'failed'), left: ffCount(a, 'pending') + ffCount(a, 'sent'),
+      note: FF_LIVE_STATES.has(a.state) ? (a.note || null) : null, keptBy: a.keptBy || null, endedAt: a.endedAt || null,
+    });
+
     // ── scheduling: a light 1 s heartbeat runs the scan when it's due, so a changed interval takes
     //    effect live (no manager restart) and a fresh join can force an immediate re-scan. ──
     let lastRun = 0, busy = false;
@@ -632,7 +1080,7 @@ module.exports = {
       busy = true;
       try { await poll(); } catch (e) { host.logger.warn('poll error: ' + e.message); } finally { busy = false; }
     }
-    if (mapOk) host.schedule.every(1000, () => { tick(); });
+    if (mapOk) host.schedule.every(1000, () => { tick(); ffHeartbeat(); });
 
     // Punish the moment an offender reconnects (offline mines waiting on `requireOnline`) — the bridge
     // join hook fires with no log-tail lag; nudge the next heartbeat to scan right away.
@@ -651,6 +1099,7 @@ module.exports = {
         host.store.set('config', next);
         reloadConfig();                            // what the store really holds now, not what was sent
         lastRun = 0;                               // apply immediately (interval/type changes take effect now)
+        ffNextRun = 0;                             // and the fallen-flag switch too
         res.json({ ok: true, config: next });
       } catch (e) { res.status(500).json({ error: e.message }); }
     });
@@ -734,6 +1183,8 @@ module.exports = {
         // answered — an owner should see "the game is being asked" or the reason it is not, and never
         // a plugin that quietly fell back to the save without saying.
         live: { traps: liveNote.traps, squads: liveNote.squads },
+        // The fallen-flag timers: what is waiting, being removed, and what happened to the last ones.
+        fallen: { on: c.fallenFlagCleanup === true, areas: ffAreas.map(ffSummary) },
         // Why nothing is being enforced, when that is the case for a reason the owner cannot fix in
         // this tab: `manager_too_old` = the manager lacks the world scan / flag test. null otherwise.
         idle: mapOk ? null : 'manager_too_old',
@@ -765,6 +1216,15 @@ module.exports = {
     });
     // Clear the recent-actions history shown in the panel.
     host.routes.post('/clear-history', (req, res) => { recent = []; persistRecent(); res.json({ ok: true }); });
+    // Keep the mines of one fallen flag: the owner's own call, from the panel, before or during removal.
+    host.routes.post('/fallen-keep', async (req, res) => {
+      const id = String((req.body || {}).id || '');
+      const a = ffAreas.find((x) => x.id === id);
+      if (!a) return res.status(404).json({ ok: false, error: 'not_found', reason: 'That fallen flag is not in the list any more.' });
+      if (!FF_LIVE_STATES.has(a.state)) return res.json({ ok: true, state: a.state });
+      try { await ffCancel(a, Date.now(), 'kept by an admin from the panel'); ffPersist(); res.json({ ok: true, state: a.state }); }
+      catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
 
     host.logger.info(`Mine Protection active — watching ${cfg().watchedTypes.length} type(s)`);
   },

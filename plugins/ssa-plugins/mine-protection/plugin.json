@@ -2,11 +2,11 @@
   "id": "mine-protection",
   "name": "Mine Protection",
   "type": "manager",
-  "version": "1.8.2",
-  "updated": "2026-10-12",
+  "version": "1.9.0",
+  "updated": "2026-10-17",
   "author": "SCUMSA",
   "website": "https://scumsa.com/plugins.php?p=mine-protection",
-  "description": "Punishes players who arm a mine or trap outside their own or their squad's flag area: a chat warning first, then a teleport onto their own mine. Squad-aware, never acts on a guess, and deals with an offline placer the moment they reconnect. You pick which mines and traps to watch.",
+  "description": "Punishes players who arm a mine or trap outside their own or their squad's flag area: a chat warning first, then a teleport onto their own mine. Squad-aware, never acts on a guess, and deals with an offline placer the moment they reconnect. You pick which mines and traps to watch. Optionally clears the mines a fallen flag leaves behind.",
   "image": "icon.png",
   "readme": "README.md",
   "apiVersion": 1,
@@ -38,6 +38,15 @@
           "members"
         ],
         "why": "Checks who is in the placer's squad right now. Squad membership also comes from the last save, so a player who joined a squad since then is punished for a mine legally placed inside their new teammate's base."
+      }
+    ],
+    "wants": [
+      {
+        "module": "wake",
+        "switches": [
+          "enabled"
+        ],
+        "why": "Loads a fallen flag's area when nobody is near, so its mines can be removed with the server empty."
       }
     ]
   },
