@@ -63,7 +63,10 @@ export interface Host {
   };
 
   db: {
-    /** Read-only SCUM.db (better-sqlite3 semantics). Returns null/[] while the server is stopped. */
+    /**
+     * SCUM.db. The reads use better-sqlite3 semantics and return null/[] while the server is
+     * stopped. `write()` is the other way round: it runs only while the server is stopped.
+     */
     scum: {
       available(): boolean;
       get<T = any>(sql: string, ...params: any[]): T | null;
@@ -76,6 +79,17 @@ export interface Host {
        * `user_profile` is the FROM table if you need the filter to apply.
        */
       excludeDeleted(sql: string): string;
+      /**
+       * Write the game save while the game server is STOPPED. Needs `"save:write"` in your
+       * plugin.json `capabilities` (never covered by `"*"`) and the owner's **May edit the game
+       * save** switch on your card. The statements run in ONE transaction after a checked backup of
+       * the whole save (the newest 10 are kept); any refusal or failure writes nothing. It looks for
+       * a running server again right before writing. Never throws or rejects.
+       * Manager after 6.0.0: feature-test it (`typeof host.db.scum.write === 'function'`).
+       */
+      write?(request: SaveWriteRequest): Promise<SaveWriteResult>;
+      /** The same checks as `write()` without writing anything, so a screen can say why not. */
+      writable?(opts?: { allowUserVersion?: number }): Promise<SaveWriteResult>;
     };
     /** Curated read helpers over the manager's own data. */
     manager: { kills(limit?: number): any[]; trades(limit?: number): any[] };
@@ -238,7 +252,11 @@ export interface Host {
     sector(x: number, y: number): Promise<string | null>;
   };
 
-  leaderboards: { get(cat: string, limit?: number, weeklyOnly?: boolean): any[]; all(limit?: number, weeklyOnly?: boolean): any; categories(): any[] };
+  /**
+   * `span`: `true` is this week; `false` (or nothing) is the overall board, which the owner may run
+   * per month; `'all'`, `'week'` or `'month'` asks for that span outright, so `'all'` is always all time.
+   */
+  leaderboards: { get(cat: string, limit?: number, span?: boolean | 'all' | 'week' | 'month'): any[]; all(limit?: number, span?: boolean | 'all' | 'week' | 'month'): any; categories(): any[] };
   /**
    * Every value the manager knows, addressable as a {token}: server state, a player's gold, a
    * leaderboard, an item image, map counts — and whatever other plugins publish.
@@ -3985,6 +4003,8 @@ export interface PluginManifest {
    * What the plugin will ask the bridge for. Each entry is a bridge module id (`"live"`, read and
    * write), `"<module>:read"` or `"<module>:write"`, `"cmd"` for any admin command or
    * `"cmd:<Verb>"` for one, `"chat"`, `"module_data"` / `"module_command"` for any module, or `"*"`.
+   * `"save:write"` lets `host.db.scum.write()` change the game save; it is checked in every mode,
+   * `"*"` does not include it, and the owner must also allow it on the plugin's card.
    *
    * Every call still goes through by default; one outside the list is logged once and shown on
    * the plugin's card. When the owner sets `plugins.capabilities` to `enforce`, such a call is
@@ -3995,6 +4015,42 @@ export interface PluginManifest {
   /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`. */
   modName?: string;
 }
+
+/** One statement for `host.db.scum.write()`: a single INSERT, REPLACE, UPDATE or DELETE. */
+export interface SaveWriteStatement {
+  sql: string;
+  /** Positional values, or an object of named ones (`@name`). A boolean is stored as 1 or 0. */
+  params?: Array<number | string | bigint | Uint8Array | boolean | null> | Record<string, number | string | bigint | Uint8Array | boolean | null>;
+  /** The number of rows this statement must change; anything else rolls the whole write back. */
+  expectChanges?: number;
+}
+
+export interface SaveWriteRequest {
+  statements: SaveWriteStatement[];
+  /** Why you are writing. Required; it goes into the manager's log and the admin audit. */
+  reason: string;
+  /** SELECTs run inside the transaction before the commit; a different answer rolls back. `expect` is the rows, or their count. */
+  verify?: Array<{ sql: string; params?: SaveWriteStatement['params']; expect: any[] | number }>;
+  /** Run everything, then roll it back. No backup is taken, and the answer's `note` says so. */
+  dryRun?: boolean;
+  /** Write on a save format the manager has not been checked against, by naming that exact number. */
+  allowUserVersion?: number;
+}
+
+export type SaveWriteRefusalCode =
+  | 'capability_missing' | 'switched_off' | 'statement_refused' | 'reason_missing' | 'start_pending'
+  | 'server_running' | 'unattributable_process' | 'process_scan_failed' | 'lock_held' | 'schema_unknown'
+  | 'save_missing' | 'save_unopenable' | 'backup_failed' | 'database_busy' | 'statement_failed'
+  | 'readback_mismatch' | 'preflight_failed' | 'write_failed';
+
+export type SaveWriteResult =
+  | { ok: true; dryRun?: boolean; changes: number; note?: string;
+      statements?: Array<{ verb: string; table: string; changes: number; lastInsertRowid: number | string | null; rows?: any[] }>;
+      verified?: number; backup?: string | null; userVersion: number }
+  | { ok: false; code: SaveWriteRefusalCode; error: SaveWriteRefusalCode; reasonCode: SaveWriteRefusalCode;
+      /** One sentence you can show. */
+      reason: string; refused: { reasonCode: SaveWriteRefusalCode; message: string };
+      changes: 0; backup: string | null };
 
 export interface PluginModule {
   register(host: Host): void | Promise<void>;
