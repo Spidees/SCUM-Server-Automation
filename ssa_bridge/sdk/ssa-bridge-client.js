@@ -18,6 +18,7 @@
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 
 const MAX_REPLY_BYTES = 8 * 1024 * 1024;
@@ -30,6 +31,7 @@ const BRIDGE_CODES = new Set([
   'missing command', 'missing_xy', 'bad_xy', 'bad_xyz', 'no_ground', 'no ground below that height',
   'no_executor', 'player not ready', 'console_failed', 'console_refused', 'bad channel',
   'too_many_spawns', 'no position', 'reply_too_long', 'reply_too_large', 'unlicensed',
+  'hmac_unavailable', 'nonce_failed',
 ]);
 /** Actions that run a SCUM admin command. The client keeps at most one of them on the wire. */
 const ADMIN_ACTIONS = new Set(['cmd', 'spawn', 'batch']);
@@ -180,8 +182,29 @@ function openSocket(host, port, timeoutMs) {
 }
 
 /**
- * Opens one connection: `auth` first when a token is given (a remote client has ten seconds), then
- * `status`. Rejects only when there is no usable connection, with `code` and `reason` on the error.
+ * `auth` without putting the token on the wire, when the bridge offers it: `status` lists `hmac` in
+ * `authModes`, `auth_nonce` hands out a nonce for this connection, and the login carries
+ * `proof` = hex(HMAC-SHA256(token, nonce + "\n" + instance)). A bridge that does not list `hmac`
+ * predates it and gets the token itself. A bridge that lists it never does, even if the nonce fails.
+ */
+async function logIn(c, o) {
+  const pre = await c.request('status');
+  if (!pre.ok) return pre;
+  const modes = pre.result && Array.isArray(pre.result.authModes) ? pre.result.authModes : [];
+  if (modes.includes('hmac')) {
+    const n = await c.request('auth_nonce');
+    if (!n.ok) return n;
+    const nonce = String((n.result && n.result.nonce) || '');
+    const instance = o.instance || String((n.result && n.result.instance) || '');
+    const proof = crypto.createHmac('sha256', String(o.token)).update(`${nonce}\n${instance}`).digest('hex');
+    return c.request('auth', { proof });
+  }
+  return c.request('auth', { token: o.token });
+}
+
+/**
+ * Opens one connection: when a token is given, logs in first (a remote client has ten seconds),
+ * then `status`. Rejects only when there is no usable connection, with `code` and `reason` on the error.
  */
 async function connect(opts) {
   const o = Object.assign({ host: '127.0.0.1', timeoutMs: 20000, backoffMs: 1000, retries: 3, minProtocol: 1 }, opts || {});
@@ -198,7 +221,7 @@ async function connect(opts) {
     throw e;
   };
   if (o.token) {
-    const a = await c.request('auth', { token: o.token });
+    const a = await logIn(c, o);
     if (!a.ok && a.reasonCode === 'locked_out') {
       const wait = Number.isFinite(a.retryAfterMs) ? a.retryAfterMs : null;
       fail(Object.assign({}, a, { reason: `too many wrong tokens from this address; the bridge closed the connection`

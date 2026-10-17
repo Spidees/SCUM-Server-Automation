@@ -41,7 +41,8 @@ From the server's own machine nothing is needed: loopback is trusted. From anywh
 
 - **`token` is the switch.** While it is empty, remote control is off and the bridge binds loopback whatever `host` says.
 - **`host`** is the interface to listen on. `0.0.0.0` accepts every interface.
-- **There is no TLS.** The token crosses the network in clear, so use a VPN or an SSH tunnel on a network you do not trust.
+- **The clients log in without sending the token** when the bridge offers it (`status` lists `hmac` in `authModes`, bridge 2.44.0 and newer). They ask `auth_nonce` and answer with a proof made from the token. To an older bridge they send the token itself.
+- **There is no TLS.** Commands and replies cross the network in clear, and so does the token sent to an older bridge, so use a VPN or an SSH tunnel on a network you do not trust.
 
 **Never guess the port.** If the configured port is taken, the bridge moves to the next free one. It writes the port it really bound into `SSABridge.status.json`, with an `instance` that changes on every start. On the server's machine, read that file (`discover()` does). From elsewhere, ask the owner for the port.
 

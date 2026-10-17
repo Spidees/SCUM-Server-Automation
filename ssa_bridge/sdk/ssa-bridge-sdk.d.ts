@@ -55,6 +55,10 @@ export interface BridgeConnectOptions {
   /**
    * The `token` from the server's `SSABridge.config.json`. Required from any machine other than the
    * server's own, and accepted from loopback too. Remote control is off while it is empty.
+   *
+   * When `status` lists `hmac` in `authModes`, the client never sends it: it asks `auth_nonce` and
+   * logs in with `proof`, so the token does not cross the network. To an older bridge it sends the
+   * token itself.
    */
   token?: string;
   /** The `instance` from the status file, when the client can read it. Remote clients usually cannot. */
@@ -85,7 +89,7 @@ export interface BridgeRequest {
 }
 
 export type BridgeAction =
-  | 'status' | 'auth' | 'list' | 'players' | 'where' | 'name'
+  | 'status' | 'auth' | 'auth_nonce' | 'list' | 'players' | 'where' | 'name'
   | 'cmd' | 'spawn' | 'batch' | 'chat' | 'console' | 'groundz' | 'tracediag'
   | 'subscribe' | 'setcmdprefix' | 'perf'
   | 'modules' | 'module_config' | 'module_data' | 'module_command' | 'persisted';
@@ -199,8 +203,16 @@ export type BridgeErrorCode =
   | 'unauthorized'
   /** A remote client, and the owner has set no token. Remote control is off until they do. */
   | 'remote_disabled'
-  /** Wrong token, or no token configured. Do not retry in a loop. */
+  /**
+   * Wrong token, or no token configured. Do not retry in a loop. For a login with `proof`,
+   * `reasonCode` says which: `bad_proof`, `no_nonce` (no `auth_nonce` outstanding on this connection)
+   * or `nonce_expired` (older than 30 s). The connection closes either way.
+   */
   | 'bad_token'
+  /** `auth_nonce` on a server whose crypto library failed HMAC-SHA256's test vector. Send the token. */
+  | 'hmac_unavailable'
+  /** `auth_nonce` could not draw random bytes. Ask again. */
+  | 'nonce_failed'
   /** The `instance` names a different run of the bridge. Read the status file again. */
   | 'wrong_instance'
   /**
@@ -269,12 +281,30 @@ export interface StatusResult {
   version: string;
   protocol?: number;
   protocolMin?: number;
+  /**
+   * How this bridge accepts `auth`, sent before authentication too. `token` is the token itself;
+   * `hmac` is a `proof` over an `auth_nonce`. Absent on bridges before 2.44.0, which take `token` only.
+   */
+  authModes?: Array<'token' | 'hmac'>;
   /** The rest is withheld from a remote client that has not authenticated. */
   port?: number;
   players?: number;
   uptimeSec?: number;
   licensed?: boolean;
   licenseExp?: number;
+}
+
+/**
+ * `auth_nonce`: 32 random bytes bound to this connection, good for one `auth` within `expiresMs`. A new
+ * request replaces it. Log in with
+ * `{"action":"auth","proof": hex(HMAC-SHA256(key = token, message = nonce + "\n" + instance))}`,
+ * where `instance` is the one from the status file, or this reply's when the file cannot be read.
+ */
+export interface AuthNonceResult {
+  nonce: string;
+  alg: 'hmac-sha256';
+  expiresMs: number;
+  instance: string;
 }
 
 export interface PlayerRow {
@@ -380,7 +410,9 @@ export declare class BridgeClient {
 }
 
 /**
- * Open one connection, send `auth` when a token is given, then `status`. Rejects only when there is
+ * Open one connection and, when a token is given, log in: with a `proof` over `auth_nonce` when
+ * `status` lists `hmac` in `authModes`, so the token never leaves this process, and with the token
+ * itself to an older bridge. Then `status`. Rejects only when there is
  * no usable connection: the socket failed, `auth` was refused, or the bridge speaks a protocol below
  * `minProtocol`. The error carries `code` and `reason`, and for an address locked out of `auth` also
  * `reasonCode` `locked_out` and `retryAfterMs`.

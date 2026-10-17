@@ -12,6 +12,8 @@ refusal: they return {"ok": False, "code": ..., "reason": ...}. Events arrive on
 Protocol: https://scumsa.com/docs/dev/ssa-bridge-protocol
 """
 
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -29,6 +31,7 @@ BRIDGE_CODES = {
     "missing command", "missing_xy", "bad_xy", "bad_xyz", "no_ground", "no ground below that height",
     "no_executor", "player not ready", "console_failed", "console_refused", "bad channel",
     "too_many_spawns", "no position", "reply_too_long", "reply_too_large", "unlicensed",
+    "hmac_unavailable", "nonce_failed",
 }
 ADMIN_ACTIONS = {"cmd", "spawn", "batch"}
 
@@ -225,9 +228,30 @@ class BridgeClient:
         self._sock.close()
 
 
+def _log_in(c, token, instance):
+    """`auth` without putting the token on the wire, when the bridge offers it: `status` lists `hmac`
+    in `authModes`, `auth_nonce` hands out a nonce for this connection, and the login carries
+    `proof` = hex(HMAC-SHA256(token, nonce + "\\n" + instance)). A bridge that does not list `hmac`
+    predates it and gets the token itself. A bridge that lists it never does, even if the nonce fails."""
+    pre = c.request("status")
+    if not pre["ok"]:
+        return pre
+    modes = (pre.get("result") or {}).get("authModes")
+    if isinstance(modes, list) and "hmac" in modes:
+        n = c.request("auth_nonce")
+        if not n["ok"]:
+            return n
+        res = n.get("result") or {}
+        nonce = str(res.get("nonce") or "")
+        inst = instance or str(res.get("instance") or "")
+        proof = hmac.new(str(token).encode("utf-8"), (nonce + "\n" + inst).encode("utf-8"), hashlib.sha256).hexdigest()
+        return c.request("auth", {"proof": proof})
+    return c.request("auth", {"token": token})
+
+
 def connect(port, host="127.0.0.1", token=None, instance=None, caller=None,
             timeout=20.0, backoff=1.0, retries=3, min_protocol=1, **_ignored):
-    """One connection: `auth` first when a token is given, then `status`. Raises BridgeError only
+    """One connection: when a token is given, log in first, then `status`. Raises BridgeError only
     when there is no usable connection."""
     if not isinstance(port, int) or port <= 0:
         raise BridgeError("no_port", "no port: read it from SSABridge.status.json or ask the owner")
@@ -243,7 +267,7 @@ def connect(port, host="127.0.0.1", token=None, instance=None, caller=None,
         raise BridgeError(r["code"], r["reason"], r.get("reasonCode"), r.get("retryAfterMs"))
 
     if token:
-        a = c.request("auth", {"token": token})
+        a = _log_in(c, token, instance)
         if not a["ok"] and a.get("reasonCode") == "locked_out":
             wait = a.get("retryAfterMs")
             a = dict(a, reason="too many wrong tokens from this address; the bridge closed the connection"
