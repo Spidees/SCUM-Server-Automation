@@ -5,7 +5,10 @@ loot files into the server's `Loot` folder and draws the same rectangle on the p
 change **by hand**, on **days and hours you pick**, or **once per server restart**, and players are
 told in your own words. Inside a zone you can also **keep sentries and zombies out**, post a
 **garrison of your own — at places you name or places the plugin finds** — and make the whole area
-**busier or quieter** by changing the spawn plan the game itself uses.
+**busier or quieter** by changing the spawn plan the game itself uses. A zone can carry **variants**,
+one picked at random every server restart, built in one click from **presets**, and the whole list,
+a hundred zones or more, is set up from the tab: **create one zone per loot set in one go**, filter,
+tick and change many at once.
 
 ## How it works
 
@@ -22,8 +25,15 @@ told in your own words. Inside a zone you can also **keep sentries and zombies o
 - **A zone can have variants, and a new one is picked at every server restart.** Each variant is
   its own set of guards, protection and spawn settings for the same place and the same loot, so
   players know where the loot is and not what is waiting there. The pick is made as the server
-  stops, written in the manager's log by zone and variant, and kept if only the manager restarts.
-  Variants are written in the plugin's `config.json`; the tab shows which one is running.
+  stops, by each variant's share, written in the manager's log by zone and variant, and kept if only
+  the manager restarts. Variants are built and edited in the tab, from **presets** or by hand, and
+  **Pick a new one now** swaps a zone's variant during a session.
+- **Every zone and every variant is held to four rules**, and a save that breaks one is refused with
+  a sentence naming it: **NPC guards never stand with sentries** (with NPC guards, the sentries are
+  kept out), **keep zombies out goes only with NPC guards**, with the place's own sentries standing
+  or as clean PvP, and **keep sentries out only where the area has sentries**. What an area holds
+  comes from the game's own map data, shipped with the plugin: the fixed sentry posts and the
+  abandoned bunkers whose alarm brings a dropship with sentries.
 - **Your own loot overrides are never touched.** The plugin writes and removes only its own
   `LOOT_ZONES_` folders.
 - **Works with the server stopped.** Running, the rectangle is drawn live and the loot can be
@@ -96,38 +106,51 @@ told in your own words. Inside a zone you can also **keep sentries and zombies o
 
 ## Configuration
 
-Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
+Everything is configured from the plugin's **admin tab** (📦 Loot Zones). Nothing needs `config.json`.
+The tab has three parts:
 
-- **Bridge**: the switches your settings need, with one button to turn on the ones an owner may.
-- **Zones**: one row per zone — name, loot set, on/off, order (which is the turn order under *one
-  per restart*), and *copy*, which makes a full independent duplicate under a name nothing else is
-  using. Each zone opens onto where it is, its schedule, its guards, how busy it should be, and a
-  short list in plain words of what will happen there.
-- **The whole list at once**: a search box, a filter for in rotation / out of it / live now, and
-  *Expand* and *Collapse* over whatever the filter is showing. Tick several zones and put them in
-  or out of the rotation, or remove them, in one press. A list longer than three opens folded.
-- **Where this zone is**: the loot set's own rectangle, or a rectangle or circle of your own with
-  its centre and half-spans in centimetres. *Pick the centre on the map*, *Centre on a player*,
-  *Show me where that is* and *Check this area*, which asks the game whether it lands on the map
-  and says how much of what you drew the loot itself covers.
-- **When they come**: *A new guard at most every*, *After a guard is killed, wait*, *Move a standing guard
-  after* and *Never appear closer to a player than*.
-- **Guards**: one row each, with *How many in the zone*, *At each place* and *Share of the rest*;
-  *Where it stands* for the places you name; **How long they stay**, which decides whether the zone
-  takes its own guards away again and whether one that wanders out is brought back; and **Only for
-  this guard**, where any one guard can keep its own wait after a kill, its own distance from
-  players, its own spacing and its own game hours. A setting a guard has not been given follows the
-  zone, and the screen says which of the two every value is.
-- **What players are told**: the chat channel and the four messages, each with its text, where it
-  goes, and a *Try it in game* button. Tokens such as `{zone}`, `{zones}` and `{player}` are filled
-  in. Each text has a tab per language.
-- **The rectangle players see**: the zone name prefix, and either one of your existing zone
-  configurations or one of the plugin's own with its name, map visibility, entry notification and
-  colour.
-- **How zones are chosen**: rotation on or off, by hand, on a schedule or one per server restart,
-  and under *More options* the zones at once, the time between switches, the reload, the check
-  interval and the loot sets folder.
-- **Actions**: *Switch everything off*, *Reload loot now* and *Check against the game*.
+- **Zones**: the whole list on one page, one row per zone with its name and loot set, its sector,
+  its shape and size, what is in the area (sentry posts, an abandoned bunker, or no sentries), the
+  variant running this session, whether anything needs fixing, and its rotation switch. Search it,
+  filter it by sector, by place or by state (in rotation, live now, with variants, with something
+  to fix), sort it by any column, and page through it 25 rows at a time. Tick zones to put them in
+  or out of the rotation, **give them variants**, remove their variants, pick a new variant now, or
+  remove them, all in one press. Above the list:
+  - **Create zones from loot sets** lists every set in the sets folder that has no zone yet and
+    makes one zone per ticked set, named after its folder, with the set's own box from `Zones.json`
+    **grown by the margin you choose**, as a rectangle, a circle or whichever suits the place, and,
+    if you like, a mix of 3 to 5 variants each.
+  - **Add a zone** and **New variants for every zone now**.
+- **One zone**: press a zone's name or **Edit** to open it, and step to the previous or next zone
+  without going back to the list. The zone is split into five sections:
+  - **General**: its name, its loot set, what the zone is doing right now, its days and hours,
+    *Switch this one on now*, *What is in this zone?*, its place in the turn order, copy and remove.
+  - **Area**: the loot set's own rectangle or numbers of your own (shape, centre, half-sizes or
+    radius), *Pick the centre on the map*, *Centre on a player*, *Show me where that is* and *Check
+    this area*. **Take the box from Zones.json, grown by** puts the set's own box plus a margin into
+    the numbers. Under it the sector, what the area holds and how far the nearest other zone is.
+  - **Guards and protection**: *Keep sentries out*, *Keep zombies out*, *Guards of my own* with one
+    row per guard, when they come, how long they stay and the technical settings. *Keep sentries
+    out* is offered only where the area really has sentries.
+  - **How busy the zone is**: the game's own spawn plan for the places in the zone.
+  - **Variants**: a bar showing how often each variant comes up and which one runs now, then one
+    row per variant with its name, its share, on or off, a sentence saying what it does, and *Edit*,
+    *Copy*, move up or down and remove. **Add a variant from a preset** (NPC guards of level 4 and 5
+    with no zombies, NPC guards among the zombies, Razors, a horde, only the sentries with no
+    zombies, clean PvP, NPC guards by day and Razors at night, quiet by day and Razors at night),
+    one that starts as the zone, or **replace them with a mix**. A variant opens onto the same guard
+    and busy sections as the zone, above a list of every setting saying whether the variant sets it
+    itself or **inherits the zone's value**, with a button to go back to the zone's. *Pick a new one
+    now* swaps this session's variant.
+- **Messages**: the chat channel and the four messages, each with its text per language, where it
+  goes, and a *Try it in game* button. Tokens such as `{zone}`, `{zones}` and `{player}` are filled in.
+- **Settings and actions**: the zone name prefix and the rectangle players see (one of your zone
+  configurations, or the plugin's own with its visibility, entry notice and colour), how zones are
+  chosen (by hand, on a schedule or one per restart, and under *More options* the zones at once, the
+  time between switches, the reload, the check interval and the loot sets folder), and *Switch
+  everything off*, *Reload loot now* and *Check against the game*.
+- **Bridge**: at the top of the zone list, the switches your settings need, with one button to turn
+  on the ones an owner may.
 
 ## Good to know
 
@@ -189,10 +212,21 @@ Everything is configured from the plugin's **admin tab** (📦 Loot Zones):
   a guard is *sent* — one that closes never removes a guard already standing — and if the game's
   clock cannot be read the window is not applied at all, which the zone says every round.
 - **A variant changes only the guards, what is kept out and how busy the zone is.** The loot set,
-  the name and the area stay the zone's own, and the tab says so if a variant tries to change them.
-  A zone without variants behaves exactly as before. Since "Keep zombies out" belongs to the zone's
+  the name and the area stay the zone's own. A setting a variant does not set follows the zone's own
+  Guards and How busy sections, so changing the zone changes every variant that inherits it. A zone
+  without variants behaves exactly as before. Since "Keep zombies out" belongs to the zone's
   configuration, a variant that turns it on or off moves the rectangle to the other configuration
   before the next server start.
+- **Pick a new one now takes the old variant's guards away** first, by their ids, inside the zone;
+  the new variant's guards arrive with the next patrol while a player is near. A guard placed without
+  an id is left to the game. The loot and the area do not change.
+- **A zone saved before the rules existed is not refused**: a save that leaves it as it was stores,
+  and the list shows what it breaks in red until you fix it.
+- **Zones made from loot sets grow the set's box, never the loot.** The margin makes the area
+  players see larger; the loot files still cover only the set's own box. Two neighbouring zones can
+  overlap after growing, and the list says so.
+- **The live map cannot draw an area for a plugin yet**, so the Area section shows the sector and
+  the nearest other zone in numbers, and *Show me where that is* puts the map on the centre.
 - **Night-only guards use the game's clock.** Give a guard game hours from 21 to 5 and it is sent
   only at night; it needs "Time of day and day length" on the bridge's Live player data card, and
   without it the window is open all day. A guard already standing when the window closes stays

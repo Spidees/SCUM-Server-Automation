@@ -369,8 +369,6 @@
    * zone removed or a copy inserted above it all change the index and none of them change what the
    * reader ticked — and acting on the wrong row here switches off somebody's live zone.
    */
-  var zoneFind = '';
-  var zoneShow = 'all';
   var zonePick = {};
   var root = null;
   var poll = null;
@@ -517,6 +515,7 @@
   }
 
   function save() {
+    syncDraft();
     return api('/config', { method: 'POST', body: state.cfg })
       .then(function (r) {
         if (!r || !r.config) {
@@ -604,6 +603,7 @@
     refreshClock();
     refreshBridge();
     refreshActivity();
+    refreshPresets();
     var reqs = [api('/config'), api('/sets'), api('/status')];
     // The shipped wording in every language, asked once: it changes only with the plugin.
     if (shippedByLang === undefined) reqs.push(api('/text-defaults').catch(function () { return null; }));
@@ -624,7 +624,12 @@
       // A poll redraws only when the page would come out DIFFERENT. It used to redraw the whole tab
       // every fifteen seconds whatever the answer was, which shut an open dropdown and repainted
       // every card under the reader on a page where nothing had moved.
-      if (!(quiet && unsaved)) render(quiet ? { ifChanged: true } : undefined);
+      // The list's warnings, sectors and places come with the page rather than after it: a column
+      // that fills in a moment later is a page that redraws itself under the reader. Asked only
+      // when the zones really changed, so an idle poll costs nothing here.
+      return overviewNow().then(function () {
+        if (!(quiet && unsaved)) render(quiet ? { ifChanged: true } : undefined);
+      });
     }).catch(function () {
       broken = true;
       render();
@@ -1373,7 +1378,9 @@
     copy.name = uniqueZoneName(c.zones, z.name || z.set || 'Zone');
     copy.enabled = false;
     c.zones.splice(i + 1, 0, copy);
-    shut['z-' + copy.id] = false;      // opened, so what was copied is in front of whoever pressed it
+    // Opened, so what was copied is in front of whoever pressed it.
+    editId = String(copy.id);
+    editTab = 'general';
     markDirty();
     // The two NAMES are values — a zone's name is what the game calls it — so they travel as vars.
     SSA.toast(T('pl.loot-zones.zone.copied',
@@ -1759,277 +1766,11 @@
       : T('pl.loot-zones.area.src.fileUnsaved', '⚠ Until you save, the server still uses the loot set\'s own area.'));
   }
 
-  // ── the whole list at once ─────────────────────────────────────────────────────────────────────
-  /**
-   * Does this zone match what the reader typed?
-   *
-   * Its name, its loot set and its own note are all things somebody would type to find it. The game
-   * never reads any of this, so it is a plain case-insensitive substring and nothing cleverer.
-   */
-  function zoneMatches(z, find) {
-    if (!find) return true;
-    var hay = [z.name, z.set].join(' ').toLowerCase();
-    return hay.indexOf(find) >= 0;
-  }
-  /** Which zones the list is showing right now — the search and the state filter together. */
-  function shownZones(c, st) {
-    var find = String(zoneFind || '').trim().toLowerCase();
-    var live = {};
-    (st.active || []).forEach(function (a) { live[String(a.id)] = true; });
-    return (c.zones || []).filter(function (z) {
-      if (!zoneMatches(z, find)) return false;
-      if (zoneShow === 'on') return z.enabled !== false;
-      if (zoneShow === 'off') return z.enabled === false;
-      if (zoneShow === 'live') return !!live[String(z.id)];
-      return true;
-    });
-  }
-
-  /**
-   * ── BULK ACTIONS OVER THE ZONE LIST ────────────────────────────────────────────────────────────
-   *
-   * Everything here is something an owner was doing one zone at a time: opening ten folds to find
-   * the one they wanted, scrolling past nine to reach the tenth, and flipping the rotation switch
-   * down a list by hand.
-   *
-   * ⚠ **A BUTTON THAT ACTS ON A SET SAYS HOW BIG THE SET IS, IN ITS OWN LABEL.** "Expand all" on a
-   * filtered list is ambiguous and "Expand 3" is not — so every count comes from the list as it is
-   * drawn right now, and a filtered list is exactly what a bulk action is for.
-   *
-   * ⚠ **AND THE TICKED ACTIONS ARE THE ONLY ONES THAT CHANGE SETTINGS.** Opening and closing a fold
-   * is a viewer's own business and needs no save; rotation and removal go through `markDirty()` and
-   * are undone by *Discard changes* like everything else on the page.
-   */
-  function zoneToolbar(c, st) {
-    var zones = c.zones || [];
-    if (!zones.length) return null;
-    var shown = shownZones(c, st);
-    var picked = zones.filter(function (z) { return !!zonePick[z.id]; });
-    var nOpen = shown.filter(function (z) { return !zoneFolded(z, zones.length); }).length;
-
-    var search = h('input', { class: 'lz-in lz-find', type: 'search',
-      value: zoneFind,
-      placeholder: T('pl.loot-zones.bulk.find.ph', 'Find a zone or a loot set') });
-    // `input`, not `change`: a filter that only applies when the box loses focus is a filter that
-    // looks broken. It redraws the list, and `afterRedraw` puts the caret back in the same box.
-    search.addEventListener('input', function () { zoneFind = search.value; render(); });
-
-    var head = h('div', { class: 'lz-bulk' }, [
-      search,
-      sel(zoneShow, [
-        ['all', T('pl.loot-zones.bulk.show.all', 'All zones')],
-        ['on', T('pl.loot-zones.bulk.show.on', 'In rotation')],
-        ['off', T('pl.loot-zones.bulk.show.off', 'Out of rotation')],
-        ['live', T('pl.loot-zones.bulk.show.live', 'Live now')],
-      ], function (v) { zoneShow = v; render(); }, T('pl.loot-zones.bulk.show.label', 'Show')),
-      h('span', { class: 'lz-bulk-n' }, shown.length === zones.length
-        ? T('pl.loot-zones.bulk.count', '{n} of {total}', { n: shown.length, total: zones.length })
-        : T('pl.loot-zones.bulk.countFiltered', '{n} of {total} shown', { n: shown.length, total: zones.length })),
-    ]);
-
-    var setFold = function (list, to) {
-      list.forEach(function (z) { shut['z-' + z.id] = to; });
-      render();
-    };
-    var acts = [
-      h('button', {
-        class: 'secondary', type: 'button', disabled: (nOpen >= shown.length) ? '' : null,
-        onclick: function () { setFold(shown, false); },
-      }, [icon('list'), T('pl.loot-zones.bulk.expand', 'Expand {n}', { n: shown.length })]),
-      h('button', {
-        class: 'secondary', type: 'button', disabled: nOpen ? null : '',
-        onclick: function () { setFold(shown, true); },
-      }, [icon('menu'), T('pl.loot-zones.bulk.collapse', 'Collapse {n}', { n: shown.length })]),
-    ];
-    if (zones.length > 1) {
-      acts.push(h('button', {
-        class: 'secondary', type: 'button',
-        disabled: shown.every(function (z) { return !!zonePick[z.id]; }) ? '' : null,
-        onclick: function () { shown.forEach(function (z) { zonePick[z.id] = true; }); render(); },
-      }, [icon('check'), T('pl.loot-zones.bulk.tickAll', 'Tick {n}', { n: shown.length })]));
-      if (picked.length) {
-        acts.push(h('button', {
-          class: 'secondary', type: 'button',
-          onclick: function () { zonePick = {}; render(); },
-        }, [icon('close'), T('pl.loot-zones.bulk.untick', 'Untick all')]));
-      }
-    }
-
-    var kids = [head, h('div', { class: 'lz-bulk' }, acts)];
-    if (picked.length) {
-      var names = function () {
-        return picked.map(function (z) { return z.name || z.set || ''; }).filter(Boolean).join(', ');
-      };
-      kids.push(h('div', { class: 'lz-bulk lz-bulk-sel' }, [
-        h('span', { class: 'lz-badge on' },
-          T('pl.loot-zones.bulk.picked', '{n} ticked', { n: picked.length })),
-        h('button', {
-          class: 'secondary', type: 'button',
-          disabled: picked.every(function (z) { return z.enabled !== false; }) ? '' : null,
-          onclick: function () {
-            picked.forEach(function (z) { z.enabled = true; });
-            markDirty();
-          },
-        }, [icon('power'), T('pl.loot-zones.bulk.on', 'Put in the rotation')]),
-        h('button', {
-          class: 'secondary', type: 'button',
-          disabled: picked.every(function (z) { return z.enabled === false; }) ? '' : null,
-          onclick: function () {
-            picked.forEach(function (z) { z.enabled = false; });
-            markDirty();
-          },
-        }, [icon('ban'), T('pl.loot-zones.bulk.off', 'Take out of the rotation')]),
-        h('button', {
-          class: 'lz-del', type: 'button',
-          title: T('pl.loot-zones.bulk.remove', 'Remove the ticked zones'),
-          onclick: function () {
-            /**
-             * ⚠ **A LIVE ZONE IS NAMED BEFORE IT IS REMOVED, NOT AFTER.** Taking an entry out of
-             * this list does NOT switch its loot off: the folder is on the server and the rectangle
-             * is in the game, and all the entry does is know about them. One zone at a time that is
-             * a sentence in a confirmation; over a selection it is the whole reason to read one.
-             */
-            var liveIds = {};
-            (st.active || []).forEach(function (a) { liveIds[String(a.id)] = true; });
-            var stillOn = picked.filter(function (z) { return liveIds[String(z.id)]; });
-            var rmVars = {
-              n: picked.length,
-              names: names(),
-              live: stillOn.length
-                ? T('pl.loot-zones.bulk.removeLive',
-                  '\n\n⚠ {n} are live and stay on the server. Press "{button}" under {card} afterwards.', { n: stillOn.length, button: labReconcile(), card: cardActions() })
-                : '',
-              save: labSave(), discard: labDiscard(),
-            };
-            SSA.confirm(picked.length === 1
-              ? T('pl.loot-zones.bulk.removeConfirm.one',
-                'Remove {n} zone from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)
-              : T('pl.loot-zones.bulk.removeConfirm',
-                'Remove {n} zones from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)).then(function (yes) {
-              if (!yes) return;
-              c.zones = zones.filter(function (z) { return !zonePick[z.id]; });
-              zonePick = {};
-              markDirty();
-            });
-          },
-        }, [icon('close'), T('pl.loot-zones.bulk.removeButton', 'Remove')]),
-      ]));
-    }
-    if (zoneFind && !shown.length) {
-      kids.push(note('', T('pl.loot-zones.bulk.noMatch', 'No zone matches that.')));
-    }
-    return h('div', { class: 'lz-bulkbar' }, kids);
-  }
-
   // ── one zone ───────────────────────────────────────────────────────────────────────────────────
-  /**
-   * Is this zone folded?
-   *
-   * ⚠ **A SHORT LIST OPENS AND A LONG ONE DOES NOT, AND A DECISION BEATS BOTH.** Every zone drew
-   * itself open, so a server with ten of them was ten full settings screens stacked one under the
-   * other and nothing but scrolling to get past them. `shut` is written only by the fold control and
-   * by a copy, so a viewer who opened or closed one keeps that — absent is a default, not a choice.
-   */
-  function zoneFolded(z, n) {
-    var k = 'z-' + z.id;
-    return Object.prototype.hasOwnProperty.call(shut, k) ? !!shut[k] : n > 3;
-  }
-  /**
-   * A zone with VARIANTS runs one of them per server session, laid over the settings on this card.
-   * Said above the guard controls, because without it the card shows the zone's own guards while
-   * the server runs somebody else's — the one screen that would mislead an owner into editing the
-   * wrong thing. Variants are written in `config.json`; this tab does not edit them.
-   */
-  function variantNote(z, st) {
-    var n = Array.isArray(z.variants) ? z.variants.length : 0;
-    if (!n) return null;
-    var run = st && st.variants ? st.variants[String(z.id)] : null;
-    return h('div', { class: 'lz-note' }, [
-      h('strong', {}, run
-        ? T('pl.loot-zones.variants.running', 'This session runs variant {i} of {n}, "{label}". A new one is picked at every server stop.',
-          { i: Number(run.index) + 1, n: n, label: String(run.label || '') })
-        : T('pl.loot-zones.variants.unpicked', 'This zone has {n} variants. One is picked for each server session.', { n: n })),
-      h('br'),
-      h('small', {}, T('pl.loot-zones.variants.note',
-        'A variant replaces the guard and busy settings below with its own. Variants are edited in config.json.')),
-    ]);
-  }
-
-  function zoneBlock(z, i, c, sets, st) {
+  function zoneParts(z, i, c, sets, st) {
     var live = (st.active || []).filter(function (a) { return String(a.id) === String(z.id); })[0];
     var set = sets.filter(function (s) { return s.name === z.set; })[0];
     var all = c.zones || [];
-    var folded = zoneFolded(z, all.length);
-
-    var head = h('div', { class: 'lz-zhead' }, [
-      // The tick that the bulk actions above read. Only where there is more than one zone to act on.
-      all.length > 1 ? (function () {
-        var box = h('input', { class: 'lz-pick', type: 'checkbox',
-          title: T('pl.loot-zones.bulk.pickOne', 'Tick this zone for the actions above') });
-        box.checked = !!zonePick[z.id];
-        box.addEventListener('change', function () {
-          if (box.checked) zonePick[z.id] = true; else delete zonePick[z.id];
-          render();
-        });
-        return box;
-      })() : null,
-      toggle(z.enabled !== false, function (v) { z.enabled = v; markDirty(); }),
-      txt(z.name, T('pl.loot-zones.zone.namePlaceholder', 'a name players will read'), function (v) { z.name = v; markDirty(); }, 'lz-in lz-name'),
-      // ⚠ The option VALUE is the set's folder name and is never translated; only the two words
-      // around it are.
-      sel(z.set, [['', T('pl.loot-zones.zone.pickSet', '— pick a loot set —')]].concat(sets.map(function (s) {
-        return [s.name, s.ok ? s.name : T('pl.loot-zones.zone.setUnusable', '{name}  (unusable)', { name: s.name })];
-      })), function (v) { z.set = v; markDirty(); }, T('pl.loot-zones.zone.setLabel', 'Loot set')),
-      live ? h('span', { class: 'lz-badge on' }, live.drawn === false
-        ? T('pl.loot-zones.badge.liveNotDrawn', 'live, not drawn') : T('pl.loot-zones.badge.live', 'live')) : null,
-      h('button', {
-        class: 'lz-link', type: 'button',
-        onclick: function () { shut['z-' + z.id] = !folded; render(); },
-      }, folded ? T('pl.loot-zones.zone.more', 'more') : T('pl.loot-zones.zone.less', 'less')),
-      // ⚠ THE ORDER IS A SETTING under "One zone per server restart, in turn down the list", and
-      // nothing on this page could change it: the only way to move a zone was to retype every field
-      // of two of them. Drawn always, because the list is also the reading order.
-      (c.zones || []).length > 1 ? h('button', {
-        class: 'lz-link lz-move', type: 'button',
-        title: i === 0 ? T('pl.loot-zones.zone.alreadyFirst', 'Already first')
-          : T('pl.loot-zones.zone.moveUp', 'Move up — the order is the turn order under "{option}"', { option: optRestart() }),
-        disabled: i === 0 ? '' : null,
-        onclick: function () { if (i === 0) return; c.zones.splice(i - 1, 0, c.zones.splice(i, 1)[0]); markDirty(); },
-      }, '↑') : null,
-      (c.zones || []).length > 1 ? h('button', {
-        class: 'lz-link lz-move', type: 'button',
-        title: i === (c.zones.length - 1) ? T('pl.loot-zones.zone.alreadyLast', 'Already last')
-          : T('pl.loot-zones.zone.moveDown', 'Move down — the order is the turn order under "{option}"', { option: optRestart() }),
-        disabled: i === (c.zones.length - 1) ? '' : null,
-        onclick: function () { if (i >= c.zones.length - 1) return; c.zones.splice(i + 1, 0, c.zones.splice(i, 1)[0]); markDirty(); },
-      }, '↓') : null,
-      h('button', {
-        class: 'lz-link', type: 'button', title: T('pl.loot-zones.zone.copyTitle', 'Add a copy of this zone with all its settings, right below it'),
-        onclick: function () { duplicateZone(z, i, c); },
-      }, T('pl.loot-zones.zone.copy', 'copy')),
-      h('button', {
-        class: 'lz-del', type: 'button', title: T('pl.loot-zones.zone.removeTitle', 'Remove this zone'),
-        onclick: function () {
-          // ⚠ **REMOVING A LIVE ZONE FROM THE LIST DOES NOT SWITCH IT OFF.** The loot folder is on
-          // the server and the rectangle is in the game; taking the entry away only takes away the
-          // thing that knows about them. That is a leftover nobody would look for, so it is said
-          // here with the two buttons that clear it — rather than found weeks later on the map.
-          SSA.confirm(T('pl.loot-zones.zone.removeConfirm', 'Remove "{name}" from the list?{live}\n\nNothing changes until {save}; "{discard}" beside {save} undoes it.', {
-            name: z.name || z.set || T('pl.loot-zones.zone.thisZone', 'this zone'),
-            live: live
-              ? T('pl.loot-zones.zone.removeLive',
-                '\n\n⚠ This zone is live. Switch it off first, or press "{button}" under {card} afterwards.',
-                { button: labReconcile(), card: cardActions() })
-              : '',
-            save: labSave(), discard: labDiscard(),
-          })).then(function (yes) {
-            if (!yes) return;
-            c.zones.splice(i, 1); markDirty();
-          });
-        },
-      }, [icon('close')]),
-    ]);
-    if (folded) return h('div', { class: 'lz-zone' + (live ? ' on' : '') }, [head]);
 
     var meta = [];
     if (!z.set) meta.push(T('pl.loot-zones.zone.noSet', 'No loot set chosen yet, so this zone cannot be switched on.'));
@@ -2242,9 +1983,15 @@
     hintScope = 'z:' + z.id;
     var where = h('div', { class: 'lz-when' },
       [h('h4', { class: 'lz-group' }, T('pl.loot-zones.area.title', 'Where this zone is'))]
-        .concat(areaBlock(z, set, pat)));
-    var guards = h('div', { class: 'lz-when' },
-      [variantNote(z, st)].concat(guardControls(z.sentries, z.id, pat, zoneRectSource(z, set))));
+        .concat(areaBlock(z, set, pat)).concat(areaExtras(z, set)));
+    // The place the area holds decides what "Keep sentries out" may mean here; see `guardPlace`.
+    var placeNow = ovOf(z);
+    guardPlace = placeNow ? placeNow.place : null;
+    var guards;
+    try {
+      guards = h('div', { class: 'lz-when' },
+        [variantBaseNote(z)].concat(zoneWarnNotes(z, null)).concat(guardControls(z.sentries, z.id, pat, zoneRectSource(z, set))));
+    } finally { guardPlace = null; }
     var busy = h('div', { class: 'lz-when' }, [
       h('h4', { class: 'lz-group' }, cardActivity()),
       /**
@@ -2272,16 +2019,7 @@
       ? T('pl.loot-zones.zone.blockedNoSet', 'Pick a loot set for this zone first.')
       : (isNew ? T('pl.loot-zones.zone.blockedNew', 'This zone is not on the server yet. Press {save}, then switch it on.', { save: labSave() }) : null);
 
-    return h('div', { class: 'lz-zone' + (live ? ' on' : '') }, [
-      head,
-      h('div', { class: 'lz-zmeta' }, withAgo(meta.join(' '), agoNow)),
-      zoneNotes.length ? h('div', { class: 'lz-live' }, zoneNotes) : null,
-      (function () { var ls = guarding ? lifeStatus(pat) : []; return ls.length ? h('div', { class: 'lz-live' }, ls) : null; })(),
-      when,
-      where,
-      guards,
-      busy,
-      h('div', { class: 'lz-actions' }, [
+    var actionsRow = h('div', { class: 'lz-actions' }, [
         h('button', {
           class: 'secondary', type: 'button',
           disabled: onBlocked ? '' : null,
@@ -2368,8 +2106,15 @@
             }).catch(failed(T('pl.loot-zones.fail.look', 'Could not look')));
           },
         }, [icon('eye'), labWhatIsIn()]) : null,
-      ]),
-    ]);
+      ]);
+    var general = generalSection(z, i, c, sets, st, {
+      meta: meta.length ? withAgo(meta.join(' '), agoNow) : null,
+      notes: zoneNotes.length ? h('div', { class: 'lz-live' }, zoneNotes) : null,
+      life: (function () { var ls = guarding ? lifeStatus(pat) : []; return ls.length ? h('div', { class: 'lz-live' }, ls) : null; })(),
+      when: when,
+      actions: actionsRow,
+    });
+    return { live: live, general: general, where: where, guards: guards, busy: busy };
   }
 
   /**
@@ -3481,9 +3226,9 @@
    * chose. It refuses and says so rather than guessing.
    */
   function guardAgain(zoneId, i, was) {
-    var c = state.cfg;
-    var z = ((c && c.zones) || []).filter(function (x) { return String(x && x.id) === String(zoneId); })[0];
-    var list = (z && z.sentries && z.sentries.replace && z.sentries.replace.types) || null;
+    // A zone's own block, or the open variant's draft (`zone::vN`), found again by its scope.
+    var sm = sentriesOfScope(zoneId);
+    var list = (sm && sm.replace && sm.replace.types) || null;
     var t = Array.isArray(list) ? list[i] : null;
     if (!t) return null;
     if (guardWordOf(t) !== guardWordOf(was)) return null;
@@ -4204,9 +3949,13 @@
      * section had been read — and choosing "only clear" hid the guard list while a guard stayed
      * chosen, so a zone set up for guards sent none and the screen gave no clue why.
      */
+    // ⚠ WHICH SENTRIES, AT THIS PLACE. The save refuses "keep fixed map sentries out" where no sentry
+    // post stands, so an abandoned bunker keeps out the deployed kind only; where the place is not
+    // known yet, both, as before.
+    var pc = guardPlace && guardPlace.cls;
     function apply(nextSentries, nextZombies, nextGuards) {
       var list = [];
-      if (nextSentries) { list.push('mapsentry'); list.push('sentry'); }
+      if (nextSentries) { if (pc !== 'D') list.push('mapsentry'); list.push('sentry'); }
       if (nextZombies) list.push('puppet');
       sm.kinds = list;
       sm.mode = nextGuards ? 'replace' : (list.length ? 'remove' : 'leave');
@@ -4217,8 +3966,10 @@
     var field = function (control, t) { return h('div', { class: 'lz-ctl' }, [control, t ? caption(t) : null]); };
     return [
       guardSummary(sm, pat, set, scope),
-      row(labSentriesOut(), toggle(sentriesOut, function (v) { apply(v, zombiesOut, guardsOn); }),
-        T('pl.loot-zones.set.sentriesOut.hint', 'Sentries are put away while players are near, so the game builds no new ones.')),
+      (pc === 'N' && !sentriesOut)
+        ? row(labSentriesOut(), h('small', {}, T('pl.loot-zones.set.sentriesOut.none', 'No sentry stands in this area (the game\'s own map data), so there is none to keep out.')))
+        : row(labSentriesOut(), toggle(sentriesOut, function (v) { apply(v, zombiesOut, guardsOn); }),
+          T('pl.loot-zones.set.sentriesOut.hint', 'Sentries are put away while players are near, so the game builds no new ones.')),
       row(labZombiesOut(), toggle(zombiesOut, function (v) { apply(sentriesOut, v, guardsOn); }),
         zombiesText()),
       row(T('pl.loot-zones.set.guardsOn', 'Guards of my own'), toggle(guardsOn, function (v) { apply(sentriesOut, zombiesOut, v); }),
@@ -4986,16 +4737,1213 @@
    * the box, so it is put back after the trial draw.
    */
   var lastDrawn = null;
+  // ══ THE TAB AS AN OWNER WITH A HUNDRED ZONES MEETS IT ════════════════════════════════════════════
+  /**
+   * ⚠ **EVERY ZONE USED TO BE A FULL SETTINGS SCREEN, ONE UNDER THE OTHER.** With 69 zones that was
+   * sixty-nine copies of the guard section to scroll past, variants only in `config.json`, and no way
+   * to see at a glance which zone was where, what it ran tonight or what was wrong with it. The
+   * owner's verdict was that the plugin could not be configured; the screen is now three things:
+   *
+   *   · the LIST — one compact row per zone (name, sector, area, what this session runs, warnings,
+   *     on/off), with search, filters, sort, paging and ticks for bulk actions;
+   *   · the EDITOR — one zone at a time, its settings split into General, Area, Guards, How busy and
+   *     Variants, with the next and previous zone one press away;
+   *   · the VARIANTS — per zone, in the tab, built from presets or by hand, each one an override of
+   *     the zone's own guard settings with every field saying whether it is its own or inherited.
+   *
+   * Which view is showing is the viewer's own and never a setting.
+   */
+  var view = 'zones';          // 'zones' | 'messages' | 'settings'
+  var editId = null;           // the zone open in the editor, by ID (never by position)
+  var editTab = 'general';     // 'general' | 'area' | 'guards' | 'busy' | 'variants'
+  var editVariant = null;      // the variant open below the variant list, by index
+  var listFilter = { sector: '', place: '', show: 'all' };
+  var zoneTable = null;
+  var presets = null;          // GET /presets, once
+  var areaMargin = 30;         // metres, the "grow the set's box" control's own number
+  var areaShape = 'rect';
+  // While `render({ ifChanged })` draws into a scratch element to compare, nothing may be MOVED out
+  // of the live page: the zone table is one element kept across draws, so the probe gets a copy.
+  var drawingProbe = false;
+
+  function zoneById(id) {
+    var c = state.cfg;
+    return ((c && c.zones) || []).filter(function (x) { return x && String(x.id) === String(id); })[0] || null;
+  }
+  function isPlainObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  /** The backend's own merge, key by key: `stored` wins where it has the key, `defaults` fills the rest. */
+  function mergeKeys(stored, defaults) {
+    var out = isPlainObj(defaults) ? clone(defaults) : {};
+    if (!isPlainObj(stored)) return out;
+    Object.keys(stored).forEach(function (k) {
+      var v = stored[k];
+      out[k] = (isPlainObj(v) && isPlainObj(out[k])) ? mergeKeys(v, out[k]) : clone(v);
+    });
+    return out;
+  }
+
+  // ── what the backend says about every zone the page holds ──────────────────────────────────
+  /**
+   * `POST /overview` with the PAGE's zones, saved or not, so a warning appears the moment an edit
+   * causes it — and asked again only when the zones really changed. The rules, the sector, the
+   * place class and the nearest other zone are the backend's; this file never works one out.
+   */
+  var overview = null;
+  var overviewKey = null;
+  var overviewAsking = null;
+  var overviewTimer = null;
+  function wantOverview() {
+    var c = state.cfg;
+    if (!c || drawingProbe) return;
+    var key = JSON.stringify([c.zones || [], c.sentries || {}]);
+    if (key === overviewKey || key === overviewAsking) return;
+    if (overviewTimer) clearTimeout(overviewTimer);
+    overviewTimer = setTimeout(function () {
+      overviewTimer = null;
+      var now = state.cfg;
+      if (!now) return;
+      var k2 = JSON.stringify([now.zones || [], now.sentries || {}]);
+      overviewAsking = k2;
+      api('/overview', { method: 'POST', body: { zones: now.zones || [], sentries: now.sentries || {} } }).then(function (r) {
+        if (overviewAsking !== k2) return;
+        overviewAsking = null;
+        overviewKey = k2;
+        overview = (r && r.zones) ? r : { zones: {}, why: (r && r.why) || '' };
+        render({ ifChanged: true });
+      }).catch(function () { overviewAsking = null; });
+    }, 300);
+  }
+  /** The overview for the zones as they are now, asked at once rather than after a pause. */
+  function overviewNow() {
+    var c = state.cfg;
+    if (!c) return Promise.resolve(null);
+    var key = JSON.stringify([c.zones || [], c.sentries || {}]);
+    if (key === overviewKey) return Promise.resolve(overview);
+    if (overviewTimer) { clearTimeout(overviewTimer); overviewTimer = null; }
+    overviewAsking = key;
+    return Promise.resolve(api('/overview', { method: 'POST', body: { zones: c.zones || [], sentries: c.sentries || {} } }))
+      .then(function (r) {
+        if (overviewAsking !== key) return overview;
+        overviewAsking = null;
+        overviewKey = key;
+        overview = (r && r.zones) ? r : { zones: {}, why: (r && r.why) || '' };
+        return overview;
+      }).catch(function () { overviewAsking = null; return overview; });
+  }
+  function ovOf(z) { return (overview && overview.zones && z && overview.zones[String(z.id)]) || null; }
+  function warnCount(z) {
+    var o = ovOf(z);
+    return o ? (o.rules || []).length + (o.warnings || []).length : 0;
+  }
+  function refreshPresets() {
+    if (presets) return Promise.resolve(presets);
+    return Promise.resolve(api('/presets')).then(function (r) {
+      if (r && Array.isArray(r.presets)) presets = r;
+      return presets;
+    }).catch(function () { return null; });
+  }
+
+  /**
+   * A preset's name and what it does, in the reader's language. One literal key per preset, so the
+   * translations can be found; the English beside each is the backend's own table, which is also
+   * what is stored as a new variant's label (an owner's value, renamed freely).
+   */
+  function presetName(k, en) {
+    if (k === 'npc_nozombies') return T('pl.loot-zones.preset.npc_nozombies', 'NPC guards (level 4-5), no zombies');
+    if (k === 'npc') return T('pl.loot-zones.preset.npc', 'NPC guards (level 4-5) among the zombies');
+    if (k === 'razors') return T('pl.loot-zones.preset.razors', 'Razors');
+    if (k === 'zombies') return T('pl.loot-zones.preset.zombies', 'A horde');
+    if (k === 'sentries_nozombies') return T('pl.loot-zones.preset.sentries_nozombies', 'Only the sentries, no zombies');
+    if (k === 'pvp_clean') return T('pl.loot-zones.preset.pvp_clean', 'Clean PvP: no sentries, no zombies, no guards');
+    if (k === 'day_npc_night_razors') return T('pl.loot-zones.preset.day_npc_night_razors', 'NPC guards by day, Razors at night');
+    if (k === 'night_razors') return T('pl.loot-zones.preset.night_razors', 'Quiet by day, Razors at night');
+    return en || k;
+  }
+  function presetHint(k, en) {
+    if (k === 'npc_nozombies') return T('pl.loot-zones.preset.npc_nozombies.hint', 'Armed NPCs of level 4 and 5 hold the zone. Zombies are kept out, and sentries where there are any.');
+    if (k === 'npc') return T('pl.loot-zones.preset.npc.hint', 'The same NPC guards, with the game\'s own zombies left in. Sentries are kept out where the place has any.');
+    if (k === 'razors') return T('pl.loot-zones.preset.razors.hint', 'A few Razors roam the zone. Where the place has sentries, they stay or go at random.');
+    if (k === 'zombies') return T('pl.loot-zones.preset.zombies.hint', 'Extra zombies of the place\'s own kind. Where the place has sentries, they stay or go at random.');
+    if (k === 'sentries_nozombies') return T('pl.loot-zones.preset.sentries_nozombies.hint', 'The place\'s own sentries stand, zombies are kept out, no guards are sent. Only at places with sentry posts.');
+    if (k === 'pvp_clean') return T('pl.loot-zones.preset.pvp_clean.hint', 'Nothing but players: sentries and zombies kept out, no guards. Only where the place has sentries to take away.');
+    if (k === 'day_npc_night_razors') return T('pl.loot-zones.preset.day_npc_night_razors.hint', 'NPC guards 05:00 to 21:00 game time, Razors 21:00 to 05:00. Sentries kept out where the place has any.');
+    if (k === 'night_razors') return T('pl.loot-zones.preset.night_razors.hint', 'Nothing extra by day; Razors from 21:00 to 05:00 game time. The place\'s own sentries stay.');
+    return en || '';
+  }
+  /** What the zone's area holds, in words: the reason some presets and switches are not offered. */
+  function placeText(p) {
+    if (!p) return T('pl.loot-zones.place.unknown', 'Sentries in this area: not known yet');
+    if (p.cls === 'S') {
+      return p.posts === 1 ? T('pl.loot-zones.place.posts.one', '{n} sentry post', { n: p.posts })
+        : T('pl.loot-zones.place.posts', '{n} sentry posts', { n: p.posts });
+    }
+    if (p.cls === 'D') return T('pl.loot-zones.place.bunker', 'Abandoned bunker (dropship sentries)');
+    return T('pl.loot-zones.place.none', 'No sentries');
+  }
+  /** The shape and size in metres, the way a person paces it out. */
+  function areaText(a) {
+    if (!a) return T('pl.loot-zones.area.short.none', 'no area yet');
+    if (a.shape === 'circle') return T('pl.loot-zones.area.short.circle', 'circle, {m} m across', { m: metres(a.radius * 2) });
+    return T('pl.loot-zones.area.short.rect', 'rectangle, {w} × {h} m', { w: metres(a.width), h: metres(a.height) });
+  }
+  function liveIdsOf(st) {
+    var out = {};
+    ((st && st.active) || []).forEach(function (a) { out[String(a.id)] = a; });
+    return out;
+  }
+  function savedHasVariants(z) {
+    // What the SERVER holds decides whether a re-roll can act: a variant added on this page and not
+    // saved yet is a variant the backend has never heard of.
+    return !!(savedIds && savedIds.indexOf(String(z.id)) >= 0 && Array.isArray(z.variants) && z.variants.some(function (v) { return v && v.enabled !== false; }));
+  }
+
+  // ── the navigation inside the tab ──────────────────────────────────────────────────────────
+  function tabNav(c) {
+    var b = function (key, ico, label) {
+      var on = view === key;
+      return h('button', {
+        class: 'lz-tab' + (on ? ' on' : ''), type: 'button', 'aria-pressed': on ? 'true' : 'false',
+        onclick: function () { view = key; if (key === 'zones') { editId = null; editVariant = null; } render(); },
+      }, [icon(ico), label]);
+    };
+    return h('nav', { class: 'lz-tabs', 'aria-label': T('pl.loot-zones.nav.label', 'Loot Zones sections') }, [
+      b('zones', 'list', T('pl.loot-zones.nav.zones', 'Zones ({n})', { n: (c.zones || []).length })),
+      b('messages', 'chat', T('pl.loot-zones.nav.messages', 'Messages')),
+      b('settings', 'sliders', T('pl.loot-zones.nav.settings', 'Settings and actions')),
+    ]);
+  }
+  function openZone(id, tab) {
+    editId = String(id);
+    editTab = tab || 'general';
+    editVariant = null;
+    view = 'zones';
+    render();
+    try { if (root && root.scrollIntoView) root.scrollIntoView({ block: 'start' }); } catch (ignored) { /* detached */ }
+  }
+
+  // ── the list ───────────────────────────────────────────────────────────────────────────────
+  function zoneShown(z, live) {
+    var o = ovOf(z);
+    if (listFilter.sector && !(o && o.sector === listFilter.sector)) return false;
+    if (listFilter.place && !(o && o.place && o.place.cls === listFilter.place)) return false;
+    var nv = Array.isArray(z.variants) ? z.variants.length : 0;
+    switch (listFilter.show) {
+      case 'on': return z.enabled !== false;
+      case 'off': return z.enabled === false;
+      case 'live': return !!live[String(z.id)];
+      case 'variants': return nv > 0;
+      case 'novariants': return nv === 0;
+      case 'warnings': return warnCount(z) > 0;
+      case 'rules': return !!(o && (o.rules || []).length);
+      default: return true;
+    }
+  }
+  function filteredZones() {
+    var c = state.cfg || {};
+    var live = liveIdsOf(state.status);
+    return (c.zones || []).filter(function (z) { return z && zoneShown(z, live); });
+  }
+  /** What the table's own search box would leave of a list: the same test it applies. */
+  function searchedOf(list) {
+    var q = zoneTable && zoneTable.search ? String(zoneTable.search.value || '').trim().toLowerCase() : '';
+    if (!q) return list;
+    return list.filter(function (z) { return zoneHay(z).toLowerCase().indexOf(q) >= 0; });
+  }
+  function zoneHay(z) {
+    var o = ovOf(z);
+    return [z.name, z.set, o && o.sector].filter(Boolean).join(' ');
+  }
+  function sessionOf(z) {
+    var st = state.status || {};
+    return st.variants ? st.variants[String(z.id)] : null;
+  }
+
+  function zoneTableNode() {
+    if (typeof SSA.table !== 'function') return note('bad', T('pl.loot-zones.list.noTable', 'This manager is too old to draw the zone list. Update the manager.'));
+    if (!zoneTable) {
+      zoneTable = SSA.table({
+        pageSize: 25,
+        searchPlaceholder: T('pl.loot-zones.bulk.find.ph', 'Find a zone or a loot set'),
+        search: zoneHay,
+        rows: filteredZones,
+        empty: function () {
+          return (state.cfg && (state.cfg.zones || []).length)
+            ? T('pl.loot-zones.list.noneShown', 'No zone matches these filters.')
+            : T('pl.loot-zones.zones.none', 'No zones yet. Add one and pick a loot set for it.');
+        },
+        columns: [
+          {
+            key: 'pick', label: '', thClass: 'lz-col-pick',
+            render: function (z) {
+              var box = h('input', { class: 'lz-pick', type: 'checkbox', 'data-on': zonePick[z.id] ? '1' : '0',
+                'aria-label': T('pl.loot-zones.bulk.pickOne', 'Tick this zone for the actions above') });
+              box.checked = !!zonePick[z.id];
+              box.addEventListener('change', function () {
+                if (box.checked) zonePick[z.id] = true; else delete zonePick[z.id];
+                render();
+              });
+              return box;
+            },
+          },
+          {
+            key: 'name', label: T('pl.loot-zones.col.zone', 'Zone'), sort: true,
+            sortVal: function (z) { return String(z.name || z.set || '').toLowerCase(); },
+            render: function (z) {
+              return h('div', { class: 'lz-zcell' }, [
+                h('button', { class: 'lz-zname', type: 'button', onclick: function () { openZone(z.id); } },
+                  String(z.name || '').trim() || T('pl.loot-zones.list.unnamed', '(no name)')),
+                h('small', {}, z.set ? String(z.set) : T('pl.loot-zones.list.noSet', 'no loot set')),
+              ]);
+            },
+          },
+          {
+            key: 'where', label: T('pl.loot-zones.col.where', 'Where'), sort: true,
+            sortVal: function (z) { var o = ovOf(z); return ((o && o.sector) || '~') + String(z.name || '').toLowerCase(); },
+            render: function (z) {
+              var o = ovOf(z);
+              return h('div', { class: 'lz-zcell' }, [
+                h('span', { class: 'lz-sector' }, (o && o.sector) || '–'),
+                h('small', {}, o ? areaText(o.area) : ''),
+                h('small', {}, o ? placeText(o.place) : ''),
+              ]);
+            },
+          },
+          {
+            key: 'session', label: T('pl.loot-zones.col.session', 'This session'), sort: true,
+            sortVal: function (z) { return Array.isArray(z.variants) ? z.variants.length : 0; },
+            render: function (z) {
+              var n = Array.isArray(z.variants) ? z.variants.length : 0;
+              if (!n) return h('small', { class: 'lz-dim' }, T('pl.loot-zones.list.noVariants', 'no variants'));
+              var run = sessionOf(z);
+              return h('div', { class: 'lz-zcell' }, [
+                h('span', {}, run ? String(run.label || '') : T('pl.loot-zones.list.notPicked', 'not picked yet')),
+                h('small', {}, run
+                  ? T('pl.loot-zones.list.variantOf', 'variant {i} of {n}', { i: Number(run.index) + 1, n: n })
+                  : (n === 1 ? T('pl.loot-zones.list.variants.one', '{n} variant', { n: n })
+                    : T('pl.loot-zones.list.variants', '{n} variants', { n: n }))),
+              ]);
+            },
+          },
+          {
+            key: 'warn', label: T('pl.loot-zones.col.warnings', 'Warnings'), sort: true,
+            sortVal: function (z) { var o = ovOf(z); return -(((o && o.rules) || []).length * 100 + warnCount(z)); },
+            render: function (z) {
+              var o = ovOf(z);
+              if (!o) return h('small', { class: 'lz-dim' }, '…');
+              var rules = o.rules || [];
+              var warns = o.warnings || [];
+              if (!rules.length && !warns.length) {
+                return h('span', { class: 'lz-ok', title: T('pl.loot-zones.list.allGood', 'Nothing to fix') }, [icon('check'), T('pl.loot-zones.list.ok', 'OK')]);
+              }
+              var lines = rules.map(function (b) { return b.text; }).concat(warns.map(function (w) { return w.text; }));
+              return h('button', {
+                class: 'lz-warnbtn' + (rules.length ? ' bad' : ''), type: 'button', title: lines.join('\n'),
+                onclick: function () { openZone(z.id, rules.length ? (rules[0].variant != null ? 'variants' : 'guards') : 'general'); },
+              }, [icon('alert'), rules.length
+                ? T('pl.loot-zones.list.rules', '{n} to fix', { n: rules.length + warns.length })
+                : T('pl.loot-zones.list.warns', '{n} to check', { n: warns.length })]);
+            },
+          },
+          {
+            key: 'on', label: T('pl.loot-zones.col.on', 'In rotation'), sort: true,
+            sortVal: function (z) { return z.enabled === false ? 1 : 0; },
+            render: function (z) {
+              var live = liveIdsOf(state.status)[String(z.id)];
+              return h('div', { class: 'lz-oncell' }, [
+                toggle(z.enabled !== false, function (v) { z.enabled = v; markDirty(); }),
+                live ? h('span', { class: 'lz-badge on' }, T('pl.loot-zones.badge.live', 'live')) : null,
+              ]);
+            },
+          },
+          {
+            key: 'open', label: '',
+            render: function (z) {
+              return h('button', { class: 'secondary lz-open', type: 'button', onclick: function () { openZone(z.id); } },
+                [icon('chev-right'), T('pl.loot-zones.list.edit', 'Edit')]);
+            },
+          },
+        ],
+      });
+    }
+    zoneTable.refresh();
+    return drawingProbe ? zoneTable.el.cloneNode(true) : zoneTable.el;
+  }
+
+  function filterBar(c) {
+    var sectors = {};
+    (c.zones || []).forEach(function (z) { var o = ovOf(z); if (o && o.sector) sectors[o.sector] = true; });
+    var sectorList = Object.keys(sectors).sort();
+    var shown = searchedOf(filteredZones());
+    var all = (c.zones || []).length;
+    var allTicked = shown.length && shown.every(function (z) { return !!zonePick[z.id]; });
+    return h('div', { class: 'lz-bulk' }, [
+      sel(listFilter.sector, [['', T('pl.loot-zones.filter.allSectors', 'Every sector')]].concat(sectorList.map(function (s) { return [s, s]; })),
+        function (v) { listFilter.sector = v; render(); }, T('pl.loot-zones.filter.sector', 'Sector')),
+      sel(listFilter.place, [
+        ['', T('pl.loot-zones.filter.allPlaces', 'Any place')],
+        ['S', T('pl.loot-zones.filter.placeS', 'With sentry posts')],
+        ['D', T('pl.loot-zones.filter.placeD', 'Abandoned bunkers')],
+        ['N', T('pl.loot-zones.filter.placeN', 'Without sentries')],
+      ], function (v) { listFilter.place = v; render(); }, T('pl.loot-zones.filter.place', 'Place')),
+      sel(listFilter.show, [
+        ['all', T('pl.loot-zones.bulk.show.all', 'All zones')],
+        ['on', T('pl.loot-zones.bulk.show.on', 'In rotation')],
+        ['off', T('pl.loot-zones.bulk.show.off', 'Out of rotation')],
+        ['live', T('pl.loot-zones.bulk.show.live', 'Live now')],
+        ['variants', T('pl.loot-zones.filter.withVariants', 'With variants')],
+        ['novariants', T('pl.loot-zones.filter.withoutVariants', 'Without variants')],
+        ['warnings', T('pl.loot-zones.filter.withWarnings', 'With something to check')],
+        ['rules', T('pl.loot-zones.filter.withRules', 'Breaking a rule')],
+      ], function (v) { listFilter.show = v; render(); }, T('pl.loot-zones.bulk.show.label', 'Show')),
+      h('span', { class: 'lz-bulk-n' }, shown.length === all
+        ? T('pl.loot-zones.bulk.count', '{n} of {total}', { n: shown.length, total: all })
+        : T('pl.loot-zones.bulk.countFiltered', '{n} of {total} shown', { n: shown.length, total: all })),
+      shown.length ? h('button', {
+        class: 'secondary', type: 'button',
+        onclick: function () {
+          shown.forEach(function (z) { if (allTicked) delete zonePick[z.id]; else zonePick[z.id] = true; });
+          render();
+        },
+      }, [icon(allTicked ? 'close' : 'check'), allTicked
+        ? T('pl.loot-zones.bulk.untickShown', 'Untick {n}', { n: shown.length })
+        : T('pl.loot-zones.bulk.tickAll', 'Tick {n}', { n: shown.length })]) : null,
+    ]);
+  }
+
+  function bulkBar(c, st) {
+    var zones = c.zones || [];
+    var picked = zones.filter(function (z) { return !!zonePick[z.id]; });
+    if (!picked.length) return null;
+    var names = picked.map(function (z) { return z.name || z.set || ''; }).filter(Boolean);
+    var short = names.slice(0, 8).join(', ') + (names.length > 8 ? T('pl.loot-zones.bulk.andMore', ' and {n} more', { n: names.length - 8 }) : '');
+    var withVariants = picked.filter(function (z) { return Array.isArray(z.variants) && z.variants.length; });
+    var rerollable = picked.filter(savedHasVariants);
+    return h('div', { class: 'lz-bulk lz-bulk-sel' }, [
+      h('span', { class: 'lz-badge on' }, T('pl.loot-zones.bulk.picked', '{n} ticked', { n: picked.length })),
+      h('button', {
+        class: 'secondary', type: 'button', disabled: picked.every(function (z) { return z.enabled !== false; }) ? '' : null,
+        onclick: function () { picked.forEach(function (z) { z.enabled = true; }); markDirty(); },
+      }, [icon('power'), T('pl.loot-zones.bulk.on', 'Put in the rotation')]),
+      h('button', {
+        class: 'secondary', type: 'button', disabled: picked.every(function (z) { return z.enabled === false; }) ? '' : null,
+        onclick: function () { picked.forEach(function (z) { z.enabled = false; }); markDirty(); },
+      }, [icon('ban'), T('pl.loot-zones.bulk.off', 'Take out of the rotation')]),
+      h('button', { class: 'secondary', type: 'button', onclick: function () { openMixDialog(picked); } },
+        [icon('copy'), T('pl.loot-zones.bulk.mix', 'Give them variants…')]),
+      withVariants.length ? h('button', {
+        class: 'secondary', type: 'button',
+        onclick: function () {
+          SSA.confirm(T('pl.loot-zones.bulk.dropVariantsConfirm',
+            'Remove every variant from {n} zones?\n\n{names}\n\nEach zone then runs its own guard settings every session. Nothing changes until {save}.',
+            { n: withVariants.length, names: short, save: labSave() })).then(function (yes) {
+            if (!yes) return;
+            withVariants.forEach(function (z) { delete z.variants; });
+            markDirty();
+          });
+        },
+      }, [icon('close'), T('pl.loot-zones.bulk.dropVariants', 'Remove their variants')]) : null,
+      rerollable.length ? h('button', {
+        class: 'secondary', type: 'button', onclick: function () { rerollConfirm(rerollable, false); },
+      }, [icon('refresh'), T('pl.loot-zones.bulk.reroll', 'New variant now ({n})', { n: rerollable.length })]) : null,
+      h('button', {
+        class: 'lz-del', type: 'button', title: T('pl.loot-zones.bulk.remove', 'Remove the ticked zones'),
+        onclick: function () {
+          var liveIds = liveIdsOf(st);
+          var stillOn = picked.filter(function (z) { return liveIds[String(z.id)]; });
+          var rmVars = {
+            n: picked.length, names: short,
+            live: stillOn.length
+              ? T('pl.loot-zones.bulk.removeLive',
+                '\n\n⚠ {n} are live and stay on the server. Press "{button}" under {card} afterwards.', { n: stillOn.length, button: labReconcile(), card: cardActions() })
+              : '',
+            save: labSave(), discard: labDiscard(),
+          };
+          SSA.confirm(picked.length === 1
+            ? T('pl.loot-zones.bulk.removeConfirm.one',
+              'Remove {n} zone from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)
+            : T('pl.loot-zones.bulk.removeConfirm',
+              'Remove {n} zones from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)).then(function (yes) {
+            if (!yes) return;
+            c.zones = zones.filter(function (z) { return !zonePick[z.id]; });
+            zonePick = {};
+            markDirty();
+          });
+        },
+      }, [icon('close'), T('pl.loot-zones.bulk.removeButton', 'Remove')]),
+      h('button', { class: 'secondary', type: 'button', onclick: function () { zonePick = {}; render(); } },
+        T('pl.loot-zones.bulk.untick', 'Untick all')),
+    ]);
+  }
+
+  function zonesCard(c, st, sets) {
+    var zones = c.zones || [];
+    var free = sets.filter(function (s) { return s.ok && !zones.some(function (z) { return z.set === s.name; }); });
+    var anyVariants = zones.some(savedHasVariants);
+    var head = h('div', { class: 'lz-actions' }, [
+      h('button', {
+        class: free.length ? '' : 'secondary', type: 'button', disabled: free.length ? null : '',
+        title: free.length ? null : T('pl.loot-zones.wiz.noneFree', 'Every loot set in the sets folder already has a zone.'),
+        onclick: function () { openWizard(free); },
+      }, [icon('box'), T('pl.loot-zones.wiz.open', 'Create zones from loot sets ({n} without a zone)', { n: free.length })]),
+      h('button', {
+        class: 'secondary', type: 'button', onclick: function () {
+          var fresh = {
+            id: 'z' + Date.now().toString(36), name: '', set: free.length ? free[0].name : (sets.length ? sets[0].name : ''),
+            enabled: true, windows: [],
+          };
+          c.zones = zones.concat([fresh]);
+          unsaved = true;
+          openZone(fresh.id);
+        },
+      }, [icon('box'), T('pl.loot-zones.zones.add', 'Add a zone')]),
+      anyVariants ? h('button', {
+        class: 'secondary', type: 'button', onclick: function () { rerollConfirm(zones.filter(savedHasVariants), true); },
+      }, [icon('refresh'), T('pl.loot-zones.reroll.all', 'New variants for every zone now')]) : null,
+    ]);
+    var kids = [head];
+    if (!zones.length) {
+      kids.push(note('', sets.length
+        ? T('pl.loot-zones.zones.noneYet', 'No zones yet. "Create zones from loot sets" makes one per set in one go.')
+        : T('pl.loot-zones.zones.noSets', 'No loot sets. Add one folder per zone, each with a Zones.json from #ExportItemSpawnerPresetsInZone.')));
+    } else {
+      kids.push(filterBar(c));
+      kids.push(bulkBar(c, st));
+      kids.push(zoneTableNode());
+      if (overview && overview.why) kids.push(note('wait', T('pl.loot-zones.list.overviewFailed', 'The warnings could not be worked out: {why}', { why: overview.why })));
+    }
+    return card('list', T('pl.loot-zones.card.zones', 'Zones'),
+      T('pl.loot-zones.list.lead', 'One row per zone. Open a zone to change its area, its guards and its variants.'), kids);
+  }
+
+  // ── a new variant now ──────────────────────────────────────────────────────────────────────
+  function rerollConfirm(list, everyZone) {
+    if (!list.length) return;
+    var guardsNow = list.some(function (z) {
+      var p = ((state.status || {}).patrols || {})[String(z.id)];
+      return p && (Number(p.inZone) > 0 || Number(p.held) > 0);
+    });
+    var msg = (everyZone
+      ? T('pl.loot-zones.reroll.confirmAll', 'Pick a new variant for all {n} zones with variants, right now?', { n: list.length })
+      : (list.length === 1
+        ? T('pl.loot-zones.reroll.confirmOne', 'Pick a new variant for "{name}" right now?', { name: list[0].name || list[0].set || '' })
+        : T('pl.loot-zones.reroll.confirmMany', 'Pick a new variant for {n} zones right now?', { n: list.length })))
+      + '\n\n' + T('pl.loot-zones.reroll.what',
+        'Its standing guards are taken away now; the new variant\'s guards come with the next patrol. Loot and area stay.')
+      + (guardsNow ? '\n\n' + T('pl.loot-zones.reroll.guardsNow', '⚠ Guards are standing in at least one of these zones, and nearby players will see them go.') : '')
+      + (unsaved ? '\n\n' + T('pl.loot-zones.reroll.unsaved', 'This uses the saved variants; this page\'s changes are not in it yet.') : '');
+    Promise.resolve(SSA.confirm(msg)).then(function (yes) {
+      if (!yes) return;
+      api('/reroll', { method: 'POST', body: everyZone ? { all: true } : (list.length === 1 ? { id: list[0].id } : { all: false, id: null, ids: list.map(function (z) { return z.id; }) }) })
+        .then(function (r) {
+          if (!r || r.ok === false) { SSA.toast((r && r.why) || T('pl.loot-zones.refused', 'Refused')); return; }
+          var done = r.rerolled || [];
+          var removed = done.reduce(function (n, x) { return n + (Number(x.removed) || 0); }, 0);
+          SSA.toast(done.length === 1
+            ? T('pl.loot-zones.reroll.doneOne', '"{name}" now runs "{label}". {n} guards taken away.', { name: done[0].name, label: (done[0].to || {}).label || '', n: removed })
+            : T('pl.loot-zones.reroll.done', '{z} zones picked a new variant. {n} guards taken away.', { z: done.length, n: removed }));
+          refresh();
+        }).catch(failed(T('pl.loot-zones.fail.reroll', 'No new variant')));
+    });
+  }
+
+  // ── the variant mix, for one zone or many ───────────────────────────────────────────────────
+  /**
+   * Presets for the ticked zones, or a mix the backend picks per zone by its place. Built by the
+   * backend and laid onto the PAGE — nothing is saved until Save, and Discard takes it back.
+   */
+  function presetChoice(onDone, opts) {
+    var o = opts || {};
+    var list = (presets && presets.presets) || [];
+    var mode = { v: 'mix', count: '0', replace: true, picks: {} };
+    var countSel = sel(mode.count, [
+      ['0', T('pl.loot-zones.mix.byPlace', 'As many as suit the place (3 to 5)')],
+      ['3', T('pl.loot-zones.mix.n3', '3 variants')], ['4', T('pl.loot-zones.mix.n4', '4 variants')], ['5', T('pl.loot-zones.mix.n5', '5 variants')],
+    ], function (v) { mode.count = v; }, T('pl.loot-zones.mix.count', 'How many'));
+    var boxes = list.map(function (p) {
+      var b = h('input', { type: 'checkbox' });
+      b.addEventListener('change', function () { if (b.checked) mode.picks[p.key] = true; else delete mode.picks[p.key]; });
+      return h('label', { class: 'lz-presetpick' }, [b, h('span', {}, [h('b', {}, presetName(p.key, p.label)), h('small', {}, presetHint(p.key, p.hint))])]);
+    });
+    var pickBox = h('div', { class: 'lz-presetlist', hidden: '' }, boxes);
+    var modeSel = sel(mode.v, [
+      ['mix', T('pl.loot-zones.mix.modeMix', 'A mix chosen for each zone by its place')],
+      ['pick', T('pl.loot-zones.mix.modePick', 'These presets, wherever they suit the place')],
+    ], function (v) { mode.v = v; if (v === 'pick') pickBox.removeAttribute('hidden'); else pickBox.setAttribute('hidden', ''); countRow.hidden = v === 'pick'; },
+    T('pl.loot-zones.mix.mode', 'Variants'));
+    var countRow = row(T('pl.loot-zones.mix.count', 'How many'), countSel);
+    var rows = [row(T('pl.loot-zones.mix.mode', 'Variants'), modeSel), countRow, pickBox];
+    if (o.replaceChoice) {
+      rows.push(row(T('pl.loot-zones.mix.replace', 'Replace the variants they have'), toggle(true, function (v) { mode.replace = v; }),
+        T('pl.loot-zones.mix.replace.hint', 'Off adds the new variants after the ones a zone already has.')));
+    }
+    rows.push(note('', T('pl.loot-zones.mix.rules', 'A preset goes only where it suits the place: no sentry options without sentries, NPC guards always without sentries.')));
+    return { node: h('div', { class: 'lz-lines' }, rows), get: function () { return mode; } };
+  }
+  function buildBody(mode, zones) {
+    var body = { zones: zones, seed: Date.now() };
+    if (mode.v === 'pick') body.presets = Object.keys(mode.picks);
+    else { body.mix = true; if (mode.count !== '0') body.count = Number(mode.count); }
+    return body;
+  }
+  function skippedText(results) {
+    var out = [];
+    Object.keys(results || {}).forEach(function (id) {
+      var r = results[id] || {};
+      (r.skipped || []).forEach(function (s) { out.push(s.why); });
+      if (r.ok === false && r.why) out.push(r.why);
+    });
+    return out;
+  }
+  function openMixDialog(zones) {
+    refreshPresets().then(function () {
+      var ch = presetChoice(null, { replaceChoice: true });
+      SSA.modal({
+        title: zones.length === 1 ? T('pl.loot-zones.mix.titleOne', 'Variants for "{name}"', { name: zones[0].name || zones[0].set || '' })
+          : T('pl.loot-zones.mix.title', 'Variants for {n} zones', { n: zones.length }),
+        body: ch.node,
+        actions: [
+          { label: T('pl.loot-zones.mix.cancel', 'Cancel') },
+          {
+            label: T('pl.loot-zones.mix.apply', 'Add the variants'), primary: true,
+            run: function () {
+              var mode = ch.get();
+              if (mode.v === 'pick' && !Object.keys(mode.picks).length) { SSA.toast(T('pl.loot-zones.mix.pickOne', 'Tick at least one preset.')); return true; }
+              api('/variants/build', { method: 'POST', body: buildBody(mode, zones) }).then(function (r) {
+                if (!r || r.ok === false) { SSA.toast((r && r.why) || T('pl.loot-zones.refused', 'Refused')); return; }
+                var got = 0;
+                zones.forEach(function (z) {
+                  var now = zoneById(z.id);
+                  var res = r.results && r.results[String(z.id)];
+                  if (!now || !res || !res.ok || !(res.variants || []).length) return;
+                  now.variants = (mode.replace || !Array.isArray(now.variants)) ? res.variants : now.variants.concat(res.variants);
+                  got++;
+                });
+                var skipped = skippedText(r.results);
+                unsaved = true;
+                render();
+                SSA.toast(T('pl.loot-zones.mix.done', '{n} zones got variants. Press {save} to keep them.', { n: got, save: labSave() })
+                  + (skipped.length ? ' ' + T('pl.loot-zones.mix.skipped', '{n} presets did not suit their place and were left out.', { n: skipped.length }) : ''));
+              }).catch(failed(T('pl.loot-zones.fail.mix', 'No variants added')));
+              return false;
+            },
+          },
+        ],
+      });
+    });
+  }
+
+  // ── creating zones from loot sets ──────────────────────────────────────────────────────────
+  function openWizard(free) {
+    refreshPresets().then(function () {
+      var pick = {};
+      free.forEach(function (s) { pick[s.name] = true; });
+      var opt = { margin: areaMargin, shape: 'auto', variants: true };
+      var setRows = free.map(function (s) {
+        var b = h('input', { type: 'checkbox' });
+        b.checked = true;
+        b.addEventListener('change', function () { if (b.checked) pick[s.name] = true; else delete pick[s.name]; });
+        var r = (s.rects || [])[0] || {};
+        return h('label', { class: 'lz-presetpick' }, [b, h('span', {}, [h('b', {}, s.name),
+          h('small', {}, T('pl.loot-zones.wiz.setFacts', '{n} loot files, {w} × {h} m', { n: s.presets, w: metres(r.width), h: metres(r.height) }))])]);
+      });
+      var ch = presetChoice(null, {});
+      var vBox = h('div', {}, [ch.node]);
+      var body = h('div', { class: 'lz-lines' }, [
+        h('p', { class: 'lz-lead' }, T('pl.loot-zones.wiz.lead', 'One zone per ticked loot set, named after its folder, with the set\'s Zones.json box grown on every side.')),
+        h('div', { class: 'lz-presetlist' }, setRows),
+        row(T('pl.loot-zones.wiz.margin', 'Grow the area by'), numIn(opt.margin, function (v) { opt.margin = Math.max(0, v); }, 0, 500, T('pl.loot-zones.unit.metres', 'm')),
+          T('pl.loot-zones.wiz.margin.hint', 'Added on every side of the set\'s box. The loot itself still covers only the set\'s own box.')),
+        row(T('pl.loot-zones.area.shape', 'Shape'), sel(opt.shape, [
+          ['auto', T('pl.loot-zones.wiz.shapeAuto', 'Circle for a near-square place, rectangle otherwise')],
+          ['rect', T('pl.loot-zones.area.shape.rect', 'Rectangle')],
+          ['circle', T('pl.loot-zones.area.shape.circle', 'Circle')],
+        ], function (v) { opt.shape = v; })),
+        row(T('pl.loot-zones.wiz.withVariants', 'Give them variants'), toggle(true, function (v) {
+          opt.variants = v; if (v) vBox.removeAttribute('hidden'); else vBox.setAttribute('hidden', '');
+        })),
+        vBox,
+      ]);
+      SSA.modal({
+        title: T('pl.loot-zones.wiz.title', 'Create zones from loot sets'),
+        wide: true,
+        body: body,
+        actions: [
+          { label: T('pl.loot-zones.mix.cancel', 'Cancel') },
+          {
+            label: T('pl.loot-zones.wiz.create', 'Create the zones'), primary: true,
+            run: function () {
+              var names = Object.keys(pick);
+              if (!names.length) { SSA.toast(T('pl.loot-zones.wiz.pickOne', 'Tick at least one loot set.')); return true; }
+              var mode = ch.get();
+              var reqBody = { sets: names, marginM: opt.margin, shape: opt.shape, zones: (state.cfg && state.cfg.zones) || [], seed: Date.now() };
+              if (opt.variants) {
+                if (mode.v === 'pick') reqBody.presets = Object.keys(mode.picks);
+                else { reqBody.mix = true; if (mode.count !== '0') reqBody.count = Number(mode.count); }
+              }
+              api('/zones/from-sets', { method: 'POST', body: reqBody }).then(function (r) {
+                if (!r || r.ok === false) { SSA.toast((r && r.why) || T('pl.loot-zones.refused', 'Refused')); return; }
+                var c = state.cfg;
+                c.zones = (c.zones || []).concat(r.zones || []);
+                areaMargin = opt.margin;
+                unsaved = true;
+                view = 'zones'; editId = null;
+                render();
+                var left = (r.skipped || []).filter(function (s) { return !s.preset; }).length;
+                SSA.toast(T('pl.loot-zones.wiz.done', '{n} zones created. Press {save} to keep them.', { n: (r.zones || []).length, save: labSave() })
+                  + (left ? ' ' + T('pl.loot-zones.wiz.skipped', '{n} sets were left out: {why}', { n: left, why: (r.skipped || []).filter(function (s) { return !s.preset; }).map(function (s) { return s.why; }).join('; ') }) : ''));
+              }).catch(failed(T('pl.loot-zones.fail.create', 'No zones created')));
+              return false;
+            },
+          },
+        ],
+      });
+    });
+  }
+
+  // ── one zone ───────────────────────────────────────────────────────────────────────────────
+  /** The rules and warnings for one zone, as notes: red for a rule, amber for a thing to check. */
+  function zoneWarnNotes(z, onlyVariant) {
+    var o = ovOf(z);
+    if (!o) return [];
+    var out = [];
+    (o.rules || []).forEach(function (b) {
+      if (onlyVariant !== undefined && b.variant !== onlyVariant) return;
+      out.push(note('bad', [h('b', {}, T('pl.loot-zones.rule.title', 'Breaks a rule: ')), b.text]));
+    });
+    if (onlyVariant === undefined) {
+      (o.warnings || []).forEach(function (w) { out.push(note('wait', w.text)); });
+    } else {
+      (o.warnings || []).forEach(function (w) { if (w.variant === onlyVariant) out.push(note('wait', w.text)); });
+    }
+    return out;
+  }
+  function factChips(z, o) {
+    var chips = [];
+    var chip = function (cls, text) { chips.push(h('span', { class: 'lz-badge' + (cls ? ' ' + cls : '') }, text)); };
+    if (o && o.sector) chip('', T('pl.loot-zones.fact.sector', 'Sector {s}', { s: o.sector }));
+    if (o) chip('', areaText(o.area));
+    if (o) chip(o.place && o.place.cls !== 'N' ? 'wait' : '', placeText(o.place));
+    var run = sessionOf(z);
+    var n = Array.isArray(z.variants) ? z.variants.length : 0;
+    if (n) chip('good', run ? T('pl.loot-zones.fact.session', 'This session: {label}', { label: String(run.label || '') })
+      : (n === 1 ? T('pl.loot-zones.list.variants.one', '{n} variant', { n: n }) : T('pl.loot-zones.list.variants', '{n} variants', { n: n })));
+    return h('div', { class: 'lz-routes lz-facts' }, chips);
+  }
+
+  function drawEditor(z, c, st, sets) {
+    var all = c.zones || [];
+    var i = all.indexOf(z);
+    var o = ovOf(z);
+    var go = function (d) { var n = all[i + d]; if (n) openZone(n.id, editTab); };
+    root.appendChild(h('div', { class: 'lz-ednav' }, [
+      h('button', { class: 'secondary', type: 'button', onclick: function () { editId = null; editVariant = null; render(); } },
+        T('pl.loot-zones.ed.back', '← All zones')),
+      h('span', { class: 'lz-edpos' }, T('pl.loot-zones.ed.pos', 'Zone {i} of {n}', { i: i + 1, n: all.length })),
+      h('button', { class: 'secondary', type: 'button', disabled: i > 0 ? null : '', title: T('pl.loot-zones.ed.prev', 'Previous zone'),
+        'aria-label': T('pl.loot-zones.ed.prev', 'Previous zone'), onclick: function () { go(-1); } }, '‹'),
+      h('button', { class: 'secondary', type: 'button', disabled: i < all.length - 1 ? null : '', title: T('pl.loot-zones.ed.next', 'Next zone'),
+        'aria-label': T('pl.loot-zones.ed.next', 'Next zone'), onclick: function () { go(1); } }, '›'),
+    ]));
+    var parts = zoneParts(z, i, c, sets, st);
+    var nv = Array.isArray(z.variants) ? z.variants.length : 0;
+    var pills = [
+      ['general', T('pl.loot-zones.ed.general', 'General')],
+      ['area', T('pl.loot-zones.ed.area', 'Area')],
+      ['guards', T('pl.loot-zones.ed.guards', 'Guards and protection')],
+      ['busy', cardActivity()],
+      ['variants', T('pl.loot-zones.ed.variants', 'Variants ({n})', { n: nv })],
+    ];
+    var ruleCount = function (key) {
+      if (!o) return 0;
+      if (key === 'variants') return (o.rules || []).filter(function (b) { return b.variant != null; }).length;
+      if (key === 'guards') return (o.rules || []).filter(function (b) { return b.variant == null; }).length;
+      return 0;
+    };
+    var pillRow = h('div', { class: 'lz-pills', role: 'tablist' }, pills.map(function (p) {
+      var on = editTab === p[0];
+      var bad = ruleCount(p[0]);
+      return h('button', {
+        class: 'lz-pill' + (on ? ' on' : '') + (bad ? ' bad' : ''), type: 'button', role: 'tab', 'aria-selected': on ? 'true' : 'false',
+        onclick: function () { editTab = p[0]; editVariant = null; render(); },
+      }, [p[1], bad ? h('span', { class: 'lz-pillbad' }, String(bad)) : null]);
+    }));
+    var title = String(z.name || '').trim() || T('pl.loot-zones.list.unnamed', '(no name)');
+    var body;
+    if (editTab === 'area') body = [parts.where];
+    else if (editTab === 'guards') body = [parts.guards];
+    else if (editTab === 'busy') body = [parts.busy];
+    else if (editTab === 'variants') body = variantsSection(z, c, st, sets);
+    else body = [parts.general];
+    root.appendChild(h('section', { class: 'card lz-card lz-editor' }, [
+      h('div', { class: 'lz-edhead' }, [
+        h('h3', {}, [icon('box'), title]),
+        h('div', { class: 'lz-oncell' }, [
+          toggle(z.enabled !== false, function (v) { z.enabled = v; markDirty(); }, T('pl.loot-zones.col.on', 'In rotation')),
+          parts.live ? h('span', { class: 'lz-badge on' }, parts.live.drawn === false
+            ? T('pl.loot-zones.badge.liveNotDrawn', 'live, not drawn') : T('pl.loot-zones.badge.live', 'live')) : null,
+        ]),
+      ]),
+      factChips(z, o),
+      editTab === 'general' ? h('div', { class: 'lz-live' }, zoneWarnNotes(z)) : null,
+      pillRow,
+    ].concat(body).filter(Boolean)));
+  }
+
+  /** The General section: what the zone is called, which loot it brings, when it is on, and what it is doing. */
+  function generalSection(z, i, c, sets, st, bits) {
+    var all = c.zones || [];
+    var rows = [
+      row(T('pl.loot-zones.ed.name', 'Name players read'), txt(z.name, T('pl.loot-zones.zone.namePlaceholder', 'a name players will read'),
+        function (v) { z.name = v; markDirty(); }, 'lz-in lz-name'),
+      T('pl.loot-zones.ed.name.hint', 'Shown on the map and in the messages, after the name prefix. Must be unique.')),
+      row(T('pl.loot-zones.zone.setLabel', 'Loot set'), sel(z.set, [['', T('pl.loot-zones.zone.pickSet', '— pick a loot set —')]].concat(sets.map(function (s) {
+        return [s.name, s.ok ? s.name : T('pl.loot-zones.zone.setUnusable', '{name}  (unusable)', { name: s.name })];
+      })), function (v) { z.set = v; markDirty(); }),
+      T('pl.loot-zones.ed.set.hint', 'A folder in the sets folder: the loot files this zone brings, and its Zones.json.')),
+      bits.meta ? h('div', { class: 'lz-zmeta' }, bits.meta) : null,
+      bits.notes,
+      bits.life,
+      bits.when,
+      bits.actions,
+      all.length > 1 ? h('div', { class: 'lz-actions' }, [
+        h('button', {
+          class: 'secondary', type: 'button', disabled: i === 0 ? '' : null,
+          title: T('pl.loot-zones.zone.moveUp', 'Move up — the order is the turn order under "{option}"', { option: optRestart() }),
+          onclick: function () { if (i === 0) return; c.zones.splice(i - 1, 0, c.zones.splice(i, 1)[0]); markDirty(); },
+        }, ['↑ ', T('pl.loot-zones.ed.up', 'Earlier in the list')]),
+        h('button', {
+          class: 'secondary', type: 'button', disabled: i >= all.length - 1 ? '' : null,
+          title: T('pl.loot-zones.zone.moveDown', 'Move down — the order is the turn order under "{option}"', { option: optRestart() }),
+          onclick: function () { if (i >= c.zones.length - 1) return; c.zones.splice(i + 1, 0, c.zones.splice(i, 1)[0]); markDirty(); },
+        }, ['↓ ', T('pl.loot-zones.ed.down', 'Later in the list')]),
+        h('button', {
+          class: 'secondary', type: 'button', title: T('pl.loot-zones.zone.copyTitle', 'Add a copy of this zone with all its settings, right below it'),
+          onclick: function () { duplicateZone(z, i, c); },
+        }, T('pl.loot-zones.ed.copy', 'Copy this zone')),
+        h('button', {
+          class: 'lz-del', type: 'button', title: T('pl.loot-zones.zone.removeTitle', 'Remove this zone'),
+          onclick: function () {
+            var live = liveIdsOf(st)[String(z.id)];
+            SSA.confirm(T('pl.loot-zones.zone.removeConfirm', 'Remove "{name}" from the list?{live}\n\nNothing changes until {save}; "{discard}" beside {save} undoes it.', {
+              name: z.name || z.set || T('pl.loot-zones.zone.thisZone', 'this zone'),
+              live: live ? T('pl.loot-zones.zone.removeLive',
+                '\n\n⚠ This zone is live. Switch it off first, or press "{button}" under {card} afterwards.',
+                { button: labReconcile(), card: cardActions() }) : '',
+              save: labSave(), discard: labDiscard(),
+            })).then(function (yes) {
+              if (!yes) return;
+              var k = c.zones.indexOf(z);
+              if (k >= 0) c.zones.splice(k, 1);
+              editId = null;
+              markDirty();
+            });
+          },
+        }, T('pl.loot-zones.ed.remove', 'Remove this zone')),
+      ]) : null,
+    ];
+    return h('div', { class: 'lz-when' }, rows.filter(Boolean));
+  }
+
+  /** Under the area: the set's own box grown by a margin, the sector, and the nearest other zone. */
+  function areaExtras(z, set) {
+    var o = ovOf(z);
+    var out = [];
+    out.push(h('h4', { class: 'lz-group' }, T('pl.loot-zones.area.fromSetTitle', 'From the loot set\'s own box')));
+    out.push(row(T('pl.loot-zones.area.fromSet', 'Take the box from Zones.json, grown by'), h('div', { class: 'lz-routes' }, [
+      numIn(areaMargin, function (v) { areaMargin = Math.max(0, v); }, 0, 500, T('pl.loot-zones.unit.metres', 'm')),
+      sel(areaShape, [['rect', T('pl.loot-zones.area.shape.rect', 'Rectangle')], ['circle', T('pl.loot-zones.area.shape.circle', 'Circle')],
+        ['auto', T('pl.loot-zones.wiz.shapeAuto', 'Circle for a near-square place, rectangle otherwise')]],
+      function (v) { areaShape = v; }, T('pl.loot-zones.area.shape', 'Shape')),
+      h('button', {
+        class: 'secondary', type: 'button', disabled: (set && set.ok) ? null : '',
+        onclick: function () {
+          api('/area-from-set', { method: 'POST', body: { set: z.set, marginM: areaMargin, shape: areaShape } }).then(function (r) {
+            if (!r || !r.ok) { SSA.toast((r && r.why) || T('pl.loot-zones.refused', 'Refused')); return; }
+            var now = zoneById(z.id);
+            if (!now) return;
+            now.area = r.area;
+            markDirty();
+            SSA.toast(T('pl.loot-zones.area.fromSetDone', 'Area taken from the loot set, {m} m wider on every side.', { m: areaMargin }));
+          }).catch(failed(T('pl.loot-zones.fail.area', 'No area taken')));
+        },
+      }, [icon('download'), T('pl.loot-zones.area.fromSetButton', 'Take it')]),
+    ]), T('pl.loot-zones.area.fromSet.hint', 'Replaces the numbers above with the set\'s own box plus this margin. The loot still covers only the set\'s box.')));
+    out.push(h('h4', { class: 'lz-group' }, T('pl.loot-zones.area.whereTitle', 'Where that is')));
+    var lines = [];
+    if (!o) lines.push(T('pl.loot-zones.area.working', 'Working out where this is…'));
+    else if (!o.area) lines.push(o.placeWhy || T('pl.loot-zones.area.short.none', 'no area yet'));
+    else {
+      lines.push(o.sector ? T('pl.loot-zones.area.sector', 'Sector {s}, centre {x}, {y}.', { s: o.sector, x: o.area.x, y: o.area.y })
+        : T('pl.loot-zones.area.noSector', 'Centre {x}, {y}. The sector appears once the manager has its map calibration.', { x: o.area.x, y: o.area.y }));
+      lines.push(placeText(o.place) + '.');
+      if (o.nearest) {
+        lines.push(o.nearest.gapCm <= 0
+          ? T('pl.loot-zones.area.overlap', '⚠ It overlaps "{name}".', { name: o.nearest.name })
+          : T('pl.loot-zones.area.nearest', 'The nearest other zone is "{name}", {m} m away.', { name: o.nearest.name, m: metres(o.nearest.gapCm) }));
+      }
+    }
+    out.push(note('', lines.join(' ')));
+    // ⚠ Said once and plainly: the panel's map has no way for a plugin to draw an area, so this
+    // screen does not pretend to preview one. "Show me where that is" above puts the map on the centre.
+    out.push(h('small', { class: 'lz-dim' }, T('pl.loot-zones.area.noPreview', 'The live map cannot draw a plugin\'s area yet. "Show me where that is" puts the map on its centre.')));
+    return out;
+  }
+
+  // ── variants ───────────────────────────────────────────────────────────────────────────────
+  /**
+   * ⚠ **A VARIANT IS AN OVERRIDE, AND THE SCREEN MUST SAY WHICH HALF IS WHICH.** The backend lays a
+   * variant's `sentries` and `activity` over the zone's own by key presence, so a field the variant
+   * does not carry follows the zone. The editor below shows the variant AS IT RUNS (the zone with
+   * the variant laid over it) and writes back ONLY what the owner changed: a snapshot is taken right
+   * after the controls are drawn, and every change is diffed against it, path by path. Drawing a
+   * control may fill in a default (`sm.replace` is created to have somewhere to write) and that is
+   * not the owner changing anything, so it never becomes an override.
+   */
+  var vdraft = null;
+  function variantBase(z, c) {
+    return {
+      sentries: mergeKeys(z.sentries || {}, c.sentries || {}),
+      activity: mergeKeys(z.activity || {}, c.activity || {}),
+    };
+  }
+  function diffPaths(a, b, pre, out) {
+    if (isPlainObj(a) && isPlainObj(b)) {
+      var keys = {};
+      Object.keys(a).forEach(function (k) { keys[k] = true; });
+      Object.keys(b).forEach(function (k) { keys[k] = true; });
+      Object.keys(keys).forEach(function (k) { diffPaths(a[k], b[k], pre.concat([k]), out); });
+      return;
+    }
+    if (JSON.stringify(a) !== JSON.stringify(b)) out.push(pre);
+  }
+  function getPath(o, p) { for (var i = 0; i < p.length; i++) { if (!isPlainObj(o)) return undefined; o = o[p[i]]; } return o; }
+  function setPath(o, p, v) {
+    for (var i = 0; i < p.length - 1; i++) { if (!isPlainObj(o[p[i]])) o[p[i]] = {}; o = o[p[i]]; }
+    if (v === undefined) delete o[p[p.length - 1]]; else o[p[p.length - 1]] = clone(v);
+  }
+  function dropPath(o, p) {
+    if (!isPlainObj(o)) return;
+    if (p.length === 1) { delete o[p[0]]; return; }
+    var child = o[p[0]];
+    dropPath(child, p.slice(1));
+    if (isPlainObj(child) && !Object.keys(child).length) delete o[p[0]];
+  }
+  /** Write what the owner changed in the open variant's controls back into the variant. */
+  function syncDraft() {
+    if (!vdraft || vdraft.snapS == null) return;
+    var z = zoneById(vdraft.zid);
+    var v = z && Array.isArray(z.variants) ? z.variants[vdraft.i] : null;
+    if (!v) { vdraft = null; return; }
+    ['sentries', 'activity'].forEach(function (key) {
+      var snap = key === 'sentries' ? vdraft.snapS : vdraft.snapA;
+      var now = vdraft[key];
+      var paths = [];
+      diffPaths(JSON.parse(snap), now, [], paths);
+      if (!paths.length) return;
+      if (!isPlainObj(v[key])) v[key] = {};
+      paths.forEach(function (p) { setPath(v[key], p, getPath(now, p)); });
+    });
+    vdraft.snapS = JSON.stringify(vdraft.sentries);
+    vdraft.snapA = JSON.stringify(vdraft.activity);
+  }
+  /** Called once the page is drawn: from here on, a difference is something the owner did. */
+  function snapDraft() {
+    if (!vdraft) return;
+    vdraft.snapS = JSON.stringify(vdraft.sentries);
+    vdraft.snapA = JSON.stringify(vdraft.activity);
+  }
+  /** The sentries block a guard control's scope stands for: a zone's, or the open variant's draft. */
+  function sentriesOfScope(scope) {
+    var m = /^(.*)::v(\d+)$/.exec(String(scope));
+    if (m) return (vdraft && String(vdraft.zid) === m[1] && vdraft.i === Number(m[2])) ? vdraft.sentries : null;
+    var z = zoneById(scope);
+    return z ? z.sentries : null;
+  }
+
+  /** The fields a variant may hold of its own, with the words the controls themselves use. */
+  function variantFields() {
+    return [
+      { p: ['sentries', 'mode'], l: T('pl.loot-zones.vf.mode', 'What the zone does') },
+      { p: ['sentries', 'kinds'], l: T('pl.loot-zones.vf.kinds', 'What is kept out') },
+      { p: ['sentries', 'replace', 'types'], l: T('pl.loot-zones.vf.types', 'Which guards') },
+      { p: ['sentries', 'ownPosts'], l: labOwnPosts() },
+      { p: ['sentries', 'replace', 'maxGuards'], l: labMaxGuards() },
+      { p: ['sentries', 'replace', 'cooldownSeconds'], l: labCooldown() },
+      { p: ['sentries', 'replace', 'afterDeathSeconds'], l: T('pl.loot-zones.set.afterDeath', 'After a guard is killed, wait') },
+      { p: ['sentries', 'replace', 'moveAfterSeconds'], l: T('pl.loot-zones.set.moveAfter', 'Move a standing guard after') },
+      { p: ['sentries', 'replace', 'keepAwayFromPlayers'], l: T('pl.loot-zones.set.keepAway', 'Never appear closer to a player than') },
+      { p: ['sentries', 'replace', 'gameTime'], l: T('pl.loot-zones.set.gameHours', 'Only at these game hours') },
+      { p: ['sentries', 'replace', 'maxPosts'], l: labMaxPosts() },
+      { p: ['sentries', 'wakeDistance'], l: T('pl.loot-zones.set.wake', 'Only while a player is within') },
+      { p: ['sentries', 'ownLife'], l: T('pl.loot-zones.group.life', 'How long they stay') },
+      { p: ['activity'], l: cardActivity() },
+    ];
+  }
+  function fieldValueText(p, v) {
+    var last = p[p.length - 1];
+    if (v === undefined || v === null) return '–';
+    if (last === 'mode' && p[0] === 'sentries') {
+      if (v === 'replace') return T('pl.loot-zones.vf.mode.replace', 'sends guards');
+      if (v === 'remove') return T('pl.loot-zones.vf.mode.remove', 'only keeps things out');
+      return T('pl.loot-zones.vf.mode.leave', 'leaves the place as the game made it');
+    }
+    if (last === 'kinds') {
+      var w = [];
+      if (v.indexOf('mapsentry') >= 0 || v.indexOf('sentry') >= 0) w.push(T('pl.loot-zones.vf.kinds.sentries', 'sentries'));
+      if (v.indexOf('puppet') >= 0) w.push(T('pl.loot-zones.vf.kinds.zombies', 'zombies'));
+      return w.length ? w.join(', ') : T('pl.loot-zones.vf.nothing', 'nothing');
+    }
+    if (last === 'types') {
+      var names = (Array.isArray(v) ? v : []).map(function (t) { return prettyGuard(t); }).filter(Boolean);
+      return names.length ? names.join(', ') : T('pl.loot-zones.vf.nobody', 'nobody');
+    }
+    if (last === 'gameTime') return v && v.enabled ? hhmm(v.fromHour) + '–' + hhmm(v.toHour) : T('pl.loot-zones.vf.anyHour', 'any hour');
+    if (/Seconds$/.test(last)) return nMinutes(Math.round(Number(v) / 60));
+    if (last === 'keepAwayFromPlayers' || last === 'wakeDistance') return metres(v) + ' m';
+    if (p[0] === 'activity' && isPlainObj(v)) {
+      return v.mode === 'leave' || !v.mode ? T('pl.loot-zones.vf.busy.leave', 'as the game makes it')
+        : T('pl.loot-zones.vf.busy.percent', '{n}% of the game\'s own', { n: Number(v.percent) || 0 });
+    }
+    if (isPlainObj(v)) return T('pl.loot-zones.vf.several', 'several settings');
+    if (typeof v === 'boolean') return v ? T('pl.loot-zones.vf.on', 'on') : T('pl.loot-zones.vf.off', 'off');
+    return String(v);
+  }
+  /** One line saying what a variant does, out of the variant as it runs. */
+  function variantSummary(eff) {
+    var s = eff.sentries || {};
+    var bits = [];
+    var mode = s.mode || 'leave';
+    var kinds = (mode === 'leave') ? [] : (s.kinds || []);
+    if (mode === 'replace') {
+      var names = chosenGuards(s.replace || {}).map(function (t) { return prettyGuard(t); }).filter(Boolean);
+      bits.push(names.length ? T('pl.loot-zones.vs.guards', 'guards: {list}', { list: names.join(', ') }) : T('pl.loot-zones.vs.noGuards', 'guards: none chosen'));
+    }
+    if (kinds.indexOf('mapsentry') >= 0 || kinds.indexOf('sentry') >= 0) bits.push(T('pl.loot-zones.vs.sentriesOut', 'sentries kept out'));
+    if (kinds.indexOf('puppet') >= 0) bits.push(T('pl.loot-zones.vs.zombiesOut', 'zombies kept out'));
+    var a = eff.activity || {};
+    if (a.mode && a.mode !== 'leave') bits.push(T('pl.loot-zones.vs.busy', 'spawning {n}%', { n: Number(a.percent) || 0 }));
+    var line = bits.length ? bits.join('; ') : T('pl.loot-zones.vs.nothing', 'nothing changed: the place as the game made it');
+    // A sentence on its own line opens with a capital, whichever fragment came first.
+    return line.charAt(0).toUpperCase() + line.slice(1);
+  }
+  function shareText(w, total) { return total ? Math.round((w / total) * 100) + '%' : '0%'; }
+
+  function variantsSection(z, c, st, sets) {
+    var list = Array.isArray(z.variants) ? z.variants : [];
+    var base = variantBase(z, c);
+    var o = ovOf(z);
+    var run = sessionOf(z);
+    var on = list.map(function (v, i) { return { v: v, i: i }; }).filter(function (x) { return x.v && x.v.enabled !== false; });
+    var weightOf = function (v) { return Math.max(1, Math.min(100, Math.round(Number(v.weight) || 1))); };
+    var total = on.reduce(function (n, x) { return n + weightOf(x.v); }, 0);
+    var out = [];
+    out.push(h('p', { class: 'lz-lead' }, T('pl.loot-zones.var.lead',
+      'A variant is one way this zone turns out; one is picked by its share at each server stop.')));
+    // The shares at a glance: the one picture on this tab, because a weight means nothing until it
+    // is set against the others.
+    if (on.length) {
+      out.push(h('div', { class: 'lz-share', role: 'img', 'aria-label': T('pl.loot-zones.var.shareLabel', 'How often each variant comes up') },
+        on.map(function (x) {
+          var running = run && Number(run.index) === x.i;
+          return h('span', {
+            class: 'lz-share-seg' + (running ? ' run' : ''), style: 'flex-grow:' + weightOf(x.v),
+            title: String(x.v.label || '') + ' · ' + shareText(weightOf(x.v), total),
+          }, h('span', {}, shareText(weightOf(x.v), total)));
+        })));
+    }
+    // This session.
+    var sess = [];
+    if (run) {
+      sess.push(h('span', {}, T('pl.loot-zones.var.running', 'This session runs "{label}", variant {i} of {n}.', { label: String(run.label || ''), i: Number(run.index) + 1, n: list.length })));
+    } else if (list.length) {
+      sess.push(h('span', {}, unsaved || !savedHasVariants(z)
+        ? T('pl.loot-zones.var.notSaved', 'One is picked as soon as these variants are saved.')
+        : T('pl.loot-zones.var.notPicked', 'Not picked yet.')));
+    }
+    if (list.length) sess.push(h('small', {}, T('pl.loot-zones.var.nextStop', 'A new one is picked automatically every time the server stops.')));
+    if (savedHasVariants(z)) {
+      sess.push(h('button', { class: 'secondary', type: 'button', onclick: function () { rerollConfirm([z], false); } },
+        [icon('refresh'), T('pl.loot-zones.var.rerollNow', 'Pick a new one now')]));
+    }
+    if (sess.length) out.push(h('div', { class: 'lz-session' }, sess));
+    // The list.
+    var rows = list.map(function (v, i) {
+      if (!v || typeof v !== 'object') return null;
+      var eff = { sentries: mergeKeys(v.sentries || {}, base.sentries), activity: mergeKeys(v.activity || {}, base.activity) };
+      var bad = o ? (o.rules || []).filter(function (b) { return b.variant === i; }).length : 0;
+      var running = run && Number(run.index) === i;
+      var label = txt(v.label, T('pl.loot-zones.var.labelPh', 'a name only you see'), function (val) { v.label = val; markDirty(); }, 'lz-in lz-vlabel');
+      label.setAttribute('aria-label', T('pl.loot-zones.var.label', 'Variant name'));
+      var weight = numIn(v.weight == null ? 1 : v.weight, function (val) { v.weight = Math.max(1, Math.min(100, Math.round(val))); markDirty(); }, 1, 100, '');
+      weight.querySelector('input').setAttribute('aria-label', T('pl.loot-zones.var.weight', 'Share'));
+      var open = editVariant === i;
+      return h('div', { class: 'lz-vrow' + (open ? ' open' : '') + (v.enabled === false ? ' off' : '') + (bad ? ' bad' : '') }, [
+        h('div', { class: 'lz-vrow-main' }, [
+          toggle(v.enabled !== false, function (val) { v.enabled = val; markDirty(); }),
+          label,
+          h('span', { class: 'lz-vweight' }, [weight, h('small', {}, v.enabled === false
+            ? T('pl.loot-zones.var.never', 'never comes up') : shareText(weightOf(v), total))]),
+          running ? h('span', { class: 'lz-badge good' }, T('pl.loot-zones.var.now', 'running now')) : null,
+          v.preset ? h('span', { class: 'lz-badge' }, presetName(v.preset, v.preset)) : null,
+          bad ? h('span', { class: 'lz-badge bad' }, T('pl.loot-zones.var.breaks', 'breaks a rule')) : null,
+        ]),
+        h('div', { class: 'lz-vrow-sum' }, [h('small', {}, variantSummary(eff))]),
+        h('div', { class: 'lz-vrow-acts' }, [
+          h('button', { class: open ? '' : 'secondary', type: 'button', 'aria-expanded': open ? 'true' : 'false',
+            onclick: function () { editVariant = open ? null : i; render(); } },
+          open ? T('pl.loot-zones.var.close', 'Close') : T('pl.loot-zones.var.edit', 'Edit')),
+          h('button', { class: 'secondary', type: 'button', disabled: i === 0 ? '' : null, 'aria-label': T('pl.loot-zones.var.up', 'Move up'), title: T('pl.loot-zones.var.up', 'Move up'),
+            onclick: function () { if (!i) return; list.splice(i - 1, 0, list.splice(i, 1)[0]); editVariant = null; markDirty(); } }, '↑'),
+          h('button', { class: 'secondary', type: 'button', disabled: i >= list.length - 1 ? '' : null, 'aria-label': T('pl.loot-zones.var.down', 'Move down'), title: T('pl.loot-zones.var.down', 'Move down'),
+            onclick: function () { if (i >= list.length - 1) return; list.splice(i + 1, 0, list.splice(i, 1)[0]); editVariant = null; markDirty(); } }, '↓'),
+          h('button', { class: 'secondary', type: 'button', onclick: function () {
+            var copy = clone(v);
+            copy.label = String(v.label || '') + T('pl.loot-zones.var.copySuffix', ' (copy)');
+            list.splice(i + 1, 0, copy);
+            editVariant = i + 1;
+            markDirty();
+          } }, T('pl.loot-zones.var.copy', 'Copy')),
+          h('button', { class: 'lz-del', type: 'button', title: T('pl.loot-zones.var.remove', 'Remove this variant'), 'aria-label': T('pl.loot-zones.var.remove', 'Remove this variant'),
+            onclick: function () {
+              SSA.confirm(T('pl.loot-zones.var.removeConfirm', 'Remove the variant "{label}"?\n\nNothing changes until {save}.', { label: v.label || '', save: labSave() })).then(function (yes) {
+                if (!yes) return;
+                list.splice(i, 1);
+                if (!list.length) delete z.variants;
+                editVariant = null;
+                markDirty();
+              });
+            } }, [icon('close')]),
+        ]),
+        open ? variantEditor(z, c, v, i, base, sets) : null,
+      ]);
+    }).filter(Boolean);
+    if (!list.length) {
+      out.push(note('', T('pl.loot-zones.var.none', 'No variants: this zone runs its own guard settings every session. Add one from a preset below.')));
+    }
+    out = out.concat(rows);
+    out.push(variantAddBar(z, c));
+    return out;
+  }
+
+  function variantAddBar(z, c) {
+    var o = ovOf(z);
+    var cls = o && o.place ? o.place.cls : null;
+    var list = (presets && presets.presets) || [];
+    var choice = { key: '' };
+    var opts = [['', T('pl.loot-zones.var.pickPreset', '— add a variant from a preset —')]].concat(list.map(function (p) {
+      var fits = !cls || p.places.indexOf(cls) >= 0;
+      return [p.key, fits ? presetName(p.key, p.label) : T('pl.loot-zones.var.notHere', '{name} (not for this place)', { name: presetName(p.key, p.label) })];
+    }));
+    var picker = sel('', opts, function (v) { choice.key = v; }, T('pl.loot-zones.var.pickPreset', '— add a variant from a preset —'));
+    var add = function (body, replace) {
+      api('/variants/build', { method: 'POST', body: body }).then(function (r) {
+        var res = r && r.results && r.results[String(z.id)];
+        if (!res || res.ok === false) { SSA.toast((res && res.why) || (r && r.why) || T('pl.loot-zones.refused', 'Refused')); return; }
+        if (!(res.variants || []).length) { SSA.toast(((res.skipped || [])[0] || {}).why || T('pl.loot-zones.refused', 'Refused')); return; }
+        var now = zoneById(z.id);
+        if (!now) return;
+        now.variants = (replace || !Array.isArray(now.variants)) ? res.variants : now.variants.concat(res.variants);
+        editVariant = replace ? null : now.variants.length - 1;
+        markDirty();
+      }).catch(failed(T('pl.loot-zones.fail.mix', 'No variants added')));
+    };
+    if (!presets) refreshPresets().then(function (p) { if (p) render(); });
+    return h('div', { class: 'lz-actions lz-vadd' }, [
+      picker,
+      h('button', { class: 'secondary', type: 'button', onclick: function () {
+        if (!choice.key) { SSA.toast(T('pl.loot-zones.var.pickFirst', 'Pick a preset first.')); return; }
+        add({ zones: [z], presets: [choice.key], seed: Date.now() }, false);
+      } }, [icon('box'), T('pl.loot-zones.var.addPreset', 'Add')]),
+      h('button', { class: 'secondary', type: 'button', onclick: function () {
+        var now = zoneById(z.id);
+        if (!now) return;
+        now.variants = (Array.isArray(now.variants) ? now.variants : []).concat([{ label: T('pl.loot-zones.var.newLabel', 'New variant'), weight: 1, enabled: true }]);
+        editVariant = now.variants.length - 1;
+        markDirty();
+      } }, [icon('box'), T('pl.loot-zones.var.addEmpty', 'Add one that starts as the zone')]),
+      h('button', { class: 'secondary', type: 'button', onclick: function () { openMixDialog([z]); } },
+        [icon('copy'), T('pl.loot-zones.var.mix', 'Replace them with a mix…')]),
+    ]);
+  }
+
+  function variantEditor(z, c, v, i, base, sets) {
+    var draft = {
+      zid: String(z.id), i: i,
+      sentries: mergeKeys(v.sentries || {}, base.sentries),
+      activity: mergeKeys(v.activity || {}, base.activity),
+      snapS: null, snapA: null,
+    };
+    vdraft = draft;
+    var fieldRows = variantFields().map(function (f) {
+      var own = getPath(v, f.p) !== undefined;
+      var val = own ? getPath(v, f.p) : getPath({ sentries: base.sentries, activity: base.activity }, f.p);
+      return h('div', { class: 'lz-vf' + (own ? ' own' : '') }, [
+        h('span', { class: 'lz-vf-label' }, f.l),
+        h('span', { class: 'lz-vf-val' }, fieldValueText(f.p, val)),
+        own ? h('span', { class: 'lz-badge on' }, T('pl.loot-zones.vf.own', 'this variant'))
+          : h('span', { class: 'lz-badge' }, T('pl.loot-zones.vf.inherits', 'inherits the zone\'s value')),
+        !own ? h('span', {}) : h('button', { class: 'lz-link', type: 'button', onclick: function () {
+          var now = zoneById(z.id);
+          var vv = now && now.variants ? now.variants[i] : null;
+          if (!vv) return;
+          vdraft = null;   // the draft is drawn again from the variant, without this field
+          dropPath(vv, f.p);
+          markDirty();
+        } }, T('pl.loot-zones.vf.reset', 'use the zone\'s value')),
+      ]);
+    });
+    var src = null;
+    var set = (sets || []).filter(function (s) { return s.name === z.set; })[0];
+    src = zoneRectSource(z, set);
+    var o = ovOf(z);
+    var scope = String(z.id) + '::v' + i;
+    var outerScope = hintScope;
+    hintScope = 'z:' + scope;
+    guardPlace = o ? o.place : null;
+    var controls;
+    try {
+      controls = guardControls(draft.sentries, scope, null, src);
+    } finally { guardPlace = null; }
+    var busy = activityControls(draft.activity, scope, activityInert(z));
+    hintScope = outerScope;
+    return h('div', { class: 'lz-veditor' }, [
+      h('div', { class: 'lz-live' }, zoneWarnNotes(z, i)),
+      more('vf:' + scope, T('pl.loot-zones.vf.title', 'What this variant sets of its own'), [h('div', { class: 'lz-vfs' }, fieldRows)], true),
+      h('p', { class: 'lz-lead' }, T('pl.loot-zones.vf.lead', 'Change anything below and it becomes this variant\'s own; everything else follows the zone\'s Guards and How busy sections.')),
+      h('h4', { class: 'lz-group' }, T('pl.loot-zones.ed.guards', 'Guards and protection')),
+    ].concat(controls).concat([
+      h('h4', { class: 'lz-group' }, cardActivity()),
+    ]).concat(busy));
+  }
+  /** What the zone's own Guards section says while variants exist: it is the base, not what runs. */
+  function variantBaseNote(z) {
+    var n = Array.isArray(z.variants) ? z.variants.filter(function (v) { return v && v.enabled !== false; }).length : 0;
+    if (!n) return null;
+    return note('wait', [h('b', {}, T('pl.loot-zones.var.baseTitle', 'This zone runs one of its {n} variants each session. ', { n: n })),
+      T('pl.loot-zones.var.baseNote', 'Every variant starts from these settings: what a variant does not set follows this section. Edit them under "{tab}".',
+        { tab: T('pl.loot-zones.ed.variants', 'Variants ({n})', { n: n }) })]);
+  }
+  /** The place the guard controls being drawn belong to, so "keep sentries out" offers only what is there. */
+  var guardPlace = null;
+
   function render(opts) {
+    // Whatever the owner changed in an open variant reaches the variant before anything is redrawn.
+    syncDraft();
     if (opts && opts.ifChanged && root && lastDrawn !== null) {
       var live = root, bar = saveBar, probe = document.createElement('div');
       var same = false;
+      var liveDraft = vdraft;
       root = probe;
+      drawingProbe = true;
+      vdraft = null;
       // Compared WITHOUT the elapsed-time spans, which are then brought up to date in place — see
       // `withAgo`. Equal counts are implied by equal markup, so the two lists pair one to one.
       try { draw(); same = withoutAgo(probe.innerHTML) === withoutAgo(lastDrawn); } catch (ignored) { same = false; }
+      drawingProbe = false;
       root = live;
       saveBar = bar;
+      vdraft = liveDraft;
       if (same) {
         var fresh = probe.querySelectorAll('.lz-ago');
         var shown = live.querySelectorAll('.lz-ago');
@@ -5010,7 +5958,8 @@
     // why a reconciler is not what is used here.
     var keep = beforeRedraw();
     lastDrawn = null;
-    try { draw(); lastDrawn = root ? root.innerHTML : null; } catch (e) {
+    vdraft = null;
+    try { draw(); snapDraft(); lastDrawn = root ? root.innerHTML : null; } catch (e) {
       try {
         root.innerHTML = '';
         root.appendChild(h('div', { class: 'lz-note bad' },
@@ -5051,371 +6000,347 @@
     var st = state.status || {};
     var sets = (state.sets && state.sets.sets) || [];
 
-    // ── what is true right now ───────────────────────────────────────────────────────────────────
-    var live = [];
-    if (state.sets && state.sets.serverConfigured === false) {
-      live.push(note('bad', T('pl.loot-zones.live.noServerDir',
-        'No server folder set yet. You can still set up everything here.')));
-    }
-    /**
-     * ⚠ **"IT IS NOT THERE" AND "I COULD NOT OPEN IT" ARE OPPOSITE FACTS AND THIS DREW ONE
-     * SENTENCE FOR BOTH.** An owner whose folder is right where they put it — held open by a
-     * backup, refused by an ACL, on a share that has gone away — was told to create it. The
-     * backend answers `missing` now and each state gets the sentence its reader can act on; the
-     * failure's own code travels, because "EPERM" is the whole diagnosis for whoever has to fix it.
-     */
-    if (state.sets && state.sets.readable === false) {
-      if (state.sets.missing === false) {
-        live.push(note('bad', T('pl.loot-zones.live.setsUnreadable',
-          'Sets folder unreadable: {path} ({why}). No zone can be switched on until it opens.',
-        { path: state.sets.root || '', why: state.sets.why || '' })));
-      } else if (state.sets.missing === true) {
-        live.push(note('bad', T('pl.loot-zones.live.noSetsFolder', 'Sets folder missing: {path}. Create it with one folder per zone, each with a Zones.json.',
-        { path: state.sets.root || '' })));
-      } else {
-        live.push(note('bad', T('pl.loot-zones.live.noSetsRoot',
-          'No sets folder: the manager gave no data folder and none is set below.')));
+    root.appendChild(tabNav(c));
+    var zEdit = editId != null ? zoneById(editId) : null;
+    if (editId != null && !zEdit) { editId = null; editVariant = null; }
+    if (view === 'messages') {
+      // ── what players are told ────────────────────────────────────────────────────────────────────
+      root.appendChild(card('chat', T('pl.loot-zones.card.messages', 'What players are told'),
+        T('pl.loot-zones.card.messages.lead', 'Four messages. Leave one empty to switch it off.'), [
+        // ⚠ The VALUES are the game's own chat channels and are sent on the wire; only their captions
+        // are translated.
+        row(T('pl.loot-zones.set.chatChannel', 'Chat channel'), sel(c.chatChannel, [
+          ['global', T('pl.loot-zones.chan.global', 'Global')], ['local', T('pl.loot-zones.chan.local', 'Local')],
+          ['squad', T('pl.loot-zones.chan.squad', 'Squad')],
+          ['admin', T('pl.loot-zones.chan.admin', 'Admin')], ['server', T('pl.loot-zones.chan.server', 'Server')],
+        ], function (v) { c.chatChannel = v; markDirty(); }),
+        T('pl.loot-zones.set.chatChannel.hint',
+          'Channel for chat messages below. Server suits announcements; Local reaches only nearby players.')),
+      ].concat(MESSAGES.map(function (d) { return messageBlock(d, c); }))));
+
+    } else if (view === 'settings') {
+      // ── the zone as players meet it ──────────────────────────────────────────────────────────────
+      var own = c.zone.configMode === 'own';
+      root.appendChild(card('map', cardRectangle(),
+        T('pl.loot-zones.card.rectangle.lead', 'Name, colour and visibility. Shows at once; loot goes live on reload or next start.'), [
+        // ⚠ The two placeholders here are VALUES — the prefix is written into the zone's name in the
+        // game and the configuration name is what the zone set is found by — so neither is translated.
+        row(T('pl.loot-zones.set.namePrefix', 'Zone name prefix'), txt(c.zone.namePrefix, 'Loot ', function (v) { c.zone.namePrefix = v; markDirty(); }),
+          T('pl.loot-zones.set.namePrefix.hint',
+            'Marks this plugin\'s zones: never empty, no colon. Switch all off before changing.')),
+        row(labConfigMode(), sel(c.zone.configMode, [
+          ['existing', T('pl.loot-zones.cfgmode.existing', 'Use one of my existing zone configurations')],
+          ['own', T('pl.loot-zones.cfgmode.own', 'Keep a configuration of its own')],
+        ], function (v) { c.zone.configMode = v; markDirty(); }),
+        T('pl.loot-zones.set.configMode.hint',
+          'Colour, visibility and entry notice belong to a configuration; this picks which one.')),
+        !own ? row(T('pl.loot-zones.set.configIndex', 'Configuration number'), numIn(c.zone.configIndex, function (v) { c.zone.configIndex = v; markDirty(); }, 0, 99, ''),
+          st.configs && st.configs.length
+            ? T('pl.loot-zones.set.configIndex.list', 'This server has: {list}', {
+              list: st.configs.map(function (x) {
+                return T('pl.loot-zones.set.configIndex.entry', '{index} = {name}',
+                  { index: x.index, name: x.name || T('pl.loot-zones.set.configIndex.unnamed', '(unnamed)') });
+              }).join(', '),
+            })
+            : T('pl.loot-zones.set.configIndex.hint', 'The list appears here once the game has sent its zones.')) : null,
+        own ? row(T('pl.loot-zones.set.ownConfigName', 'Its name'), txt(c.zone.ownConfigName, 'Loot Zones', function (v) { c.zone.ownConfigName = v; markDirty(); }),
+          T('pl.loot-zones.set.ownConfigName.hint',
+            'Created once if missing, then always found by this name.')) : null,
+        own ? row(T('pl.loot-zones.set.visibleOnMap', 'Players can see it on the map'), toggle(!!c.zone.visibleOnMap, function (v) { c.zone.visibleOnMap = v; markDirty(); })) : null,
+        own ? row(T('pl.loot-zones.set.notifyOnEntry', 'Walking in tells them'), toggle(!!c.zone.notifyOnEntry, function (v) { c.zone.notifyOnEntry = v; markDirty(); }),
+          T('pl.loot-zones.set.notifyOnEntry.hint', 'The game\'s own entry notification, which is separate from the messages below.')) : null,
+        own ? row(T('pl.loot-zones.set.colour', 'Colour'), colourIn(c.zone.colour, function () { markDirty(); render(); }),
+          T('pl.loot-zones.set.colour.hint', 'The colour players see the zone in on the map, and how see-through it is.')) : null,
+      ]));
+
+      // ── settings ─────────────────────────────────────────────────────────────────────────────────
+      root.appendChild(card('sliders', cardRotation(),
+        T('pl.loot-zones.card.rotation.lead', 'Which loot zone is live, and what may change it.'), [
+        row(labRotationOn(), toggle(!!c.enabled, function (v) { c.enabled = v; markDirty(); }),
+          T('pl.loot-zones.set.rotationOn.hint', 'Off keeps whatever is switched on; it does not remove a live zone.')),
+        row(T('pl.loot-zones.set.rotation', 'How zones change'), sel(c.rotation, [
+          ['manual', T('pl.loot-zones.rot.manual', 'Only by hand, from this page')],
+          ['time', T('pl.loot-zones.rot.time', 'On a schedule, per zone')],
+          ['restart', optRestart()],
+        ], function (v) { c.rotation = v; markDirty(); }),
+        c.rotation === 'time'
+          ? T('pl.loot-zones.set.rotation.hint.time', 'Each zone below has its own days and hours; no schedule means always on.')
+          : (c.rotation === 'restart'
+            ? T('pl.loot-zones.set.rotation.hint.restart',
+              'Zones take turns, one per server restart, chosen when the server stops.')
+            : '')),
+        c.rotation === 'time' && state.clock ? why('clock', [T('pl.loot-zones.set.managerClock',
+          'Times use the manager\'s clock, now {t}{zone} — not the game\'s day cycle.', {
+          t: state.clock.now.hhmm,
+          zone: (state.clock.zone && state.clock.zone.label)
+            ? T('pl.loot-zones.set.managerClock.zone', ' ({label})', { label: state.clock.zone.label }) : '',
+        })]) : null,
+        c.rotation === 'restart' ? row(T('pl.loot-zones.set.restartPick', 'Which one'), sel(c.restartPick, [
+          ['order', T('pl.loot-zones.pick.order', 'In turn, down the list')],
+          ['random', T('pl.loot-zones.pick.random', 'At random')],
+        ], function (v) { c.restartPick = v; markDirty(); })) : null,
+        more('rotation', T('pl.loot-zones.more.options', 'More options'), [
+          row(T('pl.loot-zones.set.maxActive', 'Zones at once'), numIn(c.maxActive, function (v) { c.maxActive = v; markDirty(); }, 1, 10, T('pl.loot-zones.unit.zones', 'zones')),
+            T('pl.loot-zones.set.maxActive.hint', 'The game allows several. Each one is another folder the game reads when it starts.')),
+          row(T('pl.loot-zones.set.minBetween', 'Time between switches'), numIn(c.minMinutesBetweenSwitches, function (v) { c.minMinutesBetweenSwitches = v; markDirty(); }, 0, 1440, T('pl.loot-zones.unit.minutes', 'minutes')),
+            T('pl.loot-zones.set.minBetween.hint',
+              'Minimum time between loot swaps; switching off counts. Stops a crash loop cycling every zone.')),
+          row(labReloadOnSwitch(), toggle(c.reloadOnSwitch !== false, function (v) { c.reloadOnSwitch = v; markDirty(); }),
+            T('pl.loot-zones.set.reloadOnSwitch.hint', 'Loot goes live at once; resets every searchable container on the map. Needs Bridge 2.22.2+.')),
+          row(T('pl.loot-zones.set.checkEvery', 'Check every'), numIn(c.checkEverySeconds, function (v) { c.checkEverySeconds = v; markDirty(); }, 15, 3600, T('pl.loot-zones.unit.seconds', 'seconds')),
+            T('pl.loot-zones.set.checkEvery.hint', 'How often the schedule is checked and failed rectangles are retried.')),
+          row(T('pl.loot-zones.set.setsDir', 'Loot sets folder'), txt(c.setsDir, (state.sets && state.sets.root) || '', function (v) { c.setsDir = v; markDirty(); }, 'lz-in lz-wide'),
+            (state.sets && state.sets.root)
+              ? T('pl.loot-zones.set.setsDir.hintPath', 'Leave it empty for the plugin\'s own folder: {path}', { path: state.sets.root })
+              : T('pl.loot-zones.set.setsDir.hint', 'Leave it empty for the plugin\'s own folder.')),
+        ]),
+      ]));
+
+      // ── everything else ──────────────────────────────────────────────────────────────────────────
+      root.appendChild(card('cog', cardActions(),
+        T('pl.loot-zones.card.actions.lead', 'Nothing here is a setting — each one does something to the server now.'), [
+        h('div', { class: 'lz-actions' }, [
+          h('button', {
+            class: 'secondary', type: 'button', onclick: function () {
+              SSA.confirm(T('pl.loot-zones.act.offConfirm', 'Switch every loot zone off and put the loot back to normal?')).then(function (yes) {
+                if (!yes) return;
+                api('/deactivate', { method: 'POST', body: { force: true } }).then(function (r) {
+                  SSA.toast(r && r.ok === false ? (r.why || T('pl.loot-zones.refused', 'Refused'))
+                    : T('pl.loot-zones.act.offDone', 'Everything is off'));
+                  refresh();
+                }).catch(failed(T('pl.loot-zones.fail.deactivate', 'Not switched off')));
+              });
+            },
+          }, [icon('stop'), T('pl.loot-zones.act.off', 'Switch everything off')]),
+          // Back since bridge 2.22.2, which runs the command on the game thread. An older bridge is
+          // refused by the backend with a sentence, never sent the command that crashed it.
+          h('button', {
+            class: 'secondary', type: 'button', onclick: function () {
+              SSA.confirm(T('pl.loot-zones.act.reloadConfirm', 'Reload loot now? Every searchable container on the whole map resets.')).then(function (yes) {
+                if (!yes) return;
+                api('/reload-loot', { method: 'POST', body: {} }).then(function (r) {
+                  SSA.toast(r && r.ok ? T('pl.loot-zones.act.reloadDone', 'Loot reloaded')
+                    : ((r && r.why) || T('pl.loot-zones.act.reloadUnconfirmed', 'The reload was not confirmed')));
+                  refresh();
+                }).catch(failed(T('pl.loot-zones.fail.reload', 'Not reloaded')));
+              });
+            },
+          }, [icon('refresh'), T('pl.loot-zones.act.reloadLoot', 'Reload loot now')]),
+          h('button', {
+            class: 'secondary', type: 'button', onclick: function () {
+              api('/reconcile', { method: 'POST', body: {} }).then(function (r) {
+                if (r && r.skipped) SSA.toast(T('pl.loot-zones.act.noZoneList', 'The game has not sent its zone list yet'));
+                else if (r && r.error) SSA.toast(T('pl.loot-zones.act.checkFailed', 'The check did not finish: {why}', { why: r.error }));
+                // A leftover FOUND is not a leftover REMOVED. Counting what was found told an owner the
+                // map was clean while the rectangle was still on it.
+                else if (r && (r.stubborn || []).length) {
+                  SSA.toast(r.stubborn.length === 1
+                    ? T('pl.loot-zones.act.stuck.one', '{n} leftover zone could not be removed: {why}', { n: 1, why: r.why || '' })
+                    : T('pl.loot-zones.act.stuck', '{n} leftover zones could not be removed: {why}', { n: r.stubborn.length, why: r.why || '' }));
+                } else {
+                  var n = ((r && r.removed) || (r && r.strayZones) || []).length + ((r && r.strayFolders) || []).length;
+                  SSA.toast(n ? (n === 1 ? T('pl.loot-zones.act.cleared.one', 'Cleared {n} leftover', { n: n })
+                    : T('pl.loot-zones.act.cleared', 'Cleared {n} leftovers', { n: n }))
+                    : T('pl.loot-zones.act.agrees', 'The game agrees with this page'));
+                }
+                refresh();
+              }).catch(failed(T('pl.loot-zones.fail.check', 'Not checked')));
+            },
+          }, [icon('check-shield'), labReconcile()]),
+        ]),
+        // The spawn plans held right now, the refusals, and the button that gives them back. Here
+        // rather than inside a zone because a plan is the island's and not one zone's.
+        activityHeldBlock(),
+        why('actions', [T('pl.loot-zones.act.note',
+          'Bridge 2.22.2+ reloads loot on switch (see "{control}"); older bridges at next start.',
+          { control: labReloadOnSwitch() })]),
+      ]));
+
+    } else if (zEdit) {
+      drawEditor(zEdit, c, st, sets);
+    } else {
+      // ── what is true right now ───────────────────────────────────────────────────────────────────
+      var live = [];
+      if (state.sets && state.sets.serverConfigured === false) {
+        live.push(note('bad', T('pl.loot-zones.live.noServerDir',
+          'No server folder set yet. You can still set up everything here.')));
       }
-    }
-    if (st.zonesKnown === false) {
-      live.push(note('', st.zonesUnknownWhy
-        ? codedText(st.zonesUnknownCode, String(st.zonesUnknownWhy))
-        : T('pl.loot-zones.live.noZoneList', 'The game has not sent its zone list yet; nothing to draw.')));
-    }
-    if (st.active && st.active.length) {
-      live.push(note('good', T('pl.loot-zones.live.on', 'Switched on: {list}', {
-        list: st.active.map(function (a) {
-          // Which of the two routes drew it, because "players can see this now" and "players will see
-          // this when the server starts" are different facts and a rectangle looks the same either way.
-          if (a.drawn === false) {
-            return T('pl.loot-zones.live.on.waiting', '{name} (loot only — the rectangle is waiting)', { name: a.name || a.set });
-          }
-          if (a.drawnBy === 'save') {
-            return T('pl.loot-zones.live.on.save', '{name} (rectangle written into the save — visible when the server starts)', { name: a.name || a.set });
-          }
-          return a.name || a.set;
-        }).join(', '),
-      })));
-    } else if (st.zonesKnown) {
-      live.push(note('', T('pl.loot-zones.live.none', 'No loot zone is switched on.')));
-    }
-
-    // ⚠ THE MOST IMPORTANT SENTENCE ON THIS PAGE. The rectangle appears at once and the loot behind
-    // it does not: SCUM reads its Loot folder when it STARTS, and a running server re-reads it only
-    // through the reload command, which is sent only through bridge 2.22.2 or newer (through an
-    // older bridge it crashed the game) — so where it was not sent, say when the loot really lands.
-    if (st.lootPending === true) {
-      // WHICH WAY the waiting change goes. After "Switch everything off" the files are GONE and the
-      // zone's loot is what players still see, so the sentence for a switch-on is false in every
-      // clause there — the backend has published which one it is all along.
-      var goingOff = st.lootPendingKind === 'off';
-      var reloadBtn = T('pl.loot-zones.act.reloadLoot', 'Reload loot now');
-      var whenLands = st.nextRestartUnix
-        ? T('pl.loot-zones.live.nextRestart', ' The next restart the manager has scheduled is {when}, and the loot lands then.',
-          { when: whenPhrase(st.nextRestartUnix) })
-        : T('pl.loot-zones.live.restartWhenever', ' Restart the server when it suits you and it lands then.');
-      live.push(note('wait', (goingOff
-        ? T('pl.loot-zones.live.pendingOff',
-          'Zone loot stays until reload. Press "{button}" (Bridge 2.22.2+) or restart the server.', { button: reloadBtn })
-        : T('pl.loot-zones.live.pendingOn',
-          'Loot waits for a reload: press "{button}" (Bridge 2.22.2+) or restart. Rectangle already shown.', { button: reloadBtn }))
-        + whenLands));
-    } else if (st.lootPending === null && (st.active || []).length) {
-      // Not knowing is its own answer. Saying "it is live" here would tell an owner their loot is
-      // in when it may be waiting; saying "it is waiting" would send them to restart a server that
-      // needs nothing.
-      live.push(note('', T('pl.loot-zones.live.pendingUnknown',
-        'Live status unknown. Switched on since the last start? It lands at the next restart.')));
-    }
-    /**
-     * ⚠ **A SCHEDULE THAT WILL NEVER RUN LOOKED EXACTLY LIKE A SCHEDULE THAT WORKS.** Rotation ships
-     * OFF, and every zone's days and hours draw, verdict and all, whether or not anything will ever
-     * read them. That is one switch on a card further down the page, and it is the first thing to
-     * check when the answer to "why does nothing happen" is "nothing is meant to".
-     */
-    if (c.enabled === false && c.rotation !== 'manual') {
-      live.push(note('bad', c.rotation === 'time'
-        ? T('pl.loot-zones.live.rotationOffTime', 'Rotation off: zone times ignored. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })
-        : T('pl.loot-zones.live.rotationOffRestart', 'Rotation off: no zone per restart. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })));
-    }
-    if (st.nextSwitchInMs > 0) {
-      live.push(note('', T('pl.loot-zones.live.held', 'Next switch waits {n} more min: each switch resets containers across the whole map.',
-      { n: Math.ceil(st.nextSwitchInMs / 60000) })));
-    }
-    root.appendChild(h('div', { class: 'lz-live' }, live));
-
-    // ── what this configuration needs in the bridge ──────────────────────────────────────────────
-    var br = state.bridge;
-    if (br) {
-      var off = br.items.filter(function (x) { return x.state === 'off'; });
-      var canOn = off.filter(function (x) { return x.ownerMay; });
-      var gone = br.items.filter(function (x) { return x.state === 'missing'; });
       /**
-       * ⚠ **A BOSS IS DECIDED BY THE CLASS NAME, NOT BY THE KIND**, and this list is built from what
-       * the configuration asks for — so a switch nothing in it names cannot appear in it at all. A
-       * Razor or a Sentry added from the creature picker needs the BOSS switch and is refused without
-       * it, which is the one refusal on this page whose fix was nowhere on this page.
-       *
-       * Said only while the list does not carry it already: once the switch is named there it comes
-       * with its real state, which is more than this line can say, and two lines about one switch is
-       * how a box like this stops being read.
+       * ⚠ **"IT IS NOT THERE" AND "I COULD NOT OPEN IT" ARE OPPOSITE FACTS AND THIS DREW ONE
+       * SENTENCE FOR BOTH.** An owner whose folder is right where they put it — held open by a
+       * backup, refused by an ACL, on a share that has gone away — was told to create it. The
+       * backend answers `missing` now and each state gets the sentence its reader can act on; the
+       * failure's own code travels, because "EPERM" is the whole diagnosis for whoever has to fix it.
        */
-      var bossGap = allChosenGuards(c).some(looksLikeBoss)
-        && !br.items.some(function (x) { return x.module === 'spawn' && x.key === 'bosses'; });
-      var kidsB = [];
-      if (!br.items.length && !bossGap) {
-        kidsB.push(note('', T('pl.loot-zones.bridge.notNeeded', 'Nothing on this page needs the bridge yet.')));
-      } else if (!off.length && !gone.length && !bossGap) {
-        kidsB.push(note('good', T('pl.loot-zones.bridge.allOn', 'Everything this page uses is switched on in the bridge.')));
-      } else {
-        off.forEach(function (x) {
-          // ⚠ `forWhat`, `moduleName` and `label` are the backend's and the bridge's own words and
-          // travel as values. The ROUTE is not written here: it used to read "Settings, Bridge, SSA
-          // Bridge card", and there is no Bridge under Settings — the cards live under Plugins.
+      if (state.sets && state.sets.readable === false) {
+        if (state.sets.missing === false) {
+          live.push(note('bad', T('pl.loot-zones.live.setsUnreadable',
+            'Sets folder unreadable: {path} ({why}). No zone can be switched on until it opens.',
+          { path: state.sets.root || '', why: state.sets.why || '' })));
+        } else if (state.sets.missing === true) {
+          live.push(note('bad', T('pl.loot-zones.live.noSetsFolder', 'Sets folder missing: {path}. Create it with one folder per zone, each with a Zones.json.',
+          { path: state.sets.root || '' })));
+        } else {
+          live.push(note('bad', T('pl.loot-zones.live.noSetsRoot',
+            'No sets folder: the manager gave no data folder and none is set below.')));
+        }
+      }
+      if (st.zonesKnown === false) {
+        live.push(note('', st.zonesUnknownWhy
+          ? codedText(st.zonesUnknownCode, String(st.zonesUnknownWhy))
+          : T('pl.loot-zones.live.noZoneList', 'The game has not sent its zone list yet; nothing to draw.')));
+      }
+      if (st.active && st.active.length) {
+        live.push(note('good', T('pl.loot-zones.live.on', 'Switched on: {list}', {
+          list: st.active.map(function (a) {
+            // Which of the two routes drew it, because "players can see this now" and "players will see
+            // this when the server starts" are different facts and a rectangle looks the same either way.
+            if (a.drawn === false) {
+              return T('pl.loot-zones.live.on.waiting', '{name} (loot only — the rectangle is waiting)', { name: a.name || a.set });
+            }
+            if (a.drawnBy === 'save') {
+              return T('pl.loot-zones.live.on.save', '{name} (rectangle written into the save — visible when the server starts)', { name: a.name || a.set });
+            }
+            return a.name || a.set;
+          }).join(', '),
+        })));
+      } else if (st.zonesKnown) {
+        live.push(note('', T('pl.loot-zones.live.none', 'No loot zone is switched on.')));
+      }
+
+      // ⚠ THE MOST IMPORTANT SENTENCE ON THIS PAGE. The rectangle appears at once and the loot behind
+      // it does not: SCUM reads its Loot folder when it STARTS, and a running server re-reads it only
+      // through the reload command, which is sent only through bridge 2.22.2 or newer (through an
+      // older bridge it crashed the game) — so where it was not sent, say when the loot really lands.
+      if (st.lootPending === true) {
+        // WHICH WAY the waiting change goes. After "Switch everything off" the files are GONE and the
+        // zone's loot is what players still see, so the sentence for a switch-on is false in every
+        // clause there — the backend has published which one it is all along.
+        var goingOff = st.lootPendingKind === 'off';
+        var reloadBtn = T('pl.loot-zones.act.reloadLoot', 'Reload loot now');
+        var whenLands = st.nextRestartUnix
+          ? T('pl.loot-zones.live.nextRestart', ' The next restart the manager has scheduled is {when}, and the loot lands then.',
+            { when: whenPhrase(st.nextRestartUnix) })
+          : T('pl.loot-zones.live.restartWhenever', ' Restart the server when it suits you and it lands then.');
+        live.push(note('wait', (goingOff
+          ? T('pl.loot-zones.live.pendingOff',
+            'Zone loot stays until reload. Press "{button}" (Bridge 2.22.2+) or restart the server.', { button: reloadBtn })
+          : T('pl.loot-zones.live.pendingOn',
+            'Loot waits for a reload: press "{button}" (Bridge 2.22.2+) or restart. Rectangle already shown.', { button: reloadBtn }))
+          + whenLands));
+      } else if (st.lootPending === null && (st.active || []).length) {
+        // Not knowing is its own answer. Saying "it is live" here would tell an owner their loot is
+        // in when it may be waiting; saying "it is waiting" would send them to restart a server that
+        // needs nothing.
+        live.push(note('', T('pl.loot-zones.live.pendingUnknown',
+          'Live status unknown. Switched on since the last start? It lands at the next restart.')));
+      }
+      /**
+       * ⚠ **A SCHEDULE THAT WILL NEVER RUN LOOKED EXACTLY LIKE A SCHEDULE THAT WORKS.** Rotation ships
+       * OFF, and every zone's days and hours draw, verdict and all, whether or not anything will ever
+       * read them. That is one switch on a card further down the page, and it is the first thing to
+       * check when the answer to "why does nothing happen" is "nothing is meant to".
+       */
+      if (c.enabled === false && c.rotation !== 'manual') {
+        live.push(note('bad', c.rotation === 'time'
+          ? T('pl.loot-zones.live.rotationOffTime', 'Rotation off: zone times ignored. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })
+          : T('pl.loot-zones.live.rotationOffRestart', 'Rotation off: no zone per restart. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })));
+      }
+      if (st.nextSwitchInMs > 0) {
+        live.push(note('', T('pl.loot-zones.live.held', 'Next switch waits {n} more min: each switch resets containers across the whole map.',
+        { n: Math.ceil(st.nextSwitchInMs / 60000) })));
+      }
+      root.appendChild(h('div', { class: 'lz-live' }, live));
+
+      // ── what this configuration needs in the bridge ──────────────────────────────────────────────
+      var br = state.bridge;
+      if (br) {
+        var off = br.items.filter(function (x) { return x.state === 'off'; });
+        var canOn = off.filter(function (x) { return x.ownerMay; });
+        var gone = br.items.filter(function (x) { return x.state === 'missing'; });
+        /**
+         * ⚠ **A BOSS IS DECIDED BY THE CLASS NAME, NOT BY THE KIND**, and this list is built from what
+         * the configuration asks for — so a switch nothing in it names cannot appear in it at all. A
+         * Razor or a Sentry added from the creature picker needs the BOSS switch and is refused without
+         * it, which is the one refusal on this page whose fix was nowhere on this page.
+         *
+         * Said only while the list does not carry it already: once the switch is named there it comes
+         * with its real state, which is more than this line can say, and two lines about one switch is
+         * how a box like this stops being read.
+         */
+        var bossGap = allChosenGuards(c).some(looksLikeBoss)
+          && !br.items.some(function (x) { return x.module === 'spawn' && x.key === 'bosses'; });
+        var kidsB = [];
+        if (!br.items.length && !bossGap) {
+          kidsB.push(note('', T('pl.loot-zones.bridge.notNeeded', 'Nothing on this page needs the bridge yet.')));
+        } else if (!off.length && !gone.length && !bossGap) {
+          kidsB.push(note('good', T('pl.loot-zones.bridge.allOn', 'Everything this page uses is switched on in the bridge.')));
+        } else {
+          off.forEach(function (x) {
+            // ⚠ `forWhat`, `moduleName` and `label` are the backend's and the bridge's own words and
+            // travel as values. The ROUTE is not written here: it used to read "Settings, Bridge, SSA
+            // Bridge card", and there is no Bridge under Settings — the cards live under Plugins.
+            kidsB.push(h('div', { class: 'lz-need' }, [icon('alert'),
+              h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.forWhat', '{what}: ', { what: x.forWhat })),
+                T('pl.loot-zones.bridge.need', '{module} → {label}{byHand}', {
+                  module: x.moduleName, label: x.label,
+                  byHand: x.manual ? T('pl.loot-zones.bridge.byHand',
+                    ' (turn it on by hand in {where}, on that module\'s card, then restart the server)',
+                    { where: bridgeWhere() }) : '',
+                })])]));
+          });
+          gone.forEach(function (x) {
+            kidsB.push(h('div', { class: 'lz-need' }, [icon('close'),
+              h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.forWhat', '{what}: ', { what: x.forWhat })),
+                T('pl.loot-zones.bridge.missing', 'this bridge has no "{label}" — update the bridge', { label: x.label })])]));
+          });
+          if (canOn.length) {
+            kidsB.push(h('div', { class: 'lz-actions' }, [
+              h('button', { type: 'button', onclick: function () { turnOnInBridge(canOn); } },
+                [icon('check'), canOn.length === 1
+                  ? T('pl.loot-zones.bridge.turnOnOne', 'Turn it on in the bridge')
+                  : T('pl.loot-zones.bridge.turnOnMany', 'Turn them on in the bridge')]),
+            ]));
+          }
+          if (br.online === false) {
+            kidsB.push(note('', T('pl.loot-zones.bridge.startsWith', 'The server is not running, so this is what the bridge will start with.')));
+          }
+        }
+        if (bossGap) {
           kidsB.push(h('div', { class: 'lz-need' }, [icon('alert'),
-            h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.forWhat', '{what}: ', { what: x.forWhat })),
-              T('pl.loot-zones.bridge.need', '{module} → {label}{byHand}', {
-                module: x.moduleName, label: x.label,
-                byHand: x.manual ? T('pl.loot-zones.bridge.byHand',
-                  ' (turn it on by hand in {where}, on that module\'s card, then restart the server)',
-                  { where: bridgeWhere() }) : '',
-              })])]));
-        });
-        gone.forEach(function (x) {
-          kidsB.push(h('div', { class: 'lz-need' }, [icon('close'),
-            h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.forWhat', '{what}: ', { what: x.forWhat })),
-              T('pl.loot-zones.bridge.missing', 'this bridge has no "{label}" — update the bridge', { label: x.label })])]));
-        });
-        if (canOn.length) {
-          kidsB.push(h('div', { class: 'lz-actions' }, [
-            h('button', { type: 'button', onclick: function () { turnOnInBridge(canOn); } },
-              [icon('check'), canOn.length === 1
-                ? T('pl.loot-zones.bridge.turnOnOne', 'Turn it on in the bridge')
-                : T('pl.loot-zones.bridge.turnOnMany', 'Turn them on in the bridge')]),
-          ]));
+            h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.sendingGuards', 'Sending guards: ')),
+              T('pl.loot-zones.bridge.bossGap',
+                'One guard is a boss, so turn on Precise spawning → Bosses (Brenner, Razor, Dropship, Sentry).')])]));
         }
-        if (br.online === false) {
-          kidsB.push(note('', T('pl.loot-zones.bridge.startsWith', 'The server is not running, so this is what the bridge will start with.')));
-        }
+        root.appendChild(card('check-shield', cardBridge(), null, kidsB));
       }
-      if (bossGap) {
-        kidsB.push(h('div', { class: 'lz-need' }, [icon('alert'),
-          h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.sendingGuards', 'Sending guards: ')),
-            T('pl.loot-zones.bridge.bossGap',
-              'One guard is a boss, so turn on Precise spawning → Bosses (Brenner, Razor, Dropship, Sentry).')])]));
-      }
-      root.appendChild(card('check-shield', cardBridge(), null, kidsB));
+
+      // The figures an owner opens this tab to see. They were in prose inside each zone, which is the
+      // right place for the detail and the wrong place for the answer to "is this working at all".
+      var held = 0; var postsAll = 0; var guardsUp = 0;
+      Object.keys(st.patrols || {}).forEach(function (k) {
+        var p = st.patrols[k] || {};
+        held += Number(p.held) || 0;
+        postsAll += Number(p.posts) || 0;
+        guardsUp += Number(p.spawned) || 0;
+      });
+      var enabledZones = (c.zones || []).filter(function (z) { return z.enabled !== false; }).length;
+      root.appendChild(h('div', { class: 'lz-figs' }, [
+        h('div', { class: 'lz-fig' }, [h('b', {}, String((c.zones || []).length)), h('span', {}, T('pl.loot-zones.fig.zones', 'zones'))]),
+        h('div', { class: 'lz-fig' }, [h('b', {}, String(enabledZones)), h('span', {}, T('pl.loot-zones.fig.inRotation', 'in rotation'))]),
+        h('div', { class: 'lz-fig' + ((st.active || []).length ? ' good' : '') },
+          [h('b', {}, String((st.active || []).length)), h('span', {}, T('pl.loot-zones.fig.liveNow', 'live now'))]),
+        postsAll ? h('div', { class: 'lz-fig' + (held < postsAll ? ' wait' : ' good') },
+          [h('b', {}, held + '/' + postsAll), h('span', {}, T('pl.loot-zones.fig.postsHeld', 'posts held'))]) : null,
+        guardsUp ? h('div', { class: 'lz-fig' }, [h('b', {}, String(guardsUp)), h('span', {}, T('pl.loot-zones.fig.guardsSent', 'guards sent'))]) : null,
+      ].filter(Boolean)));
+
+      root.appendChild(zonesCard(c, st, sets));
     }
-
-    // The figures an owner opens this tab to see. They were in prose inside each zone, which is the
-    // right place for the detail and the wrong place for the answer to "is this working at all".
-    var held = 0; var postsAll = 0; var guardsUp = 0;
-    Object.keys(st.patrols || {}).forEach(function (k) {
-      var p = st.patrols[k] || {};
-      held += Number(p.held) || 0;
-      postsAll += Number(p.posts) || 0;
-      guardsUp += Number(p.spawned) || 0;
-    });
-    var enabledZones = (c.zones || []).filter(function (z) { return z.enabled !== false; }).length;
-    root.appendChild(h('div', { class: 'lz-figs' }, [
-      h('div', { class: 'lz-fig' }, [h('b', {}, String((c.zones || []).length)), h('span', {}, T('pl.loot-zones.fig.zones', 'zones'))]),
-      h('div', { class: 'lz-fig' }, [h('b', {}, String(enabledZones)), h('span', {}, T('pl.loot-zones.fig.inRotation', 'in rotation'))]),
-      h('div', { class: 'lz-fig' + ((st.active || []).length ? ' good' : '') },
-        [h('b', {}, String((st.active || []).length)), h('span', {}, T('pl.loot-zones.fig.liveNow', 'live now'))]),
-      postsAll ? h('div', { class: 'lz-fig' + (held < postsAll ? ' wait' : ' good') },
-        [h('b', {}, held + '/' + postsAll), h('span', {}, T('pl.loot-zones.fig.postsHeld', 'posts held'))]) : null,
-      guardsUp ? h('div', { class: 'lz-fig' }, [h('b', {}, String(guardsUp)), h('span', {}, T('pl.loot-zones.fig.guardsSent', 'guards sent'))]) : null,
-    ].filter(Boolean)));
-
-    // ── the zones ────────────────────────────────────────────────────────────────────────────────
-    // ⚠ THE INDEX PASSED IN IS THE ZONE'S PLACE IN `c.zones`, never its place in the filtered list:
-    // the move arrows and the copy button splice that array, and handing them a filtered position
-    // would move a different zone. The filter decides what is DRAWN and nothing else.
-    var shownList = shownZones(c, st);
-    var kids = [zoneToolbar(c, st)].concat(shownList.map(function (z) {
-      return zoneBlock(z, (c.zones || []).indexOf(z), c, sets, st);
-    }));
-    if (!(c.zones || []).length) {
-      kids.push(note('', sets.length
-        ? T('pl.loot-zones.zones.none', 'No zones yet. Add one and pick a loot set for it.')
-        : T('pl.loot-zones.zones.noSets', 'No loot sets. Add one folder per zone, each with a Zones.json from #ExportItemSpawnerPresetsInZone.')));
-    }
-    kids.push(h('div', { class: 'lz-actions' }, [
-      h('button', {
-        type: 'button', onclick: function () {
-          var fresh = {
-            id: 'z' + Date.now().toString(36), name: '', set: sets.length ? sets[0].name : '',
-            enabled: true, windows: [],
-          };
-          c.zones = (c.zones || []).concat([fresh]);
-          // ⚠ A ZONE ADDED WHILE A FILTER IS ON IS A ZONE THE READER CANNOT SEE, and the button then
-          // reads as doing nothing. The filter is theirs, so it is cleared rather than fought with,
-          // and the new zone is opened however long the list is.
-          zoneFind = ''; zoneShow = 'all';
-          shut['z-' + fresh.id] = false;
-          markDirty();
-        },
-      }, [icon('box'), T('pl.loot-zones.zones.add', 'Add a zone')]),
-    ]));
-    // ⚠ **THE LEAD THAT USED TO BE HERE WAS ALSO ABOUT TO BECOME UNTRUE.** It said the rectangle
-    // always comes from the loot set and is never copied here, which is right until a zone is given
-    // an area of its own — and a card-wide sentence contradicting a control inside it is worse than
-    // no sentence. Where the zone is now says so on the zone, in the row that decides it.
-    root.appendChild(card('list', T('pl.loot-zones.card.zones', 'Zones'), null, kids));
-
-    // ── what players are told ────────────────────────────────────────────────────────────────────
-    root.appendChild(card('chat', T('pl.loot-zones.card.messages', 'What players are told'),
-      T('pl.loot-zones.card.messages.lead', 'Four messages. Leave one empty to switch it off.'), [
-      // ⚠ The VALUES are the game's own chat channels and are sent on the wire; only their captions
-      // are translated.
-      row(T('pl.loot-zones.set.chatChannel', 'Chat channel'), sel(c.chatChannel, [
-        ['global', T('pl.loot-zones.chan.global', 'Global')], ['local', T('pl.loot-zones.chan.local', 'Local')],
-        ['squad', T('pl.loot-zones.chan.squad', 'Squad')],
-        ['admin', T('pl.loot-zones.chan.admin', 'Admin')], ['server', T('pl.loot-zones.chan.server', 'Server')],
-      ], function (v) { c.chatChannel = v; markDirty(); }),
-      T('pl.loot-zones.set.chatChannel.hint',
-        'Channel for chat messages below. Server suits announcements; Local reaches only nearby players.')),
-    ].concat(MESSAGES.map(function (d) { return messageBlock(d, c); }))));
-
-    // ── the zone as players meet it ──────────────────────────────────────────────────────────────
-    var own = c.zone.configMode === 'own';
-    root.appendChild(card('map', cardRectangle(),
-      T('pl.loot-zones.card.rectangle.lead', 'Name, colour and visibility. Shows at once; loot goes live on reload or next start.'), [
-      // ⚠ The two placeholders here are VALUES — the prefix is written into the zone's name in the
-      // game and the configuration name is what the zone set is found by — so neither is translated.
-      row(T('pl.loot-zones.set.namePrefix', 'Zone name prefix'), txt(c.zone.namePrefix, 'Loot ', function (v) { c.zone.namePrefix = v; markDirty(); }),
-        T('pl.loot-zones.set.namePrefix.hint',
-          'Marks this plugin\'s zones: never empty, no colon. Switch all off before changing.')),
-      row(labConfigMode(), sel(c.zone.configMode, [
-        ['existing', T('pl.loot-zones.cfgmode.existing', 'Use one of my existing zone configurations')],
-        ['own', T('pl.loot-zones.cfgmode.own', 'Keep a configuration of its own')],
-      ], function (v) { c.zone.configMode = v; markDirty(); }),
-      T('pl.loot-zones.set.configMode.hint',
-        'Colour, visibility and entry notice belong to a configuration; this picks which one.')),
-      !own ? row(T('pl.loot-zones.set.configIndex', 'Configuration number'), numIn(c.zone.configIndex, function (v) { c.zone.configIndex = v; markDirty(); }, 0, 99, ''),
-        st.configs && st.configs.length
-          ? T('pl.loot-zones.set.configIndex.list', 'This server has: {list}', {
-            list: st.configs.map(function (x) {
-              return T('pl.loot-zones.set.configIndex.entry', '{index} = {name}',
-                { index: x.index, name: x.name || T('pl.loot-zones.set.configIndex.unnamed', '(unnamed)') });
-            }).join(', '),
-          })
-          : T('pl.loot-zones.set.configIndex.hint', 'The list appears here once the game has sent its zones.')) : null,
-      own ? row(T('pl.loot-zones.set.ownConfigName', 'Its name'), txt(c.zone.ownConfigName, 'Loot Zones', function (v) { c.zone.ownConfigName = v; markDirty(); }),
-        T('pl.loot-zones.set.ownConfigName.hint',
-          'Created once if missing, then always found by this name.')) : null,
-      own ? row(T('pl.loot-zones.set.visibleOnMap', 'Players can see it on the map'), toggle(!!c.zone.visibleOnMap, function (v) { c.zone.visibleOnMap = v; markDirty(); })) : null,
-      own ? row(T('pl.loot-zones.set.notifyOnEntry', 'Walking in tells them'), toggle(!!c.zone.notifyOnEntry, function (v) { c.zone.notifyOnEntry = v; markDirty(); }),
-        T('pl.loot-zones.set.notifyOnEntry.hint', 'The game\'s own entry notification, which is separate from the messages below.')) : null,
-      own ? row(T('pl.loot-zones.set.colour', 'Colour'), colourIn(c.zone.colour, function () { markDirty(); render(); }),
-        T('pl.loot-zones.set.colour.hint', 'The colour players see the zone in on the map, and how see-through it is.')) : null,
-    ]));
-
-    // ── settings ─────────────────────────────────────────────────────────────────────────────────
-    root.appendChild(card('sliders', cardRotation(),
-      T('pl.loot-zones.card.rotation.lead', 'Which loot zone is live, and what may change it.'), [
-      row(labRotationOn(), toggle(!!c.enabled, function (v) { c.enabled = v; markDirty(); }),
-        T('pl.loot-zones.set.rotationOn.hint', 'Off keeps whatever is switched on; it does not remove a live zone.')),
-      row(T('pl.loot-zones.set.rotation', 'How zones change'), sel(c.rotation, [
-        ['manual', T('pl.loot-zones.rot.manual', 'Only by hand, from this page')],
-        ['time', T('pl.loot-zones.rot.time', 'On a schedule, per zone')],
-        ['restart', optRestart()],
-      ], function (v) { c.rotation = v; markDirty(); }),
-      c.rotation === 'time'
-        ? T('pl.loot-zones.set.rotation.hint.time', 'Each zone below has its own days and hours; no schedule means always on.')
-        : (c.rotation === 'restart'
-          ? T('pl.loot-zones.set.rotation.hint.restart',
-            'Zones take turns, one per server restart, chosen when the server stops.')
-          : '')),
-      c.rotation === 'time' && state.clock ? why('clock', [T('pl.loot-zones.set.managerClock',
-        'Times use the manager\'s clock, now {t}{zone} — not the game\'s day cycle.', {
-        t: state.clock.now.hhmm,
-        zone: (state.clock.zone && state.clock.zone.label)
-          ? T('pl.loot-zones.set.managerClock.zone', ' ({label})', { label: state.clock.zone.label }) : '',
-      })]) : null,
-      c.rotation === 'restart' ? row(T('pl.loot-zones.set.restartPick', 'Which one'), sel(c.restartPick, [
-        ['order', T('pl.loot-zones.pick.order', 'In turn, down the list')],
-        ['random', T('pl.loot-zones.pick.random', 'At random')],
-      ], function (v) { c.restartPick = v; markDirty(); })) : null,
-      more('rotation', T('pl.loot-zones.more.options', 'More options'), [
-        row(T('pl.loot-zones.set.maxActive', 'Zones at once'), numIn(c.maxActive, function (v) { c.maxActive = v; markDirty(); }, 1, 10, T('pl.loot-zones.unit.zones', 'zones')),
-          T('pl.loot-zones.set.maxActive.hint', 'The game allows several. Each one is another folder the game reads when it starts.')),
-        row(T('pl.loot-zones.set.minBetween', 'Time between switches'), numIn(c.minMinutesBetweenSwitches, function (v) { c.minMinutesBetweenSwitches = v; markDirty(); }, 0, 1440, T('pl.loot-zones.unit.minutes', 'minutes')),
-          T('pl.loot-zones.set.minBetween.hint',
-            'Minimum time between loot swaps; switching off counts. Stops a crash loop cycling every zone.')),
-        row(labReloadOnSwitch(), toggle(c.reloadOnSwitch !== false, function (v) { c.reloadOnSwitch = v; markDirty(); }),
-          T('pl.loot-zones.set.reloadOnSwitch.hint', 'Loot goes live at once; resets every searchable container on the map. Needs Bridge 2.22.2+.')),
-        row(T('pl.loot-zones.set.checkEvery', 'Check every'), numIn(c.checkEverySeconds, function (v) { c.checkEverySeconds = v; markDirty(); }, 15, 3600, T('pl.loot-zones.unit.seconds', 'seconds')),
-          T('pl.loot-zones.set.checkEvery.hint', 'How often the schedule is checked and failed rectangles are retried.')),
-        row(T('pl.loot-zones.set.setsDir', 'Loot sets folder'), txt(c.setsDir, (state.sets && state.sets.root) || '', function (v) { c.setsDir = v; markDirty(); }, 'lz-in lz-wide'),
-          (state.sets && state.sets.root)
-            ? T('pl.loot-zones.set.setsDir.hintPath', 'Leave it empty for the plugin\'s own folder: {path}', { path: state.sets.root })
-            : T('pl.loot-zones.set.setsDir.hint', 'Leave it empty for the plugin\'s own folder.')),
-      ]),
-    ]));
-
-    // ── everything else ──────────────────────────────────────────────────────────────────────────
-    root.appendChild(card('cog', cardActions(),
-      T('pl.loot-zones.card.actions.lead', 'Nothing here is a setting — each one does something to the server now.'), [
-      h('div', { class: 'lz-actions' }, [
-        h('button', {
-          class: 'secondary', type: 'button', onclick: function () {
-            SSA.confirm(T('pl.loot-zones.act.offConfirm', 'Switch every loot zone off and put the loot back to normal?')).then(function (yes) {
-              if (!yes) return;
-              api('/deactivate', { method: 'POST', body: { force: true } }).then(function (r) {
-                SSA.toast(r && r.ok === false ? (r.why || T('pl.loot-zones.refused', 'Refused'))
-                  : T('pl.loot-zones.act.offDone', 'Everything is off'));
-                refresh();
-              }).catch(failed(T('pl.loot-zones.fail.deactivate', 'Not switched off')));
-            });
-          },
-        }, [icon('stop'), T('pl.loot-zones.act.off', 'Switch everything off')]),
-        // Back since bridge 2.22.2, which runs the command on the game thread. An older bridge is
-        // refused by the backend with a sentence, never sent the command that crashed it.
-        h('button', {
-          class: 'secondary', type: 'button', onclick: function () {
-            SSA.confirm(T('pl.loot-zones.act.reloadConfirm', 'Reload loot now? Every searchable container on the whole map resets.')).then(function (yes) {
-              if (!yes) return;
-              api('/reload-loot', { method: 'POST', body: {} }).then(function (r) {
-                SSA.toast(r && r.ok ? T('pl.loot-zones.act.reloadDone', 'Loot reloaded')
-                  : ((r && r.why) || T('pl.loot-zones.act.reloadUnconfirmed', 'The reload was not confirmed')));
-                refresh();
-              }).catch(failed(T('pl.loot-zones.fail.reload', 'Not reloaded')));
-            });
-          },
-        }, [icon('refresh'), T('pl.loot-zones.act.reloadLoot', 'Reload loot now')]),
-        h('button', {
-          class: 'secondary', type: 'button', onclick: function () {
-            api('/reconcile', { method: 'POST', body: {} }).then(function (r) {
-              if (r && r.skipped) SSA.toast(T('pl.loot-zones.act.noZoneList', 'The game has not sent its zone list yet'));
-              else if (r && r.error) SSA.toast(T('pl.loot-zones.act.checkFailed', 'The check did not finish: {why}', { why: r.error }));
-              // A leftover FOUND is not a leftover REMOVED. Counting what was found told an owner the
-              // map was clean while the rectangle was still on it.
-              else if (r && (r.stubborn || []).length) {
-                SSA.toast(r.stubborn.length === 1
-                  ? T('pl.loot-zones.act.stuck.one', '{n} leftover zone could not be removed: {why}', { n: 1, why: r.why || '' })
-                  : T('pl.loot-zones.act.stuck', '{n} leftover zones could not be removed: {why}', { n: r.stubborn.length, why: r.why || '' }));
-              } else {
-                var n = ((r && r.removed) || (r && r.strayZones) || []).length + ((r && r.strayFolders) || []).length;
-                SSA.toast(n ? (n === 1 ? T('pl.loot-zones.act.cleared.one', 'Cleared {n} leftover', { n: n })
-                  : T('pl.loot-zones.act.cleared', 'Cleared {n} leftovers', { n: n }))
-                  : T('pl.loot-zones.act.agrees', 'The game agrees with this page'));
-              }
-              refresh();
-            }).catch(failed(T('pl.loot-zones.fail.check', 'Not checked')));
-          },
-        }, [icon('check-shield'), labReconcile()]),
-      ]),
-      // The spawn plans held right now, the refusals, and the button that gives them back. Here
-      // rather than inside a zone because a plan is the island's and not one zone's.
-      activityHeldBlock(),
-      why('actions', [T('pl.loot-zones.act.note',
-        'Bridge 2.22.2+ reloads loot on switch (see "{control}"); older bridges at next start.',
-        { control: labReloadOnSwitch() })]),
-    ]));
 
     saveBar = saveBarNode();
     root.appendChild(saveBar);
+    wantOverview();
   }
 
   /**

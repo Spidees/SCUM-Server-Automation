@@ -663,3 +663,186 @@ small.lz-warn { color: var(--standby); }
 
 /* A note opens its line with a capital, including a reason the bridge wrote in lower case. */
 .lz-note::first-letter { text-transform: uppercase; }
+
+/* ══ THE TAB FOR A HUNDRED ZONES ═══════════════════════════════════════════════════════════════
+   Three views behind one row of tabs (the zone list, the messages, the settings), the list itself
+   (the panel's own `SSA.table`, so search, sorting and paging look like every other list in the
+   panel), the one-zone editor with its section pills, and the variants. Every hover pair is retuned
+   on the element through the `--hov-*` tokens, as everywhere above. */
+
+/* The tab's own sections. A segmented row, the same shape as the days of the week above, because it
+   is the same kind of choice: one of a few, always visible. */
+.lz-tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.lz-tab, .lz-pill {
+  --hov-bg: var(--hover-bg);
+  --hov-fg: var(--text);
+  --hov-line: var(--line-amber);
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font: inherit; font-size: 0.88rem; font-weight: 600;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.lz-tab .ico, .lz-tab svg { width: 0.95rem; height: 0.95rem; flex: 0 0 auto; }
+.lz-tab:hover, .lz-pill:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.lz-tab.on, .lz-pill.on {
+  --hov-bg: rgba(255, 106, 26, 0.16);
+  --hov-fg: var(--amber-hi);
+  --hov-line: var(--amber-hi);
+  border-color: var(--amber);
+  background: rgba(255, 106, 26, 0.07);
+  color: var(--amber-hi);
+}
+/* The chosen tab outweighs the plain hover rule above, so it reads its own pair under the pointer. */
+.lz-tab.on:hover, .lz-pill.on:hover { background: var(--hov-bg); border-color: var(--hov-line); color: var(--hov-fg); }
+.lz-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.85rem 0 0.4rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--line-2); }
+.lz-pill { font-size: 0.84rem; padding: 0.35rem 0.7rem; }
+.lz-pill.bad { border-color: rgba(229, 68, 63, 0.55); }
+.lz-pillbad {
+  display: inline-block; min-width: 1.2rem; padding: 0 0.3rem;
+  border-radius: var(--pill); background: var(--alarm); color: var(--on-amber);
+  font-size: 0.72rem; line-height: 1.2rem; text-align: center;
+}
+
+/* ── the list ──────────────────────────────────────────────────────────────────────────────── */
+.lz-zcell { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+/* ⚠ One line per fact, never a word cut in half: on a phone the table scrolls sideways inside its own
+   box (the panel's `.table-wrap`), which is where a list with six columns belongs. */
+.lz-zcell small { color: var(--muted); font-size: 0.78rem; line-height: 1.35; white-space: nowrap; }
+.lz-zname {
+  --hov-bg: transparent;
+  --hov-fg: var(--amber-hi);
+  --hov-line: transparent;
+  background: transparent; border: 0; padding: 0;
+  color: var(--text);
+  font: inherit; font-weight: 700; font-size: 0.92rem; text-align: left;
+  display: block; align-self: flex-start; white-space: nowrap;
+  cursor: pointer;
+}
+.lz-zname:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.lz-sector { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.lz-dim { color: var(--faint); font-size: 0.8rem; }
+.lz-ok { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--online); font-size: 0.82rem; font-weight: 600; }
+.lz-ok .ico, .lz-ok svg { width: 0.85rem; height: 0.85rem; }
+.lz-warnbtn {
+  --hov-bg: rgba(230, 178, 58, 0.12);
+  --hov-fg: var(--standby);
+  --hov-line: var(--standby);
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: transparent;
+  border: 1px solid rgba(230, 178, 58, 0.45);
+  border-radius: var(--radius);
+  color: var(--standby);
+  font: inherit; font-size: 0.8rem; font-weight: 600;
+  padding: 0.25rem 0.55rem; cursor: pointer; white-space: nowrap;
+}
+.lz-warnbtn.bad {
+  --hov-bg: rgba(229, 68, 63, 0.14);
+  --hov-fg: var(--alarm);
+  --hov-line: var(--alarm);
+  border-color: rgba(229, 68, 63, 0.55);
+  color: var(--alarm);
+}
+.lz-warnbtn:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.lz-warnbtn .ico, .lz-warnbtn svg { width: 0.85rem; height: 0.85rem; }
+.lz-oncell { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.lz-open { white-space: nowrap; }
+.lz-badge.bad { color: var(--alarm); border-color: rgba(229, 68, 63, 0.45); }
+
+/* ── one zone ──────────────────────────────────────────────────────────────────────────────── */
+.lz-ednav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.lz-edpos { color: var(--muted); font-size: 0.86rem; font-variant-numeric: tabular-nums; margin-left: auto; }
+.lz-edhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.lz-editor .lz-edhead > h3 {
+  margin: 0; display: flex; align-items: center; gap: 0.5rem;
+  font-size: 1.15rem; font-weight: 700; color: var(--amber-hi); line-height: 1.25;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.lz-editor .lz-edhead > h3 .ico, .lz-editor .lz-edhead > h3 svg { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+.lz-facts { margin-top: 0.6rem; }
+
+/* ── variants ──────────────────────────────────────────────────────────────────────────────────
+   The share bar is the one picture on this tab: a weight means nothing until it is set against the
+   others, and the variant running tonight is the amber one. */
+.lz-share {
+  display: flex; gap: 2px; min-width: 0;
+  height: 1.6rem; margin: 0.2rem 0 0.7rem;
+  border-radius: var(--radius); overflow: hidden;
+}
+.lz-share-seg {
+  flex: 1 1 0; min-width: 1.8rem;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--inset); color: var(--muted);
+  font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.lz-share-seg.run { background: var(--amber); color: var(--on-amber); }
+.lz-session {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem;
+  padding: 0.6rem 0.75rem; margin-bottom: 0.7rem;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-md);
+  font-size: 0.88rem;
+}
+.lz-session small { color: var(--muted); font-size: 0.8rem; flex: 1 1 14rem; }
+.lz-vrow {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.lz-vrow.open { border-color: var(--line-amber); box-shadow: inset 3px 0 0 var(--amber); }
+.lz-vrow.off { opacity: 0.75; }
+.lz-vrow.bad { border-color: rgba(229, 68, 63, 0.55); }
+.lz-vrow-main { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; min-width: 0; }
+.lz-vrow-main .lz-vlabel { flex: 1 1 12rem; min-width: 0; width: auto; }
+.lz-vweight { display: inline-flex; align-items: center; gap: 0.35rem; }
+.lz-vweight .lz-num { width: 4.2rem; }
+.lz-vweight small { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 2.6rem; }
+.lz-vrow-sum small { color: var(--muted); font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere; }
+.lz-vrow-acts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.lz-veditor { border-top: 1px solid var(--line-2); margin-top: 0.3rem; padding-top: 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.lz-vfs { display: flex; flex-direction: column; }
+.lz-vf {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+  align-items: center; gap: 0.3rem 0.7rem;
+  padding: 0.35rem 0 0.35rem 0.6rem;
+  border-left: 2px solid var(--line);
+  border-top: 1px solid var(--line-2);
+  font-size: 0.85rem;
+}
+.lz-vf.own { border-left-color: var(--amber); }
+.lz-vf-label { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.lz-vf-val { color: var(--muted); overflow-wrap: anywhere; }
+.lz-vf .lz-link { flex: 0 0 auto; font-size: 0.82rem; }
+.lz-vadd > select { flex: 1 1 14rem; min-width: 0; }
+/* A badge here can be a preset's whole name, which is longer than a phone is wide. */
+.lz-vrow-main .lz-badge, .lz-vf .lz-badge { white-space: normal; }
+@media (max-width: 640px) {
+  .lz-vf { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  /* Three tabs, one under the other, each as wide as its word was a ragged staircase. */
+  .lz-tabs > .lz-tab { flex: 1 1 auto; justify-content: center; }
+  /* The previous and next arrows are one glyph each: a 44px square is the only floor they have. */
+  .lz-ednav > button { min-width: 44px; }
+}
+
+/* ── the two dialogs: making zones from sets, and giving zones variants ──────────────────────── */
+.lz-presetlist { display: flex; flex-direction: column; gap: 0.3rem; max-height: min(22rem, 50vh); overflow-y: auto; }
+.lz-presetlist[hidden] { display: none; }
+.lz-presetpick {
+  display: flex; align-items: flex-start; gap: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line-2); border-radius: var(--radius);
+  cursor: pointer;
+}
+.lz-presetpick input { margin-top: 0.2rem; accent-color: var(--amber); flex: 0 0 auto; }
+.lz-presetpick span { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.lz-presetpick b { font-size: 0.88rem; }
+.lz-presetpick small { color: var(--muted); font-size: 0.78rem; line-height: 1.4; }

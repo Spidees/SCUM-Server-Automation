@@ -1462,6 +1462,9 @@ module.exports = {
      * remembers which guard stood on it and the new variant may have none of that kind.
      */
     const VARIANT_KEYS = ['sentries', 'activity'];
+    // What a variant carries besides the two it changes: its own name, its share, its switch, and the
+    // preset it was built from (so the tab can name it in the reader's language). Nothing reads `preset`.
+    const VARIANT_META = ['label', 'weight', 'enabled', 'preset'];
     function variantList(z) {
       const raw = (z && Array.isArray(z.variants)) ? z.variants : [];
       const out = [];
@@ -8894,6 +8897,585 @@ module.exports = {
       });
     }
 
+    // ── the rules every zone and every variant is held to, and the presets that keep them ─────────
+    /**
+     * ⚠ **THE TAB IS THE ONLY PLACE AN OWNER NEEDS, SO THE BACKEND IS THE ONLY PLACE THE RULES
+     * LIVE.** The list's warnings column, the editor's inline warnings and the save's refusal all
+     * come out of `ruleBreaks()` below, through `POST /overview` and `POST /config`; the screen
+     * never re-derives one. A second copy of a rule in the browser is a rule that drifts.
+     *
+     * What a zone's area holds is a FACT OUT OF THE GAME'S OWN FILES, shipped beside this file as
+     * `sentry-places.json`: the 94 fixed sentry posts the paks place (each one a post the game
+     * builds a sentry at and rebuilds it after it is killed) and the four abandoned bunkers whose
+     * alarm brings a dropship with deployed sentries. So "does this zone have sentries" is answered
+     * with the server stopped, for an area nobody has saved yet, by the same arithmetic the patrol
+     * uses to decide what is inside (`inRect`).
+     *
+     *   S  the area holds at least one sentry post (fixed map sentries, and deployed ones with them)
+     *   D  no post, but an abandoned bunker (deployed sentries only, when its alarm goes)
+     *   N  neither: nothing in this area brings a sentry
+     *
+     * The four rules, each with its own code and its own sentence:
+     *
+     *   no_fixed_sentries     "keep sentries out" naming fixed map sentries where no post stands
+     *   no_deployed_sentries  "keep sentries out" where nothing brings a sentry at all
+     *   npc_sentries          NPC guards in an area whose sentries are not all kept out
+     *   zombies_out           "keep zombies out" without NPC guards, without the place's own
+     *                         sentries standing and without being clean PvP (no guards, every
+     *                         sentry kind the place has kept out); a Razor or a horde never keeps
+     *                         zombies out
+     *
+     * ⚠ **A ZONE THAT ALREADY BROKE A RULE BEFORE THIS VERSION IS NOT A SAVE THAT BREAKS ONE.**
+     * Paying owners run configurations written before these rules existed, and refusing every save
+     * of theirs over a zone they did not touch would lock them out of the whole tab. A zone the save
+     * leaves exactly as it was is reported (the list's warnings column says so in red) and is never
+     * a refusal; a zone the save adds or changes is refused, naming the rule.
+     */
+    let sentryPlacesRead = null;
+    function sentryPlaces() {
+      if (sentryPlacesRead) return sentryPlacesRead;
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'sentry-places.json'), 'utf8'));
+        const pts = (list) => (Array.isArray(list) ? list : [])
+          .map((p) => ({ x: Number(p && p.x), y: Number(p && p.y) }))
+          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        sentryPlacesRead = { posts: pts(j.posts), bunkers: pts(j.bunkers), why: null };
+      } catch (e) {
+        // Not cached: a file that could not be read this second may be readable the next.
+        return { posts: [], bunkers: [], why: `the plugin's sentry-places.json could not be read (${(e && (e.code || e.message)) || 'unknown'})` };
+      }
+      return sentryPlacesRead;
+    }
+    /**
+     * What a zone's AREA holds, out of the shipped table. `known: false` with the reason when the
+     * area itself cannot be worked out (no loot set, an unreadable Zones.json, half-typed numbers)
+     * or the table could not be read; no rule is judged then, and the screen says it could not be.
+     */
+    function placeOf(entry) {
+      const r = zoneRects(entry);
+      if (!r.ok) return { known: false, why: r.why || 'the zone has no area yet' };
+      const sp = sentryPlaces();
+      if (sp.why) return { known: false, why: sp.why };
+      const inside = (p) => r.rects.some((rc) => inRect(p, rc));
+      const posts = sp.posts.filter(inside).length;
+      const bunkers = sp.bunkers.filter(inside).length;
+      return { known: true, cls: posts ? 'S' : (bunkers ? 'D' : 'N'), posts, bunkers, rects: r.rects, source: r.source };
+    }
+    /** The kinds "keep sentries out" stands for at a place of this class. */
+    const sentryKindsFor = (cls) => (cls === 'S' ? ['mapsentry', 'sentry'] : (cls === 'D' ? ['sentry'] : []));
+    /**
+     * The guards a sentries block really sends: the list, or the block itself for a configuration
+     * written before the list existed — the same fallback `guardTypes()` reads — and only an entry
+     * that names something to send. A random row names no class and is a guard all the same.
+     */
+    function chosenGuardsOf(s) {
+      const rep = (s && s.replace) || {};
+      const raw = Array.isArray(rep.types) && rep.types.length ? rep.types : [rep];
+      return raw.filter((t) => t && typeof t === 'object'
+        && (String((t.route === 'persistent' ? t.spawnName : t.classPath) || '').trim() || t.random));
+    }
+    /** An armed NPC — a Guard or a Drifter, on either route — and never a creature, a puppet or a boss. */
+    const isArmedNpc = (t) => /\/Armed_NPCs\//.test(String((t && t.classPath) || ''))
+      || (t && t.route === 'persistent' && String(t.spawnKind || 'armednpc') === 'armednpc' && !!String(t.spawnName || '').trim());
+
+    /**
+     * Every rule one EFFECTIVE sentries block breaks at a place of class `cls`, as `{ rule, text }`.
+     * `where` opens each sentence ("Small Port", variant "Razors"), so a refusal read on its own
+     * names the zone it is about.
+     */
+    function sentryRuleBreaks(s, place, where) {
+      const out = [];
+      if (!s || !place || !place.known) return out;
+      const cls = place.cls;
+      const mode = String(s.mode || 'leave');
+      const active = mode === 'remove' || mode === 'replace';
+      const kinds = active && Array.isArray(s.kinds) ? s.kinds.filter(Boolean) : [];
+      const guards = mode === 'replace' ? chosenGuardsOf(s) : [];
+      const hasNpc = guards.some(isArmedNpc);
+      const fixedOut = kinds.includes('mapsentry');
+      const deployedOut = kinds.includes('sentry');
+      const zombiesOut = kinds.includes('puppet');
+      const said = (rule, text) => out.push({ rule, text: `${where}: ${text}` });
+      if (fixedOut && cls !== 'S') {
+        said('no_fixed_sentries', '"Keep sentries out" names the fixed map sentries, and no sentry post stands in this '
+          + 'area (the game\'s own map data). Switch it off for this place.');
+      }
+      if (deployedOut && cls === 'N') {
+        said('no_deployed_sentries', '"Keep sentries out" names deployed sentries, and nothing in this area brings them: '
+          + 'no sentry post and no abandoned bunker. Switch it off for this place.');
+      }
+      if (hasNpc && ((cls === 'S' && !(fixedOut && deployedOut)) || (cls === 'D' && !deployedOut))) {
+        said('npc_sentries', cls === 'S'
+          ? `NPC guards never stand with sentries, and this area holds ${place.posts} sentry post(s). `
+            + 'Switch on "Keep sentries out", or choose guards that are not NPCs.'
+          : 'NPC guards never stand with sentries, and this area holds an abandoned bunker whose alarm brings '
+            + 'deployed sentries. Switch on "Keep sentries out", or choose guards that are not NPCs.');
+      }
+      if (zombiesOut) {
+        const sentriesStand = cls === 'S' && !fixedOut;
+        const cleanPvp = cls === 'S' ? (fixedOut && deployedOut) : (cls === 'D' ? deployedOut : false);
+        const ok = hasNpc || (!guards.length && (sentriesStand || cleanPvp));
+        if (!ok) {
+          said('zombies_out', guards.length
+            ? '"Keep zombies out" goes only with NPC guards, and this zone sends other guards (Razors, zombies, '
+              + 'animals). Switch it off, or make the guards NPCs.'
+            : '"Keep zombies out" goes only with NPC guards, with the place\'s own sentries standing, or as clean '
+              + 'PvP (sentries kept out and no guards). Here none of the three holds.');
+        }
+      }
+      return out;
+    }
+    /**
+     * Every rule a zone breaks: once for the zone, or once per variant when it has any — a zone with
+     * variants never runs its own block, it runs one of them laid over it. `base` is the page-wide
+     * default the zone's own block is merged over (the configuration being judged, not the stored one).
+     */
+    function ruleBreaks(z, base, place) {
+      const name = String((z && (z.name || z.set)) || 'this zone');
+      const pl = place || placeOf(z);
+      if (!pl.known) return [];
+      const list = variantList(z);
+      const effective = (entry) => merge((entry && entry.sentries) || {}, base || {});
+      if (!list.length) {
+        return sentryRuleBreaks(effective(z), pl, `"${name}"`).map((b) => Object.assign({ variant: null }, b));
+      }
+      const out = [];
+      for (const o of list) {
+        const e = zoneAs(z, o, z.variants.length);
+        for (const b of sentryRuleBreaks(effective(e), pl, `"${name}", variant "${o.label}"`)) {
+          out.push(Object.assign({ variant: o.i, label: o.label }, b));
+        }
+      }
+      return out;
+    }
+
+    /** Everything `ruleBreaks` reads of a zone, as one string, so two saves can be compared on it. */
+    function ruleInputOf(z, base) {
+      const list = variantList(z);
+      const eff = (entry) => merge((entry && entry.sentries) || {}, base || {});
+      return JSON.stringify({
+        set: z.set || '', area: z.area || null,
+        blocks: list.length ? list.map((o) => [o.label, eff(zoneAs(z, o, z.variants.length))]) : [eff(z)],
+      });
+    }
+
+    /**
+     * ⚠ **A GUARD SETTING THAT CAN DO NOTHING**, hoisted out of `POST /config` so the list can say it
+     * too. Every one of these is reachable by ordinary clicking, every value in it is legal, and the
+     * screen shows guards switched on — so without this the zone simply does nothing.
+     */
+    function guardTroubleOf(s2) {
+      const kinds = Array.isArray(s2.kinds) ? s2.kinds.filter(Boolean) : [];
+      const own = Math.max(0, Number(s2.ownPosts) || 0);
+      const rep = s2.replace || {};
+      // The same fallback `guardTypes()` uses: an EMPTY list means "the single choice beside it".
+      // ⚠ THE PARENTHESES ARE LOAD-BEARING. `||` binds tighter than `?:`, so
+      // `String(c ? a : b || '')` is `String(c ? a : (b || ''))` — and for a persistent entry whose
+      // `spawnName` is undefined that is `String(undefined)`, the four-letter word "undefined",
+      // which is truthy. The warning was then suppressed for exactly the configuration it exists
+      // for, while `guardTypes()` dropped the entry and the posts really did stand empty.
+      const chosen = (Array.isArray(rep.types) && rep.types.length ? rep.types : [rep])
+        .filter((t) => t && String((t.route === 'persistent' ? t.spawnName : t.classPath) || '').trim());
+      if (s2.mode === 'remove' && !kinds.length) {
+        return { dead: true, text: 'it is set to clear guards, but no kind of guard is ticked' };
+      }
+      if (s2.mode === 'replace' && !kinds.length && !own) {
+        return { dead: true, text: 'it replaces guards but has nowhere to put them. Tick a kind to clear, '
+          + 'or set "places of its own"' };
+      }
+      if (s2.mode === 'replace' && !chosen.length) {
+        return { dead: true, text: 'it is set to replace guards and no guard has been chosen, so its places will stand empty' };
+      }
+      /**
+       * ⚠ **THE THIRD CASE IS NOT DEAD, IT IS NARROW — AND IT WAS NEVER WARNED ABOUT.** Tick a kind
+       * and the zone passes every test while still having exactly one source of places: wherever the
+       * game already put a sentry. That is a handful of military places and nowhere else on the
+       * island, so a zone over a town looks perfectly configured and stands empty for ever.
+       */
+      if (s2.mode === 'replace' && !own) {
+        return { dead: false, text: 'with "places of its own" at 0, guards stand only where the game '
+          + 'put a sentry. Raise it' };
+      }
+      return null;
+    }
+
+    // ── the presets: the only shapes a one-click variant can take ───────────────────────────────
+    /**
+     * The archetype table the owner's own 69-zone configuration was generated from, moved into the
+     * plugin so it has ONE home and the tab can offer it. `places` says which classes of place a
+     * preset may be used at; the kinds it keeps out are derived from the place, never typed per
+     * preset, so a town can never carry "keep sentries out" and a sentry place can never keep its
+     * sentries under NPC guards. Every variant a preset builds is put through `sentryRuleBreaks`
+     * before it is handed back, and one that broke a rule would be refused rather than returned.
+     *
+     * `sentriesOut: 'vary'` is decided per build, half and half, and the label says which.
+     */
+    const PRESETS = {
+      npc_nozombies: { label: 'NPC guards (level 4-5), no zombies', places: 'SDN', guards: 'npc', sentriesOut: true, zombiesOut: true,
+        hint: 'Armed NPCs of level 4 and 5 hold the zone. Zombies are kept out, and sentries where there are any.' },
+      npc: { label: 'NPC guards (level 4-5) among the zombies', places: 'SDN', guards: 'npc', sentriesOut: true, zombiesOut: false,
+        hint: 'The same NPC guards, with the game\'s own zombies left in. Sentries are kept out where the place has any.' },
+      razors: { label: 'Razors', places: 'SDN', guards: 'razor', sentriesOut: 'vary', zombiesOut: false,
+        hint: 'A few Razors roam the zone. Where the place has sentries, they stay or go at random.' },
+      zombies: { label: 'A horde', places: 'SDN', guards: 'zombie', sentriesOut: 'vary', zombiesOut: false,
+        hint: 'Extra zombies of the place\'s own kind. Where the place has sentries, they stay or go at random.' },
+      sentries_nozombies: { label: 'Only the sentries, no zombies', places: 'S', guards: 'none', sentriesOut: false, zombiesOut: true, mode: 'remove',
+        hint: 'The place\'s own sentries stand, zombies are kept out, no guards are sent. Only at places with sentry posts.' },
+      pvp_clean: { label: 'Clean PvP: no sentries, no zombies, no guards', places: 'SD', guards: 'none', sentriesOut: true, zombiesOut: true, mode: 'remove',
+        hint: 'Nothing but players: sentries and zombies kept out, no guards. Only where the place has sentries to take away.' },
+      day_npc_night_razors: { label: 'NPC guards by day, Razors at night', places: 'SDN', guards: 'npc+nightrazor', sentriesOut: true, zombiesOut: false,
+        hint: 'NPC guards 05:00 to 21:00 game time, Razors 21:00 to 05:00. Sentries kept out where the place has any.' },
+      night_razors: { label: 'Quiet by day, Razors at night', places: 'SDN', guards: 'nightrazor', sentriesOut: false, zombiesOut: false,
+        hint: 'Nothing extra by day; Razors from 21:00 to 05:00 game time. The place\'s own sentries stay.' },
+    };
+    /** Which presets a mix draws from, per class of place: always these, then some of the rest. */
+    const PRESET_MIX = {
+      S: { always: ['npc_nozombies', 'razors', 'pvp_clean'], more: ['npc', 'zombies', 'sentries_nozombies', 'day_npc_night_razors', 'night_razors'] },
+      D: { always: ['npc_nozombies', 'razors', 'pvp_clean'], more: ['npc', 'zombies', 'day_npc_night_razors', 'night_razors'] },
+      N: { always: ['npc_nozombies', 'razors', 'zombies'], more: ['npc', 'day_npc_night_razors', 'night_razors'] },
+    };
+    const NIGHT = { enabled: true, fromHour: 21, toHour: 5 };
+    const DAY = { enabled: true, fromHour: 5, toHour: 21 };
+    // The same small generator the owner's configuration was built with: a preset applied twice to
+    // one zone with one seed gives the same variant, and a fresh seed gives a fresh one.
+    function rngFor(seedText) {
+      let hsh = 2166136261;
+      for (const ch of String(seedText)) { hsh ^= ch.charCodeAt(0); hsh = Math.imul(hsh, 16777619) >>> 0; }
+      let s = hsh || 1;
+      return () => {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    const between = (r, lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+    let presetClasses = null;
+    /** The catalogue's class paths, so a preset only ever writes a class this plugin ships. */
+    function presetCatalogue() {
+      if (presetClasses) return presetClasses;
+      try {
+        presetClasses = JSON.parse(fs.readFileSync(path.join(__dirname, 'guard-classes.json'), 'utf8')).classes || {};
+      } catch { return {}; }
+      return presetClasses;
+    }
+    /** What kind of place a SET is, for which NPCs and which zombies suit it. A name is a hint, nothing more. */
+    function flavourOf(setName, cls) {
+      const n = String(setName || '');
+      if (cls === 'D' || /AbandonedBunker/i.test(n)) return 'bunker';
+      if (/NuclearPlant|AbandonedCity|Radiation/i.test(n)) return 'radiation';
+      if (/Hospital|Sanitarium/i.test(n)) return 'hospital';
+      if (/Military|Airport|Airfield|Zeljava|Killbox|Refinery|RadioStation|RadarStation|WeaponsFactory|Trainyard|Port|Polygon|Bunker|Base/i.test(n)) return 'military';
+      return 'civilian';
+    }
+    function presetPools(flavour) {
+      const cat = presetCatalogue();
+      const fam = flavour === 'bunker' ? '_AbandonedBunker' : (flavour === 'radiation' ? '_Radiation' : '');
+      const npcs = [];
+      for (const b of ['BP_Guard_Lvl_4', 'BP_Guard_Lvl_5', 'BP_Drifter_Lvl_4', 'BP_Drifter_Lvl_5']) {
+        // The family's own NPC where the catalogue has it, the plain one where it does not.
+        const word = cat[b + fam] ? b + fam : b;
+        if (cat[word]) npcs.push({ path: cat[word], guard: b.startsWith('BP_Guard') });
+      }
+      const zByFlavour = {
+        military: ['BP_Zombie_Military_Armored', 'BP_Zombie_Military_Muscle', 'BP_Zombie_Military_Female', 'BP_Zombie_Police_Armored'],
+        hospital: ['BP_Zombie_Hospital_Normal', 'BP_Zombie_Hospital_Fat', 'BP_Zombie_Hospital_Muscle', 'BP_Zombie_Hospital_Female'],
+        radiation: ['BP_Zombie_Nuclear_Muscular_Male', 'BP_Zombie_Nuclear_Fat_Male', 'BP_Zombie_Nuclear_Muscular_Female', 'BP_Zombie_Nuclear_Fat_Female'],
+        civilian: ['BP_Zombie_Civilian_Normal_Male', 'BP_Zombie_Civilian_Muscular_Male', 'BP_Zombie_Civilian_Fat_Female', 'BP_Zombie_Police_Muscle', 'BP_Zombie_Civilian_Skinny_Male'],
+      };
+      const zKey = flavour === 'bunker' ? 'military' : (zByFlavour[flavour] ? flavour : 'civilian');
+      const zombies = zByFlavour[zKey].filter((w) => cat[w]).map((w) => ({ path: cat[w] }));
+      return { npcs, zombies, razor: cat.BP_Razor || null };
+    }
+    /** Square metres a zone's area covers, for how many places and guards a preset gives it. */
+    function areaSquareMetres(rects) {
+      return (rects || []).reduce((n, r) => n + (r.shape === 'circle'
+        ? Math.PI * (nz(r.radius, 0) / 100) ** 2
+        : (nz(r.width, 0) / 100) * (nz(r.height, 0) / 100)), 0);
+    }
+    /**
+     * One variant out of one preset, for one zone. Returns `{ ok, variant }` or `{ ok: false, why }`;
+     * a preset not made for this class of place is refused in words rather than bent to fit.
+     */
+    function buildPreset(key, z, place, r) {
+      const a = PRESETS[key];
+      if (!a) return { ok: false, why: `there is no preset called "${key}"` };
+      if (!place || !place.known) return { ok: false, why: `"${z.name || z.set}": ${(place && place.why) || 'the zone has no area yet'}` };
+      const cls = place.cls;
+      if (!a.places.includes(cls)) {
+        return { ok: false, why: `"${a.label}" needs sentries to keep out or keep, and this area has none` };
+      }
+      const pools = presetPools(flavourOf(z.set, cls));
+      const pick = (list) => list[Math.floor(r() * list.length)];
+      const sOut = a.sentriesOut === 'vary' ? r() < 0.5 : a.sentriesOut;
+      const zOut = a.zombiesOut;
+      const kinds = [].concat(sOut ? sentryKindsFor(cls) : [], zOut ? ['puppet'] : []);
+      const scale = Math.max(3, Math.min(10, Math.round(Math.sqrt(areaSquareMetres(place.rects)) / 60)));
+      const types = [];
+      const npcType = (win) => {
+        const guards = pools.npcs.filter((x) => x.guard);
+        const walkers = pools.npcs.filter((x) => !x.guard);
+        if (!guards.length) return [];
+        const out = [{ route: 'spawn', kind: 'npc', classPath: pick(guards).path, count: between(r, 1, 2), weight: 3, label: '' }];
+        if (walkers.length && r() < 0.5) out.push({ route: 'spawn', kind: 'npc', classPath: pick(walkers).path, count: 1, weight: 1, label: '' });
+        if (win) for (const t of out) t.gameTime = Object.assign({}, win);
+        return out;
+      };
+      const razorType = (win) => {
+        if (!pools.razor) return [];
+        const t = { route: 'spawn', kind: 'npc', classPath: pools.razor, count: 1, weight: 1, want: between(r, 1, 3), label: '' };
+        if (win) t.gameTime = Object.assign({}, win);
+        return [t];
+      };
+      const zombieType = () => {
+        if (pools.zombies.length < 2) return [];
+        const a1 = pick(pools.zombies);
+        const a2 = pick(pools.zombies.filter((x) => x !== a1));
+        return [{ route: 'spawn', kind: 'puppet', classPath: a1.path, count: between(r, 2, 3), weight: 2, label: '' },
+          { route: 'spawn', kind: 'puppet', classPath: a2.path, count: between(r, 1, 2), weight: 1, label: '' }];
+      };
+      if (a.guards === 'npc') types.push(...npcType(null));
+      if (a.guards === 'razor') types.push(...razorType(null));
+      if (a.guards === 'zombie') types.push(...zombieType());
+      if (a.guards === 'npc+nightrazor') types.push(...npcType(DAY), ...razorType(NIGHT));
+      if (a.guards === 'nightrazor') types.push(...razorType(NIGHT));
+      if (a.guards !== 'none' && !types.length) {
+        return { ok: false, why: `"${a.label}": the guard catalogue this plugin ships has none of the classes it uses` };
+      }
+      const sentries = { mode: a.mode || (types.length ? 'replace' : 'remove'), kinds };
+      if (types.length) {
+        const razorsOnly = a.guards === 'razor' || a.guards === 'nightrazor';
+        sentries.ownPosts = Math.max(2, razorsOnly ? Math.max(2, Math.min(4, Math.round(scale / 2))) : scale + between(r, -1, 1));
+        sentries.replace = {
+          types,
+          afterDeathSeconds: razorsOnly ? between(r, 10, 15) * 60 : between(r, 3, 8) * 60,
+          keepAwayFromPlayers: between(r, 5, 8) * 1000,
+          maxPosts: Math.max(4, Math.min(12, sentries.ownPosts + 2)),
+          maxGuards: a.guards === 'zombie' ? between(r, 8, 16) : (razorsOnly ? 3 : between(r, 6, 14)),
+          cooldownSeconds: between(r, 0, 3) * 5,
+          moveAfterSeconds: r() < 0.5 ? 0 : between(r, 10, 20) * 60,
+        };
+      }
+      const label = a.label + (a.sentriesOut === 'vary' && cls !== 'N' ? (sOut ? ', sentries out' : ', sentries stay') : '');
+      const variant = { label, weight: 1, enabled: true, preset: key, sentries };
+      const broke = sentryRuleBreaks(sentries, place, `"${z.name || z.set}", preset "${label}"`);
+      if (broke.length) return { ok: false, why: broke[0].text };
+      return { ok: true, variant };
+    }
+    /**
+     * Variants for one zone: the presets asked for, in that order, or a MIX for its class of place —
+     * the always-three plus some of the rest, `count` in all (3 to 5; absent is the table's own
+     * spread). Labels are made unique within the zone, because two variants called the same are two
+     * lines in the log nobody can tell apart.
+     */
+    function buildVariantsFor(z, opts) {
+      const o = opts || {};
+      const place = placeOf(z);
+      if (!place.known) return { ok: false, why: `"${z.name || z.set}": ${place.why}`, place, variants: [], skipped: [] };
+      const r = rngFor(`${z.set || z.id}|${o.seed == null ? '' : o.seed}`);
+      let keys = Array.isArray(o.presets) ? o.presets.map(String) : [];
+      if (o.mix) {
+        const m = PRESET_MIX[place.cls];
+        const more = m.more.slice();
+        for (let i = more.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [more[i], more[j]] = [more[j], more[i]]; }
+        const want = Number.isFinite(Number(o.count)) && Number(o.count) > 0
+          ? Math.max(3, Math.min(5, Math.round(Number(o.count))))
+          : (place.cls === 'S' ? 5 : (place.cls === 'D' ? between(r, 4, 5) : between(r, 3, 5)));
+        keys = m.always.concat(more.slice(0, Math.max(0, want - m.always.length)));
+      }
+      const variants = [];
+      const skipped = [];
+      const seen = new Set();
+      for (const k of keys) {
+        const b = buildPreset(k, z, place, r);
+        if (!b.ok) { skipped.push({ preset: k, why: b.why }); continue; }
+        let label = b.variant.label;
+        for (let n = 2; seen.has(label.toLowerCase()); n++) label = `${b.variant.label} (${n})`;
+        seen.add(label.toLowerCase());
+        b.variant.label = label;
+        variants.push(b.variant);
+      }
+      return { ok: true, place: { cls: place.cls, posts: place.posts, bunkers: place.bunkers }, variants, skipped };
+    }
+
+    // ── geometry the list shows: the sector, and how far the next zone is ────────────────────────
+    const rectBox = (r) => (r.shape === 'circle'
+      ? { x0: r.x - nz(r.radius, 0), x1: r.x + nz(r.radius, 0), y0: r.y - nz(r.radius, 0), y1: r.y + nz(r.radius, 0) }
+      : { x0: r.x - nz(r.width, 0) / 2, x1: r.x + nz(r.width, 0) / 2, y0: r.y - nz(r.height, 0) / 2, y1: r.y + nz(r.height, 0) / 2 });
+    /** The gap between two areas in centimetres; negative or zero where they touch or overlap. */
+    function areaGap(a, b) {
+      if (a.shape === 'circle' && b.shape === 'circle') return Math.hypot(a.x - b.x, a.y - b.y) - nz(a.radius, 0) - nz(b.radius, 0);
+      if (a.shape === 'circle' || b.shape === 'circle') {
+        const c = a.shape === 'circle' ? a : b;
+        const q = rectBox(a.shape === 'circle' ? b : a);
+        const dx = Math.max(q.x0 - c.x, 0, c.x - q.x1);
+        const dy = Math.max(q.y0 - c.y, 0, c.y - q.y1);
+        return Math.hypot(dx, dy) - nz(c.radius, 0);
+      }
+      const p = rectBox(a); const q = rectBox(b);
+      const gx = Math.max(p.x0, q.x0) - Math.min(p.x1, q.x1);
+      const gy = Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1);
+      if (gx < 0 && gy < 0) return Math.max(gx, gy);
+      return Math.hypot(Math.max(0, gx), Math.max(0, gy));
+    }
+    const sectorSeen = new Map();
+    async function sectorAt(x, y) {
+      const m = host.map;
+      if (!m || typeof m.sector !== 'function') return null;
+      const k = `${Math.round(x)},${Math.round(y)}`;
+      if (sectorSeen.has(k)) return sectorSeen.get(k);
+      const s = await Promise.resolve(m.sector(x, y)).catch(() => null);
+      const v = s ? String(s) : null;
+      // A missing calibration is not cached: it can arrive a minute from now.
+      if (v) sectorSeen.set(k, v);
+      return v;
+    }
+    /** The loot set's own box, grown by `marginM` on every side, as an area of the zone's own. */
+    function areaFromSet(setName, marginM, shape) {
+      const r = readRect(setName);
+      if (!r.ok) return { ok: false, why: r.why };
+      const box = r.rects.map(rectBox).reduce((a, b) => ({
+        x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1),
+      }));
+      const m = Math.max(0, Math.min(5000, nz(marginM, 0))) * 100;
+      const hx = (box.x1 - box.x0) / 2;
+      const hy = (box.y1 - box.y0) / 2;
+      const cx = Math.round((box.x0 + box.x1) / 2);
+      const cy = Math.round((box.y0 + box.y1) / 2);
+      // 'auto' is the rule the owner's configuration was built with: a near-square box becomes the
+      // circle through its corners, anything longer stays a rectangle.
+      const circle = shape === 'circle' || (shape === 'auto' && Math.max(hx, hy) / Math.max(1, Math.min(hx, hy)) <= 1.15);
+      return circle
+        ? { ok: true, area: { mode: 'custom', shape: 'circle', x: cx, y: cy, radius: Math.round(Math.hypot(hx, hy) + m) } }
+        : { ok: true, area: { mode: 'custom', shape: 'rect', x: cx, y: cy, sizeX: Math.round(hx + m), sizeY: Math.round(hy + m) } };
+    }
+    /** "A0_SmallPort" -> "A0 Small Port": the folder name as players would read it. */
+    const spokenName = (n) => String(n || '').replace(/_/g, ' ').replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+      .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
+
+    /**
+     * What the list and the editor show for every zone, judged on the zones the PAGE holds — saved
+     * or not — so a warning appears the moment an edit causes it. Never writes anything.
+     */
+    async function overviewOf(zones, base) {
+      const list = Array.isArray(zones) ? zones.filter((z) => z && typeof z === 'object' && z.id != null) : [];
+      const setsKnown = listSets();
+      const setByName = new Map((setsKnown.sets || []).map((s) => [s.name, s]));
+      const rows = list.map((z) => ({ z, place: placeOf(z) }));
+      const out = {};
+      const sectorsKnown = !!(host.map && typeof host.map.sector === 'function');
+      for (const row of rows) {
+        const z = row.z;
+        const id = String(z.id);
+        const pl = row.place;
+        const warn = [];
+        const name = String(z.name || '').trim();
+        if (!z.set) warn.push({ code: 'no_set', text: 'No loot set chosen, so this zone cannot be switched on.' });
+        else if (setsKnown.readable && !setByName.has(z.set)) warn.push({ code: 'set_missing', text: `The loot set "${z.set}" is not in the sets folder.` });
+        else if (setByName.has(z.set) && !setByName.get(z.set).ok) warn.push({ code: 'set_unusable', text: String(setByName.get(z.set).why || 'The loot set cannot be read.') });
+        if (!name) warn.push({ code: 'no_name', text: 'No name: players see only the prefix.' });
+        else if (list.some((x) => x !== z && String(x.name || '').trim().toLowerCase() === name.toLowerCase())) {
+          warn.push({ code: 'twin_name', text: `Another zone is also called "${name}"; both on would clash in game.` });
+        }
+        if (z.set && z.enabled !== false && list.some((x) => x !== z && x.set === z.set && x.enabled !== false)) {
+          warn.push({ code: 'twin_set', text: `Another zone in rotation uses the loot set "${z.set}".` });
+        }
+        if (!pl.known && z.set && setByName.has(z.set) && setByName.get(z.set).ok) {
+          warn.push({ code: 'no_area', text: String(pl.why) });
+        }
+        // A variant that can do nothing is a zone that stands empty one session in a few.
+        const vl = variantList(z);
+        const eff = (entry) => merge((entry && entry.sentries) || {}, base || {});
+        if (vl.length) {
+          for (const o of vl) {
+            const t = guardTroubleOf(eff(zoneAs(z, o, z.variants.length)));
+            if (t) warn.push({ code: t.dead ? 'variant_dead' : 'variant_narrow', variant: o.i, text: `Variant "${o.label}": ${t.text}.` });
+          }
+        } else if (z.sentries) {
+          const t = guardTroubleOf(eff(z));
+          if (t) warn.push({ code: t.dead ? 'guards_dead' : 'guards_narrow', text: `Guards: ${t.text}.` });
+        }
+        const rules = ruleBreaks(z, base, pl);
+        let nearest = null;
+        const overlaps = [];
+        if (pl.known) {
+          for (const other of rows) {
+            if (other === row || !other.place.known) continue;
+            let g = Infinity;
+            for (const a of pl.rects) for (const b of other.place.rects) g = Math.min(g, areaGap(a, b));
+            if (g <= 0) overlaps.push(String(other.z.id));
+            if (!nearest || g < nearest.gapCm) nearest = { id: String(other.z.id), name: String(other.z.name || other.z.set || ''), gapCm: Math.round(g) };
+          }
+          if (overlaps.length) {
+            warn.push({ code: 'overlaps', ids: overlaps, text: `The area overlaps ${overlaps.length === 1 ? 'another zone' : `${overlaps.length} other zones`}.` });
+          }
+        }
+        const first = pl.known ? pl.rects[0] : null;
+        out[id] = {
+          place: pl.known ? { cls: pl.cls, posts: pl.posts, bunkers: pl.bunkers, source: pl.source } : null,
+          placeWhy: pl.known ? null : String(pl.why || ''),
+          area: first ? (first.shape === 'circle'
+            ? { shape: 'circle', x: Math.round(first.x), y: Math.round(first.y), radius: Math.round(nz(first.radius, 0)), count: pl.rects.length }
+            : { shape: 'rect', x: Math.round(first.x), y: Math.round(first.y), width: Math.round(nz(first.width, 0)), height: Math.round(nz(first.height, 0)), count: pl.rects.length })
+            : null,
+          sector: first && sectorsKnown ? await sectorAt(first.x, first.y) : null,
+          nearest,
+          rules,
+          warnings: warn,
+        };
+      }
+      return { ok: true, sectorsKnown, zones: out };
+    }
+
+    /**
+     * ── A NEW VARIANT NOW, NOT AT THE NEXT STOP ──────────────────────────────────────────────────
+     *
+     * The guards the old variant has standing belong to a garrison the zone no longer runs, so they
+     * are TAKEN AWAY first — by their own ids, inside the zone's own area, exactly as a sleeping zone
+     * takes its guards back — and the posts are let go, so the new variant fills the zone from its
+     * own guard list on the next patrol while a player is near. A guard placed with no id cannot be
+     * named and is left to the game, which says so in the answer. Loot, the area and the rectangle
+     * do not change.
+     *
+     * ⚠ A pick that stays the same variant is not a re-roll, so with more than one variant the one
+     * running now is left out of the draw.
+     */
+    async function rerollZone(z, why) {
+      const id = String(z.id);
+      const list = variantList(z);
+      if (!list.length) return { id, ok: false, why: `"${z.name || z.set}" has no variant switched on` };
+      const picks = variantPicks();
+      const had = picks[id];
+      const pool = (list.length > 1 && had && Number.isInteger(had.i)) ? list.filter((o) => o.i !== had.i) : list;
+      const o = drawVariant(pool);
+      const res = { id, ok: true, name: String(z.name || z.set || ''), from: had && Number.isInteger(had.i) ? { index: had.i, label: had.label || '' } : null,
+        to: { index: o.i, label: o.label }, removed: 0, unidentified: 0, refusals: [] };
+      const running = !!(host.server && typeof host.server.isRunning === 'function' && host.server.isRunning() === true);
+      const posts = postsOf(id);
+      if (running && posts.length) {
+        const old = (cfg().zones || []).find((q) => String(q && q.id) === id) || z;
+        const r = zoneRects(old);
+        if (r.ok) {
+          const gone = await takeOwnGuardsAway(old, guardsFor(old) || {}, posts, r.rects, why)
+            .catch((e) => ({ removed: 0, unidentified: 0, refusals: [String((e && e.message) || e)] }));
+          res.removed = nz(gone.removed, 0);
+          res.unidentified = nz(gone.unidentified, 0);
+          res.refusals = (gone.refusals || []).map(String);
+        }
+      }
+      setPosts(id, []);
+      delete asleepSince[id];
+      delete sweptAsleep[id];
+      delete sleepReport[id];
+      delete strayedSinceWake[id];
+      const next = Object.assign({}, variantPicks());
+      next[id] = { i: o.i, label: o.label, of: z.variants.length, at: Date.now(), why: String(why || '') };
+      st.set(K.variants, next);
+      log.info(`"${z.name || z.set}" — ${why}: this server session now runs variant ${o.i + 1} of `
+        + `${z.variants.length}, "${o.label}"${res.removed ? ` (${res.removed} guard(s) of the previous one taken away)` : ''}`);
+      return res;
+    }
+
     // ── admin API ────────────────────────────────────────────────────────────────────────────────
     // Mounted unconditionally: a `register()` that stands down takes the whole tab with it, and
     // every read below answers with the server stopped.
@@ -8984,6 +9566,32 @@ module.exports = {
         return res.json({ ok: false, code: 'prefix_empty',
           why: 'nothing was saved: the zone name prefix cannot be empty. It is how this plugin tells its zones from yours.' });
       }
+      /**
+       * ⚠ **A SAVE THAT BREAKS ONE OF THE ZONE RULES IS REFUSED, AND THE SENTENCE NAMES THE RULE.**
+       * See `ruleBreaks()`. Only a zone this save ADDS or CHANGES is held to it: one left exactly as
+       * it was stored was written before the rule existed, and refusing every save over it would lock
+       * an owner out of the whole tab. The list's warnings column names those in red instead.
+       */
+      {
+        const judged = merge(next, DEFAULTS);
+        const was = merge(stored || {}, DEFAULTS);
+        const baseNow = judged.sentries || {};
+        // What the rules READ, compared rather than the raw zone: opening a zone on the tab writes
+        // the page default into it as its own copy, which changes the object and nothing it runs.
+        const before = new Map((was.zones || []).filter((z) => z && typeof z === 'object')
+          .map((z) => [String(z.id), ruleInputOf(z, was.sentries || {})]));
+        const broken = [];
+        for (const z of (Array.isArray(judged.zones) ? judged.zones : [])) {
+          if (!z || typeof z !== 'object') continue;
+          if (before.get(String(z.id)) === ruleInputOf(z, baseNow)) continue;
+          for (const b of ruleBreaks(z, baseNow)) broken.push(b);
+        }
+        if (broken.length) {
+          return res.json({ ok: false, code: 'rule_broken', rule: broken[0].rule,
+            why: `nothing was saved: ${broken[0].text}${broken.length > 1 ? ` (and ${broken.length - 1} more)` : ''}`,
+            breaks: broken });
+        }
+      }
       host.config.set(next);
       arm();
       syncOwnConfig().catch(() => {});
@@ -9027,45 +9635,7 @@ module.exports = {
       // clicking, every individual value in it is legal, and the screen shows guards switched on —
       // so without this the zone simply does nothing and the owner has no way of finding out why.
       // The owner's C3 zone was the middle case: replace, nothing to clear, and no posts of its own.
-      const guardTrouble = (s2) => {
-        const kinds = Array.isArray(s2.kinds) ? s2.kinds.filter(Boolean) : [];
-        const own = Math.max(0, Number(s2.ownPosts) || 0);
-        const rep = s2.replace || {};
-        // The same fallback `guardTypes()` uses, and for the same reason: an EMPTY list means "the
-        // single choice beside it", which is what every configuration written before the list
-        // existed carries. Reading `[]` as "nothing is chosen" warned about settings that work.
-        // ⚠ THE PARENTHESES ARE LOAD-BEARING. `||` binds tighter than `?:`, so
-        // `String(c ? a : b || '')` is `String(c ? a : (b || ''))` — and for a persistent entry whose
-        // `spawnName` is undefined that is `String(undefined)`, the four-letter word "undefined",
-        // which is truthy. The warning was then suppressed for exactly the configuration it exists
-        // for, while `guardTypes()` dropped the entry and the posts really did stand empty.
-        const chosen = (Array.isArray(rep.types) && rep.types.length ? rep.types : [rep])
-          .filter((t) => t && String((t.route === 'persistent' ? t.spawnName : t.classPath) || '').trim());
-        if (s2.mode === 'remove' && !kinds.length) {
-          return { dead: true, text: 'it is set to clear guards, but no kind of guard is ticked' };
-        }
-        if (s2.mode === 'replace' && !kinds.length && !own) {
-          return { dead: true, text: 'it replaces guards but has nowhere to put them. Tick a kind to clear, '
-            + 'or set "places of its own"' };
-        }
-        if (s2.mode === 'replace' && !chosen.length) {
-          return { dead: true, text: 'it is set to replace guards and no guard has been chosen, so its places will stand empty' };
-        }
-        /**
-         * ⚠ **THE THIRD CASE IS NOT DEAD, IT IS NARROW — AND IT WAS NEVER WARNED ABOUT.** The rule
-         * above fires only when NOTHING is ticked and there are no places of its own. Tick a kind and
-         * the zone passes every test while still having exactly one source of places: wherever the
-         * game already put a sentry. That is a handful of military places and nowhere else on the
-         * island, so a zone over a town, a field or a road looks perfectly configured and stands
-         * empty for ever.
-         */
-        if (s2.mode === 'replace' && !own) {
-          // The game puts sentries only in a few military places, so elsewhere nothing is guarded.
-          return { dead: false, text: 'with "places of its own" at 0, guards stand only where the game '
-            + 'put a sentry. Raise it' };
-        }
-        return null;
-      };
+      const guardTrouble = guardTroubleOf;
       const defaultTrouble = guardTrouble(c.sentries || {});
       if (defaultTrouble) {
         warn.push(defaultTrouble.dead
@@ -9082,7 +9652,7 @@ module.exports = {
         const list = variantList(z);
         if (!list.length) continue;
         for (const o of list) {
-          const extra = Object.keys(o.v).filter((k) => !VARIANT_KEYS.includes(k) && !['label', 'weight', 'enabled'].includes(k));
+          const extra = Object.keys(o.v).filter((k) => !VARIANT_KEYS.includes(k) && !VARIANT_META.includes(k));
           if (extra.length) {
             warn.push(`"${z.name || z.set}", variant "${o.label}": ${extra.join(', ')} cannot change per variant `
               + 'and is ignored; a variant changes the guards and how busy the zone is, never the loot set, name or area.');
@@ -9124,6 +9694,117 @@ module.exports = {
       // read — so the log line saying what it runs is written at the save that caused it.
       try { pickVariants('the configuration changed', false); } catch { /* the next read picks */ }
       res.json({ ok: true, config: cfgRaw(), warnings: warn });
+    });
+
+    /**
+     * ── THE TAB'S OWN ROUTES FOR A HUNDRED ZONES ─────────────────────────────────────────────────
+     *
+     * Every one of these BUILDS or JUDGES and none of them saves: the tab lays what comes back onto
+     * the page, the owner sees it, and `POST /config` is still the one door into the configuration
+     * — with its rule check, its Discard, and nothing written behind the reader's back. The one
+     * exception is `/reroll`, which changes what the running session does and nothing in the
+     * configuration at all.
+     */
+    // The preset table, for the tab's pickers. The words are the table's own English; the tab shows
+    // its own translation beside each key and stores the English label, which the owner may rename.
+    host.routes.get('/presets', (req, res) => {
+      res.json({
+        presets: Object.keys(PRESETS).map((k) => ({ key: k, label: PRESETS[k].label, hint: PRESETS[k].hint, places: PRESETS[k].places.split('') })),
+        mix: PRESET_MIX,
+      });
+    });
+    // `{ zones: [...], base? }` -> what each zone shows in the list: sector, area, place class, the
+    // nearest other zone, the warnings and the rules it breaks. The zones are the PAGE's.
+    host.routes.post('/overview', async (req, res) => {
+      const b = req.body || {};
+      const zones = Array.isArray(b.zones) ? b.zones : (cfgRaw().zones || []);
+      const base = (b.sentries && typeof b.sentries === 'object') ? merge(b.sentries, DEFAULTS.sentries) : (cfgRaw().sentries || {});
+      try {
+        res.json(await overviewOf(zones, base));
+      } catch (e) {
+        res.json({ ok: false, why: `the overview could not be worked out: ${(e && e.message) || e}`, zones: {} });
+      }
+    });
+    // `{ zones: [...], presets?: [keys], mix?: true, count?: 3..5, seed? }` -> variants per zone.
+    host.routes.post('/variants/build', (req, res) => {
+      const b = req.body || {};
+      const zones = Array.isArray(b.zones) ? b.zones.filter((z) => z && typeof z === 'object') : [];
+      if (!zones.length) return res.json({ ok: false, why: 'no zone was given to build variants for.' });
+      if (!b.mix && !(Array.isArray(b.presets) && b.presets.length)) {
+        return res.json({ ok: false, why: 'pick at least one preset, or ask for a mix.' });
+      }
+      const results = {};
+      for (const z of zones) {
+        results[String(z.id)] = buildVariantsFor(z, { presets: b.presets, mix: !!b.mix, count: b.count, seed: b.seed });
+      }
+      res.json({ ok: true, results });
+    });
+    // `{ set, marginM, shape }` -> the set's own box grown by the margin, as an area of the zone's own.
+    host.routes.post('/area-from-set', (req, res) => {
+      const b = req.body || {};
+      if (!b.set) return res.json({ ok: false, why: 'pick a loot set first.' });
+      res.json(areaFromSet(String(b.set), b.marginM, String(b.shape || 'rect')));
+    });
+    /**
+     * `{ sets: [names], marginM, shape, mix?, count?, presets?, seed? }` -> one new zone per set,
+     * each with its area grown out of the set's own Zones.json and, if asked, its variants. A set a
+     * zone already uses, or one that cannot be read, is answered in `skipped` with the reason.
+     */
+    host.routes.post('/zones/from-sets', (req, res) => {
+      const b = req.body || {};
+      const want = Array.isArray(b.sets) ? b.sets.map(String) : [];
+      if (!want.length) return res.json({ ok: false, why: 'tick at least one loot set.' });
+      const c = cfgRaw();
+      const pageZones = Array.isArray(b.zones) ? b.zones : (c.zones || []);
+      const used = new Set(pageZones.map((z) => z && z.set).filter(Boolean));
+      const ids = new Set(pageZones.map((z) => String(z && z.id)));
+      const names = new Set(pageZones.map((z) => String((z && z.name) || '').trim().toLowerCase()));
+      const zones = [];
+      const skipped = [];
+      for (const set of want) {
+        if (used.has(set)) { skipped.push({ set, why: `a zone already uses "${set}"` }); continue; }
+        const a = areaFromSet(set, b.marginM, String(b.shape || 'rect'));
+        if (!a.ok) { skipped.push({ set, why: a.why }); continue; }
+        let id = `lz-${set.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+        for (let n = 2; ids.has(id); n++) id = `lz-${set.replace(/[^A-Za-z0-9_-]/g, '_')}-${n}`;
+        let name = spokenName(set) || set;
+        for (let n = 2; names.has(name.toLowerCase()); n++) name = `${spokenName(set) || set} ${n}`;
+        ids.add(id); names.add(name.toLowerCase()); used.add(set);
+        const z = { id, name, set, enabled: true, windows: [], area: a.area };
+        if (b.mix || (Array.isArray(b.presets) && b.presets.length)) {
+          const v = buildVariantsFor(z, { presets: b.presets, mix: !!b.mix, count: b.count, seed: b.seed });
+          if (v.ok && v.variants.length) {
+            // The zone's own block is neutral: every session runs one of the variants laid over it.
+            z.sentries = { mode: 'leave', kinds: [] };
+            z.variants = v.variants;
+          }
+          for (const s of (v.skipped || [])) skipped.push({ set, preset: s.preset, why: s.why });
+        }
+        zones.push(z);
+      }
+      res.json({ ok: true, zones, skipped });
+    });
+    /**
+     * `{ id }`, `{ ids: [...] }` or `{ all: true }` -> a new variant for that zone (or those, or every zone that has variants)
+     * NOW, with the old variant's own guards taken away. Answers what changed per zone.
+     */
+    host.routes.post('/reroll', async (req, res) => {
+      const b = req.body || {};
+      const c = cfgRaw();
+      const zones = (c.zones || []).filter((z) => z && z.id != null && variantList(z).length
+        && (b.all === true || String(z.id) === String(b.id)
+          || (Array.isArray(b.ids) && b.ids.map(String).includes(String(z.id)))));
+      if (!zones.length) {
+        return res.json({ ok: false, why: b.all ? 'no saved zone has a variant switched on.'
+          : 'that zone has no saved variant switched on. Save first, then re-roll.' });
+      }
+      const done = [];
+      for (const z of zones) done.push(await rerollZone(z, 're-rolled from the tab'));
+      // "Keep zombies out" lives on the zone's configuration: a new variant may need the other one.
+      const running = !!(host.server && typeof host.server.isRunning === 'function' && host.server.isRunning() === true);
+      if (running) await syncOwnConfig().catch(() => {});
+      else await settleVariantConfigs().catch(() => {});
+      res.json({ ok: true, rerolled: done, variants: variantsForScreen() });
     });
 
     /**
