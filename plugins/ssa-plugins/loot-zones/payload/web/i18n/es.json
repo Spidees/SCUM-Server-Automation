@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Lo que esta variante fija por su cuenta",
   "pl.loot-zones.vf.lead": "Lo que cambies abajo pasa a ser propio de esta variante; todo lo demás sigue las secciones Guardias y Movimiento de la zona.",
   "pl.loot-zones.var.baseTitle": "Esta zona usa una de sus {n} variantes en cada sesión. ",
-  "pl.loot-zones.var.baseNote": "Cada variante parte de estos ajustes: lo que una variante no fija por su cuenta sigue esta sección. Edítalos en «{tab}»."
+  "pl.loot-zones.var.baseNote": "Cada variante parte de estos ajustes: lo que una variante no fija por su cuenta sigue esta sección. Edítalos en «{tab}».",
+  "pl.loot-zones.bridge.unknownAll": "El bridge no pudo decir si estos están activados: {list}"
 }

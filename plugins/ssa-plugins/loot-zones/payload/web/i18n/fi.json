@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Mitä tämä variantti asettaa itse",
   "pl.loot-zones.vf.lead": "Muuta mitä tahansa alla, niin siitä tulee tämän variantin oma; kaikki muu seuraa vyöhykkeen osioita ”Vartijat” ja ”Kuinka vilkas vyöhyke on”.",
   "pl.loot-zones.var.baseTitle": "Tämä vyöhyke käyttää joka istunnossa yhtä {n} variantistaan. ",
-  "pl.loot-zones.var.baseNote": "Jokainen variantti lähtee näistä asetuksista: mitä variantti ei aseta itse, seuraa tätä osiota. Muokkaa niitä kohdassa ”{tab}”."
+  "pl.loot-zones.var.baseNote": "Jokainen variantti lähtee näistä asetuksista: mitä variantti ei aseta itse, seuraa tätä osiota. Muokkaa niitä kohdassa ”{tab}”.",
+  "pl.loot-zones.bridge.unknownAll": "Bridge ei pystynyt kertomaan, ovatko nämä päällä: {list}"
 }

@@ -4993,7 +4993,11 @@
               return h('div', { class: 'lz-zcell' }, [
                 h('button', { class: 'lz-zname', type: 'button', onclick: function () { openZone(z.id); } },
                   String(z.name || '').trim() || T('pl.loot-zones.list.unnamed', '(no name)')),
-                h('small', {}, z.set ? String(z.set) : T('pl.loot-zones.list.noSet', 'no loot set')),
+                // The set only where it adds something: "Airfield / Airfield" says one fact twice.
+                // The search still matches the set either way (see `zoneHay`).
+                !z.set ? h('small', {}, T('pl.loot-zones.list.noSet', 'no loot set'))
+                  : (String(z.set).trim().toLowerCase() !== String(z.name || '').trim().toLowerCase()
+                    ? h('small', {}, String(z.set)) : null),
               ]);
             },
           },
@@ -6259,6 +6263,13 @@
         var canOn = off.filter(function (x) { return x.ownerMay; });
         var gone = br.items.filter(function (x) { return x.state === 'missing'; });
         /**
+         * ⚠ **"I COULD NOT FIND OUT" IS NOT "IT IS ON".** A switch the bridge could not report
+         * (`unknown`: the module is not in the list it answered with) used to count as on, so the
+         * card said everything was switched on while the note above it said the zones module was
+         * off. Each one is named, with its own sentence, and the all-clear needs none of them.
+         */
+        var unsure = br.items.filter(function (x) { return x.state === 'unknown'; });
+        /**
          * ⚠ **A BOSS IS DECIDED BY THE CLASS NAME, NOT BY THE KIND**, and this list is built from what
          * the configuration asks for — so a switch nothing in it names cannot appear in it at all. A
          * Razor or a Sentry added from the creature picker needs the BOSS switch and is refused without
@@ -6273,7 +6284,7 @@
         var kidsB = [];
         if (!br.items.length && !bossGap) {
           kidsB.push(note('', T('pl.loot-zones.bridge.notNeeded', 'Nothing on this page needs the bridge yet.')));
-        } else if (!off.length && !gone.length && !bossGap) {
+        } else if (!off.length && !gone.length && !unsure.length && !bossGap) {
           kidsB.push(note('good', T('pl.loot-zones.bridge.allOn', 'Everything this page uses is switched on in the bridge.')));
         } else {
           off.forEach(function (x) {
@@ -6289,6 +6300,21 @@
                     { where: bridgeWhere() }) : '',
                 })])]));
           });
+          // ONE line for all of them, grouped by module: sixteen rows saying the same "could not
+          // say" is a box nobody reads, and the reason is the same for every one.
+          if (unsure.length) {
+            var byModule = {};
+            var order = [];
+            unsure.forEach(function (x) {
+              var m = String(x.moduleName || x.module || '');
+              if (!byModule[m]) { byModule[m] = []; order.push(m); }
+              if (byModule[m].indexOf(String(x.label)) < 0) byModule[m].push(String(x.label));
+            });
+            kidsB.push(h('div', { class: 'lz-need' }, [icon('alert'),
+              h('span', {}, T('pl.loot-zones.bridge.unknownAll', 'The bridge could not say whether these are on: {list}', {
+                list: order.map(function (m) { return m + ' (' + byModule[m].join(', ') + ')'; }).join('; '),
+              }))]));
+          }
           gone.forEach(function (x) {
             kidsB.push(h('div', { class: 'lz-need' }, [icon('close'),
               h('span', {}, [h('b', {}, T('pl.loot-zones.bridge.forWhat', '{what}: ', { what: x.forWhat })),

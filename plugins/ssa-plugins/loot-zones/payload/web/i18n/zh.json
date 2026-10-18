@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "此变体自己设定的内容",
   "pl.loot-zones.vf.lead": "在下面改动任何一项，它就成为此变体自己的设定；其余一切都沿用区域的守卫和「区域有多热闹」部分。",
   "pl.loot-zones.var.baseTitle": "这个区域每次运行都会使用它 {n} 个变体中的一个。 ",
-  "pl.loot-zones.var.baseNote": "每个变体都从这些设定开始：变体自己没有设定的项目都沿用这一节。请在「{tab}」下编辑。"
+  "pl.loot-zones.var.baseNote": "每个变体都从这些设定开始：变体自己没有设定的项目都沿用这一节。请在「{tab}」下编辑。",
+  "pl.loot-zones.bridge.unknownAll": "SSA Bridge 无法报告以下项目是否已打开：{list}"
 }

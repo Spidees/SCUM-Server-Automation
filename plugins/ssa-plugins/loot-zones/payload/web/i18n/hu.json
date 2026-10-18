@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Mit állít be ez a változat sajátként",
   "pl.loot-zones.vf.lead": "Bármit módosítasz lent, az ennek a változatnak a sajátja lesz; minden más a zóna „Őrök” és „Mennyire forgalmas a zóna” részét követi.",
   "pl.loot-zones.var.baseTitle": "Ez a zóna minden menetben a(z) {n} változata közül egyet futtat. ",
-  "pl.loot-zones.var.baseNote": "Minden változat ezekből a beállításokból indul: amit egy változat nem állít be magának, ezt a részt követi. Szerkesztésük: „{tab}”."
+  "pl.loot-zones.var.baseNote": "Minden változat ezekből a beállításokból indul: amit egy változat nem állít be magának, ezt a részt követi. Szerkesztésük: „{tab}”.",
+  "pl.loot-zones.bridge.unknownAll": "A bridge nem tudta megmondani, hogy ezek be vannak-e kapcsolva: {list}"
 }

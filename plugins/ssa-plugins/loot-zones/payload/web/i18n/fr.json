@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Ce que cette variante règle elle-même",
   "pl.loot-zones.vf.lead": "Tout ce que vous modifiez ci-dessous devient propre à cette variante ; le reste suit les sections Gardes et Animation de la zone.",
   "pl.loot-zones.var.baseTitle": "Cette zone applique une de ses {n} variantes à chaque session. ",
-  "pl.loot-zones.var.baseNote": "Chaque variante part de ces réglages : ce qu'une variante ne règle pas elle-même suit cette section. Modifiez-les sous « {tab} »."
+  "pl.loot-zones.var.baseNote": "Chaque variante part de ces réglages : ce qu'une variante ne règle pas elle-même suit cette section. Modifiez-les sous « {tab} ».",
+  "pl.loot-zones.bridge.unknownAll": "Le bridge n’a pas pu dire si ceux-ci sont activés : {list}"
 }

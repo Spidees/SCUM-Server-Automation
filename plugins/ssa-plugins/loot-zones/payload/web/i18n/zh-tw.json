@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "此變體自己設定的內容",
   "pl.loot-zones.vf.lead": "在下面改動任何一項，它就成為此變體自己的設定；其餘一切都沿用區塊的守衛和「區塊有多熱鬧」部分。",
   "pl.loot-zones.var.baseTitle": "這個區塊每次運行都會使用它 {n} 個變體中的一個。 ",
-  "pl.loot-zones.var.baseNote": "每個變體都從這些設定開始：變體自己沒有設定的項目都沿用這一節。請在「{tab}」下編輯。"
+  "pl.loot-zones.var.baseNote": "每個變體都從這些設定開始：變體自己沒有設定的項目都沿用這一節。請在「{tab}」下編輯。",
+  "pl.loot-zones.bridge.unknownAll": "SSA Bridge 無法回報以下項目是否已開啟：{list}"
 }

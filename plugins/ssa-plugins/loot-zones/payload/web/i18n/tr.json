@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Bu varyantın kendine ait ayarları",
   "pl.loot-zones.vf.lead": "Aşağıda herhangi bir şeyi değiştirirseniz bu varyantın kendi ayarı olur; geri kalan her şey bölgenin Muhafızlar ve \"Bölge ne kadar hareketli\" bölümlerini izler.",
   "pl.loot-zones.var.baseTitle": "Bu bölge her oturumda {n} varyantından birini çalıştırır. ",
-  "pl.loot-zones.var.baseNote": "Her varyant bu ayarlardan başlar: bir varyantın kendisi ayarlamadığı şey bu bölümü izler. Bunları \"{tab}\" altında düzenleyin."
+  "pl.loot-zones.var.baseNote": "Her varyant bu ayarlardan başlar: bir varyantın kendisi ayarlamadığı şey bu bölümü izler. Bunları \"{tab}\" altında düzenleyin.",
+  "pl.loot-zones.bridge.unknownAll": "Bridge bunların açık olup olmadığını söyleyemedi: {list}"
 }

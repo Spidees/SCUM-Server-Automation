@@ -997,5 +997,6 @@
   "pl.loot-zones.vf.title": "Što ova varijanta postavlja sama",
   "pl.loot-zones.vf.lead": "Što god promijeniš ispod, postaje vlastita postavka ove varijante; sve ostalo prati odjeljke zone „Stražari” i „Koliko je zona živa”.",
   "pl.loot-zones.var.baseTitle": "Ova zona u svakoj sesiji radi s jednom od svojih varijanti ({n}). ",
-  "pl.loot-zones.var.baseNote": "Svaka varijanta polazi od ovih postavki: što varijanta ne postavi sama, prati ovaj odjeljak. Uređuješ ih pod „{tab}”."
+  "pl.loot-zones.var.baseNote": "Svaka varijanta polazi od ovih postavki: što varijanta ne postavi sama, prati ovaj odjeljak. Uređuješ ih pod „{tab}”.",
+  "pl.loot-zones.bridge.unknownAll": "Bridge nije mogao reći jesu li ovo uključeni: {list}"
 }

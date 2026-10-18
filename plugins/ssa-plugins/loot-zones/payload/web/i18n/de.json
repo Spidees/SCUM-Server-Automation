@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Was diese Variante selbst festlegt",
   "pl.loot-zones.vf.lead": "Was du unten änderst, gehört dieser Variante; alles andere folgt den Abschnitten Wachen und Belebtheit der Zone.",
   "pl.loot-zones.var.baseTitle": "Diese Zone nutzt in jeder Sitzung eine ihrer {n} Varianten. ",
-  "pl.loot-zones.var.baseNote": "Jede Variante geht von diesen Einstellungen aus: Was eine Variante nicht selbst festlegt, folgt diesem Abschnitt. Bearbeite sie unter „{tab}“."
+  "pl.loot-zones.var.baseNote": "Jede Variante geht von diesen Einstellungen aus: Was eine Variante nicht selbst festlegt, folgt diesem Abschnitt. Bearbeite sie unter „{tab}“.",
+  "pl.loot-zones.bridge.unknownAll": "Die Bridge konnte nicht sagen, ob diese eingeschaltet sind: {list}"
 }

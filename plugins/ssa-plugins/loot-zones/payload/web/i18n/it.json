@@ -981,5 +981,6 @@
   "pl.loot-zones.vf.title": "Cosa imposta questa variante per conto suo",
   "pl.loot-zones.vf.lead": "Ciò che cambi qui sotto diventa di questa variante; tutto il resto segue le sezioni Guardie e Animazione della zona.",
   "pl.loot-zones.var.baseTitle": "Questa zona usa una delle sue {n} varianti in ogni sessione. ",
-  "pl.loot-zones.var.baseNote": "Ogni variante parte da queste impostazioni: ciò che una variante non imposta da sé segue questa sezione. Modificale in «{tab}»."
+  "pl.loot-zones.var.baseNote": "Ogni variante parte da queste impostazioni: ciò che una variante non imposta da sé segue questa sezione. Modificale in «{tab}».",
+  "pl.loot-zones.bridge.unknownAll": "Il bridge non ha potuto dire se questi sono attivi: {list}"
 }

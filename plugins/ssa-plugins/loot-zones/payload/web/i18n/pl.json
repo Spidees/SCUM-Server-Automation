@@ -1013,5 +1013,6 @@
   "pl.loot-zones.vf.title": "Co ten wariant ustawia sam",
   "pl.loot-zones.vf.lead": "Cokolwiek zmienisz poniżej, staje się własnym ustawieniem tego wariantu; cała reszta idzie za sekcjami strefy „Wartownicy” i „Jak ruchliwa jest strefa”.",
   "pl.loot-zones.var.baseTitle": "Ta strefa w każdej sesji działa z jednym ze swoich wariantów ({n}). ",
-  "pl.loot-zones.var.baseNote": "Każdy wariant wychodzi od tych ustawień: czego wariant sam nie ustawia, idzie za tą sekcją. Edytujesz je w „{tab}”."
+  "pl.loot-zones.var.baseNote": "Każdy wariant wychodzi od tych ustawień: czego wariant sam nie ustawia, idzie za tą sekcją. Edytujesz je w „{tab}”.",
+  "pl.loot-zones.bridge.unknownAll": "SSA Bridge nie potrafił powiedzieć, czy te są włączone: {list}"
 }

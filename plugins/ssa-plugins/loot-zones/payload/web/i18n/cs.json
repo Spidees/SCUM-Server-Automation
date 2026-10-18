@@ -997,5 +997,6 @@
   "pl.loot-zones.vf.title": "Co si tahle varianta nastavuje sama",
   "pl.loot-zones.vf.lead": "Cokoli níže změníš, stane se vlastním nastavením téhle varianty; všechno ostatní se řídí sekcemi zóny „Strážní“ a „Jak rušno v zóně je“.",
   "pl.loot-zones.var.baseTitle": "Tahle zóna v každé relaci běží s jednou ze svých variant ({n}). ",
-  "pl.loot-zones.var.baseNote": "Každá varianta vychází z těchto nastavení: co si varianta nenastaví sama, řídí se touto sekcí. Uprav je pod „{tab}“."
+  "pl.loot-zones.var.baseNote": "Každá varianta vychází z těchto nastavení: co si varianta nenastaví sama, řídí se touto sekcí. Uprav je pod „{tab}“.",
+  "pl.loot-zones.bridge.unknownAll": "Bridge nedokázal říct, zda je toto zapnuto: {list}"
 }
