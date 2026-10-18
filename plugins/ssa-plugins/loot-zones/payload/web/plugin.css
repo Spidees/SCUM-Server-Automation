@@ -751,6 +751,33 @@ small.lz-warn { color: var(--standby); }
 .lz-warnbtn .ico, .lz-warnbtn svg { width: 0.85rem; height: 0.85rem; }
 .lz-oncell { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .lz-open { white-space: nowrap; }
+/* Links drawn as the panel's own controls. Edit, a zone's name, its warnings, the three section tabs,
+   the editor's pills and arrows are real `<a href>`s so a middle click or ctrl click opens that screen
+   in a new tab; they keep the look of the buttons they replace, and the panel's `button.secondary`
+   paint is restated here because a link does not match a `button` selector. */
+a.lz-tab, a.lz-pill, a.lz-zname, a.lz-warnbtn, a.lz-btnlink { text-decoration: none; }
+a.lz-btnlink {
+  --hov-bg: var(--panel-2);
+  --hov-fg: var(--amber-hi);
+  --hov-line: var(--line-amber);
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+  font-family: var(--ui); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.03em;
+  padding: 0.55rem 1.05rem; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  cursor: pointer; transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+a.lz-btnlink:hover { background: var(--hov-bg); border-color: var(--hov-line); color: var(--hov-fg); text-decoration: none; }
+a.lz-btnlink[aria-disabled="true"] { opacity: 0.45; pointer-events: none; cursor: default; }
+a.lz-btnlink .ico, a.lz-btnlink svg { width: 1em; height: 1em; }
+/* Which rotation this server runs and how many zones can be live at once, under the figures and in
+   the bulk bar: the two settings that decide what "In rotation" does, said where it is pressed. */
+.lz-rotline { display: flex; align-items: flex-start; gap: 0.45rem; color: var(--muted); font-size: 0.84rem; line-height: 1.45; min-width: 0; }
+.lz-rotline > .ico, .lz-rotline > svg { width: 0.95rem; height: 0.95rem; flex: 0 0 auto; margin-top: 0.15rem; }
+.lz-rotline > span { min-width: 0; flex: 1 1 14rem; }
+.lz-rotline { flex-wrap: wrap; }
+.lz-rotline > a.lz-rotlink { padding: 0.35rem 0.8rem; font-size: 0.8rem; }
+.lz-bulk-sel > .lz-rotline { flex: 1 1 100%; }
+.lz-bulk[hidden] { display: none; }
 .lz-badge.bad { color: var(--alarm); border-color: rgba(229, 68, 63, 0.45); }
 
 /* ── one zone ──────────────────────────────────────────────────────────────────────────────── */
@@ -830,7 +857,11 @@ small.lz-warn { color: var(--standby); }
   /* Three tabs, one under the other, each as wide as its word was a ragged staircase. */
   .lz-tabs > .lz-tab { flex: 1 1 auto; justify-content: center; }
   /* The previous and next arrows are one glyph each: a 44px square is the only floor they have. */
-  .lz-ednav > button { min-width: 44px; }
+  .lz-ednav > button, .lz-ednav > a { min-width: 44px; }
+  /* The panel's phone floor covers the controls IT draws, and a link is not one of them: these were
+     buttons until 1.12.1 and keep the 44px they had then. */
+  a.lz-tab, a.lz-pill, a.lz-btnlink, a.lz-warnbtn { min-height: 44px; }
+  a.lz-zname { display: inline-flex; align-items: center; min-height: 44px; }
 }
 
 /* ── the two dialogs: making zones from sets, and giving zones variants ──────────────────────── */

@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "Aşağıda herhangi bir şeyi değiştirirseniz bu varyantın kendi ayarı olur; geri kalan her şey bölgenin Muhafızlar ve \"Bölge ne kadar hareketli\" bölümlerini izler.",
   "pl.loot-zones.var.baseTitle": "Bu bölge her oturumda {n} varyantından birini çalıştırır. ",
   "pl.loot-zones.var.baseNote": "Her varyant bu ayarlardan başlar: bir varyantın kendisi ayarlamadığı şey bu bölümü izler. Bunları \"{tab}\" altında düzenleyin.",
-  "pl.loot-zones.bridge.unknownAll": "Bridge bunların açık olup olmadığını söyleyemedi: {list}"
+  "pl.loot-zones.bridge.unknownAll": "Bridge bunların açık olup olmadığını söyleyemedi: {list}",
+  "pl.loot-zones.rot.line.time": "Rotasyon: zamanlamaya göre. Rotasyondaki bir bölge saatleri açıkken aktiftir, aynı anda en fazla {n}.",
+  "pl.loot-zones.rot.line.over": "Rotasyonda: {k}, aynı anda aktif en fazla {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotasyon: her sunucu yeniden başlatmasında, rotasyondaki bölgelerden biri.",
+  "pl.loot-zones.rot.line.manual": "Rotasyon: elle. Bir bölge yalnızca onu düzenleyicisinde açtığında aktiftir, aynı anda en fazla {n}.",
+  "pl.loot-zones.rot.line.bulkManual": "Rotasyon elle yapılırken bölgeleri döngüye almak onları açmaz.",
+  "pl.loot-zones.rot.line.off": "Rotasyon kapalı, bu yüzden hiçbir şey kendiliğinden aktif olmaz.",
+  "pl.loot-zones.rot.line.change": "{tab} altında değiştir"
 }

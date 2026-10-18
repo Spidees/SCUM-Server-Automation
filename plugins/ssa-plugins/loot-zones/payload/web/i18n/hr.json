@@ -998,5 +998,12 @@
   "pl.loot-zones.vf.lead": "Što god promijeniš ispod, postaje vlastita postavka ove varijante; sve ostalo prati odjeljke zone „Stražari” i „Koliko je zona živa”.",
   "pl.loot-zones.var.baseTitle": "Ova zona u svakoj sesiji radi s jednom od svojih varijanti ({n}). ",
   "pl.loot-zones.var.baseNote": "Svaka varijanta polazi od ovih postavki: što varijanta ne postavi sama, prati ovaj odjeljak. Uređuješ ih pod „{tab}”.",
-  "pl.loot-zones.bridge.unknownAll": "Bridge nije mogao reći jesu li ovo uključeni: {list}"
+  "pl.loot-zones.bridge.unknownAll": "Bridge nije mogao reći jesu li ovo uključeni: {list}",
+  "pl.loot-zones.rot.line.time": "Rotacija: po rasporedu. Zona u rotaciji je aktivna dok su joj vremena otvorena, najviše {n} odjednom.",
+  "pl.loot-zones.rot.line.over": "U rotaciji: {k}, aktivnih odjednom najviše {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotacija: jedna zona po svakom ponovnom pokretanju servera, iz zona u rotaciji.",
+  "pl.loot-zones.rot.line.manual": "Rotacija: ručno. Zona je aktivna samo kad je uključiš u njezinom uređivaču, najviše {n} odjednom.",
+  "pl.loot-zones.rot.line.bulkManual": "Uz ručnu rotaciju, stavljanje zona u rotaciju ne uključuje ih.",
+  "pl.loot-zones.rot.line.off": "Rotacija je isključena, pa se ništa ne uključuje samo.",
+  "pl.loot-zones.rot.line.change": "Mijenja se u {tab}"
 }

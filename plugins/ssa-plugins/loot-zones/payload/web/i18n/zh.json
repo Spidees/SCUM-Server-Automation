@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "在下面改动任何一项，它就成为此变体自己的设定；其余一切都沿用区域的守卫和「区域有多热闹」部分。",
   "pl.loot-zones.var.baseTitle": "这个区域每次运行都会使用它 {n} 个变体中的一个。 ",
   "pl.loot-zones.var.baseNote": "每个变体都从这些设定开始：变体自己没有设定的项目都沿用这一节。请在「{tab}」下编辑。",
-  "pl.loot-zones.bridge.unknownAll": "SSA Bridge 无法报告以下项目是否已打开：{list}"
+  "pl.loot-zones.bridge.unknownAll": "SSA Bridge 无法报告以下项目是否已打开：{list}",
+  "pl.loot-zones.rot.line.time": "轮换：按时间表。在轮换中的区域在其时段开放时生效，同时最多 {n} 个。",
+  "pl.loot-zones.rot.line.over": "在轮换中的区域：{k}，同时生效最多 {n}。",
+  "pl.loot-zones.rot.line.restart": "轮换：每次服务器重启选一个区域，从轮换中的区域挑选。",
+  "pl.loot-zones.rot.line.manual": "轮换：手动。区域只有在你于其编辑器中开启时才生效，同时最多 {n} 个。",
+  "pl.loot-zones.rot.line.bulkManual": "手动轮换时，把区域放进轮换并不会开启它们。",
+  "pl.loot-zones.rot.line.off": "轮换已关闭，因此不会自行生效任何区域。",
+  "pl.loot-zones.rot.line.change": "在 {tab} 中更改"
 }

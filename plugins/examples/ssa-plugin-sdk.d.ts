@@ -4194,6 +4194,24 @@ export interface SSA {
    */
   apiClient(): <T = any>(path: string, opts?: RequestInit) => Promise<T>;
   /**
+   * An address for each screen inside your page. Your page is `#plugins/p/<id>`; the part after the
+   * next `/` is yours. Call `client()` once at the top of your script, like `apiClient()`.
+   *
+   * Draw a control that opens a screen as `<a href={route.href(sub)}>`, handle only a plain left
+   * click in the page (then `route.go(sub)`), and leave a middle, ctrl, cmd or shift click to the
+   * browser: that is what opens the screen in a new tab. `get()` is what the address names when
+   * your `render()` runs; `onChange` hears Back, Forward and an address followed while the page is
+   * open. Feature-test it: an older manager has no `route` and opens your first screen instead.
+   */
+  route?: {
+    client(): {
+      href(sub?: string): string;
+      get(): string;
+      go(sub?: string, opts?: { replace?: boolean }): void;
+      onChange(fn: (sub: string) => void): void;
+    };
+  };
+  /**
    * One sentence for a rejection, in the order that matters: the route's own `reason` (it is the
    * only layer that knows which value was over which limit), then the expired-session case, then
    * the code.

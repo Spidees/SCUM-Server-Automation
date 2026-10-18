@@ -154,6 +154,13 @@ The tab has three parts:
 
 ## Good to know
 
+- **"In rotation" means a zone may be chosen, not that it goes live.** How many zones are live at once
+  and how they are chosen are set under *Settings and actions*: with rotation by hand and one zone at
+  a time, putting fifty zones in rotation still leaves one live. The list says which rotation runs,
+  beside its figures and in the bar of ticked zones.
+- **Every zone has its own address.** A middle click or ctrl click on a zone's name, its *Edit*, its
+  warnings or the arrows between zones opens that zone in a new tab, and Back walks back through the
+  zones you opened. On a manager older than the one after 6.1.0 the link opens the plugin's list.
 - **Nothing reaches the server until you press Save**, and *Discard changes* puts everything back to
   what the server is holding — including a zone or a guard you removed.
 - **The rectangle belongs to the loot set unless you give the zone one of its own**, so two zones

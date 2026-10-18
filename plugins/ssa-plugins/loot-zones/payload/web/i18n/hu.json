@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "Bármit módosítasz lent, az ennek a változatnak a sajátja lesz; minden más a zóna „Őrök” és „Mennyire forgalmas a zóna” részét követi.",
   "pl.loot-zones.var.baseTitle": "Ez a zóna minden menetben a(z) {n} változata közül egyet futtat. ",
   "pl.loot-zones.var.baseNote": "Minden változat ezekből a beállításokból indul: amit egy változat nem állít be magának, ezt a részt követi. Szerkesztésük: „{tab}”.",
-  "pl.loot-zones.bridge.unknownAll": "A bridge nem tudta megmondani, hogy ezek be vannak-e kapcsolva: {list}"
+  "pl.loot-zones.bridge.unknownAll": "A bridge nem tudta megmondani, hogy ezek be vannak-e kapcsolva: {list}",
+  "pl.loot-zones.rot.line.time": "Rotáció: menetrend szerint. A rotációban lévő zóna addig él, amíg az idősávjai nyitva vannak, egyszerre legfeljebb {n}.",
+  "pl.loot-zones.rot.line.over": "Rotációban: {k}, egyszerre élő legfeljebb {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotáció: szerver-újraindításonként egy zóna, a rotációban lévők közül.",
+  "pl.loot-zones.rot.line.manual": "Rotáció: kézi. Egy zóna csak akkor él, ha a szerkesztőjében bekapcsolod, egyszerre legfeljebb {n}.",
+  "pl.loot-zones.rot.line.bulkManual": "Kézi rotációnál a zónák rotációba tétele nem kapcsolja be őket.",
+  "pl.loot-zones.rot.line.off": "A rotáció ki van kapcsolva, így semmi sem kapcsol be magától.",
+  "pl.loot-zones.rot.line.change": "Módosítás itt: {tab}"
 }

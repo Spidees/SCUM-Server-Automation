@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "아래에서 무엇이든 바꾸면 그 항목은 이 변형의 것이 됩니다. 나머지는 모두 존의 경비병 및 \"존의 활발함\" 섹션을 따릅니다.",
   "pl.loot-zones.var.baseTitle": "이 존은 매 세션 {n}개의 변형 중 하나로 실행됩니다. ",
   "pl.loot-zones.var.baseNote": "모든 변형은 이 설정에서 출발합니다. 변형이 직접 정하지 않은 항목은 이 섹션을 따릅니다. \"{tab}\" 아래에서 편집하세요.",
-  "pl.loot-zones.bridge.unknownAll": "브리지가 다음 항목이 켜져 있는지 알려 주지 못했습니다: {list}"
+  "pl.loot-zones.bridge.unknownAll": "브리지가 다음 항목이 켜져 있는지 알려 주지 못했습니다: {list}",
+  "pl.loot-zones.rot.line.time": "순환: 일정에 따라. 순환에 포함된 존은 시간이 열려 있는 동안 활성화되며, 동시에 최대 {n}개입니다.",
+  "pl.loot-zones.rot.line.over": "순환 포함: {k}, 동시 활성: 최대 {n}.",
+  "pl.loot-zones.rot.line.restart": "순환: 서버 재시작마다 순환에 포함된 존 중 하나.",
+  "pl.loot-zones.rot.line.manual": "순환: 수동. 존은 편집기에서 직접 켤 때만 활성화되며, 동시에 최대 {n}개입니다.",
+  "pl.loot-zones.rot.line.bulkManual": "수동 순환에서는 존을 순환에 넣어도 켜지지 않습니다.",
+  "pl.loot-zones.rot.line.off": "순환이 꺼져 있어 저절로 활성화되는 것은 없습니다.",
+  "pl.loot-zones.rot.line.change": "{tab}에서 변경"
 }

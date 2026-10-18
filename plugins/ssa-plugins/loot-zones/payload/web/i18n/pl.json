@@ -1014,5 +1014,12 @@
   "pl.loot-zones.vf.lead": "Cokolwiek zmienisz poniżej, staje się własnym ustawieniem tego wariantu; cała reszta idzie za sekcjami strefy „Wartownicy” i „Jak ruchliwa jest strefa”.",
   "pl.loot-zones.var.baseTitle": "Ta strefa w każdej sesji działa z jednym ze swoich wariantów ({n}). ",
   "pl.loot-zones.var.baseNote": "Każdy wariant wychodzi od tych ustawień: czego wariant sam nie ustawia, idzie za tą sekcją. Edytujesz je w „{tab}”.",
-  "pl.loot-zones.bridge.unknownAll": "SSA Bridge nie potrafił powiedzieć, czy te są włączone: {list}"
+  "pl.loot-zones.bridge.unknownAll": "SSA Bridge nie potrafił powiedzieć, czy te są włączone: {list}",
+  "pl.loot-zones.rot.line.time": "Rotacja: według harmonogramu. Strefa w rotacji jest aktywna, gdy jej godziny są otwarte, naraz najwyżej {n}.",
+  "pl.loot-zones.rot.line.over": "W rotacji: {k}, aktywnych naraz najwyżej {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotacja: jedna strefa na każdy restart serwera, wybrana spośród stref w rotacji.",
+  "pl.loot-zones.rot.line.manual": "Rotacja: ręczna. Strefa jest aktywna tylko wtedy, gdy włączysz ją w jej edytorze, naraz najwyżej {n}.",
+  "pl.loot-zones.rot.line.bulkManual": "Przy ręcznej rotacji włączenie stref do rotacji ich nie uruchamia.",
+  "pl.loot-zones.rot.line.off": "Rotacja jest wyłączona, więc nic nie włączy się samo.",
+  "pl.loot-zones.rot.line.change": "Zmienisz w {tab}"
 }

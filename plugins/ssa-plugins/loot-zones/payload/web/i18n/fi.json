@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "Muuta mitä tahansa alla, niin siitä tulee tämän variantin oma; kaikki muu seuraa vyöhykkeen osioita ”Vartijat” ja ”Kuinka vilkas vyöhyke on”.",
   "pl.loot-zones.var.baseTitle": "Tämä vyöhyke käyttää joka istunnossa yhtä {n} variantistaan. ",
   "pl.loot-zones.var.baseNote": "Jokainen variantti lähtee näistä asetuksista: mitä variantti ei aseta itse, seuraa tätä osiota. Muokkaa niitä kohdassa ”{tab}”.",
-  "pl.loot-zones.bridge.unknownAll": "Bridge ei pystynyt kertomaan, ovatko nämä päällä: {list}"
+  "pl.loot-zones.bridge.unknownAll": "Bridge ei pystynyt kertomaan, ovatko nämä päällä: {list}",
+  "pl.loot-zones.rot.line.time": "Kierto: aikataulun mukaan. Kierrossa oleva alue on päällä, kun sen ajat ovat auki, enintään {n} kerralla.",
+  "pl.loot-zones.rot.line.over": "Kierrossa: {k}, kerralla päällä enintään {n}.",
+  "pl.loot-zones.rot.line.restart": "Kierto: yksi alue jokaista palvelimen uudelleenkäynnistystä kohden, kierrossa olevista alueista.",
+  "pl.loot-zones.rot.line.manual": "Kierto: käsin. Alue on päällä vain, kun kytket sen päälle sen editorissa, enintään {n} kerralla.",
+  "pl.loot-zones.rot.line.bulkManual": "Kun kierto on käsin, alueiden ottaminen kiertoon ei kytke niitä päälle.",
+  "pl.loot-zones.rot.line.off": "Kierto on pois päältä, joten mikään ei mene päälle itsestään.",
+  "pl.loot-zones.rot.line.change": "Muuta kohdassa {tab}"
 }

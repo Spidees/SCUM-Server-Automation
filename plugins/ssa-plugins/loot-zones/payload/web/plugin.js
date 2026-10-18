@@ -24,6 +24,28 @@
    * copied into the next plugin and then into one where the two names differ.
    */
   var API = SSA.apiClient ? SSA.apiClient() : null;
+  /**
+   * The address of each screen of this tab: `#plugins/p/loot-zones/zone/<id>[/<section>]`,
+   * `…/messages`, `…/settings`, and the plain page for the list. Every Edit, every zone name, the
+   * zone-to-zone arrows and "All zones" are real links to these, so a middle click or ctrl click
+   * opens that zone in a new tab, and Back walks back through what was opened.
+   *
+   * A manager older than the hook has no `SSA.route`: the links still carry an address (that panel
+   * opens this plugin's first screen from it), a plain click still opens the zone in place, and
+   * Back leaves the page as it always did.
+   */
+  var ROUTE = (SSA.route && typeof SSA.route.client === 'function') ? SSA.route.client() : null;
+  // Back and Forward inside this page, and an address followed while it is open, draw that screen.
+  // The panel leaves the page itself alone for these (it used to open the whole plugin again).
+  if (ROUTE) {
+    ROUTE.onChange(function (sub) {
+      applyRoute(sub);
+      if (root && document.body.contains(root)) {
+        render();
+        try { if (root.scrollIntoView) root.scrollIntoView({ block: 'start' }); } catch (ignored) { /* detached */ }
+      }
+    });
+  }
   var T = SSA.t;
   /**
    * WHERE THE BRIDGE'S SETTINGS REALLY ARE, IN THE PANEL'S OWN WORDS.
@@ -610,7 +632,14 @@
     return Promise.all(reqs).then(function (r) {
       if (r.length > 3) shippedByLang = (r[3] && r[3].byLang) || null;
       if (!unsaved) {
-        state.cfg = looksLikeConfig(r[0]) ? r[0] : null;
+        /**
+         * ⚠ **THE SAME CONFIGURATION IS KEPT AS THE SAME OBJECTS.** Every poll used to put a fresh
+         * copy in place, while the controls on the page — left alone because nothing on it had
+         * changed — still held the zones of the copy before. A change made in such a control went
+         * into an object nothing saves, and the next redraw drew the setting back the way it was.
+         */
+        var got = looksLikeConfig(r[0]) ? r[0] : null;
+        if (!(got && state.cfg && JSON.stringify(got) === JSON.stringify(state.cfg))) state.cfg = got;
         broken = !looksLikeConfig(r[0]);
       }
       // Taken on every answer, whether or not the screen is being written over: it is a reading of
@@ -718,7 +747,12 @@
    * semantics that a `<button><span></span></button>` had none of.
    */
   function toggle(v, on, label) {
-    var box = h('input', { type: 'checkbox' });
+    // ⚠ **THE ATTRIBUTE AS WELL AS THE PROPERTY, OR A ROW CANNOT TELL ON FROM OFF.** `SSA.table`
+    // keeps a row whose markup comes out the same as before, and `.checked` is not in the markup: so
+    // "Put in the rotation" over five ticked zones changed the five zones and the figure above the
+    // list, and left all five switches drawn OFF, because every row's HTML was byte for byte the
+    // row it had been. Measured with real input on the owner's 69 zones before this line existed.
+    var box = h('input', v ? { type: 'checkbox', checked: '' } : { type: 'checkbox' });
     box.checked = !!v;
     box.addEventListener('change', function () { on(box.checked); });
     return h('label', { class: 'switch' }, [box, label ? h('span', {}, label) : null]);
@@ -1382,6 +1416,7 @@
     editId = String(copy.id);
     editTab = 'general';
     markDirty();
+    noteRoute();
     // The two NAMES are values — a zone's name is what the game calls it — so they travel as vars.
     SSA.toast(T('pl.loot-zones.zone.copied',
       'Copied as "{name}", off, sharing "{from}"\'s loot set. Give it its own.',
@@ -4735,8 +4770,22 @@
    * produced. Equal means nothing on the page would change, so the page is left exactly as it is —
    * same nodes, same open dropdown, same hover. Only `saveBar` is written by `draw()` from outside
    * the box, so it is put back after the trial draw.
+   *
+   * ⚠ **AND WHAT DIFFERS IS PATCHED, NOT REDRAWN.** "Equal or redraw everything" redrew the whole tab
+   * for every poll whose status had moved — a post held, a guard sent, one zone's session — and for
+   * every tick, switch and filter in the list. Measured with real input on the owner's 69 zones and
+   * 305 variants: 130 to 180 nodes thrown away and rebuilt per press, and an idle poll replacing 182
+   * of them under the reader, which is the open dropdown that shuts and the press that lands on a
+   * node that is no longer there. `lastTree` is a detached copy of what the last draw produced,
+   * before the panel enhanced anything in it; the trial draw is compared with it element by element
+   * (`diffInto`), and only the elements that really differ are swapped in. The zone table is never
+   * part of either: a draw holds a placeholder for it (`placeTable`).
    */
-  var lastDrawn = null;
+  var lastTree = null;
+  // The configuration object the last full draw was made from. A different one (a save, a discard, a
+  // poll that brought back somebody else's change) is always a full draw: every control on the page
+  // holds the objects it was drawn with.
+  var drawnCfg = null;
   // ══ THE TAB AS AN OWNER WITH A HUNDRED ZONES MEETS IT ════════════════════════════════════════════
   /**
    * ⚠ **EVERY ZONE USED TO BE A FULL SETTINGS SCREEN, ONE UNDER THE OTHER.** With 69 zones that was
@@ -4892,20 +4941,101 @@
     ((st && st.active) || []).forEach(function (a) { out[String(a.id)] = a; });
     return out;
   }
+  /**
+   * ── WHAT "IN ROTATION" DOES UNDER THE ROTATION THIS SERVER HAS, SAID WHERE IT IS PRESSED ──────
+   *
+   * The owner ticked many zones, pressed "Put in the rotation" and saw one zone live, and read that as
+   * the bulk action failing. It was the rotation he had set: by hand, one zone at a time. Neither fact
+   * was on the list — both sat under Settings and actions, inside a fold — so the list now says, next
+   * to its figures and inside the bar the action is pressed in, which rotation this is, how many zones
+   * can be live at once, and where that is changed. Nothing here changes either setting.
+   */
+  function rotationNote(c, picked, plain) {
+    var n = Math.max(1, Math.round(Number(c.maxActive) || 1));
+    var inRot = (c.zones || []).filter(function (z) { return z && z.enabled !== false; }).length;
+    var parts = [];
+    if (c.rotation === 'time') {
+      parts.push(T('pl.loot-zones.rot.line.time', 'Rotation: on a schedule. A zone in rotation goes live while its times are open; at most {n} at once.', { n: n }));
+      if (inRot > n) parts.push(T('pl.loot-zones.rot.line.over', '{k} zones are in rotation and only {n} can be live at once.', { k: inRot, n: n }));
+    } else if (c.rotation === 'restart') {
+      parts.push(T('pl.loot-zones.rot.line.restart', 'Rotation: one zone per server restart, chosen from the zones in rotation.'));
+    } else {
+      parts.push(T('pl.loot-zones.rot.line.manual', 'Rotation: by hand. A zone goes live only when you switch it on in its editor; at most {n} at once.', { n: n }));
+      if (picked) parts.push(T('pl.loot-zones.rot.line.bulkManual', 'Putting zones in rotation does not switch them on while rotation is by hand.'));
+    }
+    if (c.enabled === false && c.rotation !== 'manual') {
+      parts.push(T('pl.loot-zones.rot.line.off', 'Rotation is switched off, so nothing goes live by itself.'));
+    }
+    var tab = T('pl.loot-zones.nav.settings', 'Settings and actions');
+    // `plain`: on the Settings card itself, and inside a dialog, where a link away is no help.
+    if (plain) return h('div', { class: 'lz-rotline' }, [icon('clock'), h('span', {}, parts.join(' '))]);
+    return h('div', { class: 'lz-rotline' }, [icon('clock'), h('span', {}, parts.join(' ')),
+      navLink('settings', { class: 'lz-btnlink lz-rotlink' }, T('pl.loot-zones.rot.line.change', 'Change it under {tab}', { tab: tab }), function () {
+        view = 'settings'; editId = null; editVariant = null; render(); noteRoute();
+      })]);
+  }
   function savedHasVariants(z) {
     // What the SERVER holds decides whether a re-roll can act: a variant added on this page and not
     // saved yet is a variant the backend has never heard of.
     return !!(savedIds && savedIds.indexOf(String(z.id)) >= 0 && Array.isArray(z.variants) && z.variants.some(function (v) { return v && v.enabled !== false; }));
   }
 
-  // ── the navigation inside the tab ──────────────────────────────────────────────────────────
+  // ── the navigation inside the tab, and the address of each screen ──────────────────────────
+  var EDIT_TABS = ['general', 'area', 'guards', 'busy', 'variants'];
+  /** The sub-route of what is on screen now. */
+  function routeNow() {
+    if (view === 'messages' || view === 'settings') return view;
+    if (editId != null) return 'zone/' + encodeURIComponent(String(editId)) + (editTab && editTab !== 'general' ? '/' + editTab : '');
+    return '';
+  }
+  function routeHref(sub) {
+    return ROUTE ? ROUTE.href(sub) : '#plugins/p/loot-zones' + (sub ? '/' + sub : '');
+  }
+  function zoneRoute(id, tab) {
+    return 'zone/' + encodeURIComponent(String(id)) + (tab && tab !== 'general' ? '/' + tab : '');
+  }
+  /** Read an address into the screen state. Answers false for one this page cannot draw. */
+  function applyRoute(sub) {
+    var p = String(sub || '').split('/');
+    if (p[0] === 'messages' || p[0] === 'settings') { view = p[0]; editId = null; editVariant = null; return true; }
+    if (p[0] === 'zone' && p[1]) {
+      var id;
+      try { id = decodeURIComponent(p[1]); } catch (ignored) { id = p[1]; }
+      view = 'zones'; editId = String(id); editVariant = null;
+      editTab = EDIT_TABS.indexOf(p[2]) >= 0 ? p[2] : 'general';
+      return true;
+    }
+    view = 'zones'; editId = null; editVariant = null;
+    return !p[0];
+  }
+  /** What the page now draws, written into the address: a history entry, or a replacement. */
+  function noteRoute(replace) {
+    if (ROUTE && !drawingProbe) ROUTE.go(routeNow(), { replace: !!replace });
+  }
+  /**
+   * A REAL LINK whose plain left click is handled here and whose every other click is the
+   * browser's. ⚠ Nothing but an unmodified primary click is ever prevented: a middle click, a
+   * ctrl/cmd/shift click and the context menu's "open in new tab" are the reader asking the
+   * browser for a second window, and swallowing them is exactly the defect this replaces.
+   */
+  function navLink(sub, attrs, kids, onPlain) {
+    var a = h('a', Object.assign({ href: routeHref(sub) }, attrs || {}), kids);
+    a.addEventListener('click', function (ev) {
+      if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+      ev.preventDefault();
+      onPlain();
+    });
+    return a;
+  }
   function tabNav(c) {
     var b = function (key, ico, label) {
       var on = view === key;
-      return h('button', {
-        class: 'lz-tab' + (on ? ' on' : ''), type: 'button', 'aria-pressed': on ? 'true' : 'false',
-        onclick: function () { view = key; if (key === 'zones') { editId = null; editVariant = null; } render(); },
-      }, [icon(ico), label]);
+      return navLink(key === 'zones' ? '' : key, {
+        class: 'lz-tab' + (on ? ' on' : ''), 'aria-current': on ? 'page' : null,
+      }, [icon(ico), label], function () {
+        view = key; if (key === 'zones') { editId = null; editVariant = null; }
+        render(); noteRoute();
+      });
     };
     return h('nav', { class: 'lz-tabs', 'aria-label': T('pl.loot-zones.nav.label', 'Loot Zones sections') }, [
       b('zones', 'list', T('pl.loot-zones.nav.zones', 'Zones ({n})', { n: (c.zones || []).length })),
@@ -4913,13 +5043,20 @@
       b('settings', 'sliders', T('pl.loot-zones.nav.settings', 'Settings and actions')),
     ]);
   }
-  function openZone(id, tab) {
+  function openZone(id, tab, replace) {
     editId = String(id);
     editTab = tab || 'general';
     editVariant = null;
     view = 'zones';
     render();
+    noteRoute(replace);
     try { if (root && root.scrollIntoView) root.scrollIntoView({ block: 'start' }); } catch (ignored) { /* detached */ }
+  }
+  /** Back to the list from a zone, as a history entry of its own. */
+  function closeZone() {
+    editId = null; editVariant = null;
+    render();
+    noteRoute();
   }
 
   // ── the list ───────────────────────────────────────────────────────────────────────────────
@@ -4976,12 +5113,15 @@
           {
             key: 'pick', label: '', thClass: 'lz-col-pick',
             render: function (z) {
-              var box = h('input', { class: 'lz-pick', type: 'checkbox', 'data-on': zonePick[z.id] ? '1' : '0',
-                'aria-label': T('pl.loot-zones.bulk.pickOne', 'Tick this zone for the actions above') });
+              var attrs = { class: 'lz-pick', type: 'checkbox', 'data-on': zonePick[z.id] ? '1' : '0',
+                'aria-label': T('pl.loot-zones.bulk.pickOne', 'Tick this zone for the actions above') };
+              if (zonePick[z.id]) attrs.checked = '';
+              var box = h('input', attrs);
               box.checked = !!zonePick[z.id];
+              var zid = z.id;
               box.addEventListener('change', function () {
-                if (box.checked) zonePick[z.id] = true; else delete zonePick[z.id];
-                render();
+                if (box.checked) zonePick[zid] = true; else delete zonePick[zid];
+                listChanged(false);
               });
               return box;
             },
@@ -4991,8 +5131,8 @@
             sortVal: function (z) { return String(z.name || z.set || '').toLowerCase(); },
             render: function (z) {
               return h('div', { class: 'lz-zcell' }, [
-                h('button', { class: 'lz-zname', type: 'button', onclick: function () { openZone(z.id); } },
-                  String(z.name || '').trim() || T('pl.loot-zones.list.unnamed', '(no name)')),
+                navLink(zoneRoute(z.id), { class: 'lz-zname' },
+                  String(z.name || '').trim() || T('pl.loot-zones.list.unnamed', '(no name)'), function () { openZone(z.id); }),
                 // The set only where it adds something: "Airfield / Airfield" says one fact twice.
                 // The search still matches the set either way (see `zoneHay`).
                 !z.set ? h('small', {}, T('pl.loot-zones.list.noSet', 'no loot set'))
@@ -5041,12 +5181,12 @@
                 return h('span', { class: 'lz-ok', title: T('pl.loot-zones.list.allGood', 'Nothing to fix') }, [icon('check'), T('pl.loot-zones.list.ok', 'OK')]);
               }
               var lines = rules.map(function (b) { return b.text; }).concat(warns.map(function (w) { return w.text; }));
-              return h('button', {
-                class: 'lz-warnbtn' + (rules.length ? ' bad' : ''), type: 'button', title: lines.join('\n'),
-                onclick: function () { openZone(z.id, rules.length ? (rules[0].variant != null ? 'variants' : 'guards') : 'general'); },
+              var where = rules.length ? (rules[0].variant != null ? 'variants' : 'guards') : 'general';
+              return navLink(zoneRoute(z.id, where), {
+                class: 'lz-warnbtn' + (rules.length ? ' bad' : ''), title: lines.join('\n'),
               }, [icon('alert'), rules.length
                 ? T('pl.loot-zones.list.rules', '{n} to fix', { n: rules.length + warns.length })
-                : T('pl.loot-zones.list.warns', '{n} to check', { n: warns.length })]);
+                : T('pl.loot-zones.list.warns', '{n} to check', { n: warns.length })], function () { openZone(z.id, where); });
             },
           },
           {
@@ -5054,8 +5194,12 @@
             sortVal: function (z) { return z.enabled === false ? 1 : 0; },
             render: function (z) {
               var live = liveIdsOf(state.status)[String(z.id)];
+              var zid = z.id;
+              // By ID at the moment of the click, never the object this row was drawn from: a row
+              // the table keeps across a save still holds the zone as it was BEFORE the save, and a
+              // switch written into that orphan changed nothing anybody would ever save.
               return h('div', { class: 'lz-oncell' }, [
-                toggle(z.enabled !== false, function (v) { z.enabled = v; markDirty(); }),
+                toggle(z.enabled !== false, function (v) { var now = zoneById(zid); if (now) now.enabled = v; listChanged(true); }),
                 live ? h('span', { class: 'lz-badge on' }, T('pl.loot-zones.badge.live', 'live')) : null,
               ]);
             },
@@ -5063,15 +5207,45 @@
           {
             key: 'open', label: '',
             render: function (z) {
-              return h('button', { class: 'secondary lz-open', type: 'button', onclick: function () { openZone(z.id); } },
-                [icon('chev-right'), T('pl.loot-zones.list.edit', 'Edit')]);
+              return navLink(zoneRoute(z.id), { class: 'lz-btnlink lz-open' },
+                [icon('chev-right'), T('pl.loot-zones.list.edit', 'Edit')], function () { openZone(z.id); });
             },
           },
         ],
       });
+      // ⚠ The counts and "Tick n" above the table read the SAME search, so they must follow it: the
+      // table filters on every key while the bar above went on saying "69 of 69" and "Tick 69", and
+      // pressing it ticked every zone the search had just hidden.
+      if (zoneTable.search) zoneTable.search.addEventListener('input', searchTyped);
     }
     zoneTable.refresh();
-    return drawingProbe ? zoneTable.el.cloneNode(true) : zoneTable.el;
+    return h('div', { 'data-lz-table': '' });
+  }
+  /**
+   * The table is ONE element kept for the life of the tab, and every draw puts a placeholder where it
+   * goes; this puts the real one there. So a draw's markup never contains the 25 rows (the table keeps
+   * those itself, row by row), and a redraw that leaves the list's card alone leaves the table where
+   * it is: its search box keeps the caret, its page and its sort.
+   */
+  function placeTable(r) {
+    var slot = r && r.querySelector ? r.querySelector('[data-lz-table]') : null;
+    if (slot && zoneTable) slot.parentNode.replaceChild(zoneTable.el, slot);
+  }
+  /**
+   * A change made in the LIST — a tick, a switch, a filter, a bulk action — redrawn as a patch: the
+   * figures, the counts and the bar change and nothing else is touched. `dataChanged` is a change to
+   * the zones themselves, which marks the page unsaved and asks the backend for the warnings again.
+   */
+  function listChanged(dataChanged) {
+    if (dataChanged) unsaved = true;
+    render({ ifChanged: true });
+    if (dataChanged) wantOverview();
+  }
+  /** The searched list's counts follow the search box, a moment after the last key. */
+  var searchTimer = null;
+  function searchTyped() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () { searchTimer = null; render({ ifChanged: true }); }, 120);
   }
 
   function filterBar(c) {
@@ -5083,13 +5257,13 @@
     var allTicked = shown.length && shown.every(function (z) { return !!zonePick[z.id]; });
     return h('div', { class: 'lz-bulk' }, [
       sel(listFilter.sector, [['', T('pl.loot-zones.filter.allSectors', 'Every sector')]].concat(sectorList.map(function (s) { return [s, s]; })),
-        function (v) { listFilter.sector = v; render(); }, T('pl.loot-zones.filter.sector', 'Sector')),
+        function (v) { listFilter.sector = v; listChanged(false); }, T('pl.loot-zones.filter.sector', 'Sector')),
       sel(listFilter.place, [
         ['', T('pl.loot-zones.filter.allPlaces', 'Any place')],
         ['S', T('pl.loot-zones.filter.placeS', 'With sentry posts')],
         ['D', T('pl.loot-zones.filter.placeD', 'Abandoned bunkers')],
         ['N', T('pl.loot-zones.filter.placeN', 'Without sentries')],
-      ], function (v) { listFilter.place = v; render(); }, T('pl.loot-zones.filter.place', 'Place')),
+      ], function (v) { listFilter.place = v; listChanged(false); }, T('pl.loot-zones.filter.place', 'Place')),
       sel(listFilter.show, [
         ['all', T('pl.loot-zones.bulk.show.all', 'All zones')],
         ['on', T('pl.loot-zones.bulk.show.on', 'In rotation')],
@@ -5099,15 +5273,19 @@
         ['novariants', T('pl.loot-zones.filter.withoutVariants', 'Without variants')],
         ['warnings', T('pl.loot-zones.filter.withWarnings', 'With something to check')],
         ['rules', T('pl.loot-zones.filter.withRules', 'Breaking a rule')],
-      ], function (v) { listFilter.show = v; render(); }, T('pl.loot-zones.bulk.show.label', 'Show')),
+      ], function (v) { listFilter.show = v; listChanged(false); }, T('pl.loot-zones.bulk.show.label', 'Show')),
       h('span', { class: 'lz-bulk-n' }, shown.length === all
         ? T('pl.loot-zones.bulk.count', '{n} of {total}', { n: shown.length, total: all })
         : T('pl.loot-zones.bulk.countFiltered', '{n} of {total} shown', { n: shown.length, total: all })),
       shown.length ? h('button', {
         class: 'secondary', type: 'button',
         onclick: function () {
-          shown.forEach(function (z) { if (allTicked) delete zonePick[z.id]; else zonePick[z.id] = true; });
-          render();
+          // Read at the PRESS: a list narrowed by the search since this bar was drawn is the list
+          // the reader is looking at, and the one this acts on.
+          var now = searchedOf(filteredZones());
+          var allNow = now.length && now.every(function (z) { return !!zonePick[z.id]; });
+          now.forEach(function (z) { if (allNow) delete zonePick[z.id]; else zonePick[z.id] = true; });
+          listChanged(false);
         },
       }, [icon(allTicked ? 'close' : 'check'), allTicked
         ? T('pl.loot-zones.bulk.untickShown', 'Untick {n}', { n: shown.length })
@@ -5115,68 +5293,91 @@
     ]);
   }
 
-  function bulkBar(c, st) {
+  /**
+   * The ticked zones, read NOW. ⚠ Every bulk handler asks this at the press and never closes over
+   * the list it was drawn with: a bar left in place by a patch (`render({ ifChanged })`) is a bar
+   * whose markup came out the same — "3 ticked" — over a DIFFERENT three, and acting on the three it
+   * was drawn with switches off somebody else's zones.
+   */
+  function bulkNow() {
+    var c = state.cfg || {};
     var zones = c.zones || [];
-    var picked = zones.filter(function (z) { return !!zonePick[z.id]; });
-    if (!picked.length) return null;
+    var picked = zones.filter(function (z) { return z && !!zonePick[z.id]; });
     var names = picked.map(function (z) { return z.name || z.set || ''; }).filter(Boolean);
-    var short = names.slice(0, 8).join(', ') + (names.length > 8 ? T('pl.loot-zones.bulk.andMore', ' and {n} more', { n: names.length - 8 }) : '');
-    var withVariants = picked.filter(function (z) { return Array.isArray(z.variants) && z.variants.length; });
-    var rerollable = picked.filter(savedHasVariants);
+    return {
+      c: c, zones: zones, picked: picked,
+      short: names.slice(0, 8).join(', ') + (names.length > 8 ? T('pl.loot-zones.bulk.andMore', ' and {n} more', { n: names.length - 8 }) : ''),
+      withVariants: picked.filter(function (z) { return Array.isArray(z.variants) && z.variants.length; }),
+      rerollable: picked.filter(savedHasVariants),
+    };
+  }
+  function bulkBar(c, st) {
+    var b0 = bulkNow();
+    var picked = b0.picked;
+    // Always an element, so the card's shape does not change with the first tick and the table
+    // below it is never moved (see `placeTable`).
+    if (!picked.length) return h('div', { class: 'lz-bulk lz-bulk-sel', hidden: '' });
     return h('div', { class: 'lz-bulk lz-bulk-sel' }, [
       h('span', { class: 'lz-badge on' }, T('pl.loot-zones.bulk.picked', '{n} ticked', { n: picked.length })),
       h('button', {
         class: 'secondary', type: 'button', disabled: picked.every(function (z) { return z.enabled !== false; }) ? '' : null,
-        onclick: function () { picked.forEach(function (z) { z.enabled = true; }); markDirty(); },
+        onclick: function () { bulkNow().picked.forEach(function (z) { z.enabled = true; }); listChanged(true); },
       }, [icon('power'), T('pl.loot-zones.bulk.on', 'Put in the rotation')]),
       h('button', {
         class: 'secondary', type: 'button', disabled: picked.every(function (z) { return z.enabled === false; }) ? '' : null,
-        onclick: function () { picked.forEach(function (z) { z.enabled = false; }); markDirty(); },
+        onclick: function () { bulkNow().picked.forEach(function (z) { z.enabled = false; }); listChanged(true); },
       }, [icon('ban'), T('pl.loot-zones.bulk.off', 'Take out of the rotation')]),
-      h('button', { class: 'secondary', type: 'button', onclick: function () { openMixDialog(picked); } },
+      h('button', { class: 'secondary', type: 'button', onclick: function () { openMixDialog(bulkNow().picked); } },
         [icon('copy'), T('pl.loot-zones.bulk.mix', 'Give them variants…')]),
-      withVariants.length ? h('button', {
+      b0.withVariants.length ? h('button', {
         class: 'secondary', type: 'button',
         onclick: function () {
+          var b = bulkNow();
+          if (!b.withVariants.length) return;
           SSA.confirm(T('pl.loot-zones.bulk.dropVariantsConfirm',
             'Remove every variant from {n} zones?\n\n{names}\n\nEach zone then runs its own guard settings every session. Nothing changes until {save}.',
-            { n: withVariants.length, names: short, save: labSave() })).then(function (yes) {
+            { n: b.withVariants.length, names: b.short, save: labSave() })).then(function (yes) {
             if (!yes) return;
-            withVariants.forEach(function (z) { delete z.variants; });
-            markDirty();
+            b.withVariants.forEach(function (z) { delete z.variants; });
+            listChanged(true);
           });
         },
       }, [icon('close'), T('pl.loot-zones.bulk.dropVariants', 'Remove their variants')]) : null,
-      rerollable.length ? h('button', {
-        class: 'secondary', type: 'button', onclick: function () { rerollConfirm(rerollable, false); },
-      }, [icon('refresh'), T('pl.loot-zones.bulk.reroll', 'New variant now ({n})', { n: rerollable.length })]) : null,
+      b0.rerollable.length ? h('button', {
+        class: 'secondary', type: 'button', onclick: function () { rerollConfirm(bulkNow().rerollable, false); },
+      }, [icon('refresh'), T('pl.loot-zones.bulk.reroll', 'New variant now ({n})', { n: b0.rerollable.length })]) : null,
       h('button', {
         class: 'lz-del', type: 'button', title: T('pl.loot-zones.bulk.remove', 'Remove the ticked zones'),
         onclick: function () {
-          var liveIds = liveIdsOf(st);
-          var stillOn = picked.filter(function (z) { return liveIds[String(z.id)]; });
+          var b = bulkNow();
+          if (!b.picked.length) return;
+          var liveIds = liveIdsOf(state.status);
+          var stillOn = b.picked.filter(function (z) { return liveIds[String(z.id)]; });
           var rmVars = {
-            n: picked.length, names: short,
+            n: b.picked.length, names: b.short,
             live: stillOn.length
               ? T('pl.loot-zones.bulk.removeLive',
                 '\n\n⚠ {n} are live and stay on the server. Press "{button}" under {card} afterwards.', { n: stillOn.length, button: labReconcile(), card: cardActions() })
               : '',
             save: labSave(), discard: labDiscard(),
           };
-          SSA.confirm(picked.length === 1
+          SSA.confirm(b.picked.length === 1
             ? T('pl.loot-zones.bulk.removeConfirm.one',
               'Remove {n} zone from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)
             : T('pl.loot-zones.bulk.removeConfirm',
               'Remove {n} zones from the list?{live}\n\n{names}\n\nNothing changes until {save}; "{discard}" undoes it.', rmVars)).then(function (yes) {
             if (!yes) return;
-            c.zones = zones.filter(function (z) { return !zonePick[z.id]; });
+            var cc = state.cfg;
+            if (!cc) return;
+            cc.zones = (cc.zones || []).filter(function (z) { return !zonePick[z.id]; });
             zonePick = {};
-            markDirty();
+            listChanged(true);
           });
         },
       }, [icon('close'), T('pl.loot-zones.bulk.removeButton', 'Remove')]),
-      h('button', { class: 'secondary', type: 'button', onclick: function () { zonePick = {}; render(); } },
+      h('button', { class: 'secondary', type: 'button', onclick: function () { zonePick = {}; listChanged(false); } },
         T('pl.loot-zones.bulk.untick', 'Untick all')),
+      rotationNote(c, picked),
     ]);
   }
 
@@ -5188,7 +5389,10 @@
       h('button', {
         class: free.length ? '' : 'secondary', type: 'button', disabled: free.length ? null : '',
         title: free.length ? null : T('pl.loot-zones.wiz.noneFree', 'Every loot set in the sets folder already has a zone.'),
-        onclick: function () { openWizard(free); },
+        onclick: function () {
+          var zs = (state.cfg && state.cfg.zones) || [];
+          openWizard(((state.sets && state.sets.sets) || []).filter(function (s) { return s.ok && !zs.some(function (z) { return z.set === s.name; }); }));
+        },
       }, [icon('box'), T('pl.loot-zones.wiz.open', 'Create zones from loot sets ({n} without a zone)', { n: free.length })]),
       h('button', {
         class: 'secondary', type: 'button', onclick: function () {
@@ -5196,13 +5400,17 @@
             id: 'z' + Date.now().toString(36), name: '', set: free.length ? free[0].name : (sets.length ? sets[0].name : ''),
             enabled: true, windows: [],
           };
-          c.zones = zones.concat([fresh]);
+          // The CURRENT list: the head is kept across patches, and `zones` here may be an array a
+          // removal has since replaced — concatenating onto it would bring the removed zones back.
+          var cc = state.cfg;
+          if (!cc) return;
+          cc.zones = (cc.zones || []).concat([fresh]);
           unsaved = true;
           openZone(fresh.id);
         },
       }, [icon('box'), T('pl.loot-zones.zones.add', 'Add a zone')]),
       anyVariants ? h('button', {
-        class: 'secondary', type: 'button', onclick: function () { rerollConfirm(zones.filter(savedHasVariants), true); },
+        class: 'secondary', type: 'button', onclick: function () { rerollConfirm(((state.cfg && state.cfg.zones) || []).filter(savedHasVariants), true); },
       }, [icon('refresh'), T('pl.loot-zones.reroll.all', 'New variants for every zone now')]) : null,
     ]);
     var kids = [head];
@@ -5214,13 +5422,20 @@
       kids.push(filterBar(c));
       kids.push(bulkBar(c, st));
       kids.push(zoneTableNode());
-      if (overview && overview.why) kids.push(note('wait', T('pl.loot-zones.list.overviewFailed', 'The warnings could not be worked out: {why}', { why: overview.why })));
+      kids.push(h('div', { class: 'lz-listnote' }, overview && overview.why
+        ? note('wait', T('pl.loot-zones.list.overviewFailed', 'The warnings could not be worked out: {why}', { why: overview.why })) : null));
     }
     return card('list', T('pl.loot-zones.card.zones', 'Zones'),
       T('pl.loot-zones.list.lead', 'One row per zone. Open a zone to change its area, its guards and its variants.'), kids);
   }
 
   // ── a new variant now ──────────────────────────────────────────────────────────────────────
+  /** ONE request for every zone it names: one id, the ticked ids, or every zone. */
+  function rerollBody(list, everyZone) {
+    if (everyZone) return { all: true };
+    if (list.length === 1) return { id: list[0].id };
+    return { all: false, id: null, ids: list.map(function (z) { return z.id; }) };
+  }
   function rerollConfirm(list, everyZone) {
     if (!list.length) return;
     var guardsNow = list.some(function (z) {
@@ -5238,7 +5453,7 @@
       + (unsaved ? '\n\n' + T('pl.loot-zones.reroll.unsaved', 'This uses the saved variants; this page\'s changes are not in it yet.') : '');
     Promise.resolve(SSA.confirm(msg)).then(function (yes) {
       if (!yes) return;
-      api('/reroll', { method: 'POST', body: everyZone ? { all: true } : (list.length === 1 ? { id: list[0].id } : { all: false, id: null, ids: list.map(function (z) { return z.id; }) }) })
+      api('/reroll', { method: 'POST', body: rerollBody(list, everyZone) })
         .then(function (r) {
           if (!r || r.ok === false) { SSA.toast((r && r.why) || T('pl.loot-zones.refused', 'Refused')); return; }
           var done = r.rerolled || [];
@@ -5355,6 +5570,8 @@
       var vBox = h('div', {}, [ch.node]);
       var body = h('div', { class: 'lz-lines' }, [
         h('p', { class: 'lz-lead' }, T('pl.loot-zones.wiz.lead', 'One zone per ticked loot set, named after its folder, with the set\'s Zones.json box grown on every side.')),
+        // The new zones arrive in rotation, and what that means is this server's rotation.
+        state.cfg ? rotationNote(state.cfg, null, true) : null,
         h('div', { class: 'lz-presetlist' }, setRows),
         row(T('pl.loot-zones.wiz.margin', 'Grow the area by'), numIn(opt.margin, function (v) { opt.margin = Math.max(0, v); }, 0, 500, T('pl.loot-zones.unit.metres', 'm')),
           T('pl.loot-zones.wiz.margin.hint', 'Added on every side of the set\'s box. The loot itself still covers only the set\'s own box.')),
@@ -5439,15 +5656,19 @@
     var all = c.zones || [];
     var i = all.indexOf(z);
     var o = ovOf(z);
-    var go = function (d) { var n = all[i + d]; if (n) openZone(n.id, editTab); };
+    // Links, every one: the next zone, the previous one and the list are each an address, so a
+    // middle click opens them beside this one and Back walks back through the zones opened.
+    var step = function (d, glyph, label) {
+      var n = all[i + d];
+      if (!n) return h('a', { class: 'lz-btnlink', 'aria-disabled': 'true', title: label, 'aria-label': label }, glyph);
+      return navLink(zoneRoute(n.id, editTab), { class: 'lz-btnlink', title: label, 'aria-label': label }, glyph,
+        function () { openZone(n.id, editTab); });
+    };
     root.appendChild(h('div', { class: 'lz-ednav' }, [
-      h('button', { class: 'secondary', type: 'button', onclick: function () { editId = null; editVariant = null; render(); } },
-        T('pl.loot-zones.ed.back', '← All zones')),
+      navLink('', { class: 'lz-btnlink' }, T('pl.loot-zones.ed.back', '← All zones'), closeZone),
       h('span', { class: 'lz-edpos' }, T('pl.loot-zones.ed.pos', 'Zone {i} of {n}', { i: i + 1, n: all.length })),
-      h('button', { class: 'secondary', type: 'button', disabled: i > 0 ? null : '', title: T('pl.loot-zones.ed.prev', 'Previous zone'),
-        'aria-label': T('pl.loot-zones.ed.prev', 'Previous zone'), onclick: function () { go(-1); } }, '‹'),
-      h('button', { class: 'secondary', type: 'button', disabled: i < all.length - 1 ? null : '', title: T('pl.loot-zones.ed.next', 'Next zone'),
-        'aria-label': T('pl.loot-zones.ed.next', 'Next zone'), onclick: function () { go(1); } }, '›'),
+      step(-1, '‹', T('pl.loot-zones.ed.prev', 'Previous zone')),
+      step(1, '›', T('pl.loot-zones.ed.next', 'Next zone')),
     ]));
     var parts = zoneParts(z, i, c, sets, st);
     var nv = Array.isArray(z.variants) ? z.variants.length : 0;
@@ -5467,10 +5688,13 @@
     var pillRow = h('div', { class: 'lz-pills', role: 'tablist' }, pills.map(function (p) {
       var on = editTab === p[0];
       var bad = ruleCount(p[0]);
-      return h('button', {
-        class: 'lz-pill' + (on ? ' on' : '') + (bad ? ' bad' : ''), type: 'button', role: 'tab', 'aria-selected': on ? 'true' : 'false',
-        onclick: function () { editTab = p[0]; editVariant = null; render(); },
-      }, [p[1], bad ? h('span', { class: 'lz-pillbad' }, String(bad)) : null]);
+      // A section of the same zone REPLACES the address rather than adding to it: Back from a zone
+      // goes to the list, not through every section the reader looked at on the way.
+      return navLink(zoneRoute(z.id, p[0]), {
+        class: 'lz-pill' + (on ? ' on' : '') + (bad ? ' bad' : ''), role: 'tab', 'aria-selected': on ? 'true' : 'false',
+      }, [p[1], bad ? h('span', { class: 'lz-pillbad' }, String(bad)) : null], function () {
+        editTab = p[0]; editVariant = null; render(); noteRoute(true);
+      });
     }));
     var title = String(z.name || '').trim() || T('pl.loot-zones.list.unnamed', '(no name)');
     var body;
@@ -5541,6 +5765,7 @@
               if (k >= 0) c.zones.splice(k, 1);
               editId = null;
               markDirty();
+              noteRoute(true);
             });
           },
         }, T('pl.loot-zones.ed.remove', 'Remove this zone')),
@@ -5931,39 +6156,106 @@
   /** The place the guard controls being drawn belong to, so "keep sentries out" offers only what is there. */
   var guardPlace = null;
 
+  /** Equal for the purpose of a redraw: the same markup, the elapsed-time spans aside. */
+  function sameNode(a, b) {
+    if (a.nodeType !== b.nodeType) return false;
+    if (a.nodeType === 3) return a.data === b.data;
+    if (a.nodeType !== 1) return true;
+    return withoutAgo(a.outerHTML) === withoutAgo(b.outerHTML);
+  }
+  function shallowSame(a, b) {
+    return a.tagName === b.tagName && a.cloneNode(false).outerHTML === b.cloneNode(false).outerHTML;
+  }
+  /**
+   * Walk the last drawn tree (`o`), the trial draw (`n`) and the page (`l`) together and collect the
+   * page nodes to swap for trial nodes. Recurses into an element whose own tag and attributes are
+   * unchanged, so a changed count inside the list's card swaps the count and not the card. Answers
+   * false when the shapes do not line up, which the caller answers with a full redraw.
+   */
+  function diffInto(o, n, l, depth, plan) {
+    var oc = o.childNodes, nc = n.childNodes, lc = l.childNodes;
+    if (oc.length !== nc.length || lc.length !== oc.length) return false;
+    for (var i = 0; i < nc.length; i++) {
+      var a = oc[i], b = nc[i], c = lc[i];
+      if (sameNode(a, b)) continue;
+      if (depth < 5 && a.nodeType === 1 && b.nodeType === 1 && c.nodeType === 1 && c.tagName === a.tagName && shallowSame(a, b)) {
+        var sub = [];
+        if (diffInto(a, b, c, depth + 1, sub)) { for (var k = 0; k < sub.length; k++) plan.push(sub[k]); continue; }
+      }
+      if (c.nodeType !== b.nodeType && (c.nodeType !== 1 || b.nodeType !== 1)) return false;
+      plan.push([c, b]);
+    }
+    return true;
+  }
+  /** The patch half of `render({ ifChanged })`. Answers false where only a full redraw will do. */
+  function patchRender() {
+    var live = root, bar = saveBar, probe = document.createElement('div');
+    var liveDraft = vdraft;
+    var drew = true;
+    root = probe;
+    drawingProbe = true;
+    vdraft = null;
+    try { draw(); } catch (ignored) { drew = false; }
+    drawingProbe = false;
+    root = live;
+    saveBar = bar;
+    vdraft = liveDraft;
+    if (!drew) return false;
+    var next = probe.cloneNode(true);
+    var plan = [];
+    if (!diffInto(lastTree, probe, root, 0, plan)) return false;
+    var focus = document.activeElement;
+    var todo = [];
+    for (var i = 0; i < plan.length; i++) {
+      var was = plan[i][0];
+      if (was.nodeType === 1) {
+        // A variant being edited holds a draft that the trial draw did not build; only a full redraw
+        // keeps the two together.
+        if ((was.matches && was.matches('.lz-veditor')) || (was.querySelector && was.querySelector('.lz-veditor'))) return false;
+        // A field the reader is in stays exactly as it is, caret and all, until the next draw.
+        if (focus && was !== focus && was.contains(focus) && /^(?:INPUT|SELECT|TEXTAREA)$/.test(focus.tagName)
+          && !(zoneTable && zoneTable.el.contains(focus))) continue;
+      }
+      todo.push(plan[i]);
+    }
+    for (var j = 0; j < todo.length; j++) {
+      if (todo[j][0].parentNode) todo[j][0].parentNode.replaceChild(todo[j][1], todo[j][0]);
+    }
+    placeTable(root);
+    var sb = null;
+    for (var ch = root.lastElementChild; ch; ch = ch.previousElementSibling) { if (ch.classList && ch.classList.contains('lz-save')) { sb = ch; break; } }
+    if (sb) saveBar = sb;
+    // The elapsed-time spans of what was kept, brought up to date in place — see `withAgo`.
+    var fresh = next.querySelectorAll('.lz-ago');
+    var shown = root.querySelectorAll('.lz-ago');
+    if (fresh.length === shown.length) {
+      for (var ai = 0; ai < fresh.length; ai++) {
+        if (shown[ai].textContent !== fresh[ai].textContent) shown[ai].textContent = fresh[ai].textContent;
+      }
+    }
+    lastTree = next;
+    return true;
+  }
+
   function render(opts) {
     // Whatever the owner changed in an open variant reaches the variant before anything is redrawn.
     syncDraft();
-    if (opts && opts.ifChanged && root && lastDrawn !== null) {
-      var live = root, bar = saveBar, probe = document.createElement('div');
-      var same = false;
-      var liveDraft = vdraft;
-      root = probe;
-      drawingProbe = true;
-      vdraft = null;
-      // Compared WITHOUT the elapsed-time spans, which are then brought up to date in place — see
-      // `withAgo`. Equal counts are implied by equal markup, so the two lists pair one to one.
-      try { draw(); same = withoutAgo(probe.innerHTML) === withoutAgo(lastDrawn); } catch (ignored) { same = false; }
-      drawingProbe = false;
-      root = live;
-      saveBar = bar;
-      vdraft = liveDraft;
-      if (same) {
-        var fresh = probe.querySelectorAll('.lz-ago');
-        var shown = live.querySelectorAll('.lz-ago');
-        for (var ai = 0; ai < fresh.length && ai < shown.length; ai++) {
-          if (shown[ai].textContent !== fresh[ai].textContent) shown[ai].textContent = fresh[ai].textContent;
-        }
-        lastDrawn = probe.innerHTML;
-        return;
-      }
+    if (opts && opts.ifChanged && root && lastTree && drawnCfg === state.cfg) {
+      var patched = false;
+      try { patched = patchRender(); } catch (e) { patched = false; }
+      if (patched) return;
     }
     // ⚠ BEFORE `draw()`, which empties the root — see `beforeRedraw` for what is being kept and
     // why a reconciler is not what is used here.
     var keep = beforeRedraw();
-    lastDrawn = null;
+    lastTree = null;
     vdraft = null;
-    try { draw(); snapDraft(); lastDrawn = root ? root.innerHTML : null; } catch (e) {
+    try {
+      draw(); snapDraft();
+      lastTree = root ? root.cloneNode(true) : null;
+      drawnCfg = state.cfg;
+      placeTable(root);
+    } catch (e) {
       try {
         root.innerHTML = '';
         root.appendChild(h('div', { class: 'lz-note bad' },
@@ -6006,7 +6298,9 @@
 
     root.appendChild(tabNav(c));
     var zEdit = editId != null ? zoneById(editId) : null;
-    if (editId != null && !zEdit) { editId = null; editVariant = null; }
+    // An address naming a zone this configuration does not have (removed since, or an unsaved one
+    // opened in a new tab) lands on the list, and the address says so.
+    if (editId != null && !zEdit) { editId = null; editVariant = null; noteRoute(true); }
     if (view === 'messages') {
       // ── what players are told ────────────────────────────────────────────────────────────────────
       root.appendChild(card('chat', T('pl.loot-zones.card.messages', 'What players are told'),
@@ -6083,9 +6377,13 @@
           ['order', T('pl.loot-zones.pick.order', 'In turn, down the list')],
           ['random', T('pl.loot-zones.pick.random', 'At random')],
         ], function (v) { c.restartPick = v; markDirty(); })) : null,
+        // ⚠ OUT OF THE FOLD. Together with the rotation above it decides what "In rotation" does on the
+        // list — by hand with 1 here, putting fifty zones in rotation leaves one live — and an owner
+        // who set it to 1 while trying things out had to open "More options" to find out why.
+        row(T('pl.loot-zones.set.maxActive', 'Zones at once'), numIn(c.maxActive, function (v) { c.maxActive = v; markDirty(); }, 1, 10, T('pl.loot-zones.unit.zones', 'zones')),
+          T('pl.loot-zones.set.maxActive.hint', 'The game allows several. Each one is another folder the game reads when it starts.')),
+        rotationNote(c, null, true),
         more('rotation', T('pl.loot-zones.more.options', 'More options'), [
-          row(T('pl.loot-zones.set.maxActive', 'Zones at once'), numIn(c.maxActive, function (v) { c.maxActive = v; markDirty(); }, 1, 10, T('pl.loot-zones.unit.zones', 'zones')),
-            T('pl.loot-zones.set.maxActive.hint', 'The game allows several. Each one is another folder the game reads when it starts.')),
           row(T('pl.loot-zones.set.minBetween', 'Time between switches'), numIn(c.minMinutesBetweenSwitches, function (v) { c.minMinutesBetweenSwitches = v; markDirty(); }, 0, 1440, T('pl.loot-zones.unit.minutes', 'minutes')),
             T('pl.loot-zones.set.minBetween.hint',
               'Minimum time between loot swaps; switching off counts. Stops a crash loop cycling every zone.')),
@@ -6360,6 +6658,7 @@
           [h('b', {}, held + '/' + postsAll), h('span', {}, T('pl.loot-zones.fig.postsHeld', 'posts held'))]) : null,
         guardsUp ? h('div', { class: 'lz-fig' }, [h('b', {}, String(guardsUp)), h('span', {}, T('pl.loot-zones.fig.guardsSent', 'guards sent'))]) : null,
       ].filter(Boolean)));
+      root.appendChild(rotationNote(c, null));
 
       root.appendChild(zonesCard(c, st, sets));
     }
@@ -6427,6 +6726,8 @@
       render: function (container) {
         root = container;
         root.classList.add('lz');
+        // The screen the address names: a zone opened in a new tab, a bookmark, Back into this page.
+        if (ROUTE) applyRoute(ROUTE.get());
         refresh();
         // One timer across opens, or reopening the tab stacks them.
         if (poll) clearInterval(poll);

@@ -998,5 +998,12 @@
   "pl.loot-zones.vf.lead": "Cokoli níže změníš, stane se vlastním nastavením téhle varianty; všechno ostatní se řídí sekcemi zóny „Strážní“ a „Jak rušno v zóně je“.",
   "pl.loot-zones.var.baseTitle": "Tahle zóna v každé relaci běží s jednou ze svých variant ({n}). ",
   "pl.loot-zones.var.baseNote": "Každá varianta vychází z těchto nastavení: co si varianta nenastaví sama, řídí se touto sekcí. Uprav je pod „{tab}“.",
-  "pl.loot-zones.bridge.unknownAll": "Bridge nedokázal říct, zda je toto zapnuto: {list}"
+  "pl.loot-zones.bridge.unknownAll": "Bridge nedokázal říct, zda je toto zapnuto: {list}",
+  "pl.loot-zones.rot.line.time": "Rotace: podle plánu. Zóna v rotaci je živá, dokud jsou otevřené její časy, naráz nejvýš {n}.",
+  "pl.loot-zones.rot.line.over": "V rotaci: {k}, naráz živých nejvýš {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotace: jedna zóna na každý restart serveru, vybraná ze zón v rotaci.",
+  "pl.loot-zones.rot.line.manual": "Rotace: ručně. Zóna je živá, jen když ji zapneš v jejím editoru, naráz nejvýš {n}.",
+  "pl.loot-zones.rot.line.bulkManual": "Při ruční rotaci se zóny tím, že je dáš do rotace, nezapnou.",
+  "pl.loot-zones.rot.line.off": "Rotace je vypnutá, sama se tedy nic nezapne.",
+  "pl.loot-zones.rot.line.change": "Změníš v části {tab}"
 }

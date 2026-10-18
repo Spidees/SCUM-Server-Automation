@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "在下面改動任何一項，它就成為此變體自己的設定；其餘一切都沿用區塊的守衛和「區塊有多熱鬧」部分。",
   "pl.loot-zones.var.baseTitle": "這個區塊每次運行都會使用它 {n} 個變體中的一個。 ",
   "pl.loot-zones.var.baseNote": "每個變體都從這些設定開始：變體自己沒有設定的項目都沿用這一節。請在「{tab}」下編輯。",
-  "pl.loot-zones.bridge.unknownAll": "SSA Bridge 無法回報以下項目是否已開啟：{list}"
+  "pl.loot-zones.bridge.unknownAll": "SSA Bridge 無法回報以下項目是否已開啟：{list}",
+  "pl.loot-zones.rot.line.time": "輪替：依排程。在輪替中的區塊於其時段開啟時生效，同時最多 {n} 個。",
+  "pl.loot-zones.rot.line.over": "在輪替中的區塊：{k}，同時生效最多 {n}。",
+  "pl.loot-zones.rot.line.restart": "輪替：每次伺服器重新啟動選一個區塊，從輪替中的區塊挑選。",
+  "pl.loot-zones.rot.line.manual": "輪替：手動。區塊只有在你於其編輯器中開啟時才生效，同時最多 {n} 個。",
+  "pl.loot-zones.rot.line.bulkManual": "手動輪替時，把區塊放進輪替並不會開啟它們。",
+  "pl.loot-zones.rot.line.off": "輪替已關閉，因此不會自行生效任何區塊。",
+  "pl.loot-zones.rot.line.change": "在 {tab} 中變更"
 }

@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "Ändra något nedan så blir det den här variantens eget; allt annat följer zonens avsnitt ”Vakter” och ”Hur livlig zonen är”.",
   "pl.loot-zones.var.baseTitle": "Den här zonen kör en av sina {n} varianter varje session. ",
   "pl.loot-zones.var.baseNote": "Varje variant utgår från de här inställningarna: det en variant inte ställer in själv följer det här avsnittet. Redigera dem under ”{tab}”.",
-  "pl.loot-zones.bridge.unknownAll": "Bridgen kunde inte säga om dessa är på: {list}"
+  "pl.loot-zones.bridge.unknownAll": "Bridgen kunde inte säga om dessa är på: {list}",
+  "pl.loot-zones.rot.line.time": "Rotation: enligt schema. En zon i rotationen är live medan dess tider är öppna, högst {n} åt gången.",
+  "pl.loot-zones.rot.line.over": "I rotation: {k}, live samtidigt högst {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotation: en zon per omstart av servern, vald bland zonerna i rotationen.",
+  "pl.loot-zones.rot.line.manual": "Rotation: för hand. En zon är live bara när du slår på den i dess redigerare, högst {n} åt gången.",
+  "pl.loot-zones.rot.line.bulkManual": "När rotationen sker för hand slås zoner inte på av att tas in i rotationen.",
+  "pl.loot-zones.rot.line.off": "Rotationen är av, så inget blir live av sig självt.",
+  "pl.loot-zones.rot.line.change": "Ändra under {tab}"
 }

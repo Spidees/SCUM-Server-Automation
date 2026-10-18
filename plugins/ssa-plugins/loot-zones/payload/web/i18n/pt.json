@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "O que você mudar abaixo passa a ser desta variante; todo o resto segue as seções Guardas e Movimento da zona.",
   "pl.loot-zones.var.baseTitle": "Esta zona usa uma das suas {n} variantes em cada sessão. ",
   "pl.loot-zones.var.baseNote": "Toda variante parte destas configurações: o que uma variante não define por conta própria segue esta seção. Edite-as em \"{tab}\".",
-  "pl.loot-zones.bridge.unknownAll": "O bridge não conseguiu dizer se estes estão ligados: {list}"
+  "pl.loot-zones.bridge.unknownAll": "O bridge não conseguiu dizer se estes estão ligados: {list}",
+  "pl.loot-zones.rot.line.time": "Rotação: por horário. Uma zona na rotação fica ativa enquanto os seus horários estão abertos, no máximo {n} de cada vez.",
+  "pl.loot-zones.rot.line.over": "Na rotação: {k}; ativas ao mesmo tempo: no máximo {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotação: uma zona por cada reinício do servidor, escolhida entre as zonas na rotação.",
+  "pl.loot-zones.rot.line.manual": "Rotação: à mão. Uma zona só fica ativa quando a ligas no seu editor, no máximo {n} de cada vez.",
+  "pl.loot-zones.rot.line.bulkManual": "Com a rotação à mão, pôr zonas na rotação não as liga.",
+  "pl.loot-zones.rot.line.off": "A rotação está desligada, por isso nada fica ativo sozinho.",
+  "pl.loot-zones.rot.line.change": "Muda-se em {tab}"
 }

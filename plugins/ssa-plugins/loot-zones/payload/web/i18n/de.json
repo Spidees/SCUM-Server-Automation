@@ -982,5 +982,12 @@
   "pl.loot-zones.vf.lead": "Was du unten änderst, gehört dieser Variante; alles andere folgt den Abschnitten Wachen und Belebtheit der Zone.",
   "pl.loot-zones.var.baseTitle": "Diese Zone nutzt in jeder Sitzung eine ihrer {n} Varianten. ",
   "pl.loot-zones.var.baseNote": "Jede Variante geht von diesen Einstellungen aus: Was eine Variante nicht selbst festlegt, folgt diesem Abschnitt. Bearbeite sie unter „{tab}“.",
-  "pl.loot-zones.bridge.unknownAll": "Die Bridge konnte nicht sagen, ob diese eingeschaltet sind: {list}"
+  "pl.loot-zones.bridge.unknownAll": "Die Bridge konnte nicht sagen, ob diese eingeschaltet sind: {list}",
+  "pl.loot-zones.rot.line.time": "Rotation: nach Zeitplan. Eine Zone in der Rotation ist live, solange ihre Zeiten offen sind, höchstens {n} gleichzeitig.",
+  "pl.loot-zones.rot.line.over": "In der Rotation: {k}, gleichzeitig live höchstens {n}.",
+  "pl.loot-zones.rot.line.restart": "Rotation: eine Zone pro Serverneustart, gewählt aus den Zonen in der Rotation.",
+  "pl.loot-zones.rot.line.manual": "Rotation: von Hand. Eine Zone ist nur live, wenn du sie in ihrem Editor einschaltest, höchstens {n} gleichzeitig.",
+  "pl.loot-zones.rot.line.bulkManual": "Zonen in die Rotation zu nehmen schaltet sie nicht ein, solange die Rotation von Hand läuft.",
+  "pl.loot-zones.rot.line.off": "Die Rotation ist aus, also geht nichts von selbst live.",
+  "pl.loot-zones.rot.line.change": "Ändern unter {tab}"
 }
