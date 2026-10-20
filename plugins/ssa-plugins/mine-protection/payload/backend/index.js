@@ -97,6 +97,25 @@ const DEFAULTS = {
   fallenFlagAnnounce: false,          // a line in game chat when mines are removed
   fallenFlagMessage: 'The mines left in a fallen flag\'s area have been removed.',
   fallenFlagMessageI18n: {},
+  // ── 1.10.0 ──
+  // The punishment on its own switch, so an owner can run only the clean-up. `enabled` stays the
+  // master switch for the whole plugin, exactly as before.
+  punishEnabled: true,
+  // ── mines that sit inside NO standing flag area (whatever the reason: the flag fell before this
+  // plugin ever saw it, the base was wiped, the mine was armed outside every flag) ──
+  // OFF as shipped, like the fallen-flag switch: it removes things from the world.
+  orphanCleanup: false,
+  orphanTypes: 'watched',             // 'watched' | 'all'
+  orphanGraceMinutes: 60,             // how long a mine must be outside every flag before it goes
+  orphanOfflineOnly: true,            // never while its placer is online (an unknown placer is not online)
+  orphanAlert: true,
+  orphanAnnounce: false,
+  orphanMessage: 'Mines left outside every flag area have been removed.',
+  orphanMessageI18n: {},
+  // How long an orphan or manual removal keeps trying (the area has to be loaded to remove a mine).
+  removeTryMinutes: 120,
+  // Mines the owner chose to keep: never removed by the orphan clean-up.
+  keepMineIds: [],
 };
 // Channels a targeted DM can be delivered to for one player.
 const CHANNELS = ['local', 'global', 'squad', 'admin', 'server'];
@@ -170,6 +189,19 @@ function normalizeConfig(raw) {
   c.fallenFlagAnnounce = c.fallenFlagAnnounce === true;
   c.fallenFlagMessage = String(c.fallenFlagMessage || DEFAULTS.fallenFlagMessage);
   c.fallenFlagMessageI18n = cleanI18n(r.fallenFlagMessageI18n);
+  c.punishEnabled = c.punishEnabled !== false;
+  // Orphans. The same rule as the fallen flags: only an explicit `true` removes anything.
+  c.orphanCleanup = r.orphanCleanup === true;
+  c.orphanTypes = c.orphanTypes === 'all' ? 'all' : 'watched';
+  c.orphanGraceMinutes = boundedNumber(r.orphanGraceMinutes, 1, 10080, DEFAULTS.orphanGraceMinutes);
+  c.orphanOfflineOnly = c.orphanOfflineOnly !== false;
+  c.orphanAlert = c.orphanAlert !== false;
+  c.orphanAnnounce = c.orphanAnnounce === true;
+  c.orphanMessage = String(c.orphanMessage || DEFAULTS.orphanMessage);
+  c.orphanMessageI18n = cleanI18n(r.orphanMessageI18n);
+  c.removeTryMinutes = boundedNumber(r.removeTryMinutes, 5, 10080, DEFAULTS.removeTryMinutes);
+  c.keepMineIds = [...new Set((Array.isArray(r.keepMineIds) ? r.keepMineIds : [])
+    .map((s) => String(s).trim()).filter((s) => /^[\w-]{1,40}$/.test(s)))].slice(0, 5000);
   return c;
 }
 
@@ -217,6 +249,36 @@ function overlayConfig(stored, body) {
   return out;
 }
 
+/**
+ * Does one row of the Mines screen match its filters?
+ *
+ * ⚠ THE SCREEN HAS A COPY OF THIS, and the two must agree: "Remove all matching" names a count that
+ * the screen worked out, and the backend works the match out again at the press. A difference
+ * between the two is a refusal ("the list changed"), never a different removal from the one the
+ * admin confirmed. Every unknown matches nothing: a mine whose flag could not be told is neither
+ * inside nor outside one, and a mine with no recorded age is not "older than" anything.
+ */
+function mineMatches(r, f, now) {
+  f = f || {};
+  if (f.type === '*watched') { if (!r.watched) return false; }
+  else if (f.type && r.type !== f.type) return false;
+  if (f.placer === '*unknown') { if (r.placerSteamId) return false; }
+  else if (f.placer && r.placerSteamId !== f.placer) return false;
+  if (f.flag === 'inside' && r.insideFlag !== true) return false;
+  if (f.flag === 'outside' && r.insideFlag !== false) return false;
+  if (f.flag === 'unknown' && r.insideFlag !== null && r.insideFlag !== undefined) return false;
+  if (f.armed === 'armed' && r.armed !== true) return false;
+  if (f.armed === 'disarmed' && r.armed !== false) return false;
+  if (f.armed === 'unknown' && r.armed !== null && r.armed !== undefined) return false;
+  if (f.sector && r.sector !== f.sector) return false;
+  const days = Number(f.age) || 0;
+  if (days > 0 && !(Number.isFinite(r.lastTouched) && now - r.lastTouched >= days * 86400000)) return false;
+  const q = String(f.q || '').trim().toLowerCase();
+  if (q && mineSearchText(r).toLowerCase().indexOf(q) < 0) return false;
+  return true;
+}
+function mineSearchText(r) { return [r.id, r.name, r.type, r.placerName, r.placerSteamId, r.sector].join(' '); }
+
 module.exports = {
   async register(host) {
     // ── what the offender reads, in their own language ──────────────────────────────────────
@@ -229,6 +291,7 @@ module.exports = {
       if (!host.i18n) return null;
       if (field === 'warnMessage') return host.i18n.t('pl.mine-protection.default.warnMessage', 'Warning: arm mines only inside your own or your squad\'s flag area. The next one takes you with it.', lang);
       if (field === 'fallenFlagMessage') return host.i18n.t('pl.mine-protection.default.fallenFlagMessage', 'The mines left in a fallen flag\'s area have been removed.', lang);
+      if (field === 'orphanMessage') return host.i18n.t('pl.mine-protection.default.orphanMessage', 'Mines left outside every flag area have been removed.', lang);
       return host.i18n.t('pl.mine-protection.default.message', 'Arming a mine outside your own or your squad\'s flag area is not allowed. Enjoy your own trap.', lang);
     }
     // Per language: the owner's own line, else the plugin's translation while the text is still the
@@ -249,7 +312,7 @@ module.exports = {
     }
     /** The shipped lines in every player language, for the language editor's built-in text. */
     function textDefaults() {
-      const fields = ['message', 'warnMessage', 'fallenFlagMessage'];
+      const fields = ['message', 'warnMessage', 'fallenFlagMessage', 'orphanMessage'];
       const english = {};
       for (const f of fields) english[f] = DEFAULTS[f];
       const byLang = {};
@@ -267,10 +330,29 @@ module.exports = {
     // store there parsed the plugin's whole store file once a second, enabled or not. It is re-read
     // after every save and once a minute, so a store that could not be read at boot (and answered
     // the defaults) still recovers on its own, exactly as the per-second read did.
+    //
+    // ⚠ A config this plugin has read before and now cannot is NOT "no config". The host answers
+    // nothing for a store file that exists and could not be read (an antivirus hold, a half-written
+    // file), and read as the defaults that switched both clean-ups off for a minute: the fallen-flag
+    // timers were dropped and their flags learned again, so a flag that fell in that minute was
+    // never seen to fall. The last config read stays in force until the store answers again.
     const CONFIG_REREAD_MS = 60000;
-    let configNow = normalizeConfig(host.store.get('config', {}));
+    let configStored = host.store.get('config', undefined);
+    let configNow = normalizeConfig(configStored || {});
     let configReadAt = Date.now();
-    const reloadConfig = () => { configNow = normalizeConfig(host.store.get('config', {})); configReadAt = Date.now(); return configNow; };
+    let configLostSaid = false;
+    const reloadConfig = () => {
+      const raw = host.store.get('config', undefined);
+      configReadAt = Date.now();
+      if (raw === undefined && configStored !== undefined) {
+        if (!configLostSaid) { configLostSaid = true; host.logger.warn('the stored settings could not be read; the ones read before stay in force'); }
+        return configNow;
+      }
+      configLostSaid = false;
+      configStored = raw;
+      configNow = normalizeConfig(raw || {});
+      return configNow;
+    };
     const cfg = () => (Date.now() - configReadAt >= CONFIG_REREAD_MS ? reloadConfig() : configNow);
 
     // The plugin leans on two shared manager facilities; without them it ENFORCES nothing rather than
@@ -579,7 +661,7 @@ module.exports = {
 
     async function poll() {
       const c = cfg();
-      if (!c.enabled) return;
+      if (!c.enabled || !c.punishEnabled) return;
 
       const mines = armedWatchedMines(c);
       if (mines === null) return;                  // world not readable right now → skip, keep memory
@@ -704,6 +786,33 @@ module.exports = {
     let ffDirty = false;
     let ffBusy = false, ffNextRun = 0;
 
+    // ── 1.10.0: one removal engine, three kinds of job ──────────────────────────────────────────
+    //
+    // A fallen flag's area is one kind of removal job. Two more run through the SAME passes below,
+    // so a mine is listed, destroyed, confirmed and logged one way whoever asked for it:
+    //
+    //   • `orphan`: mines that sit inside NO standing flag area, found by `orScan()`. That is the case
+    //     the fallen-flag timer can never reach, because it only knows flags it saw standing: a flag
+    //     that fell before this plugin first looked, a base wiped with its owner, a mine armed outside
+    //     every flag. Measured on the dev save: 26 armed mines of one deleted profile (23 improvised
+    //     mines and 3 cartridge traps) where no base stands any more, already there in every backup
+    //     taken before the fallen-flag switch first ran.
+    //   • `manual`: mines an admin picked on the Mines screen, or a "Remove now" press.
+    //
+    // A job covers one square the size of a flag's (`RM_CELL_CM`), so the bridge's visitor reaches it
+    // the same way it reaches a flag. Only ONE job holds the visitor at a time (`wakeHolder`): the
+    // bridge keeps a small pool of them, and ten clusters asking at once would each get half a nudge.
+    const RM_CELL_CM = 2 * FF_HALF_CM;
+    const RM_KEEP_DONE = 30;               // finished jobs kept for the panel
+    const RM_LOG_MAX = 300;                // one row per removed mine, newest first
+    const OR_SCAN_MS = 60000;              // how often the world is searched for mines outside every flag
+    const OR_MAX_LIVE = 4;                 // orphan jobs running at once; the rest wait for the next scan
+    let rmJobs = (() => { const a = host.store.get('rmJobs', []); return Array.isArray(a) ? a.filter((x) => x && typeof x === 'object' && x.mines) : []; })();
+    let removals = (() => { const a = host.store.get('removals', []); return Array.isArray(a) ? a.filter((x) => x && typeof x === 'object').slice(0, RM_LOG_MAX) : []; })();
+    let orphans = (() => { const o = host.store.get('orphans', {}); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; })();
+    let rmDirty = false, logDirty = false, orDirty = false;
+    let rmSeq = 0, orNextScan = 0, wakeHolder = null;
+
     function ffPersist() {
       const sig = Object.keys(ffFlags).sort().join(',');
       try {
@@ -714,7 +823,17 @@ module.exports = {
           const done = ffAreas.filter((a) => !FF_LIVE_STATES.has(a.state)).slice(0, FF_KEEP_DONE);
           ffAreas = live.concat(done);
           host.store.set('ffAreas', ffAreas);
+          rmDirty = true;                  // a job's mine moved too: the same flag covers both lists
         }
+        if (rmDirty) {
+          rmDirty = false;
+          const live = rmJobs.filter((a) => FF_LIVE_STATES.has(a.state));
+          const done = rmJobs.filter((a) => !FF_LIVE_STATES.has(a.state)).slice(0, RM_KEEP_DONE);
+          rmJobs = live.concat(done);
+          if (rmJobs.length || host.store.get('rmJobs', null) !== null) host.store.set('rmJobs', rmJobs);
+        }
+        if (logDirty) { logDirty = false; removals = removals.slice(0, RM_LOG_MAX); host.store.set('removals', removals); }
+        if (orDirty) { orDirty = false; host.store.set('orphans', orphans); }
       } catch (e) { /* the store logs its own refusal */ }
     }
 
@@ -758,6 +877,42 @@ module.exports = {
     const ffLabel = (a) => `${a.flagId !== null && a.flagId !== undefined ? `#${a.flagId}` : `of base ${a.baseId}`}`
       + `${a.owner ? ` (${a.owner})` : ''}${a.sector ? ` in ${a.sector}` : ''}`;
     const ffCount = (a, st) => Object.values(a.mines || {}).filter((m) => m.state === st).length;
+    // What a job is called in the log and the alert. A fallen-flag area keeps its 1.9 wording.
+    const jobLabel = (a) => (a.kind === 'orphan'
+      ? `mines outside every flag${a.sector ? ` in ${a.sector}` : ` near ${Math.round(a.x)}, ${Math.round(a.y)}`}`
+      : a.kind === 'manual'
+        ? `removal asked for by an admin${a.label ? ` (${a.label})` : ''}${a.sector ? ` in ${a.sector}` : ''}`
+        : `fallen flag ${ffLabel(a)}`);
+    const isJob = (a) => a && (a.kind === 'orphan' || a.kind === 'manual');
+    const liveWork = () => ffAreas.filter((a) => FF_LIVE_STATES.has(a.state)).concat(rmJobs.filter((a) => FF_LIVE_STATES.has(a.state)));
+    /** Every mine a live job or area is working on, so nothing is queued twice. */
+    function idsInLiveWork() {
+      const out = new Set();
+      for (const a of liveWork()) for (const id of Object.keys(a.mines || {})) {
+        const st = a.mines[id] && a.mines[id].state;
+        if (st === 'pending' || st === 'sent') out.add(String(id));
+      }
+      return out;
+    }
+
+    /**
+     * One mine the game confirmed gone: counted, logged on its own line, and kept for Activity.
+     * `by` says which evidence answered: the bridge's own confirmation, or a later save without it.
+     */
+    function markRemoved(a, id, m, by) {
+      if (!m || m.state === 'removed') return;
+      m.state = 'removed'; m.by = by; ffDirty = true;
+      const code = m.code || (m.type && typeMeta(m.type) ? typeMeta(m.type).code : null);
+      let name = m.type || 'mine';
+      try { name = host.items.name(code || String(m.type || 'mine')) || name; } catch (e) { /* the type stands in */ }
+      removals.unshift({ at: Date.now(), id: String(id), type: m.type || null, code, name,
+        x: m.x, y: m.y, z: m.z, kind: a.kind || 'fallen', job: a.id, label: jobLabel(a), by,
+        ownerId: m.ownerId || null });
+      if (removals.length > RM_LOG_MAX) removals.length = RM_LOG_MAX;
+      logDirty = true;
+      host.logger.info(`removed ${name} #${id} at ${Math.round(m.x)}, ${Math.round(m.y)} (${jobLabel(a)}): confirmed by the ${by === 'save' ? 'save' : 'game'}`);
+      try { host.realtime.toAdmins('mine-protection:event', { at: Date.now(), action: 'removedOne', id: String(id) }); } catch (e) { /* realtime optional */ }
+    }
     // Same owner, or a member of the squad that owned the fallen flag. An owner the save could not
     // name is nobody's, so it keeps the mines only under 'any'.
     const ffSameSide = (f, a) => (f.ownerId !== null && f.ownerId === a.ownerId)
@@ -770,7 +925,40 @@ module.exports = {
       a.note = text;
       if (a.said === text && now - (a.saidAt || 0) < FF_SAY_EVERY_MS) return;
       a.said = text; a.saidAt = now;
-      host.logger.warn(`fallen flag ${ffLabel(a)}: ${text}. Trying again.`);
+      host.logger.warn(`${jobLabel(a)}: ${text}. Trying again.`);
+    }
+
+    /**
+     * The two bridge switches every removal stands on, read off the module cards, or null.
+     *
+     * ⚠ "Destroy an item" ships OFF, and on 1.9.0 every destroy it refused was counted as one of the
+     * mine's five tries: about two and a half minutes after the delay ran out the mine was marked
+     * failed for good, and switching it on afterwards removed nothing. A switch that is off is not
+     * the mine's fault, so it is read FIRST, nothing is sent while it is off, and no try is spent.
+     * `null` (no bridge, an older bridge with no module list) leaves the destroy to say it itself.
+     */
+    let swCache = null, swAt = 0;
+    async function bridgeSwitches(now) {
+      if (swAt && now - swAt < 30000) return swCache;
+      if (!host.bridge || typeof host.bridge.modules !== 'function') return null;
+      let list = null;
+      try { list = await host.bridge.modules(); } catch (e) { list = null; }
+      swAt = now;
+      if (!Array.isArray(list) || !list.length) { swCache = null; return null; }
+      const card = (id) => list.find((x) => x && String(x.id) === id) || null;
+      const flag = (m, key) => {
+        if (!m) return null;
+        const v = (m.config && m.config[key] !== undefined) ? m.config[key] : (m.status && m.status[key] !== undefined ? m.status[key] : undefined);
+        if (v === undefined || v === null) return null;
+        return v === true || v === 'true';
+      };
+      const items = card('items'), wake = card('wake');
+      swCache = {
+        items: items ? !!items.enabled : null,
+        destroy: items ? flag(items, 'destroy') : null,
+        wake: wake ? !!wake.enabled : null,
+      };
+      return swCache;
     }
 
     /** A bridge failure in the module's own words, or the switch an owner has to find. */
@@ -819,6 +1007,7 @@ module.exports = {
 
     /** Hand the bridge's visitor back (it parks; its lease ends it anyway). Best effort. */
     async function ffReleaseWake(a) {
+      if (wakeHolder === a.id) wakeHolder = null;
       if (!a.wake) return;
       const w = a.wake; a.wake = null; ffDirty = true;
       try {
@@ -834,6 +1023,11 @@ module.exports = {
       if (!c.fallenFlagWake) return false;
       if (a.wake && a.wake.until > now) return true;
       if (!canQuery()) return false;
+      // One place at a time. Another job is using the visitor; this one waits its turn.
+      if (wakeHolder && wakeHolder !== a.id && liveWork().some((x) => x.id === wakeHolder && x.wake)) {
+        a.wakeWhy = 'the visitor is loading another place first';
+        return false;
+      }
       const v = await host.bridge.query('wake', 'visitors');
       if (!v || !v.ok) { a.wakeWhy = ffWhy('wake', v); return false; }
       const reach = Math.max(100, Math.min(7500, Number(v.data && v.data.maxBoundsCm) || 5000));
@@ -843,37 +1037,45 @@ module.exports = {
       if (!r || !r.ok) { a.wakeWhy = ffWhy('wake', r); return false; }
       a.wake = { x, y, placedAt: now, until: now + secs * 1000 };
       a.wakeWhy = null;
+      wakeHolder = a.id;
       ffDirty = true;
-      host.logger.info(`fallen flag ${ffLabel(a)}: nobody is near, so a bridge visitor is loading its area`);
+      host.logger.info(`${jobLabel(a)}: nobody is near, so a bridge visitor is loading its area`);
       return true;
     }
 
     async function ffFinish(a, c, state, now) {
       const removed = ffCount(a, 'removed'), gone = ffCount(a, 'gone'), failed = ffCount(a, 'failed');
-      const left = ffCount(a, 'pending') + ffCount(a, 'sent');
-      a.state = state; a.endedAt = now; a.removed = removed; a.gone = gone; a.failed = failed; a.left = left;
+      const left = ffCount(a, 'pending') + ffCount(a, 'sent'), skipped = ffCount(a, 'skipped');
+      a.state = state; a.endedAt = now; a.removed = removed; a.gone = gone; a.failed = failed; a.left = left; a.skipped = skipped;
       a.total = Object.keys(a.mines || {}).length;
       ffDirty = true;
       await ffReleaseWake(a);
-      const counts = `removed ${removed} of ${a.total} mine(s), ${gone} already gone, ${failed + left} not removed`;
-      if (state === 'gaveup') host.logger.warn(`fallen flag ${ffLabel(a)}: gave up after the grace period; ${counts}${a.note ? ` (last reason: ${a.note})` : ''}`);
-      else if (failed) host.logger.warn(`fallen flag ${ffLabel(a)}: ${counts}${a.note ? ` (last reason: ${a.note})` : ''}`);
-      else host.logger.info(`fallen flag ${ffLabel(a)}: ${counts}`);
+      const counts = `removed ${removed} of ${a.total} mine(s), ${gone} already gone, ${failed + left} not removed${skipped ? `, ${skipped} left alone` : ''}`;
+      const label = jobLabel(a);
+      if (state === 'gaveup') host.logger.warn(`${label}: gave up after the grace period; ${counts}${a.note ? ` (last reason: ${a.note})` : ''}`);
+      else if (failed) host.logger.warn(`${label}: ${counts}${a.note ? ` (last reason: ${a.note})` : ''}`);
+      else host.logger.info(`${label}: ${counts}`);
       if (!removed) return;
-      pushRecent({ at: now, player: a.owner || null, steamId: null, mine: String(removed), type: null, code: null, action: 'cleared',
+      const kind = a.kind || 'fallen';
+      pushRecent({ at: now, player: a.owner || null, steamId: null, mine: String(removed), type: null, code: null,
+        action: kind === 'orphan' ? 'orphans' : kind === 'manual' ? 'removed' : 'cleared',
         loc: { x: a.x, y: a.y, z: a.z } });
-      if (c.fallenFlagAlert) {
-        try { host.notify('admin.alert', { message: `Mine Protection: removed ${removed} mine(s) left at fallen flag ${ffLabel(a)}.`, severity: 'info' }); } catch (e) { /* alerts optional */ }
+      // Who asked decides who is told. An admin's own removal is on their screen already.
+      const alert = kind === 'orphan' ? c.orphanAlert : kind === 'manual' ? false : c.fallenFlagAlert;
+      const announce = kind === 'orphan' ? c.orphanAnnounce : kind === 'manual' ? false : c.fallenFlagAnnounce;
+      const field = kind === 'orphan' ? 'orphanMessage' : 'fallenFlagMessage';
+      if (alert) {
+        const what = kind === 'orphan' ? `outside every flag${a.sector ? ` in ${a.sector}` : ''}` : `left at fallen flag ${ffLabel(a)}`;
+        try { host.notify('admin.alert', { message: `Mine Protection: removed ${removed} mine(s) ${what}.`, severity: 'info' }); } catch (e) { /* alerts optional */ }
       }
-      if (c.fallenFlagAnnounce) {
+      if (announce) {
         const vars = { count: removed };
         try {
-          if (host.i18n) await host.chat.broadcast(playerText(c, 'fallenFlagMessage'), { channel: 'global', vars });
-          else await host.chat.broadcast(String(c.fallenFlagMessage || DEFAULTS.fallenFlagMessage).replace(/\{count\}/gi, String(removed)), { channel: 'global' });
-        } catch (e) { host.logger.debug('the fallen-flag announcement was not sent: ' + e.message); }
+          if (host.i18n) await host.chat.broadcast(playerText(c, field), { channel: 'global', vars });
+          else await host.chat.broadcast(String(c[field] || DEFAULTS[field]).replace(/\{count\}/gi, String(removed)), { channel: 'global' });
+        } catch (e) { host.logger.debug('the removal announcement was not sent: ' + e.message); }
       }
     }
-
     async function ffCancel(a, now, why) {
       const removed = ffCount(a, 'removed');
       a.state = 'kept'; a.endedAt = now; a.keptBy = why; a.removed = removed; a.total = Object.keys(a.mines || {}).length;
@@ -923,7 +1125,47 @@ module.exports = {
       ffFlags = flags;
     }
 
-    /** One removal pass for one area. */
+    /**
+     * Step 1 of a pass for an orphan or manual job: its mines are named by id, so this only asks
+     * what has happened to each one since the last pass.
+     *
+     * An orphan job asks one question more, and it is the one that may never be skipped: is the mine
+     * STILL outside every flag. A flag built over it since it was queued keeps it, and a placer who
+     * came online keeps it under the offline-only rule; the orphan scan queues it again later if it is
+     * still an orphan then. False when the save could not say: nothing is destroyed on a guess.
+     */
+    function rmListed(a, scan, c) {
+      if (!scan || !Array.isArray(scan.traps)) return false;
+      const mines = a.mines;
+      const byId = new Map();
+      for (const t of scan.traps) if (t && t.id !== undefined && t.id !== null) byId.set(String(t.id), t);
+      const flags = a.kind === 'orphan' ? Object.values(scan.flags || {}) : null;
+      const marginCm = Math.max(0, Number(c.marginMeters) || 0) * 100;
+      const online = (a.kind === 'orphan' && c.orphanOfflineOnly) ? onlineSet() : null;
+      for (const id of Object.keys(mines)) {
+        const m = mines[id];
+        if (m.state !== 'pending' && m.state !== 'sent') continue;
+        const t = byId.get(String(id));
+        if (t) {
+          const tx = Number(t.x), ty = Number(t.y);
+          if (flags && (!Number.isFinite(tx) || !Number.isFinite(ty) || insideAnyFlag(flags, tx, ty, marginCm))) {
+            if (m.state === 'pending') { m.state = 'skipped'; m.why = 'a flag stands here now'; ffDirty = true; }
+            continue;
+          }
+          if (online && m.state === 'pending' && m.ownerId) {
+            const pl = resolvePlacer(m.ownerId);
+            if (pl && online.has(pl.steamId)) { m.state = 'skipped'; m.why = 'its placer is online'; ffDirty = true; }
+          }
+          continue;
+        }
+        if (ffStillPlaced(id) !== false) continue;
+        if (m.state === 'sent') markRemoved(a, id, m, 'save');
+        else { m.state = 'gone'; ffDirty = true; }
+      }
+      return true;
+    }
+
+    /** One removal pass for one area or job. */
     async function ffWork(a, c, now, scan) {
       if (a.state === 'waiting') {
         if (now < a.deadline) return;
@@ -936,6 +1178,11 @@ module.exports = {
       a.nextAt = now + FF_RETRY_MS;
       const mines = a.mines || (a.mines = {});
 
+      if (isJob(a)) {
+        // An orphan or manual job decides on THIS pass's reading of the save, never on an older one:
+        // "is it still outside every flag" is a question about now.
+        if (!rmListed(a, scan, c)) { ffNote(a, 'the game database cannot be read yet'); return; }
+      } else {
       // 1. What the SAVE holds inside the square. An empty trap layer is not "no mines": each layer
       //    is caught on its own, so only a mine the save positively no longer holds changes state.
       if (scan && Array.isArray(scan.traps)) {
@@ -946,21 +1193,27 @@ module.exports = {
           if (!want(t) || !ffIn(a, tx, ty)) continue;
           const id = String(t.id);
           inside.add(id);
-          if (!mines[id]) { mines[id] = { type: t.type || null, x: Math.round(tx), y: Math.round(ty), z: Math.round(Number(t.z) || 0), state: 'pending', tries: 0 }; ffDirty = true; }
+          if (!mines[id]) { mines[id] = { type: t.type || null, x: Math.round(tx), y: Math.round(ty), z: Math.round(Number(t.z) || 0), state: 'pending', tries: 0, ownerId: Number(t.ownerId) > 0 ? Number(t.ownerId) : null }; ffDirty = true; }
         }
         for (const id of Object.keys(mines)) {
           const m = mines[id];
           if (inside.has(id) || (m.state !== 'pending' && m.state !== 'sent')) continue;
           if (ffStillPlaced(id) !== false) continue;
-          m.state = m.state === 'sent' ? 'removed' : 'gone';      // ours once we had destroyed it
-          if (m.state === 'removed') m.by = 'save';
+          if (m.state === 'sent') markRemoved(a, id, m, 'save');        // ours once we had destroyed it
+          else m.state = 'gone';
           ffDirty = true;
         }
         a.listed = true;
       }
       if (!a.listed) { ffNote(a, 'the game database cannot be read yet'); return; }
+      }
       const open = Object.keys(mines).filter((id) => mines[id].state === 'pending' || mines[id].state === 'sent');
       if (!open.length) { await ffFinish(a, c, ffCount(a, 'failed') ? 'partial' : 'cleared', now); return; }
+
+      // 2a. The bridge's own switches, before anything is sent (see `bridgeSwitches`).
+      const sw = await bridgeSwitches(now);
+      if (sw && sw.items === false) { ffNote(a, `turn on '${FF_SWITCH.items}' in the SSA Bridge`); return; }
+      if (sw && sw.destroy === false) { ffNote(a, "turn on 'Destroy an item' in the SSA Bridge"); return; }
 
       // 2. What the RUNNING GAME has loaded. Nothing is destroyed or believed without this answer.
       if (!canQuery()) { ffNote(a, 'the SSA Bridge did not answer'); return; }
@@ -973,12 +1226,12 @@ module.exports = {
         const m = mines[id];
         if (m.state !== 'sent') continue;
         const row = ffLiveRow(live, id, m);
-        if (row && row.destroyed === true) { m.state = 'removed'; m.by = 'bridge'; ffDirty = true; continue; }
+        if (row && row.destroyed === true) { markRemoved(a, id, m, 'bridge'); if (a.inflight === id) a.inflight = null; continue; }
         if (a.inflight === id) {
           if (now - m.sentAt < FF_CONFIRM_MS) { a.nextAt = m.sentAt + FF_CONFIRM_MS; return; }
           const after = await ffDestroyedCount();
           if (after && Number.isFinite(m.before) && after.n > m.before && after.data.confirmed === true) {
-            m.state = 'removed'; m.by = 'bridge'; a.inflight = null; ffDirty = true; continue;
+            markRemoved(a, id, m, 'bridge'); a.inflight = null; continue;
           }
           if (after && after.data.destroyPending === true && now - m.sentAt < FF_PENDING_MAX_MS) { a.nextAt = now + 2000; return; }
           a.inflight = null; ffDirty = true;
@@ -993,7 +1246,7 @@ module.exports = {
         const m = mines[id];
         if (m.state !== 'pending') continue;
         const row = ffLiveRow(live, id, m);
-        if (row && row.destroyed === true) { m.state = 'removed'; m.by = 'bridge'; ffDirty = true; continue; }
+        if (row && row.destroyed === true) { markRemoved(a, id, m, 'bridge'); continue; }
         if (!row) { unloaded++; continue; }
         const before = await ffDestroyedCount();
         const r = await host.bridge.destroyItem(`eid:${id}`);
@@ -1015,6 +1268,8 @@ module.exports = {
       if (unloaded) {
         const placed = await ffWake(a, c, now);
         if (placed) { if (a.wake && now - a.wake.placedAt < FF_WAKE_SETTLE_MS) a.nextAt = a.wake.placedAt + FF_WAKE_SETTLE_MS; return; }
+        // Nothing is loaded and nothing is in flight, so the visitor this job held is free for the next.
+        if (wakeHolder === a.id && !a.wake) wakeHolder = null;
         ffNote(a, `${unloaded} mine(s) are not loaded because nobody is near${c.fallenFlagWake && a.wakeWhy ? `, and the area could not be loaded: ${a.wakeWhy}` : ''}`);
       }
     }
@@ -1029,18 +1284,148 @@ module.exports = {
       try { host.store.set('ffSeeded', false); } catch (e) { /* ignore */ }
     }
 
+    // ── mines outside every flag ────────────────────────────────────────────────────────────────
+
+    /** Inside the square of any flag standing now, widened by `marginCm`. */
+    function insideAnyFlag(flags, x, y, marginCm) {
+      for (const f of flags) {
+        if (x >= f.x + f.minX - marginCm && x <= f.x + f.maxX + marginCm
+          && y >= f.y + f.minY - marginCm && y <= f.y + f.maxY + marginCm) return true;
+      }
+      return false;
+    }
+    const cellKey = (x, y) => `${Math.floor(x / RM_CELL_CM)}:${Math.floor(y / RM_CELL_CM)}`;
+    function orTypeOk(c) {
+      if (c.orphanTypes === 'all') return () => true;
+      const watch = new Set(c.watchedTypes);
+      return (t) => watch.has(t && t.type);
+    }
+    // A fallen flag still on its timer owns the mines in its square: the owner may yet rebuild there.
+    const inLiveFallenArea = (x, y) => ffAreas.some((a) => FF_LIVE_STATES.has(a.state) && ffIn(a, x, y));
+
+    /** A new job for named mines, one square of the map. */
+    async function rmCreate(kind, entries, c, now, extra) {
+      const mines = {};
+      let sx = 0, sy = 0, sz = 0, n = 0;
+      for (const [id, t] of entries) {
+        const x = Number(t && t.x), y = Number(t && t.y), z = Number(t && t.z) || 0;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        mines[String(id)] = { type: (t && t.type) || null, x: Math.round(x), y: Math.round(y), z: Math.round(z), state: 'pending', tries: 0,
+          ownerId: Number(t && t.ownerId) > 0 ? Number(t.ownerId) : null };
+        sx += x; sy += y; sz += z; n++;
+      }
+      if (!n) return null;
+      const a = Object.assign({
+        id: `${kind === 'orphan' ? 'o' : 'r'}${now}-${++rmSeq}`, kind, state: 'removing', startedAt: now, fellAt: now,
+        x: Math.round(sx / n), y: Math.round(sy / n), z: Math.round(sz / n),
+        minX: -FF_HALF_CM, maxX: FF_HALF_CM, minY: -FF_HALF_CM, maxY: FF_HALF_CM,
+        giveUpAt: now + c.removeTryMinutes * 60000, mines, sector: null,
+      }, extra || {});
+      if (typeof host.map.sector === 'function') {
+        try { a.sector = (await host.map.sector(a.x, a.y)) || null; } catch (e) { a.sector = null; }
+      }
+      rmJobs.unshift(a); rmDirty = true; ffNextRun = 0;
+      host.logger.info(`${jobLabel(a)}: removing ${n} mine(s)`);
+      return a;
+    }
+
+    /**
+     * Find the mines outside every standing flag, start their grace, and queue the due ones.
+     *
+     * Three-valued like everything here. With the base layer unreadable `ffScan()` answers null and
+     * this is never reached; a mine whose position is not a number is left alone. A mine counts as
+     * outside only against a flag list that was READ this pass.
+     */
+    async function orScan(scan, c, now) {
+      if (now < orNextScan) return;
+      orNextScan = now + OR_SCAN_MS;
+      if (!Array.isArray(scan.traps)) return;
+      const flags = Object.values(scan.flags || {});
+      const marginCm = Math.max(0, Number(c.marginMeters) || 0) * 100;
+      const want = orTypeOk(c);
+      const keep = new Set(c.keepMineIds.map(String));
+      const seen = new Set();
+      for (const t of scan.traps) {
+        if (!t || !want(t)) continue;
+        const x = Number(t.x), y = Number(t.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const id = String(t.id);
+        if (keep.has(id) || insideAnyFlag(flags, x, y, marginCm) || inLiveFallenArea(x, y)) continue;
+        seen.add(id);
+        const ownerId = Number(t.ownerId) > 0 ? Number(t.ownerId) : null;
+        const o = orphans[id];
+        if (!o) { orphans[id] = { firstAt: now, type: t.type || null, x: Math.round(x), y: Math.round(y), z: Math.round(Number(t.z) || 0), ownerId }; orDirty = true; }
+        else if (o.ownerId !== ownerId || o.type !== (t.type || null)) { o.ownerId = ownerId; o.type = t.type || null; orDirty = true; }
+      }
+      for (const id of Object.keys(orphans)) if (!seen.has(id)) { delete orphans[id]; orDirty = true; }
+
+      const grace = c.orphanGraceMinutes * 60000;
+      const busy = idsInLiveWork();
+      const online = c.orphanOfflineOnly ? onlineSet() : null;
+      const exempt = new Set(c.exemptSteamIds.map(String));
+      const cells = new Map();
+      for (const id of Object.keys(orphans)) {
+        const o = orphans[id];
+        let wait = null;
+        if (busy.has(id)) wait = 'queued';
+        else if (now - o.firstAt < grace) wait = 'grace';
+        else {
+          const pl = o.ownerId ? resolvePlacer(o.ownerId) : null;
+          if (pl && exempt.has(pl.steamId)) wait = 'exempt';
+          else if (online && pl && online.has(pl.steamId)) wait = 'online';
+        }
+        if ((o.wait || null) !== wait) { o.wait = wait; orDirty = true; }
+        if (wait) continue;
+        const k = cellKey(o.x, o.y);
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push([id, o]);
+      }
+      for (const entries of cells.values()) {
+        if (rmJobs.filter((j) => j.kind === 'orphan' && FF_LIVE_STATES.has(j.state)).length >= OR_MAX_LIVE) break;
+        await rmCreate('orphan', entries, c, now, null);
+      }
+    }
+
+    /** Orphan removal switched off: its grace timers and its unfinished jobs are dropped. */
+    async function orStandDown(now) {
+      const live = rmJobs.filter((a) => a.kind === 'orphan' && FF_LIVE_STATES.has(a.state));
+      if (!live.length && !Object.keys(orphans).length) return;
+      for (const a of live) { a.state = 'off'; a.endedAt = now; await ffReleaseWake(a); }
+      if (live.length) host.logger.info(`removing mines outside every flag is off: ${live.length} unfinished job(s) dropped, their mines stay`);
+      orphans = {}; orDirty = true; rmDirty = true; orNextScan = 0;
+    }
+
+    /** The whole plugin switched off: an admin's removal waiting in the queue does not run either. */
+    async function rmStandDown(now) {
+      const live = rmJobs.filter((a) => FF_LIVE_STATES.has(a.state));
+      for (const a of live) { a.state = 'off'; a.endedAt = now; await ffReleaseWake(a); rmDirty = true; }
+    }
+
     async function ffTick(now) {
       const c = cfg();
       ffNextRun = now + FF_TICK_MS;
-      if (!c.enabled || !c.fallenFlagCleanup) { await ffStandDown(now); ffPersist(); return; }
+      if (!c.enabled || !c.fallenFlagCleanup) await ffStandDown(now);
+      if (!c.enabled || !c.orphanCleanup) await orStandDown(now);
+      if (!c.enabled) { await rmStandDown(now); ffPersist(); return; }
+      // Nothing switched on and nothing queued: the world is not read at all.
+      if (!c.fallenFlagCleanup && !c.orphanCleanup && !rmJobs.some((a) => FF_LIVE_STATES.has(a.state))) { ffPersist(); return; }
       const scan = ffScan();
-      if (scan) await ffCompare(scan, c, now);
-      for (const a of ffAreas.slice()) {
+      if (c.fallenFlagCleanup) {
+        if (scan) await ffCompare(scan, c, now);
+        for (const a of ffAreas.slice()) {
+          if (!FF_LIVE_STATES.has(a.state)) continue;
+          await ffWork(a, c, now, scan);
+          if (a.state === 'removing' && a.nextAt) ffNextRun = Math.min(ffNextRun, a.nextAt);
+          else if (a.state === 'waiting') ffNextRun = Math.min(ffNextRun, Math.max(now + 1000, a.deadline));
+        }
+      }
+      if (c.orphanCleanup && scan) await orScan(scan, c, now);
+      for (const a of rmJobs.slice()) {
         if (!FF_LIVE_STATES.has(a.state)) continue;
         await ffWork(a, c, now, scan);
         if (a.state === 'removing' && a.nextAt) ffNextRun = Math.min(ffNextRun, a.nextAt);
-        else if (a.state === 'waiting') ffNextRun = Math.min(ffNextRun, Math.max(now + 1000, a.deadline));
       }
+      if (c.orphanCleanup) ffNextRun = Math.min(ffNextRun, Math.max(now + 1000, orNextScan));
       ffPersist();
     }
     async function ffHeartbeat() {
@@ -1056,6 +1441,7 @@ module.exports = {
       total: Object.keys(a.mines || {}).length, removed: ffCount(a, 'removed'), gone: ffCount(a, 'gone'),
       failed: ffCount(a, 'failed'), left: ffCount(a, 'pending') + ffCount(a, 'sent'),
       note: FF_LIVE_STATES.has(a.state) ? (a.note || null) : null, keptBy: a.keptBy || null, endedAt: a.endedAt || null,
+      kind: a.kind || 'fallen', label: jobLabel(a), skipped: ffCount(a, 'skipped'), startedAt: a.startedAt || null,
     });
 
     // ── scheduling: a light 1 s heartbeat runs the scan when it's due, so a changed interval takes
@@ -1074,6 +1460,13 @@ module.exports = {
       if (busy) return;
       const c = cfg();
       if (!c.enabled) return;
+      // The punishment switched off on its own. Its memory of which mines were already placed is
+      // forgotten, so switching it on again learns the world of that moment and punishes nothing
+      // that was armed while it was off, the same as a first start.
+      if (!c.punishEnabled) {
+        if (seeded) { seeded = false; try { host.store.set('seeded', false); } catch (e) { /* ignore */ } }
+        return;
+      }
       if (Date.now() - lastRun < c.pollSeconds * 1000) return;
       lastRun = Date.now();
       if (seeded && !anybodyHere()) return;        // the join hook below forces a scan the moment somebody arrives
@@ -1100,6 +1493,7 @@ module.exports = {
         reloadConfig();                            // what the store really holds now, not what was sent
         lastRun = 0;                               // apply immediately (interval/type changes take effect now)
         ffNextRun = 0;                             // and the fallen-flag switch too
+        orNextScan = 0;                            // and the search for mines outside every flag
         res.json({ ok: true, config: next });
       } catch (e) { res.status(500).json({ error: e.message }); }
     });
@@ -1127,68 +1521,381 @@ module.exports = {
       res.json({ items, defaults: DEFAULT_TYPES });
     });
 
-    // Overview: EVERY watched mine/trap in the last SAVE (armed or not) with who armed it, where,
-    // whether it's inside a flag, and its enforcement state — powers the admin overview table. Showing
-    // un-armed ones too means a placed mine appears at the next save, not only once it is armed.
-    host.routes.get('/mines', (req, res) => {
-      const c = cfg();
-      const traps = watchedTraps(c);
-      if (traps === null) return res.json({ mines: [], serverRunning: false });
+    // ── the Mines screen: every placed mine and trap, with what each filter is decided on ─────────
+    //
+    // Every type, not only the watched ones: the screen is also where an owner removes mines by
+    // conditions, and a mine of a type nobody watches is still a mine. Per row:
+    //   • `insideFlag` — inside the square of ANY flag standing now (`null` when the base layer could
+    //     not be read, and then no filter matches it as outside);
+    //   • `inArea` — the punishment's own question (the placer's or their squad's flag), asked only for
+    //     the watched types, exactly as before;
+    //   • `lastTouched` — `_lastAccessTime` out of the trap's own XML in the save, in seconds: when the
+    //     game last saw anybody handle it. 729 of the dev save's 729 placed traps carry it.
+    //   • `sector` — the panel's own grid, `null` without a map calibration.
+    const RM_MAX_REQUEST = 2000;
+    const allTraps = () => worldTraps();
+    let touched = { at: 0, map: null };
+    function touchedMap(now) {
+      if (touched.map && now - touched.at < 60000) return touched.map;
+      const map = new Map();
+      try {
+        const codes = TRAP_CATALOG.map((t) => t.code).concat(['C4_Detonator_ES', 'C4_Keypad_ES', 'PracticeTrap_ES']);
+        const rows = host.db.scum.all(`SELECT e.id AS id, ie.xml AS xml FROM entity e JOIN item_entity ie ON ie.entity_id = e.id
+          WHERE e.owning_entity_id IS NULL AND e.class IN (${codes.map(() => '?').join(',')})`, ...codes) || [];
+        for (const r of rows) {
+          const m = /_lastAccessTime="(\d+)"/.exec(String((r && r.xml) || ''));
+          if (m && Number(m[1]) > 0) map.set(String(r.id), Number(m[1]) * 1000);
+        }
+      } catch (e) { /* the age is then unknown, never zero */ }
+      touched = { at: now, map };
+      return map;
+    }
+    const sectorOf = new Map();
+    async function fillSectors(traps) {
+      if (typeof host.map.sector !== 'function') return;
+      const missing = traps.filter((t) => !sectorOf.has(String(t.id)) && Number.isFinite(Number(t.x)) && Number.isFinite(Number(t.y))).slice(0, 1500);
+      await Promise.all(missing.map(async (t) => {
+        let s = null;
+        try { s = (await host.map.sector(Number(t.x), Number(t.y))) || null; } catch (e) { s = null; }
+        sectorOf.set(String(t.id), s);
+      }));
+      if (sectorOf.size > 20000) sectorOf.clear();
+    }
+    /** Which live job or area holds each mine: `{ state: 'pending'|'sent', kind, job }`. */
+    function workById() {
+      const out = new Map();
+      for (const a of liveWork()) for (const id of Object.keys(a.mines || {})) {
+        const st = a.mines[id] && a.mines[id].state;
+        if (st === 'pending' || st === 'sent') out.set(String(id), { state: st, kind: a.kind || 'fallen', job: a.id });
+      }
+      return out;
+    }
+
+    async function mineRows(c, now) {
+      const traps = allTraps();
+      if (traps === null) return null;
+      const scan = ffScan();
+      const flags = scan ? Object.values(scan.flags || {}) : null;
       const marginCm = Math.max(0, Number(c.marginMeters) || 0) * 100;
+      const watch = new Set(c.watchedTypes);
       const exempt = new Set(c.exemptSteamIds.map(String));
+      const keep = new Set(c.keepMineIds.map(String));
+      const work = workById();
+      const tm = touchedMap(now);
+      const placers = new Map();
+      await fillSectors(traps);
       const out = traps.map((m) => {
-        const placer = m.ownerId ? resolvePlacer(m.ownerId) : null;
+        const id = String(m.id);
+        let placer = null;
+        if (m.ownerId) { if (!placers.has(m.ownerId)) placers.set(m.ownerId, resolvePlacer(m.ownerId)); placer = placers.get(m.ownerId); }
         const sid = placer && placer.steamId;
-        // THREE-VALUED, exactly like the enforcement path above — and for the same reason.
-        //
-        // This used to be `!!host.map.isInOwnerArea(...)`, which collapses the manager's `null`
-        // ("the game database could not answer") into `false` ("outside their flag"). The scan
-        // stopped doing that; this table did not, so it showed a mine as an offence the plugin
-        // was deliberately refusing to judge, and an admin reading "Pending" beside a mine that
-        // never got enforced had nothing to go on. The panel has to show the same three answers
-        // the plugin acts on, or it is describing a different plugin.
-        const inArea = sid ? host.map.isInOwnerArea(sid, m.x, m.y, marginCm) : false;
-        // Same rule for `armed`: the world scan OMITS the key when it could not read the trap's
-        // XML, and "unknown" is not "not armed" — the plugin does nothing in either case, but only
-        // one of them is a trap sitting there disarmed.
+        const watched = watch.has(m.type);
+        const x = Number(m.x), y = Number(m.y);
+        // THREE-VALUED, exactly like the enforcement path — and for the same reason. `!!` on the
+        // manager's answer collapsed "the game database could not answer" into "outside their flag",
+        // and the table then described a mine as an offence the plugin was declining to judge.
+        const inArea = !watched ? null : (sid ? host.map.isInOwnerArea(sid, m.x, m.y, marginCm) : false);
+        // Same rule for `armed`: the world scan OMITS the key when it could not read the trap's XML.
         const armed = (m.armed === true || m.armed === false) ? m.armed : null;
+        const w = work.get(id) || null;
         return {
-          id: m.id, type: m.type, code: codeOf(m), name: displayName(m), armed,
-          x: Math.round(m.x), y: Math.round(m.y), z: Math.round(m.z),
+          id: m.id, type: m.type, code: codeOf(m), name: displayName(m), armed, watched,
+          x: Math.round(x), y: Math.round(y), z: Math.round(Number(m.z) || 0),
           placerName: placer ? placer.name : null, placerSteamId: sid || null,
           inArea: (inArea === true || inArea === false) ? inArea : null,
-          exempt: sid ? exempt.has(sid) : false,
-          handled: handled.has(String(m.id)), offences: sid ? (offenses[sid] || 0) : 0,
+          insideFlag: (flags && Number.isFinite(x) && Number.isFinite(y)) ? insideAnyFlag(flags, x, y, marginCm) : null,
+          exempt: sid ? exempt.has(sid) : false, kept: keep.has(id),
+          handled: handled.has(id), offences: sid ? (offenses[sid] || 0) : 0,
+          sector: sectorOf.has(id) ? sectorOf.get(id) : null,
+          lastTouched: tm.has(id) ? tm.get(id) : null,
+          orphanSince: orphans[id] ? orphans[id].firstAt : null, orphanWait: orphans[id] ? (orphans[id].wait || null) : null,
+          work: w ? w.state : null, workKind: w ? w.kind : null,
         };
       });
-      // Most-relevant first: armed & outside-flag & not-yet-handled at the top; un-armed last.
-      out.sort((a, b) => (Number(a.armed === true ? 0 : 1) - Number(b.armed === true ? 0 : 1)) || (Number(a.inArea === true) - Number(b.inArea === true)) || (Number(a.handled) - Number(b.handled)) || (b.offences - a.offences));
-      res.json({ mines: out, serverRunning: true });
+      out.flagsKnown = !!flags;
+      return out;
+    }
+
+    // Overview of the old screen kept its order: armed & outside-flag & not-yet-handled first.
+    host.routes.get('/mines', async (req, res) => {
+      try {
+        const c = cfg();
+        const traps = allTraps();
+      if (traps === null) return res.json({ mines: [], serverRunning: false });
+        const now = Date.now();
+        const out = await mineRows(c, now);
+        const flagsKnown = out.flagsKnown;
+        out.sort((a, b) => (Number(a.watched ? 0 : 1) - Number(b.watched ? 0 : 1)) || (Number(a.armed === true ? 0 : 1) - Number(b.armed === true ? 0 : 1)) || (Number(a.inArea === true) - Number(b.inArea === true)) || (Number(a.handled) - Number(b.handled)) || (b.offences - a.offences));
+        res.json({ mines: out, serverRunning: true, flagsKnown, at: now });
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
     });
 
     // `GET /online` used to live here, for the exemption picker. The picker uses the panel's own
     // SSA.pickPlayer now — which is the point of having an SDK — so nothing called it.
 
+    /**
+     * The mines outside every flag, in squares of the map, for the Flags screen.
+     *
+     * Computed from THIS reading whether the clean-up is on or not: an owner deciding whether to
+     * switch it on is asking exactly what it would remove. With it on, each group also carries how
+     * long its mines have been waiting and why one is held (`grace`, `online`, `exempt`, `queued`).
+     */
+    function orphanGroups(c, now) {
+      const scan = ffScan();
+      if (!scan || !Array.isArray(scan.traps)) return null;
+      const flags = Object.values(scan.flags || {});
+      const marginCm = Math.max(0, Number(c.marginMeters) || 0) * 100;
+      const want = orTypeOk(c);
+      const keep = new Set(c.keepMineIds.map(String));
+      const cells = new Map();
+      for (const t of scan.traps) {
+        if (!t || !want(t)) continue;
+        const x = Number(t.x), y = Number(t.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (insideAnyFlag(flags, x, y, marginCm) || inLiveFallenArea(x, y)) continue;
+        const id = String(t.id);
+        const k = cellKey(x, y);
+        let g = cells.get(k);
+        if (!g) { g = { key: k, n: 0, kept: 0, armed: 0, sx: 0, sy: 0, sz: 0, types: {}, owners: {}, since: null, waits: {}, ids: [] }; cells.set(k, g); }
+        if (keep.has(id)) { g.kept++; continue; }
+        g.n++; g.ids.push(id); g.sx += x; g.sy += y; g.sz += Number(t.z) || 0;
+        if (t.armed === true) g.armed++;
+        g.types[t.type] = (g.types[t.type] || 0) + 1;
+        const own = Number(t.ownerId) > 0 ? Number(t.ownerId) : 0;
+        g.owners[own] = (g.owners[own] || 0) + 1;
+        const o = c.orphanCleanup ? orphans[id] : null;
+        if (o) { g.since = g.since === null ? o.firstAt : Math.min(g.since, o.firstAt); const wt = o.wait || 'due'; g.waits[wt] = (g.waits[wt] || 0) + 1; }
+      }
+      const work = workById();
+      const out = [];
+      for (const g of cells.values()) {
+        if (!g.n) { if (g.kept) out.push({ key: g.key, n: 0, kept: g.kept, x: null, y: null, z: null, types: {}, placers: [], armed: 0, since: null, dueAt: null, waits: {}, removing: 0 }); continue; }
+        const placers = Object.keys(g.owners).map((pid) => {
+          const p = Number(pid) > 0 ? resolvePlacer(Number(pid)) : null;
+          return { name: p ? p.name : null, steamId: p ? p.steamId : null, n: g.owners[pid] };
+        }).sort((a, b) => b.n - a.n);
+        out.push({
+          key: g.key, n: g.n, kept: g.kept, armed: g.armed, types: g.types, placers,
+          x: Math.round(g.sx / g.n), y: Math.round(g.sy / g.n), z: Math.round(g.sz / g.n),
+          since: g.since, dueAt: g.since === null ? null : g.since + c.orphanGraceMinutes * 60000, waits: g.waits,
+          removing: g.ids.filter((id) => work.has(id)).length,
+        });
+      }
+      out.sort((a, b) => b.n - a.n);
+      return out.slice(0, 200);
+    }
+
     // Live status for the UI header + recent-actions feed. "serverRunning" here means "the game DB is
     // readable right now" (worldTraps() !== null) — the meaningful signal for this plugin, and the one
     // that isn't a false-negative like a stale process check.
-    host.routes.get('/status', (req, res) => {
-      const c = cfg();
-      const readable = worldTraps() !== null;
-      res.json({
-        enabled: c.enabled, action: c.action, watchedTypes: c.watchedTypes, warningsBeforeAction: c.warningsBeforeAction,
-        requireOnline: c.requireOnline, marginMeters: c.marginMeters, pollSeconds: c.pollSeconds,
-        serverRunning: readable, knownMines: handled.size, warnedPlayers: Object.keys(offenses).length, recent,
-        // What the two live cross-checks are doing. `null` for a check means the last time it ran it
-        // answered — an owner should see "the game is being asked" or the reason it is not, and never
-        // a plugin that quietly fell back to the save without saying.
-        live: { traps: liveNote.traps, squads: liveNote.squads },
-        // The fallen-flag timers: what is waiting, being removed, and what happened to the last ones.
-        fallen: { on: c.fallenFlagCleanup === true, areas: ffAreas.map(ffSummary) },
-        // Why nothing is being enforced, when that is the case for a reason the owner cannot fix in
-        // this tab: `manager_too_old` = the manager lacks the world scan / flag test. null otherwise.
-        idle: mapOk ? null : 'manager_too_old',
-      });
+    host.routes.get('/status', async (req, res) => {
+      try {
+        const c = cfg();
+        const now = Date.now();
+        const traps = worldTraps();
+        const readable = traps !== null;
+        // Counters for the header: what is placed, and how much of it sits outside every flag.
+        let counts = null;
+        let groups = null;
+        if (readable) {
+          const watch = new Set(c.watchedTypes);
+          groups = orphanGroups(c, now);
+          // Per type, for the Overview: placed, armed, and outside every flag (whatever the type, so
+          // an owner sees what choosing "every mine and trap" would add). Null when flags are unknown.
+          const scan = ffScan();
+          const flags = scan ? Object.values(scan.flags || {}) : null;
+          const marginCm = Math.max(0, Number(c.marginMeters) || 0) * 100;
+          const byType = {};
+          for (const t of traps) {
+            const k = String(t.type || '');
+            const b = byType[k] || (byType[k] = { placed: 0, armed: 0, outside: flags ? 0 : null });
+            b.placed++;
+            if (t.armed === true) b.armed++;
+            const x = Number(t.x), y = Number(t.y);
+            if (flags && Number.isFinite(x) && Number.isFinite(y) && !insideAnyFlag(flags, x, y, marginCm)) b.outside++;
+          }
+          counts = {
+            placed: traps.length,
+            watched: traps.filter((t) => watch.has(t.type)).length,
+            armed: traps.filter((t) => t.armed === true).length,
+            outside: groups ? groups.reduce((s, g) => s + g.n, 0) : null,
+            byType,
+          };
+        }
+        const day = now - 86400000;
+        res.json({
+          enabled: c.enabled, action: c.action, watchedTypes: c.watchedTypes, warningsBeforeAction: c.warningsBeforeAction,
+          requireOnline: c.requireOnline, marginMeters: c.marginMeters, pollSeconds: c.pollSeconds, punishEnabled: c.punishEnabled,
+          serverRunning: readable, knownMines: handled.size, warnedPlayers: Object.keys(offenses).length, recent,
+          // What the two live cross-checks are doing. `null` for a check means the last time it ran it
+          // answered — an owner should see "the game is being asked" or the reason it is not, and never
+          // a plugin that quietly fell back to the save without saying.
+          live: { traps: liveNote.traps, squads: liveNote.squads },
+          // The fallen-flag timers: what is waiting, being removed, and what happened to the last ones.
+          fallen: { on: c.fallenFlagCleanup === true, areas: ffAreas.map(ffSummary) },
+          // Mines outside every flag, by square, and the clean-up's own queue.
+          orphans: { on: c.orphanCleanup === true, graceMinutes: c.orphanGraceMinutes, groups: groups || [], known: groups !== null },
+          jobs: rmJobs.map(ffSummary),
+          counts,
+          removed24h: removals.filter((r) => r && r.at > day).length,
+          removals: removals.slice(0, 50),
+          // The switches every removal needs, read off the bridge's module cards (null: not readable).
+          bridge: await bridgeSwitches(now),
+          // Why nothing is being enforced, when that is the case for a reason the owner cannot fix in
+          // this tab: `manager_too_old` = the manager lacks the world scan / flag test. null otherwise.
+          idle: mapOk ? null : 'manager_too_old',
+        });
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+
+    // Every removed mine this plugin kept a line for, newest first.
+    host.routes.get('/removals', (req, res) => res.json({ removals }));
+
+    /** Store a change to the settings the same way the Save button does: over what is stored. */
+    function saveConfigPatch(patch) {
+      const merged = normalizeConfig(overlayConfig(host.store.get('config', {}), patch));
+      host.store.set('config', merged);
+      reloadConfig();
+      ffNextRun = 0; orNextScan = 0;
+      return merged;
+    }
+    /** Queue named mines (rows of `mineRows`, or `[id, trap]` pairs) as manual jobs, one per square. */
+    async function queueManual(entries, c, now, label) {
+      const busy = idsInLiveWork();
+      const cells = new Map();
+      let fresh = 0;
+      for (const [id, t] of entries) {
+        if (busy.has(String(id))) continue;
+        const x = Number(t && t.x), y = Number(t && t.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        const k = cellKey(x, y);
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push([id, t]);
+        fresh++;
+      }
+      let jobs = 0;
+      for (const list of cells.values()) if (await rmCreate('manual', list, c, now, { label: label || null })) jobs++;
+      if (fresh) host.logger.info(`an admin asked to remove ${fresh} mine(s)${label ? ` (${label})` : ''}: ${jobs} job(s) queued`);
+      return { queued: fresh, already: entries.length - fresh, jobs };
+    }
+    function refusal(res, code, error, reason, extra) { return res.status(code).json(Object.assign({ ok: false, error, reason }, extra || {})); }
+
+    /**
+     * Remove mines by the admin's choice: `{ ids }` (the ticked rows) or `{ filter, expect }` (every
+     * row the filter matches). The filter is evaluated HERE, at the press, with the same function the
+     * screen used; `expect` is the count the confirmation named, and a world that moved since then is
+     * a refusal rather than a different removal than the one confirmed.
+     */
+    host.routes.post('/remove', async (req, res) => {
+      try {
+        const c = cfg();
+        if (!c.enabled) return refusal(res, 409, 'plugin_off', 'Mine Protection is switched off. Switch it on in Settings first.');
+        const now = Date.now();
+        const rows = await mineRows(c, now);
+        if (rows === null) return refusal(res, 503, 'world_unreadable', 'The game database cannot be read now, so nothing was queued.');
+        const b = req.body || {};
+        let picked;
+        if (Array.isArray(b.ids)) {
+          const want = new Set(b.ids.map(String));
+          picked = rows.filter((r) => want.has(String(r.id)));
+        } else if (b.filter && typeof b.filter === 'object') {
+          const at = Number(b.filter.at);
+          const t = Number.isFinite(at) && Math.abs(at - now) < 600000 ? at : now;
+          picked = rows.filter((r) => mineMatches(r, b.filter, t));
+        } else return refusal(res, 400, 'nothing_named', 'Name the mines to remove, or a filter.');
+        const expect = b.expect === undefined || b.expect === null || b.expect === '' ? null : Number(b.expect);
+        if (expect !== null && expect !== picked.length) {
+          return refusal(res, 409, 'changed', `The list changed: ${picked.length} mine(s) match now, not ${expect}. Nothing was queued.`, { count: picked.length });
+        }
+        if (!picked.length) return refusal(res, 404, 'none', 'No placed mine matches that any more. Nothing was queued.');
+        if (picked.length > RM_MAX_REQUEST) return refusal(res, 413, 'too_many', `That is ${picked.length} mines. Remove at most ${RM_MAX_REQUEST} at once.`);
+        const r = await queueManual(picked.map((p) => [String(p.id), p]), c, now, null);
+        ffPersist();
+        res.json(Object.assign({ ok: true }, r));
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+
+    // "Remove now" on a fallen flag's row: a flag still on its timer skips the rest of the wait; one
+    // that finished, gave up or was kept gets its square's mines queued as an admin's removal.
+    host.routes.post('/fallen-now', async (req, res) => {
+      try {
+        const c = cfg();
+        if (!c.enabled) return refusal(res, 409, 'plugin_off', 'Mine Protection is switched off. Switch it on in Settings first.');
+        const id = String((req.body || {}).id || '');
+        const a = ffAreas.find((x) => x.id === id);
+        if (!a) return refusal(res, 404, 'not_found', 'That fallen flag is not in the list any more.');
+        const now = Date.now();
+        if (c.fallenFlagCleanup && a.state === 'waiting') { a.deadline = now; ffDirty = true; ffNextRun = 0; ffPersist(); return res.json({ ok: true, state: a.state, now: true }); }
+        if (c.fallenFlagCleanup && a.state === 'removing') { a.nextAt = 0; ffNextRun = 0; return res.json({ ok: true, state: a.state, now: true }); }
+        const scan = ffScan();
+        if (!scan || !Array.isArray(scan.traps)) return refusal(res, 503, 'world_unreadable', 'The game database cannot be read now, so nothing was queued.');
+        const want = ffTypeOk(c);
+        const entries = scan.traps.filter((t) => want(t) && ffIn(a, Number(t.x), Number(t.y))).map((t) => [String(t.id), t]);
+        if (!entries.length) return refusal(res, 404, 'none', 'No placed mine is left in that flag\'s area.');
+        const r = await queueManual(entries, c, now, `fallen flag ${ffLabel(a)}`);
+        ffPersist();
+        res.json(Object.assign({ ok: true }, r));
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+
+    // The orphan groups' two buttons. Both name a square by its key, read again here.
+    function orphanEntries(c, key) {
+      const scan = ffScan();
+      if (!scan || !Array.isArray(scan.traps)) return null;
+      const flags = Object.values(scan.flags || {});
+      const marginCm = Math.max(0, Number(c.marginMeters) || 0) * 100;
+      const want = orTypeOk(c);
+      return scan.traps.filter((t) => {
+        if (!t || !want(t)) return false;
+        const x = Number(t.x), y = Number(t.y);
+        return Number.isFinite(x) && Number.isFinite(y) && cellKey(x, y) === key
+          && !insideAnyFlag(flags, x, y, marginCm) && !inLiveFallenArea(x, y);
+      }).map((t) => [String(t.id), t]);
+    }
+    host.routes.post('/orphans-now', async (req, res) => {
+      try {
+        const c = cfg();
+        if (!c.enabled) return refusal(res, 409, 'plugin_off', 'Mine Protection is switched off. Switch it on in Settings first.');
+        const entries = orphanEntries(c, String((req.body || {}).key || ''));
+        if (entries === null) return refusal(res, 503, 'world_unreadable', 'The game database cannot be read now, so nothing was queued.');
+        const keep = new Set(c.keepMineIds.map(String));
+        const list = entries.filter(([id]) => !keep.has(id));
+        if (!list.length) return refusal(res, 404, 'none', 'No mine outside a flag is left there.');
+        const r = await queueManual(list, c, Date.now(), 'outside every flag');
+        ffPersist();
+        res.json(Object.assign({ ok: true }, r));
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+    host.routes.post('/orphans-keep', (req, res) => {
+      try {
+        const c = cfg();
+        const entries = orphanEntries(c, String((req.body || {}).key || ''));
+        if (entries === null) return refusal(res, 503, 'world_unreadable', 'The game database cannot be read now, so nothing was kept.');
+        if (!entries.length) return refusal(res, 404, 'none', 'No mine outside a flag is left there.');
+        const ids = entries.map(([id]) => id);
+        const merged = saveConfigPatch({ keepMineIds: c.keepMineIds.concat(ids) });
+        for (const id of ids) if (orphans[id]) { delete orphans[id]; orDirty = true; }
+        ffPersist();
+        host.logger.info(`an admin kept ${ids.length} mine(s) outside every flag; the clean-up leaves them alone`);
+        res.json({ ok: true, kept: ids.length, total: merged.keepMineIds.length });
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+    host.routes.post('/keep-forget', (req, res) => {
+      try {
+        const n = cfg().keepMineIds.length;
+        saveConfigPatch({ keepMineIds: [] });
+        res.json({ ok: true, forgotten: n });
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+    host.routes.post('/removals-clear', (req, res) => { removals = []; logDirty = true; ffPersist(); res.json({ ok: true }); });
+    // An admin's queued removal, called off before it is done. The mines not yet removed stay.
+    host.routes.post('/job-stop', async (req, res) => {
+      const id = String((req.body || {}).id || '');
+      const a = rmJobs.find((x) => x.id === id);
+      if (!a) return refusal(res, 404, 'not_found', 'That removal is not in the list any more.');
+      if (!FF_LIVE_STATES.has(a.state)) return res.json({ ok: true, state: a.state });
+      try { await ffFinish(a, cfg(), 'stopped', Date.now()); ffPersist(); res.json({ ok: true, state: a.state }); }
+      catch (e) { res.status(500).json({ ok: false, error: e.message }); }
     });
 
     // Reset the escalation memory (offence counts) — e.g. after a wipe, so everyone starts on a warning again.
@@ -1217,13 +1924,21 @@ module.exports = {
     // Clear the recent-actions history shown in the panel.
     host.routes.post('/clear-history', (req, res) => { recent = []; persistRecent(); res.json({ ok: true }); });
     // Keep the mines of one fallen flag: the owner's own call, from the panel, before or during removal.
+    // From 1.10.0 the mines in its square are also kept from the orphan clean-up, which would
+    // otherwise remove them once the timer that was called off no longer covers them.
     host.routes.post('/fallen-keep', async (req, res) => {
       const id = String((req.body || {}).id || '');
       const a = ffAreas.find((x) => x.id === id);
       if (!a) return res.status(404).json({ ok: false, error: 'not_found', reason: 'That fallen flag is not in the list any more.' });
       if (!FF_LIVE_STATES.has(a.state)) return res.json({ ok: true, state: a.state });
-      try { await ffCancel(a, Date.now(), 'kept by an admin from the panel'); ffPersist(); res.json({ ok: true, state: a.state }); }
-      catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+      try {
+        await ffCancel(a, Date.now(), 'kept by an admin from the panel');
+        const ids = new Set(Object.keys(a.mines || {}).filter((k) => a.mines[k].state === 'pending' || a.mines[k].state === 'sent'));
+        const scan = ffScan();
+        if (scan && Array.isArray(scan.traps)) for (const t of scan.traps) if (ffIn(a, Number(t.x), Number(t.y))) ids.add(String(t.id));
+        if (ids.size) saveConfigPatch({ keepMineIds: cfg().keepMineIds.concat([...ids]) });
+        ffPersist(); res.json({ ok: true, state: a.state, kept: ids.size });
+      } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
     });
 
     host.logger.info(`Mine Protection active — watching ${cfg().watchedTypes.length} type(s)`);

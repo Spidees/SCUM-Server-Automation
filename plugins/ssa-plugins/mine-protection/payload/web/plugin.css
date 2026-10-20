@@ -1,103 +1,137 @@
-/* Mine Protection — admin config UI (mirrors the manager's native card + token styling). */
-.mp-head{margin:0 0 1rem}
-.mp-intro{margin:0;font-size:.86rem;color:var(--muted,#8b9099)}
-.mp-body{display:flex;flex-direction:column;gap:1rem}
-.mp-loading{color:var(--muted,#8b9099);font-size:.86rem}
-.mp-card{margin:0}
-.mp-card-t{margin:0 0 .25rem;font-size:.95rem}
-.mp-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099)}
-.mp-card-t + .mp-card-sub{margin-top:-.15rem}
-.mp-card > .mp-card-t:last-of-type{margin-bottom:.9rem}
+/* Mine Protection — admin tab (mirrors the manager's native card + token styling).
+   Every class is `mpr-`: the panel's own map card already owns `.mp-head`, `.mp-body`, `.mp-chip`
+   and `.mp-live`, and a plugin rule of the same name restyles the panel and is restyled by it. */
+.mpr-wrap{display:flex;flex-direction:column;gap:12px}
+.mpr-lead{margin:0;font-size:.86rem;color:var(--muted,#8b9099)}
+.mpr-body{display:flex;flex-direction:column;gap:1rem}
+.mpr-loading{color:var(--muted,#8b9099);font-size:.86rem}
+.mpr-card{margin:0}
+.mpr-card-t{margin:0 0 .25rem;font-size:.95rem}
+.mpr-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099)}
+.mpr-card-t + .mpr-card-sub{margin-top:-.15rem}
+
+/* ── the top row: the five screens and the save button ── */
+.mpr-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.mpr-nav{display:flex;gap:10px;flex-wrap:wrap}
+.mpr-tab{display:inline-flex;align-items:center;gap:8px;font:inherit;cursor:pointer;font-size:.82rem;padding:.5rem 1rem;border-radius:8px;border:1px solid var(--line,#24272e);background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099);text-decoration:none}
+.mpr-tab .ico{width:15px;height:15px}
+.mpr-tab{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:var(--amber,#f0820c)}
+.mpr-tab:hover{background:var(--hov-bg);border-color:var(--hov-line);color:var(--hov-fg)}
+.mpr-tab.active{color:var(--text,#f1f3f5);background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,var(--panel-2,#1c1f25));border-color:var(--accent,var(--amber,#ff6a1a))}
+.mpr-tab.active .ico{color:var(--accent,var(--amber,#ff6a1a))}
+.mpr-top-r{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mpr-unsaved{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#ff6a1a) 45%,transparent)}
+/* It carries a whole sentence when a save is refused, so it may wrap onto its own line. */
+.mpr-savemsg{font-size:.8rem;color:var(--muted,#8b9099);min-width:0}
 
 /* ── status header ── */
-.mp-status{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 1rem}
-.mp-badge{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.4rem .7rem;font-size:.78rem}
-.mp-badge-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
-.mp-badge-l{color:var(--muted,#8b9099);letter-spacing:.02em}
-.mp-badge .mp-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
-.mp-badge.ok{border-color:rgba(59,165,93,.4)} .mp-badge.ok .mp-dot{background:#3ba55d;box-shadow:0 0 8px rgba(59,165,93,.6)}
-.mp-badge.warn{border-color:rgba(250,166,26,.4)} .mp-badge.warn .mp-dot{background:#faa61a}
-.mp-badge.off .mp-dot{background:#8b9099}
+.mpr-stat{display:flex;flex-wrap:wrap;gap:8px}
+.mpr-badge{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.4rem .7rem;font-size:.78rem}
+.mpr-badge-v{font-weight:700;font-size:.95rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums}
+.mpr-badge-l{color:var(--muted,#8b9099);letter-spacing:.02em}
+.mpr-badge .mpr-dot{width:8px;height:8px;border-radius:50%;background:var(--muted,#8b9099);flex:none}
+.mpr-badge.ok{border-color:rgba(59,165,93,.4)} .mpr-badge.ok .mpr-dot{background:#3ba55d;box-shadow:0 0 8px rgba(59,165,93,.6)}
+.mpr-badge.warn{border-color:rgba(250,166,26,.4)} .mpr-badge.warn .mpr-dot{background:#faa61a}
+.mpr-badge.off .mpr-dot{background:#8b9099}
 
-/* A live cross-check that could not run. Drawn only when there is one, so it is never wallpaper. */
-.mp-live{display:flex;flex-direction:column;gap:6px;margin:0 0 1rem}
-.mp-live-n{background:var(--panel-2,#1c1f25);border:1px solid rgba(250,166,26,.4);border-left-width:3px;border-radius:8px;padding:.5rem .7rem;font-size:.78rem;line-height:1.45}
-/* "The server is not running" is INFORMATION, not a warning: an owner configuring this before the
-   first start has done nothing wrong, and an amber bar tells them they have. Both halves are set in
-   the one rule so the pair can never drift apart (check-contrast). */
-.mp-live-off{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--line-2,#343943)}
-/* A REQUEST that failed — a different thing from a world with nothing in it, and the whole reason
-   this plugin no longer swallows a failure. Both halves of the pair are written in the one rule so
-   the cascade cannot leave text nobody can read on a coloured ground (check-contrast). */
-.mp-live-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--alarm,#e5443f)}
-.mp-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
-.mp-err-act{margin-top:.7rem}
+/* ── notes: drawn only when there is something to say, so they are never wallpaper ── */
+.mpr-live,.mpr-firstrun{display:flex;flex-direction:column;gap:6px}
+.mpr-live:empty,.mpr-firstrun:empty{display:none}
+.mpr-note{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid rgba(250,166,26,.4);border-left-width:3px;border-radius:8px;padding:.5rem .7rem;font-size:.78rem;line-height:1.45}
+/* "The server is not running" is INFORMATION, not a warning. Both halves of the pair in one rule. */
+.mpr-note-off{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--line-2,#343943)}
+/* A REQUEST that failed, a different thing from a world with nothing in it. */
+.mpr-note-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border-color:var(--alarm,#e5443f)}
+.mpr-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
+.mpr-err-act{margin-top:.7rem}
 
-/* ── fields ── */
-.mp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:14px}
-.mp-stack{display:flex;flex-direction:column;gap:12px}
-.mp-f{display:flex;flex-direction:column;gap:5px}
-.mp-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
-.mp-f input,.mp-f select{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
-.mp-f input:focus,.mp-f select:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
-.mp-hint{color:var(--muted,#8b9099);font-size:.72rem}
-.mp-checks{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}
-.mp-chk{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
-.mp-chk input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
+/* ── overview rows ── */
+.mpr-rows{display:flex;flex-direction:column;gap:8px;margin:0 0 10px}
+.mpr-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:.84rem}
+.mpr-row-t{font-weight:600;color:var(--text,#f1f3f5)}
+.mpr-row-s{color:var(--muted,#8b9099);flex:1 1 220px;min-width:0}
+.mpr-types{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}
+.mpr-type{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.82rem}
+.mpr-type-n{color:var(--muted,#8b9099)}
+.mpr-link{display:inline-flex;align-items:center;gap:6px}
+.mpr-link .ico{width:13px;height:13px}
+.mpr-sumline .mpr-card-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ── fields and switches ── */
+.mpr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:14px;margin:12px 0}
+.mpr-stack{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.mpr-f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.mpr-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.mpr-f input,.mpr-f select{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
+.mpr-f input:focus,.mpr-f select:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+.mpr-hint{color:var(--muted,#8b9099);font-size:.72rem}
+.mpr-sw{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer;margin:6px 0}
+.mpr-sw input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
+.mpr-sw .mpr-hint{flex:1 0 100%;margin-left:26px}
+.mpr-keptrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.84rem}
+
+/* ── the Mines screen ── */
+.mpr-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px;margin:0 0 10px}
+.mpr-count-in{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+.mpr-count-n{font-size:.84rem;color:var(--text,#f1f3f5);margin-right:auto}
+.mpr-acts{display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center}
 
 /* ── mine/trap picker ── */
-.mp-pick-quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
-.mp-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,118px),1fr));gap:10px}
-.mp-pi{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px 10px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:10px;color:var(--text,#f1f3f5);cursor:pointer;font:inherit;text-align:center;transition:border-color .12s,background .12s,transform .06s}
-.mp-pi { --hov-bg:var(--bg,#0b0c0e);--hov-fg:var(--text,#f1f3f5);--hov-line:var(--muted,#8b9099) }
-.mp-pi:hover { background:var(--hov-bg);border-color:var(--hov-line);color:var(--hov-fg) }
-.mp-pi:active{transform:scale(.98)}
-.mp-pi.on { border-color:var(--accent,var(--amber,#ff6a1a));background:color-mix(in srgb,var(--accent,#ff6a1a) 12%,var(--bg,#0b0c0e));--hov-bg:color-mix(in srgb,var(--accent,#ff6a1a) 20%,var(--bg,#0b0c0e));--hov-fg:var(--text,#f1f3f5);--hov-line:var(--accent,var(--amber,#ff6a1a)) }
-.mp-pi.on:hover { background: var(--hov-bg); border-color: var(--hov-line); color: var(--hov-fg); }
-.mp-pi-img{width:44px;height:44px;object-fit:contain;image-rendering:auto}
-.mp-pi-ph{width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted,#8b9099)}
-.mp-pi-ph .ico{width:26px;height:26px}
-.mp-pi-check .ico{width:12px;height:12px}
-.mp-pi-name{font-size:.78rem;font-weight:600;line-height:1.15}
-.mp-pi-meta{font-size:.66rem;color:var(--muted,#8b9099);letter-spacing:.02em}
-.mp-pi-check{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;background:transparent;border:1px solid var(--line-2,#343943);color:transparent}
-.mp-pi.on .mp-pi-check{background:var(--accent,var(--amber,#ff6a1a));border-color:transparent;color:var(--on-amber,#1a0d02)}
+.mpr-pick-quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.mpr-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,118px),1fr));gap:10px}
+.mpr-pi{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px 10px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:10px;color:var(--text,#f1f3f5);cursor:pointer;font:inherit;text-align:center;transition:border-color .12s,background .12s,transform .06s}
+.mpr-pi { --hov-bg:var(--bg,#0b0c0e);--hov-fg:var(--text,#f1f3f5);--hov-line:var(--muted,#8b9099) }
+.mpr-pi:hover { background:var(--hov-bg);border-color:var(--hov-line);color:var(--hov-fg) }
+.mpr-pi:active{transform:scale(.98)}
+.mpr-pi.on { border-color:var(--accent,var(--amber,#ff6a1a));background:color-mix(in srgb,var(--accent,#ff6a1a) 12%,var(--bg,#0b0c0e));--hov-bg:color-mix(in srgb,var(--accent,#ff6a1a) 20%,var(--bg,#0b0c0e));--hov-fg:var(--text,#f1f3f5);--hov-line:var(--accent,var(--amber,#ff6a1a)) }
+.mpr-pi.on:hover { background: var(--hov-bg); border-color: var(--hov-line); color: var(--hov-fg); }
+.mpr-pi-img{width:44px;height:44px;object-fit:contain;image-rendering:auto}
+.mpr-pi-ph{width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--muted,#8b9099)}
+.mpr-pi-ph .ico{width:26px;height:26px}
+.mpr-pi-check .ico{width:12px;height:12px}
+.mpr-pi-name{font-size:.78rem;font-weight:600;line-height:1.15}
+.mpr-pi-meta{font-size:.66rem;color:var(--muted,#8b9099);letter-spacing:.02em}
+.mpr-pi-check{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;background:transparent;border:1px solid var(--line-2,#343943);color:transparent}
+.mpr-pi.on .mpr-pi-check{background:var(--accent,var(--amber,#ff6a1a));border-color:transparent;color:var(--on-amber,#1a0d02)}
 
 /* ── chips / exemptions ── */
-.mp-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;min-height:1.4rem}
-.mp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.25rem .3rem .25rem .65rem;font-size:.8rem}
-.mp-chip code{font-size:.78rem;color:var(--text,#f1f3f5)}
-.mp-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font-size:.75rem;width:18px;height:18px;border-radius:50%;line-height:1}
-.mp-chip-x { --hov-bg:rgba(237,66,69,.16);--hov-fg:#ff8a8c;--hov-line:transparent }
-.mp-chip-x:hover { background:var(--hov-bg);color:var(--hov-fg) }
-.mp-ex-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.mp-ex-in{flex:1;min-width:180px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.84rem;padding:.42rem .6rem}
-.mp-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:0}
-
-/* the button row above each table (Refresh / Reset warnings / Clear history) + the Save bar. Tables,
-   pagination, search, player/location cells and status tags all use the manager's NATIVE classes
-   (.data-table, .th-sort, .player-search, .roster-pager, .gl-player, .gl-loc, .gl-tag-*, button.secondary). */
-.mp-rec-head{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 4px}
-.mp-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}
-/* It carries a whole sentence when a save is refused, so it needs room to wrap onto its own line
-   rather than pushing the buttons off a narrow screen. */
-.mp-savemsg{font-size:.82rem;color:var(--muted,#8b9099);min-width:0;flex:1 1 220px}
-
-/* A 17-digit Steam ID cannot shrink, so it may break anywhere rather than push the chip wide. */
-.mp-chip code { overflow-wrap: anywhere; }
+.mpr-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;min-height:1.4rem}
+.mpr-acts .mpr-chips,td .mpr-chips{margin:0}
+.mpr-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.25rem .65rem;font-size:.78rem;color:var(--text,#f1f3f5)}
+.mpr-chip code{font-size:.78rem;color:var(--text,#f1f3f5);overflow-wrap:anywhere}
+.mpr-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font-size:.75rem;width:18px;height:18px;border-radius:50%;line-height:1;padding:0}
+.mpr-chip-x { --hov-bg:rgba(237,66,69,.16);--hov-fg:#ff8a8c;--hov-line:transparent }
+.mpr-chip-x:hover { background:var(--hov-bg);color:var(--hov-fg) }
+.mpr-ex-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mpr-ex-in{flex:1;min-width:min(100%,180px);background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.84rem;padding:.42rem .6rem}
+.mpr-empty{color:var(--muted,#8b9099);font-size:.82rem;margin:0}
+.mpr-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.mpr-dim{color:var(--muted,#8b9099)}
 
 /* Offences cell: the number, and a way to forgive that one player. The button stays quiet until the
-   row is hovered so a table of counts does not read as a table of buttons — but it is always in the
-   layout, so nothing shifts when it appears, and it is fully visible on touch where there is no
-   hover to reveal it with. */
-.mp-off { display: inline-flex; align-items: center; gap: 8px; }
-.mp-off-x { font-size: .72rem; padding: .1rem .45rem; opacity: .35; transition: opacity .12s; }
-tr:hover .mp-off-x, .mp-off-x:focus-visible { opacity: 1; }
-@media (hover: none) { .mp-off-x { opacity: 1; } }
+   row is hovered, always in the layout, and fully visible on touch. */
+.mpr-off { display: inline-flex; align-items: center; gap: 8px; }
+.mpr-off-x { font-size: .72rem; padding: .1rem .45rem; opacity: .35; transition: opacity .12s; }
+tr:hover .mpr-off-x, .mpr-off-x:focus-visible { opacity: 1; }
+@media (hover: none) { .mpr-off-x { opacity: 1; } }
 
-/* On a phone a wrapping row of buttons stretches to the column instead of
-   falling into a staircase of boxes, one per line, each at its own width. */
+/* On a phone a wrapping row of buttons stretches to the column instead of a staircase of boxes. */
 @media (max-width: 480px) {
-  .mp-pick-quick > * { flex: 1 1 auto; }
+  .mpr-pick-quick > *, .mpr-nav > *, .mpr-count-in > button { flex: 1 1 auto; }
+  .mpr-top-r { margin-left: 0; }
 }
-.mp-dim{color:var(--muted,#8b9099)}
+
+/* Remove. Ghost: no fill, the alarm colour is the affordance, and both halves of the hover pair are
+   set here so the panel's own `button.danger` hover (4.2:1 inside a table cell) never applies. */
+.mpr-danger{--hov-bg:transparent;--hov-fg:var(--text,#f1f3f5);--hov-line:var(--alarm,#ff5c5c);background:transparent;border:1px solid rgba(255,92,92,.45);color:var(--alarm,#ff5c5c);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.mpr-danger:hover{background:var(--hov-bg);border-color:var(--hov-line);color:var(--hov-fg)}
+.mpr-danger .ico{width:13px;height:13px}
+.mpr-acts button,.mpr-count-in button{white-space:nowrap}
+.mpr-card td.dim{white-space:nowrap}
+.mpr-tick{width:1.05rem;height:1.05rem;margin:0;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
+@media (max-width: 480px) {
+  /* A tick decides what a removal acts on; a chip's ✕ removes an exemption. Both are one glyph,
+     so an explicit 44px square is safe and is what a fingertip needs. */
+  .mpr-tick { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+  .mpr-chip-x { min-width: 44px; min-height: 44px; }
+}

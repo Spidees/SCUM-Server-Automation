@@ -2,7 +2,8 @@
 
 Punishes players who **arm a mine or trap outside their own or their squad's flag area**. The first
 offences earn a chat **warning**; after that the placer is **teleported onto their own armed mine**.
-Optionally it also **removes the mines a fallen flag leaves behind** when no new flag is built in time.
+It also **clears the mines no flag protects any more**: the ones a fallen flag leaves behind, and the
+ones that sit **outside every flag**, and lets you **remove mines by conditions** yourself.
 
 ## How it works
 - Every few seconds the plugin reads the manager's **world scan** for placed, **armed** mines and traps
@@ -10,25 +11,24 @@ Optionally it also **removes the mines a fallen flag leaves behind** when no new
 - A mine is legal when it sits inside the **flag area of any base owned by the placer or a squadmate**.
   A squad member arming inside a teammate's base is never punished.
 - **Before a teleport, the running game is asked** whether the mine is still armed and who is in the
-  placer's squad right now. A mine defused since the last save, or a squadmate who joined since then,
-  calls the punishment off. These checks can only cancel an offence, never create one.
-- **Escalation:** the first offences per player are a warning, then the teleport. The teleport runs
-  through the placer, so it does not depend on name or Steam ID targeting.
-- **It never punishes on a guess.** When the game database cannot say whether a mine is inside a flag,
-  the mine is left alone and checked again on the next scan.
-- **Offline placers** are dealt with the moment they reconnect: the bridge's join announcement counts
-  them as online and starts a scan at once, without waiting for the next save.
-- **State survives restarts:** handled mines, offence counts and the action history are saved, so a
-  restart never punishes the same mine twice. Mines that were already placed when the plugin first
-  ran are never punished.
-- **Fallen flags (off until you switch it on):** when a flag disappears from the world, a **timer**
-  starts (10 minutes by default). If no new flag stands in the **original flag area** when it runs
-  out, every placed mine inside that area is removed through the bridge, one by one, and the log
-  gets one line per area with the counts.
-- **Only the same owner or their squad keeps the mines** with a new flag, by default. A raider who
-  builds a flag on the ruins does not keep the old owner's mines alive inside their base.
-- **A mine counts as removed only when the game confirms it.** A refusal is logged in the bridge's
-  own words and tried again until the grace period runs out. Timers survive a manager restart.
+  placer's squad right now. These checks can only cancel an offence, never create one.
+- **Escalation:** the first offences per player are a warning, then the teleport. **Offline placers**
+  are dealt with the moment they reconnect.
+- **It never acts on a guess.** When the game database cannot say whether a mine is inside a flag,
+  the mine is left alone and checked again later. That holds for the punishment and for every removal.
+- **Fallen flags (off until you switch it on):** when a flag disappears, a **timer** starts (10 minutes
+  by default). If no new flag of the same owner or squad stands in the **original flag area** when it
+  runs out, the mines inside that area are removed.
+- **Mines outside every flag (off until you switch it on):** a mine of the chosen types that sits inside
+  **no standing flag area** is removed once it has been there for the **grace time** (60 minutes by
+  default). This covers what the fallen-flag timer cannot see: a flag that fell **before the plugin
+  first looked**, a base that was wiped, a mine armed outside every flag. By default a placer who is
+  online keeps their mine until they leave; exempt players and mines you chose to keep are never removed.
+- **Remove by conditions:** the **Mines** screen lists every placed mine and trap with filters for
+  type, placer, inside or outside a flag, armed, sector and the time it was last handled. Tick rows and
+  remove them, or remove everything that matches. The confirmation names the count.
+- **A mine counts as removed only when the game confirms it.** Each one is a line in the log and in
+  **Activity**. A refusal is logged in the bridge's own words and tried again. Timers survive a restart.
 
 ## Requirements
 - The **SSA Bridge** plugin, for the teleport and the chat message.
@@ -38,50 +38,49 @@ Optionally it also **removes the mines a fallen flag leaves behind** when no new
   - **Live inventories**: *Read live inventories*, which confirms a mine is still armed.
   - **Live squads**: *Read live squads, and allow the changes below* and *Include the member list*,
     which confirm the placer's current squad.
-- For **fallen-flag removal**: *Destroy an item* in the **Live inventories** module. To clear an
-  area with nobody near it, also the **Far from players** module (*Work far from players*).
+- For **any removal**: *Destroy an item* in the **Live inventories** module. It ships off, and the
+  Overview says so while it is off. To clear an area with nobody near it, also the **Far from players**
+  module (*Work far from players*).
 - Manager **6.0.0+**.
 
 ## Configuration
-Everything is configured from the plugin's **admin tab** (🛡️ Mine Protection):
+Everything is configured from the plugin's **admin tab** (🛡️ Mine Protection), on five screens:
 
-- **Watched mines & traps**: a picker with an icon per type and how many are placed and armed right
-  now. Quick buttons: *Explosives only* (every explosive, C4 included), *Select all*, *Clear*. The
-  default selection is the explosives without C4, because C4 is a raiding tool.
-- **When a violation is found**: teleport onto their mine, or warn only.
-- **Warnings before action**: how many warnings a player gets first (default 1, 0 acts at once).
-- **Extra margin around flag (m)**: tolerance beyond the flag area (default 0).
-- **Scan interval (s)**: how often to scan (default 6). Applies as soon as you save.
-- **Only act while the placer is online** (on by default).
-- **In-game messages**: the chat channel, the warning message and the penalty message.
-- **Every player's language**: each message has a tab per language, and every player reads the
-  one for the language they chose with `/lang` in game, on the Field Console or on Discord. An
-  empty tab sends the default text.
-- **Mines of a fallen flag**: the on/off switch (off by default), the delay before removal, how long
-  to keep trying after it, whether every mine and trap or only the watched types are removed, whose
-  new flag keeps the mines, loading an empty area, an owner alert, and a chat announcement in every
-  player's language. The list below it shows each fallen flag, its state and a *Keep mines* button.
-- **Exemptions**: players who are never punished. Type a Steam ID or pick an online player.
-- **Placed mines**: every watched mine in the server's last save, who armed it, where, and its status.
-- **Recent actions**: every warning and teleport, with *Reset warnings* and *Clear history*.
+- **Overview**: what runs on this server, what a removal needs from the bridge, the placed mines by
+  type and the latest actions.
+- **Mines**: every placed mine and trap, with filters, ticks, *Remove ticked* and *Remove all matching*,
+  and a *Forgive* button on a player's offences.
+- **Flags**: the fallen flags with *Keep mines* and *Remove now*, and the mines outside every flag by
+  place, with *Keep mines* and *Remove now*.
+- **Activity**: every removed mine, what is being removed now (with *Stop*), and the warnings and
+  teleports with *Reset warnings* and *Clear history*.
+- **Settings**: every switch.
+  - **Watched mines & traps**: a picker with an icon per type. Quick buttons: *Explosives only*,
+    *Select all*, *Clear*. The default is the explosives without C4, because C4 is a raiding tool.
+  - **Punishment**: its own on/off switch, teleport or warn only, warnings before action, extra margin
+    around the flag, scan interval, and only while the placer is online.
+  - **In-game messages**: the chat channel, the warning and the penalty message.
+  - **Mines of a fallen flag**: the switch, the delay, how long to keep trying, which types, whose new
+    flag keeps the mines, an owner alert and a chat announcement.
+  - **Mines outside every flag**: the switch, which types, the grace time, only while the placer is
+    offline, an owner alert and a chat announcement.
+  - **Removing mines**: loading an empty area with the bridge's visitor, how long a removal keeps
+    trying, and the mines you chose to keep.
+  - **Exemptions**: players who are never punished and whose mines are never cleared.
+- **Every player's language**: each message has a tab per language, and every player reads the one
+  for the language they chose with `/lang`. An empty tab sends the default text.
 
 ## Good to know
-- **Forgive one player** with the *Forgive* button on their row in the mines table. *Reset warnings*
-  clears everybody.
-- **A warning counts only once it arrives.** If the player is not online to receive it, the mine is
-  checked again later instead of counting as their warning.
-- *Armed state unknown* and *Flag unknown* in the mines table mean the plugin could not tell, and it
-  does nothing about those mines until it can.
-- The placer is whoever **armed** the mine, not whoever crafted or placed it.
-- Everything can be configured with the server stopped; only the live lists need it running.
 - **A mine can only be removed while the game has its area loaded**, which means a player nearby or
-  the bridge's *Work far from players* visitor. Without either, removal waits and says so.
+  the bridge's *Work far from players* visitor. The visitor loads one place at a time.
+- The fallen-flag timer only knows flags it saw standing. Mines of a flag that fell earlier are found
+  by **Mines outside every flag**.
 - A flag is seen as fallen when the **server's save** (or the game's own flag log) no longer has it,
-  so the timer starts up to one autosave after the flag really fell.
-- Switching fallen-flag removal on only starts watching: flags that fell before that are left alone.
-- **A new install already speaks every player's language.** A message you have not changed goes out
-  in the plugin's own translation; once you edit it, players read your wording. On a manager without
-  per-language chat, everyone gets the one text.
+  so a timer starts up to one autosave after the flag really fell.
+- *Last handled* is when the game last saw anybody handle the mine, read from the save.
+- The placer is whoever **armed** the mine. A placer the save no longer knows counts as offline.
+- *Keep mines* on a fallen flag also keeps those mines from the outside-every-flag clean-up.
+- Everything can be configured with the server stopped; only the lists, counters and removals need it.
 
 ---
 
