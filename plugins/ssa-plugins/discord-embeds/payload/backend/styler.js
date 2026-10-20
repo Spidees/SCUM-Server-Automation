@@ -12,7 +12,30 @@
 function clean(v) { return (typeof v === 'string' && v.trim() !== '') ? v : undefined; }
 
 module.exports = {
-  async register(host) {
+  /**
+   * `shared` is handed over by `index.js`: the plugin's settings, the activity log and the bot test.
+   * It is optional, so this half still registers on its own (a check, an older caller) and then
+   * behaves exactly as it did before there were settings: every switch on, the built-in replies,
+   * nothing recorded.
+   */
+  async register(host, shared) {
+    const SH = (shared && typeof shared === 'object') ? shared : {};
+    const FALLBACK = {
+      styling: { enabled: true }, liveEmbeds: { enabled: true, defaultIntervalSec: 60, reverifyMinutes: 10 },
+      clickActions: { enabled: true }, replies: {}, repliesI18n: {},
+    };
+    const S = () => {
+      try { return (typeof SH.settings === 'function' && SH.settings()) || FALLBACK; } catch (e) { return FALLBACK; }
+    };
+    const record = (entry) => { try { if (typeof SH.record === 'function') SH.record(entry); } catch (e) { /* bookkeeping only */ } };
+    const botUp = () => {
+      try {
+        if (typeof SH.botUp === 'function') return !!SH.botUp();
+        const c = host.discord && typeof host.discord.client === 'function' ? host.discord.client() : null;
+        if (!c) return false;
+        return typeof c.isReady === 'function' ? !!c.isReady() : true;
+      } catch (e) { return false; }
+    };
     // discord.js deprecated the `ephemeral: true` reply option in favour of the flag; the old one
     // still works but warns on every reply. 64 is the flag's fixed value in Discord's API.
     const EPHEMERAL = (() => {
@@ -63,13 +86,50 @@ module.exports = {
       noButton: (l) => (I18N && l ? host.i18n.t('pl.discord-embeds.reply.noButton', 'Nothing is set up for that button yet.', l) : 'Nothing is set up for that button yet.'),
       noChoice: (l) => (I18N && l ? host.i18n.t('pl.discord-embeds.reply.noChoice', 'Nothing is set up for that choice yet.', l) : 'Nothing is set up for that choice yet.'),
       error: (l) => (I18N && l ? host.i18n.t('pl.discord-embeds.reply.error', 'Action error.', l) : 'Action error.'),
+      actionsOff: (l) => (I18N && l ? host.i18n.t('pl.discord-embeds.reply.actionsOff', '⏸ This button is switched off for now.', l) : '⏸ This button is switched off for now.'),
     };
+    const REPLY_KEYS = Object.keys(REPLY);
+    const serverLang = () => { try { return I18N && typeof host.i18n.serverLang === 'function' ? host.i18n.serverLang() : null; } catch { return null; } };
+    /**
+     * The owner's own wording first, the plugin's translation second.
+     *
+     * Settings → Messages stores only what the owner changed: their text in the server's language
+     * (`replies`) and one per other language (`repliesI18n`). A language with no text of its own gets
+     * the owner's server-language text when there is one, which is what the language editor shows for
+     * that tab; with neither, the built-in line in that language.
+     */
     const reply = (lang, key, vars) => {
-      let s = REPLY[key](lang);
-      if (typeof s !== 'string' || !s) s = REPLY[key](null);
+      const st = S();
+      const own = st.replies && typeof st.replies[key] === 'string' && st.replies[key].trim() ? st.replies[key] : '';
+      const map = st.repliesI18n && st.repliesI18n[key] && typeof st.repliesI18n[key] === 'object' ? st.repliesI18n[key] : {};
+      const srv = serverLang();
+      let s = '';
+      if (lang && lang !== srv && typeof map[lang] === 'string' && map[lang].trim()) s = map[lang];
+      else if (own) s = own;
+      else {
+        s = REPLY[key](lang);
+        if (typeof s !== 'string' || !s) s = REPLY[key](null);
+      }
       if (vars) for (const k of Object.keys(vars)) s = s.split('{' + k + '}').join(String(vars[k]));
       return s;
     };
+    // The shipped line of every reply in every language, for the language editor's "built-in text".
+    host.routes.get('/text-defaults', (req, res) => {
+      const english = {};
+      for (const k of REPLY_KEYS) english[k] = REPLY[k](null);
+      const byLang = {};
+      try {
+        if (I18N && typeof host.i18n.languages === 'function') {
+          for (const l of host.i18n.languages()) {
+            if (!l || !l.code) continue;
+            const code = String(l.code).toLowerCase();
+            byLang[code] = {};
+            for (const k of REPLY_KEYS) byLang[code][k] = REPLY[k](code);
+          }
+        }
+      } catch (e) { /* the editor works without them */ }
+      res.json({ ok: true, keys: REPLY_KEYS, english, byLang, serverLang: serverLang() });
+    });
     // The owner's private reply: their variant for the clicker's language, else the text as written.
     function replyText(act, lang) {
       const base = act && act.value != null ? String(act.value) : '';
@@ -148,6 +208,16 @@ module.exports = {
       } catch (e) { /* a resolver that threw must not lose the name */ }
       return s;
     };
+    /**
+     * The OTHER fields of a kill that can name an actor. An NPC death carries the killer's class a
+     * second time as `causeBy` (`BP_Guard_Lvl_2_C_2147320439`), and a suicide carries the victim as
+     * `playerName`; both are offered as tokens and both went out raw while `{killerName}` beside them
+     * read "Guard (Lvl 2)". A player's name comes back from the resolver untouched.
+     */
+    function actorTokens(c, m) {
+      if (c.causeBy) m.causeBy = actorName(c.causeBy);
+      if (c.playerName) m.playerName = actorName(c.playerName);
+    }
     function topPlayer() {
       try {
         // `host.leaderboards.all()` answers `{ key: { label, data: [...] } }`, never `{ key: [...] }`.
@@ -192,12 +262,12 @@ module.exports = {
       kill: {
         tokens: [T('killerName', 'Killer name', 'Survivor'), T('victimName', 'Victim name', 'Bandit'), T('weapon', 'Weapon (name)', 'M16A4'), T('weaponImage', 'Weapon image URL', 'https://…/Weapon_M16A4__vicinity.png'), T('weaponType', 'Weapon type', 'ranged'), T('distance', 'Distance', '134 m'), T('killerSteamId', 'Killer Steam ID', '76561198000000000'), T('victimSteamId', 'Victim Steam ID', '76561198999999999'), TOK.location, T('squad', "Killer's squad", 'Wolves'), T('fame', "Killer's fame", '18420'), TOK.playerName, TOK.steamId],
         defaults: [F('🔪 Killer', 'killerName'), F('💀 Victim', 'victimName'), F('🔫 Weapon', 'weapon'), F('📏 Distance', 'distance'), F('📍 Location', 'location', false)],
-        resolve: (c) => { const m = base(c); if (c.killerName) m.killerName = actorName(c.killerName); if (c.victimName) m.victimName = actorName(c.victimName); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; enrich(c.killerSteamId || c.steamId, m); return m; },
+        resolve: (c) => { const m = base(c); if (c.killerName) m.killerName = actorName(c.killerName); if (c.victimName) m.victimName = actorName(c.victimName); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; actorTokens(c, m); enrich(c.killerSteamId || c.steamId, m); return m; },
       },
       eventkill: {
         tokens: [T('killerName', 'Killer name', 'Survivor'), T('victimName', 'Victim name', 'Bandit'), T('weapon', 'Weapon (name)', 'M16A4'), T('weaponImage', 'Weapon image URL', 'https://…/Weapon_M16A4__vicinity.png'), T('distance', 'Distance', '134 m'), T('killerSteamId', 'Killer Steam ID', '76561198000000000'), T('victimSteamId', 'Victim Steam ID', '76561198999999999'), TOK.location],
         defaults: [F('🔪 Killer', 'killerName'), F('💀 Victim', 'victimName'), F('🔫 Weapon', 'weapon'), F('📏 Distance', 'distance'), F('📍 Location', 'location', false)],
-        resolve: (c) => { const m = base(c); if (c.killerName) m.killerName = actorName(c.killerName); if (c.victimName) m.victimName = actorName(c.victimName); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; enrich(c.killerSteamId, m); return m; },
+        resolve: (c) => { const m = base(c); if (c.killerName) m.killerName = actorName(c.killerName); if (c.victimName) m.victimName = actorName(c.victimName); if (c.weaponName) { m.weapon = itemName(c.weaponName); m.weaponImage = host.items.image(c.weaponName, 'vicinity') || ''; } if (c.distance != null) m.distance = `${c.distance} m`; actorTokens(c, m); enrich(c.killerSteamId, m); return m; },
       },
       economy: {
         tokens: [TOK.playerName, TOK.steamId, T('type', 'Activity type', 'sell'), T('item', 'Item (name)', 'Bandage'), T('itemImage', 'Item image URL', 'https://…/Bandage.png'), T('itemsList', 'Items (list)', 'Bandage x3 — 500\n7.62mm x60 — 1200'), T('quantity', 'Quantity', '3'), T('amount', 'Amount', '1500'), T('unitPrice', 'Price / item', '500'), T('totalAmount', 'Total credits', '4500'), T('health', 'Item condition', '87'), T('trader', 'Trader', 'Armory (A1)'), T('cardType', 'Card type', 'Gold'), T('beforeCash', 'Cash before', '2000'), T('afterCash', 'Cash after', '500'), T('beforeAccount', 'Account before', '8000'), T('afterAccount', 'Account after', '9500'), T('beforeGold', 'Gold before', '30'), T('afterGold', 'Gold after', '35'), T('beforeTraderFunds', 'Trader funds before', '50000'), T('afterTraderFunds', 'Trader funds after', '48500'), TOK.squad],
@@ -697,7 +767,34 @@ module.exports = {
      * footer on every embed as it sends, so anything set here is overwritten a moment later. The
      * editor says so rather than offering a field that cannot work.
      */
+    // What the restyling has done since the manager started, per embed kind, for the Activity screen:
+    // how often a saved style was applied, when last, and the last part that could not be applied.
+    // Counters rather than log lines: a kill feed restyles every kill, and one entry per kill would
+    // push everything else out of the log.
+    const styleCounts = {};
+    const styleFailNoted = {};      // kind → the failure text last written to the activity log, and when
+    function noteStyle(kind, failed) {
+      const c = styleCounts[kind] || (styleCounts[kind] = { applied: 0, lastAt: 0, failed: 0, lastFailure: '' });
+      c.applied++; c.lastAt = Date.now();
+      if (!failed) return;
+      c.failed++; c.lastFailure = failed;
+      // The same failure is written once per ten minutes, so a broken style on a busy feed is one
+      // line rather than a page of them.
+      const last = styleFailNoted[kind];
+      if (last && last.text === failed && Date.now() - last.at < 600000) return;
+      styleFailNoted[kind] = { text: failed, at: Date.now() };
+      record({ kind: 'style', ok: false, code: 'style_part', why: failed, title: kind, embedKind: kind });
+    }
+    SH.styleStats = () => {
+      const st = loadStyles();
+      const enabledKinds = Object.keys(st).filter((k) => st[k] && st[k].enabled && st[k].model).length;
+      return { enabledKinds, kinds: JSON.parse(JSON.stringify(styleCounts)), labels: Object.assign({}, kindLabels), on: S().styling.enabled };
+    };
+
     function applyStyle(embed, kind, ctx) {
+      // The master switch: every saved style stays as it is and the manager's own embeds go out
+      // untouched until it is on again.
+      if (!S().styling.enabled) return embed;
       const entry = loadStyles()[kind];
       if (!entry || !entry.enabled || !entry.model || !editor) return embed;
       const m = tokenMapFor(kind, ctx, entry.model);
@@ -755,6 +852,7 @@ module.exports = {
       if (failed.length) {
         host.logger.warn(`applyStyle(${kind}): ${failed.length} style part(s) not applied: ${failed.join('; ')}. Check the Built-in Embeds tab.`);
       }
+      noteStyle(kind, failed.length ? failed.join('; ') : '');
       if (content === undefined && components === undefined && extraEmbeds === undefined) return embed;
       return { embed, content, components, extraEmbeds };
     }
@@ -778,9 +876,14 @@ module.exports = {
     // to be the same 18 entries; the moment the manager gained notification, DM-alert and intel
     // kinds, a style saved against one of those would have been listed in the UI, saved to the
     // store, and then silently never applied — the failure would look like "the plugin ignores me".
+    // The name of each kind as the manager gives it, kept from this one call: the Activity screen
+    // shows it beside the counters, and asking `embedKinds()` again on every status poll would run
+    // every builder each time.
+    const kindLabels = {};
     const styleable = (() => {
       const real = realKinds();
-      if (real) return real.map((k) => k.key);
+      if (real) { real.forEach((k) => { kindLabels[k.key] = k.label || k.key; }); return real.map((k) => k.key); }
+      KIND_META.forEach((k) => { kindLabels[k.key] = k.label; });
       return KIND_META.map((k) => k.key);
     })();
     styleable.forEach((key) => host.discord.onEmbed(key, (embed, ctx) => { captureImage(key, embed); return applyStyle(embed, key, ctx); }));
@@ -886,7 +989,39 @@ module.exports = {
     // unchanged message is still re-edited every ten minutes, which catches a delete that was missed
     // (the bot offline at the time).
     const lastSent = {};
-    const REVERIFY_MS = 10 * 60000;
+    // How long an unchanged message goes before it is re-edited anyway. A setting (minutes) now.
+    const reverifyMs = () => Math.max(1, Number(S().liveEmbeds.reverifyMinutes) || 10) * 60000;
+    /**
+     * What each custom live embed last did, for the Activity screen: when, whether it worked, why
+     * not, and the message it keeps updated. Every refresh that reached Discord moves it; a refresh
+     * skipped because nothing changed does not.
+     *
+     * The activity LOG gets a line only when the outcome CHANGES (the first post, a new post after
+     * the message was deleted, the first failure, the recovery, a different failure). An embed that
+     * edits itself every minute would otherwise fill the log with "updated" and push every send
+     * and click out of it.
+     */
+    const liveState = {};
+    function noteLive(ce, out, how) {
+      const prev = liveState[ce.id] || null;
+      const now = { at: Date.now(), ok: out.ok === true, code: out.code || '', why: out.why || '', how: how || '',
+        messageId: (out.messageId || (prev && prev.messageId) || ''), lastOkAt: out.ok === true ? Date.now() : (prev ? prev.lastOkAt : 0) };
+      liveState[ce.id] = now;
+      const changed = !prev || prev.ok !== now.ok || (!now.ok && prev.code !== now.code) || how === 'posted' || how === 'reposted';
+      if (!changed) return;
+      record({ kind: 'live', ok: now.ok, code: now.ok ? how : now.code, why: now.why, title: ce.name || ce.id,
+        channelId: String(ce.channelId || ''), messageId: now.messageId, liveId: ce.id });
+    }
+    SH.liveStatus = () => loadCustom().map((ce) => {
+      const st = liveState[ce.id] || {};
+      const ids = held('customMsg', {});
+      return {
+        id: ce.id, name: ce.name || '', channelId: ce.channelId || '', enabled: ce.enabled !== false,
+        intervalSec: Math.max(15, Number(ce.intervalSec) || S().liveEmbeds.defaultIntervalSec || 60),
+        lastAt: st.at || null, lastOkAt: st.lastOkAt || null, ok: st.at ? st.ok : null,
+        code: st.code || '', why: st.why || '', messageId: ids[ce.id] || st.messageId || '',
+      };
+    });
     // A message deleted in Discord should come back on its next refresh, not ten minutes later, so
     // the bot's own delete event drops what was remembered about it. Attached once, when the bot is
     // up, and taken off again when the plugin unloads.
@@ -920,9 +1055,14 @@ module.exports = {
       if (!ce.channelId) return { ok: false, code: 'no_channel', why: 'no channel is set for this embed' };
       if (ce.enabled === false) return { ok: false, code: 'embed_off', why: 'this embed is switched off' };
       if (!editor) return { ok: false, code: 'no_editor', why: 'the editor half of the plugin is not loaded' };
-      const interval = Math.max(15, ce.intervalSec || 60) * 1000;
+      const interval = Math.max(15, Number(ce.intervalSec) || S().liveEmbeds.defaultIntervalSec || 60) * 1000;
       if (!force && lastPost[ce.id] && (Date.now() - lastPost[ce.id]) < interval) return { ok: true, skipped: true };
       lastPost[ce.id] = Date.now();
+      const out = await refreshInner(ce, force);
+      if (out && !out.skipped) noteLive(ce, out, out.how);
+      return out;
+    }
+    async function refreshInner(ce, force) {
       try {
         const m = fitLimits(resolveModel(ce.model, tokenMapForTemplate(ce.model)));
         const e = editor.apiEmbed(m);
@@ -955,35 +1095,51 @@ module.exports = {
         const ids = held('customMsg', {});
         const prev = lastSent[ce.id];
         const same = !!(prev && sig && prev.sig === sig && prev.channelId === ce.channelId && ids[ce.id] && prev.msgId === ids[ce.id]);
-        if (!force && same && (Date.now() - prev.at) < REVERIFY_MS) return { ok: true, skipped: true, unchanged: true };
+        if (!force && same && (Date.now() - prev.at) < reverifyMs()) return { ok: true, skipped: true, unchanged: true };
         const remember = (msg) => { lastSent[ce.id] = { sig, channelId: ce.channelId, msgId: String(msg.id), msg, at: Date.now() }; };
         // The kept Message belongs to the channel it was posted in. A changed channel must not edit
         // the old one — it has to reach the fetch below, which fails in the new channel and reposts.
         if (ids[ce.id] && prev && prev.msg && prev.channelId === ce.channelId && prev.msgId === ids[ce.id]) {
-          try { await prev.msg.edit(payload); remember(prev.msg); return { ok: true }; }
+          try { await prev.msg.edit(payload); remember(prev.msg); return { ok: true, how: 'updated', messageId: String(prev.msg.id) }; }
           catch { delete lastSent[ce.id]; /* stale object or deleted message → fetch by id below */ }
         }
         const ch = await host.discord.channel(ce.channelId);
         // Say which of the several silent exits happened. The panel used to print
         // "Posted ✓ — keeps updating" for a missing channel, a disabled embed, a bot that cannot see
         // the channel, and a missing editor service alike.
-        if (!ch || !ch.send) { return { ok: false, code: 'channel_not_found', why: 'the bot cannot see that channel' }; }
+        //
+        // And a bot that is not connected at all is not a channel problem: `host.discord.channel()`
+        // answers null for both, and "the bot cannot see that channel" sent an owner to check a
+        // channel that was fine while the bot was offline.
+        if (!ch || !ch.send) {
+          return botUp() ? { ok: false, code: 'channel_not_found', why: 'the bot cannot see that channel' }
+            : { ok: false, code: 'bot_offline', why: 'the Discord bot is not connected' };
+        }
+        const hadMsg = !!ids[ce.id];
         if (ids[ce.id]) {
           // An edit that WORKED has to say so. Returning nothing here made the panel report every
           // successful refresh of an existing message as a failure — which is every refresh after
           // the first one.
-          try { const msg = await ch.messages.fetch(ids[ce.id]); await msg.edit(payload); remember(msg); return { ok: true }; }
+          try { const msg = await ch.messages.fetch(ids[ce.id]); await msg.edit(payload); remember(msg); return { ok: true, how: 'updated', messageId: String(msg.id) }; }
           catch { /* message deleted → repost below */ }
         }
         const sent = await ch.send(payload);
         if (sent && sent.id) { ids[ce.id] = sent.id; host.store.set('customMsg', ids); forget('customMsg'); remember(sent); }
-        return { ok: true };
+        return { ok: true, how: hadMsg ? 'reposted' : 'posted', messageId: sent && sent.id ? String(sent.id) : '' };
       } catch (err) {
         host.logger.warn(`custom embed "${ce.id}" failed: ${err.message}`);
         return { ok: false, code: 'post_failed', detail: String(err.message || ''), why: err.message };
       }
     }
-    host.schedule.every(15000, () => { for (const ce of loadCustom()) refreshCustom(ce, false); });
+    // The master switch stops the loop; every embed keeps its settings and its message in Discord
+    // stays as it last was. A loop that is still busy with the previous round is not started again.
+    let liveBusy = false;
+    host.schedule.every(15000, async () => {
+      if (!S().liveEmbeds.enabled || liveBusy) return;
+      liveBusy = true;
+      try { for (const ce of loadCustom()) { try { await refreshCustom(ce, false); } catch (e) { /* refreshCustom answers, never throws */ } } }
+      finally { liveBusy = false; }
+    });
 
     // ── component actions: a custom-embed button or menu choice runs a command or replies ────────
     // One dispatcher (no double-registration): match the clicked component to a configured action
@@ -1009,22 +1165,77 @@ module.exports = {
      * handler, and replying to those would steal the interaction from its real owner — which looks
      * exactly like the bug this is fixing, only for someone else.
      */
-    function ownsButton(cid) {
+    /**
+     * The custom ids a message built from `model` really carries.
+     *
+     * A button or menu left without an id goes out as `btn_<n>` / `select_<n>` (`buildComponents`),
+     * and a Link button carries no id at all. Comparing only the ids an owner TYPED meant a click on
+     * one of those defaults was never recognised as ours.
+     */
+    function idsOf(model) {
+      const out = { buttons: new Set(), menus: new Set() };
+      if (!model || typeof model !== 'object') return out;
+      const own = (c) => String(clean(c && c.custom_id) || clean(c && c.customId) || '');
+      (Array.isArray(model.buttons) ? model.buttons : []).forEach((b, i) => {
+        if (!b) return;
+        const style = b.style || (b.url ? 5 : 1);
+        if (String(style) === '5') return;
+        out.buttons.add((own(b) || ('btn_' + i)).slice(0, 100));
+      });
+      (Array.isArray(model.selects) ? model.selects : []).forEach((s, i) => {
+        if (!s) return;
+        out.menus.add(own(s) || ('select_' + i));
+      });
+      return out;
+    }
+    /** Every message model this plugin puts buttons or menus on: live, restyled, sent, booked. */
+    function ourModels() {
+      const list = [];
+      for (const ce of loadCustom()) if (ce && ce.model) list.push({ model: ce.model, actions: ce.actions });
+      const styles = loadStyles();
+      for (const key of Object.keys(styles)) if (styles[key] && styles[key].model) list.push({ model: styles[key].model, actions: styles[key].actions });
+      // Messages sent or booked from the Embeds screen have no click actions, but a click on one of
+      // their buttons is still OURS to answer: unanswered, Discord shows "This interaction failed".
+      try { for (const h of (host.store.get('history', []) || [])) if (h && h.data) list.push({ model: { buttons: h.data.buttons, selects: h.data.selects } }); } catch (e) { /* list optional */ }
+      try { for (const s of (host.store.get('scheduled', []) || [])) if (s && s.data) list.push({ model: { buttons: s.data.buttons, selects: s.data.selects } }); } catch (e) { /* list optional */ }
+      return list;
+    }
+    /**
+     * Did THIS plugin put that button (or menu) on a message?
+     *
+     * Only then should it answer. Another plugin's buttons and menus travel through the same
+     * interaction handler, and replying to those would steal the interaction from its real owner.
+     *
+     * ⚠ THE MENU HALF HAD NO SUCH TEST. A pick in ANY select menu whose option had no action here was
+     * answered "Nothing is set up for that choice yet": Chat Commands & Kits' kit menu, Vehicle
+     * Rental's vehicle menu, the manager's own menus. Whichever handler answered first won and the
+     * other got "already acknowledged", so installing this plugin broke the other plugins' menus.
+     */
+    function ownsComponent(cid, kind) {
       const id = String(cid || '');
       if (!id) return false;
-      const has = (list) => (Array.isArray(list) ? list : []).some((b) => String(b && (b.custom_id || b.customId) || '') === id);
-      // custom live embeds
-      for (const ce of loadCustom()) {
-        if (ce.actions && ce.actions[id]) return true;
-        if (ce.model && has(ce.model.buttons)) return true;
-      }
-      // buttons an owner put on one of the manager's own embeds
-      const styles = loadStyles();
-      for (const key of Object.keys(styles)) {
-        const m = styles[key] && styles[key].model;
-        if (m && has(m.buttons)) return true;
+      for (const m of ourModels()) {
+        if (m.actions && (m.actions[id] || (kind === 'menus' && Object.keys(m.actions).some((k) => k.indexOf(id + '::') === 0)))) return true;
+        if (idsOf(m.model)[kind].has(id)) return true;
       }
       return false;
+    }
+    const ownsButton = (cid) => ownsComponent(cid, 'buttons');
+    const ownsMenu = (cid) => ownsComponent(cid, 'menus');
+    /** What the owner called the clicked control, for the activity log. */
+    function labelOf(cid, picked) {
+      const id = String(cid || '');
+      for (const m of ourModels()) {
+        const md = m.model || {};
+        const b = (Array.isArray(md.buttons) ? md.buttons : []).find((x, i) => x && (String(clean(x.custom_id) || clean(x.customId) || ('btn_' + i)) === id));
+        if (b) return String(b.label || id);
+        const sl = (Array.isArray(md.selects) ? md.selects : []).find((x, i) => x && (String(clean(x.custom_id) || clean(x.customId) || ('select_' + i)) === id));
+        if (sl) {
+          const o = picked ? (sl.options || []).find((x, oi) => x && String(clean(x.value) || ('opt_' + oi)) === String(picked)) : null;
+          return String((o && o.label) || sl.placeholder || id);
+        }
+      }
+      return id;
     }
 
     /**
@@ -1076,16 +1287,16 @@ module.exports = {
           || (Array.isArray(r) && r.indexOf(roleId) >= 0)
           || (typeof r.has === 'function' && r.has(roleId))
         );
-        if (!has) return { ok: false, why: reply(discordLang(i), 'noRole') };
+        if (!has) return { ok: false, code: 'noRole', why: reply(discordLang(i), 'noRole') };
       }
 
-      if (actionBusy.has(slot)) return { ok: false, why: reply(discordLang(i), 'busy') };
+      if (actionBusy.has(slot)) return { ok: false, code: 'busy', why: reply(discordLang(i), 'busy') };
 
       const cd = Math.max(0, Number(act.cooldownSec) || 0);
       if (cd) {
         const last = actionLast.get(slot) || 0;
         const left = Math.ceil((last + cd * 1000 - Date.now()) / 1000);
-        if (left > 0) return { ok: false, why: reply(discordLang(i), 'cooldown', { left }) };
+        if (left > 0) return { ok: false, code: 'cooldown', why: reply(discordLang(i), 'cooldown', { left }) };
       }
       return { ok: true, slot };
     }
@@ -1095,7 +1306,7 @@ module.exports = {
       const lang = discordLang(i);
       if (act.type === 'command') {
         const gate = actionGate(i, act, key || act.value || 'action');
-        if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
+        if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return { code: gate.code }; }
         actionBusy.add(gate.slot);
         let ok = false;
         let confirmed = true;
@@ -1120,7 +1331,7 @@ module.exports = {
         } catch { ok = false; }
         finally { actionBusy.delete(gate.slot); }
         // The interaction could not be answered at all, so nothing ran and nobody can be told.
-        if (!answered) return;
+        if (!answered) return { code: 'unanswered' };
         // The cooldown starts when the command SUCCEEDED. A failed bridge call should not lock
         // someone out for a minute over something that never happened. An UNCONFIRMED one DOES start
         // it: it may well have run, and the whole reason the lock exists is that a second click on a
@@ -1132,6 +1343,7 @@ module.exports = {
             ? reply(lang, 'done')
             : reply(lang, 'unconfirmed'));
         try { await i.editReply({ content: said }); } catch {}
+        return { code: !ok ? 'failed' : (confirmed ? 'done' : 'unconfirmed') };
       } else if (act.type === 'message') {
         // The flag, not the deprecated `ephemeral:` option — every other reply here already uses it,
         // and discord.js logs a deprecation warning per call for the old one. There is no UI for
@@ -1140,11 +1352,12 @@ module.exports = {
         const own = replyText(act, lang);
         const mm = own === (act.value || '') ? m : Object.assign({}, tokenMapForTemplate(own), extra || {});
         await i.reply({ content: resolveTpl(own || '…', mm) || '…', ...EPHEMERAL });
+        return { code: 'replied' };
       } else if (act.type === 'announce') {
         // This one WRITES TO A CHANNEL everyone can read, so it takes the same gate as a command.
         // A "message" action only answers the person who clicked and needs no protection.
         const gate = actionGate(i, act, key || act.value || 'announce');
-        if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return; }
+        if (!gate.ok) { try { await i.reply({ content: gate.why, ...EPHEMERAL }); } catch (e) { /* already answered */ } return { code: gate.code }; }
         // Only a post that really went out answers "Sent" and starts the cooldown. A channel the bot
         // cannot see, or a send Discord refused, used to answer "✅ Sent." anyway and lock the player
         // out for the cooldown over a message nobody ever saw.
@@ -1160,29 +1373,64 @@ module.exports = {
         finally { actionBusy.delete(gate.slot); }
         if (sent) actionLast.set(gate.slot, Date.now());
         await i.reply({ content: sent ? reply(lang, 'sent') : reply(lang, 'notSent'), ...EPHEMERAL });
+        return { code: sent ? 'sent' : 'notSent' };
       }
+      return { code: 'noAction' };
     }
+    /**
+     * "Nothing is set up for that" — said only when nobody else has answered.
+     *
+     * A control of ours with no action may still be meant for another plugin: the editor's own
+     * Custom id box says "another plugin handles this id". So this waits a moment and answers only an
+     * interaction nobody has replied to or deferred, which is the one Discord would otherwise turn
+     * into "This interaction failed" after three seconds.
+     */
+    const GRACE_MS = 1200;
+    function answerIfNobodyDid(i, key, onDone) {
+      setTimeout(async () => {
+        try {
+          if (i.replied || i.deferred) return;
+          await i.reply({ content: reply(discordLang(i), key), ...EPHEMERAL });
+          if (onDone) onDone();
+        } catch (e) { /* somebody answered in the meantime */ }
+      }, GRACE_MS);
+    }
+    const who = (i) => {
+      const u = i && i.user;
+      return u ? String(u.globalName || u.username || u.tag || u.id || '') : '';
+    };
+    const noteClick = (i, cid, out, act, picked) => record({
+      kind: 'click', ok: ['done', 'sent', 'replied'].indexOf(out) >= 0,
+      code: out, title: labelOf(cid, picked), what: act ? act.type : '', key: String(cid || ''),
+      who: who(i), userId: String((i && i.user && i.user.id) || ''), channelId: String((i && i.channelId) || ''),
+    });
     host.discord.onInteraction(async (i) => {
       try {
         const isBtn = !!(i.isButton && i.isButton());
         const isSel = !!(i.isStringSelectMenu && i.isStringSelectMenu());
         if (!isBtn && !isSel) return;
         const cid = i.customId;
+        const actionsOn = S().clickActions.enabled;
         if (isBtn) {
           const act = findAction(cid);
           // The custom id is the key: a cooldown belongs to THAT button, not to every button an
           // owner has configured.
-          if (act) { await runAction(i, act, null, cid); return; }
+          if (act) {
+            // The master switch: a button that does something answers that it is paused, rather
+            // than running or going silent.
+            if (!actionsOn) {
+              try { await i.reply({ content: reply(discordLang(i), 'actionsOff'), ...EPHEMERAL }); } catch (e) { /* already answered */ }
+              noteClick(i, cid, 'actionsOff', act);
+              return;
+            }
+            const r = await runAction(i, act, null, cid);
+            noteClick(i, cid, (r && r.code) || 'done', act);
+            return;
+          }
           // No action configured. Returning silently leaves Discord showing the player "This
           // interaction failed" three seconds later, which reads as the server being broken.
-          //
-          // The select-menu branch below was fixed for this and buttons were not — and buttons have
-          // it WORSE, because `findAction` only searches custom live embeds. A button added to a
-          // styled built-in embed, or to a message sent from the Embeds tab, can never have an
-          // action at all: neither tab offers the "Click actions" panel. Every click on one of those
-          // was a guaranteed failed interaction.
           if (!ownsButton(cid)) return;          // not ours — leave it for whoever put it there
-          await i.reply({ content: reply(discordLang(i), 'noButton'), ...EPHEMERAL });
+          answerIfNobodyDid(i, actionsOn ? 'noButton' : 'actionsOff', () => noteClick(i, cid, 'noAction', null));
           return;
         }
         const picked = (Array.isArray(i.values) ? i.values : []).filter(Boolean);
@@ -1192,13 +1440,19 @@ module.exports = {
           const key = findAction(cid + '::' + v) ? (cid + '::' + v) : cid;
           const act = findAction(key);
           if (!act) continue;
-          await runAction(i, act, { picked: v, pickedList: picked.join(', ') }, key);
+          if (!actionsOn) {
+            try { await i.reply({ content: reply(discordLang(i), 'actionsOff'), ...EPHEMERAL }); } catch (e) { /* already answered */ }
+            noteClick(i, cid, 'actionsOff', act, v);
+            return;
+          }
+          const r = await runAction(i, act, { picked: v, pickedList: picked.join(', ') }, key);
+          noteClick(i, cid, (r && r.code) || 'done', act, v);
           ran = true;
           break;                       // Discord allows exactly one reply per interaction
         }
-        // A menu whose chosen option has no action still has to be answered, or the player is left
-        // looking at "This interaction failed" for something that simply is not configured yet.
-        if (!ran && !i.replied) await i.reply({ content: reply(discordLang(i), 'noChoice'), ...EPHEMERAL });
+        // A menu of OURS whose chosen option has no action still has to be answered, or the player is
+        // left looking at "This interaction failed". Somebody else's menu is left to its owner.
+        if (!ran && ownsMenu(cid)) answerIfNobodyDid(i, actionsOn ? 'noChoice' : 'actionsOff', () => noteClick(i, cid, 'noAction', null, picked[0]));
       } catch (e) { try { if (i && !i.replied && i.reply) await i.reply({ content: reply(discordLang(i), 'error'), ...EPHEMERAL }); } catch {} }
     });
 
@@ -1231,6 +1485,9 @@ module.exports = {
       // sent and never would be.
       if (!ce.channelId) return res.json({ ok: false, code: 'no_channel', error: 'no channel is set for this embed' });
       if (ce.enabled === false) return res.json({ ok: false, code: 'embed_off', error: 'this embed is switched off' });
+      // Posting one by hand while the loop is switched off would put up a message that then never
+      // updates, which is the one thing a live embed promises not to do.
+      if (!S().liveEmbeds.enabled) return res.json({ ok: false, code: 'live_off', error: 'custom live embeds are switched off in Settings' });
       const out = await refreshCustom(ce, true);
       // Anything but a plain success is a failure, `undefined` included.
       if (!out || out.ok !== true) {

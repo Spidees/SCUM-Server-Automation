@@ -97,6 +97,99 @@ function fitModel(r) {
   return r;
 }
 
+/**
+ * The plugin's own settings: the four master switches, the intervals, the default channel and the
+ * owner's wording of every private reply a click action gives.
+ *
+ * They live in `config.json`, which is the owner's copy of these DEFAULTS, and they are merged by
+ * KEY PRESENCE: a config written by 1.9.x has none of these keys, so every switch reads ON and every
+ * number reads what the code used before it was a setting. That is what makes an installed plugin
+ * open unchanged. `replies` and `repliesI18n` hold only what the owner CHANGED: an empty text is the
+ * built-in one, in every language the plugin ships.
+ */
+const DEFAULTS = {
+  styling: { enabled: true },
+  liveEmbeds: { enabled: true, defaultIntervalSec: 60, reverifyMinutes: 10 },
+  clickActions: { enabled: true },
+  scheduler: { enabled: true, lateLimitMinutes: 0 },
+  history: { max: 100 },
+  activity: { max: 300 },
+  defaultChannelId: '',
+  replies: {},
+  repliesI18n: {},
+};
+// The floor and ceiling of every number above. A typed 0 or a word falls back to the default rather
+// than to a floor: a refresh "every 0 s" is a mistake, not a request to hammer Discord.
+const RANGES = {
+  'liveEmbeds.defaultIntervalSec': [15, 86400],
+  'liveEmbeds.reverifyMinutes': [1, 1440],
+  'scheduler.lateLimitMinutes': [0, 10080],
+  'history.max': [10, 500],
+  'activity.max': [50, 2000],
+};
+function intIn(v, dflt, range) {
+  if (v === '' || v == null || typeof v === 'boolean') return dflt;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return dflt;
+  if (n < range[0]) return range[0] === 0 ? 0 : (n <= 0 ? dflt : range[0]);
+  return Math.min(range[1], n);
+}
+/** A per-language map as it is stored: a language code to a text that is not blank. */
+function cleanI18n(m) {
+  const out = {};
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return out;
+  for (const k of Object.keys(m)) {
+    const code = String(k).toLowerCase();
+    if (/^[a-z]{2}(?:-[a-z]{2})?$/.test(code) && typeof m[k] === 'string' && m[k].trim()) out[code] = m[k];
+  }
+  return out;
+}
+/** Whatever is stored, made whole: every key present, every number in range, by key presence. */
+function normalizeSettings(raw) {
+  const r = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+  const sec = (name) => ((r[name] && typeof r[name] === 'object' && !Array.isArray(r[name])) ? r[name] : {});
+  const on = (name) => sec(name).enabled !== false;
+  const num = (name, key) => intIn(sec(name)[key], DEFAULTS[name][key], RANGES[name + '.' + key]);
+  const replies = {};
+  const rs = (r.replies && typeof r.replies === 'object' && !Array.isArray(r.replies)) ? r.replies : {};
+  for (const k of Object.keys(rs)) if (/^\w{1,40}$/.test(k) && typeof rs[k] === 'string' && rs[k].trim()) replies[k] = rs[k];
+  const repliesI18n = {};
+  const ri = (r.repliesI18n && typeof r.repliesI18n === 'object' && !Array.isArray(r.repliesI18n)) ? r.repliesI18n : {};
+  for (const k of Object.keys(ri)) {
+    if (!/^\w{1,40}$/.test(k)) continue;
+    const m = cleanI18n(ri[k]);
+    if (Object.keys(m).length) repliesI18n[k] = m;
+  }
+  const ch = typeof r.defaultChannelId === 'string' || typeof r.defaultChannelId === 'number' ? String(r.defaultChannelId).trim() : '';
+  return {
+    styling: { enabled: on('styling') },
+    liveEmbeds: { enabled: on('liveEmbeds'), defaultIntervalSec: num('liveEmbeds', 'defaultIntervalSec'), reverifyMinutes: num('liveEmbeds', 'reverifyMinutes') },
+    clickActions: { enabled: on('clickActions') },
+    scheduler: { enabled: on('scheduler'), lateLimitMinutes: num('scheduler', 'lateLimitMinutes') },
+    history: { max: num('history', 'max') },
+    activity: { max: num('activity', 'max') },
+    defaultChannelId: /^\d{5,25}$/.test(ch) ? ch : '',
+    replies,
+    repliesI18n,
+  };
+}
+/**
+ * A save laid over what is stored, one level deep and by key presence, so a body that names one
+ * section never resets the others. A per-language map is sent WHOLE and replaces what is stored,
+ * or a language the owner cleared would come back from the stored copy.
+ */
+function overlaySettings(stored, body) {
+  const out = Object.assign({}, (stored && typeof stored === 'object' && !Array.isArray(stored)) ? stored : {});
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return out;
+  for (const k of Object.keys(body)) {
+    const b = body[k]; const cur = out[k];
+    if (k === 'replies' || k === 'repliesI18n') out[k] = b;
+    else if (b && typeof b === 'object' && !Array.isArray(b) && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, b);
+    else out[k] = b;
+  }
+  return out;
+}
+
 function toApiEmbed(j) {
   j = j || {};
   const e = {};
@@ -171,7 +264,69 @@ function buildComponents(host, buttons, selects) {
 }
 
 module.exports = {
+  DEFAULTS,
+  normalizeSettings,
   async register(host) {
+    // ── settings ────────────────────────────────────────────────────────────────────────────
+    // Read through the host each time: `host.config.get()` is cached by the manager, and reading it
+    // here means a save from the Settings screen applies at the next send without a reload.
+    const settings = () => {
+      let raw = {};
+      try { raw = (host.config && typeof host.config.get === 'function') ? (host.config.get() || {}) : {}; } catch (e) { raw = {}; }
+      return normalizeSettings(raw);
+    };
+
+    // ── is the bot there at all ─────────────────────────────────────────────────────────────
+    // Every Discord call here goes through the bot, and a bot that is not connected answered as if
+    // the CHANNEL were the problem ("the bot cannot see that channel"), which sends an owner to fix
+    // a channel that is fine. Asked first now, so the answer names the bot.
+    const botClient = () => {
+      try { return (host.discord && typeof host.discord.client === 'function') ? host.discord.client() : null; } catch (e) { return null; }
+    };
+    const botUp = () => {
+      const c = botClient();
+      if (!c) return false;
+      try { return typeof c.isReady === 'function' ? !!c.isReady() : true; } catch (e) { return true; }
+    };
+    const BOT_OFF = { error: 'bot_offline', code: 'bot_offline', reason: 'the Discord bot is not connected' };
+
+    // ── activity: what this plugin did, where and when, and why when it failed ─────────────────
+    // Held in memory and written to the store on a five-second tick when something changed, so a
+    // burst of clicks costs one write. A restart loses at most those five seconds.
+    let activity = [];
+    try { const a = host.store.get('activity', []); activity = Array.isArray(a) ? a.slice(0, 2000) : []; } catch (e) { activity = []; }
+    let activityDirty = false;
+    let activitySeq = 0;
+    function record(entry) {
+      try {
+        const e = Object.assign({ at: Date.now(), ok: true }, entry || {});
+        e.id = 'a' + e.at.toString(36) + (activitySeq++).toString(36);
+        activity.unshift(e);
+        const max = settings().activity.max;
+        if (activity.length > max) activity.length = max;
+        activityDirty = true;
+      } catch (err) { /* bookkeeping never breaks a send */ }
+    }
+    function flushActivity() {
+      if (!activityDirty) return;
+      activityDirty = false;
+      try { host.store.set('activity', activity); } catch (e) { activityDirty = true; }
+    }
+    host.schedule.every(5000, flushActivity);
+    const channelName = async (id) => {
+      try { const ch = id ? await host.discord.channel(String(id)) : null; return (ch && ch.name) ? String(ch.name) : ''; } catch (e) { return ''; }
+    };
+    /** Why a send that answered false did not go out: no bot, no channel, or Discord refused it. */
+    async function whyNotSent(channelId) {
+      if (!botUp()) return { code: 'bot_offline', why: BOT_OFF.reason };
+      let ch = null;
+      try { ch = await host.discord.channel(String(channelId)); } catch (e) { ch = null; }
+      if (!ch) return { code: 'channel_not_found', why: 'the bot cannot see that channel' };
+      return { code: 'send_failed', why: 'Discord did not accept the message' };
+    }
+    // Shared with the styler half, which runs the live embeds, the restyled embeds and the clicks.
+    const shared = { settings, record, botUp, botClient, liveStatus: null, styleStats: null };
+
     // Reusable service for OTHER plugins.
     host.provide('embed-editor', {
       apiEmbed: (json) => toApiEmbed(json),
@@ -220,12 +375,12 @@ module.exports = {
 
     // Everything the editor has sent, newest first. Keeping the message id is what makes editing
     // an already-posted message possible at all — without it a "sent" embed is unreachable.
-    const HISTORY_MAX = 100;
-    const history = () => host.store.get('history', []);
+    // How many it keeps is a setting now (10 to 500); 100 is what it always kept.
+    const history = () => { const l = host.store.get('history', []); return Array.isArray(l) ? l : []; };
     function remember(entry) {
       const list = history();
       list.unshift(entry);
-      host.store.set('history', list.slice(0, HISTORY_MAX));
+      host.store.set('history', list.slice(0, settings().history.max));
     }
 
     // Live data. The catalog and the resolver come from the `server-data` service; the EDITOR is
@@ -345,37 +500,57 @@ module.exports = {
       return payload;
     }
 
+    // The name the panel sent with the channel is "#rules" as the dropdown drew it; the history and
+    // the activity log keep the bare name.
+    const bareName = (n) => String(n || '').replace(/^#/, '');
     host.routes.post('/send', async (req, res) => {
       const b = req.body || {};
       if (!b.channelId) return res.status(400).json({ error: 'no_channel', reason: 'no channel was picked' });
+      const title = (b.embed && b.embed.title) || '';
+      const where = { channelId: String(b.channelId), channelName: bareName(b.channelName) };
       try {
         const msg = await host.discord.send(b.channelId, buildPayload(b));
-        if (!msg) return res.json({ ok: false, code: 'send_failed', error: 'Discord did not accept the message' });
+        if (!msg) {
+          const w = await whyNotSent(b.channelId);
+          record(Object.assign({ kind: 'send', ok: false, code: w.code, why: w.why, title }, where));
+          return res.json({ ok: false, code: w.code, error: w.why });
+        }
         const id = msg && msg.id ? String(msg.id) : null;
         if (id) {
           remember({
             messageId: id, channelId: String(b.channelId),
-            channelName: b.channelName || '', title: (b.embed && b.embed.title) || '',
+            channelName: bareName(b.channelName), title,
             sentAt: Date.now(), editedAt: null,
             data: messageData(b),
           });
         }
+        record(Object.assign({ kind: 'send', ok: true, title, messageId: id }, where));
         res.json({ ok: true, messageId: id });
-      } catch (e) { res.status(500).json({ error: e.message }); }
+      } catch (e) {
+        record(Object.assign({ kind: 'send', ok: false, code: 'send_failed', why: String(e.message || ''), title }, where));
+        res.status(500).json({ error: e.message });
+      }
     });
 
     // Rewrite a message the editor sent earlier, in place.
     host.routes.post('/edit', async (req, res) => {
       const b = req.body || {};
       if (!b.channelId || !b.messageId) return res.status(400).json({ error: 'no_message', reason: 'no message was given' });
+      const title = (b.embed && b.embed.title) || '';
+      const where = { channelId: String(b.channelId), channelName: bareName(b.channelName), messageId: String(b.messageId) };
+      const refuse = (status, code, why) => {
+        record(Object.assign({ kind: 'edit', ok: false, code, why, title }, where));
+        return res.status(status).json({ error: code, reason: why });
+      };
       try {
         const ch = await host.discord.channel(b.channelId);
-        if (!ch || !ch.messages) return res.status(404).json({ error: 'channel_not_found', reason: 'the bot cannot see that channel' });
+        if (!ch || !ch.messages) return botUp() ? refuse(404, 'channel_not_found', 'the bot cannot see that channel') : refuse(503, 'bot_offline', BOT_OFF.reason);
+        if (!where.channelName && ch.name) where.channelName = String(ch.name);
         const msg = await ch.messages.fetch(String(b.messageId)).catch(() => null);
         // A message deleted in Discord is the common case here, and "not found" is the honest answer —
         // silently re-sending it somewhere would be worse than failing.
-        if (!msg) return res.status(404).json({ error: 'message_gone', reason: 'that message is gone, it may have been deleted in Discord' });
-        if (!msg.editable) return res.status(403).json({ error: 'not_ours', reason: 'that message was not posted by this bot, so it cannot be edited' });
+        if (!msg) return refuse(404, 'message_gone', 'that message is gone, it may have been deleted in Discord');
+        if (!msg.editable) return refuse(403, 'not_ours', 'that message was not posted by this bot, so it cannot be edited');
         // `host.discord.send` attaches an uploaded picture itself; an edit made here has to ask
         // (an older manager has no such helper, and no uploads to attach).
         const pl = buildPayload(b);
@@ -388,23 +563,59 @@ module.exports = {
           hit.data = messageData(b);
           host.store.set('history', list);
         }
+        record(Object.assign({ kind: 'edit', ok: true, title }, where));
         res.json({ ok: true });
-      } catch (e) { res.status(500).json({ error: e.message }); }
+      } catch (e) {
+        record(Object.assign({ kind: 'edit', ok: false, code: 'post_failed', why: String(e.message || ''), title }, where));
+        res.status(500).json({ error: e.message });
+      }
     });
 
     host.routes.post('/delete', async (req, res) => {
       const b = req.body || {};
+      const entry = history().find((x) => x.messageId === String(b.messageId || '')) || {};
+      const where = { channelId: String(b.channelId || ''), channelName: bareName(entry.channelName), messageId: String(b.messageId || ''), title: entry.title || '' };
       try {
+        let gone = 'deleted';
         if (b.channelId && b.messageId) {
           const ch = await host.discord.channel(b.channelId);
+          // With no bot nothing can be deleted in Discord, and dropping the entry anyway (which is
+          // what happened) lost the only link to a message that is still up. Refused; the entry stays.
+          if (!ch && !botUp()) {
+            record(Object.assign({ kind: 'delete', ok: false, code: 'bot_offline', why: BOT_OFF.reason }, where));
+            return res.json({ ok: false, code: 'bot_offline', error: BOT_OFF.reason });
+          }
           const msg = ch && ch.messages ? await ch.messages.fetch(String(b.messageId)).catch(() => null) : null;
-          if (msg) await msg.delete().catch(() => {});
+          if (msg) {
+            let refused = null;
+            await msg.delete().catch((e) => { refused = e; });
+            // Discord refusing the delete (no permission) leaves the message up, so the entry stays
+            // and the panel says why. It used to vanish from the list while the message stayed.
+            if (refused) {
+              const why = String((refused && refused.message) || 'Discord refused the delete');
+              record(Object.assign({ kind: 'delete', ok: false, code: 'post_failed', why }, where));
+              return res.json({ ok: false, code: 'post_failed', detail: why, error: why });
+            }
+          } else gone = 'already_gone';
         }
         // Drop it from the list whether or not the message was still there — the entry is about a
         // message that no longer exists either way.
         host.store.set('history', history().filter((x) => x.messageId !== String(b.messageId)));
-        res.json({ ok: true });
+        record(Object.assign({ kind: 'delete', ok: true, code: gone }, where));
+        res.json({ ok: true, gone });
       } catch (e) { res.status(500).json({ error: e.message }); }
+    });
+
+    // Take entries off the list without touching Discord. One body for the whole tick list, so a
+    // bulk "Forget" is one write rather than one per message.
+    host.routes.post('/history/forget', (req, res) => {
+      const ids = Array.isArray((req.body || {}).messageIds) ? req.body.messageIds.map(String) : [];
+      if (!ids.length) return res.status(400).json({ error: 'no_message', reason: 'no message was given' });
+      const drop = new Set(ids);
+      const before = history();
+      const after = before.filter((x) => !drop.has(String(x.messageId)));
+      host.store.set('history', after);
+      res.json({ ok: true, removed: before.length - after.length });
     });
 
     // The bot's own footer branding, so a new embed starts looking like the rest of the bot
@@ -423,7 +634,7 @@ module.exports = {
       if (!b.channelId || !b.messageId) return res.status(400).json({ error: 'no_message', reason: 'no message was given' });
       try {
         const ch = await host.discord.channel(b.channelId);
-        if (!ch || !ch.messages) return res.status(404).json({ error: 'channel_not_found', reason: 'the bot cannot see that channel' });
+        if (!ch || !ch.messages) return botUp() ? res.status(404).json({ error: 'channel_not_found', reason: 'the bot cannot see that channel' }) : res.status(503).json(BOT_OFF);
         const msg = await ch.messages.fetch(String(b.messageId)).catch(() => null);
         if (!msg) return res.status(404).json({ error: 'message_not_found', reason: 'that message is not in that channel' });
         // Only our own messages can be edited later, so say so now rather than after the rewrite.
@@ -471,7 +682,7 @@ module.exports = {
             emoji: (c.emoji && (c.emoji.name || c.emoji.id)) ? (c.emoji.id ? '<:' + c.emoji.name + ':' + c.emoji.id + '>' : c.emoji.name) : '',
           });
         }));
-        res.json({ ok: true, embed, content: msg.content || '', channelId: String(b.channelId), messageId: String(b.messageId), sentAt: msg.createdTimestamp || Date.now() });
+        res.json({ ok: true, embed, content: msg.content || '', channelId: String(b.channelId), channelName: ch.name ? String(ch.name) : '', messageId: String(b.messageId), sentAt: msg.createdTimestamp || Date.now() });
       } catch (e) { res.status(500).json({ error: e.message }); }
     });
 
@@ -505,7 +716,7 @@ module.exports = {
       }
       list.push({
         id: 'sch_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
-        at, channelId: String(b.channelId), channelName: b.channelName || '',
+        at, channelId: String(b.channelId), channelName: bareName(b.channelName),
         title: (b.embed && b.embed.title) || '',
         data: messageData(b),
       });
@@ -514,45 +725,73 @@ module.exports = {
       res.json({ ok: true });
     });
 
+    // One id, or `ids` for the ticked rows of a bulk cancel.
     host.routes.post('/scheduled/delete', (req, res) => {
-      const id = String((req.body || {}).id || '');
-      saveScheduled(scheduled().filter((x) => x.id !== id));
-      res.json({ ok: true });
+      const b = req.body || {};
+      const ids = new Set((Array.isArray(b.ids) ? b.ids : [b.id]).filter((x) => x != null && x !== '').map(String));
+      const before = scheduled();
+      saveScheduled(before.filter((x) => !ids.has(String(x.id))));
+      res.json({ ok: true, removed: before.length - scheduled().length });
     });
 
     // One pass a minute. Anything already due when the manager starts goes out on the first pass —
     // late is better than never for an announcement, and the list shows when it actually went.
-    host.schedule.every(60000, async () => {
+    //
+    // ⚠ A DUE MESSAGE WAITS FOR THE BOT. The pass used to take every due item off the queue and then
+    // send, so a bot that was offline for that one minute (a token refresh, a Discord outage, the
+    // manager starting before the bot) turned every booked announcement into a warning in the log
+    // and nothing else. With no bot nothing can have been posted, so keeping the item is safe; it
+    // goes out on the first pass the bot is back. The same holds with the Scheduler switched off.
+    // `lateLimitMinutes` (0 = no limit) drops one that is now too late to mean anything, and says so.
+    const schedState = { waitingForBot: false, lastPassAt: 0, paused: false };
+    async function schedulePass() {
       const now = Date.now();
+      schedState.lastPassAt = now;
+      const s = settings();
       const list = scheduled();
       const due = list.filter((x) => x.at <= now);
-      if (!due.length) return;
+      schedState.paused = !s.scheduler.enabled;
+      if (!due.length) { schedState.waitingForBot = false; return; }
+      if (!s.scheduler.enabled) return;
+      if (!botUp()) { schedState.waitingForBot = true; return; }
+      schedState.waitingForBot = false;
+      const late = s.scheduler.lateLimitMinutes > 0 ? s.scheduler.lateLimitMinutes * 60000 : 0;
       // Drop them from the queue FIRST: if the send throws, a retry loop that posts the same
       // announcement every minute would be worse than losing it once, and the log says what failed.
       saveScheduled(list.filter((x) => x.at > now));
       for (const item of due) {
+        const where = { channelId: String(item.channelId || ''), channelName: bareName(item.channelName), title: item.title || '', bookedFor: item.at };
+        if (late && now - item.at > late) {
+          record(Object.assign({ kind: 'scheduled', ok: false, code: 'too_late', why: `it was ${Math.round((now - item.at) / 60000)} minutes late` }, where));
+          host.logger.warn(`scheduled embed "${item.title || item.id}" was not posted: it was more than ${s.scheduler.lateLimitMinutes} minutes late.`);
+          continue;
+        }
         try {
           const msg = await host.discord.send(item.channelId, buildPayload(item.data));
           // `host.discord.send` RETURNS false on failure — it does not throw — so the catch below
           // never ran and a booked announcement that never posted was logged as sent and dropped
           // from the queue. Nothing anywhere said it had not gone out.
           if (!msg) {
-            // Channel gone, or the bot cannot post there. The item is dropped from the queue.
-            host.logger.warn(`scheduled embed for channel ${item.channelId} was not posted and was dropped. Check the channel, then book it again.`);
+            const w = await whyNotSent(item.channelId);
+            record(Object.assign({ kind: 'scheduled', ok: false, code: w.code, why: w.why }, where));
+            host.logger.warn(`scheduled embed for channel ${item.channelId} was not posted and was dropped (${w.why}). Check the channel, then book it again.`);
             continue;
           }
           if (msg && msg.id) {
             remember({
-              messageId: String(msg.id), channelId: item.channelId, channelName: item.channelName,
+              messageId: String(msg.id), channelId: item.channelId, channelName: bareName(item.channelName),
               title: item.title, sentAt: Date.now(), editedAt: null, scheduled: true, data: item.data,
             });
           }
+          record(Object.assign({ kind: 'scheduled', ok: true, messageId: msg && msg.id ? String(msg.id) : '' }, where));
           host.logger.info(`scheduled embed sent to ${item.channelId}`);
         } catch (e) {
+          record(Object.assign({ kind: 'scheduled', ok: false, code: 'post_failed', why: String(e.message || '') }, where));
           host.logger.error(`scheduled embed failed (${item.title || item.id}): ${e.message}`);
         }
       }
-    });
+    }
+    host.schedule.every(60000, schedulePass);
 
     host.routes.get('/history', (req, res) => res.json(history()));
     host.routes.post('/history/clear', (req, res) => { host.store.set('history', []); res.json({ ok: true }); });
@@ -579,23 +818,106 @@ module.exports = {
     host.routes.get('/templates', (req, res) => res.json(host.store.get('templates', {})));
     host.routes.post('/templates', (req, res) => {
       const b = req.body || {};
-      if (!b.name || typeof b.name !== 'string') return res.status(400).json({ error: 'no_name', reason: 'the template has no name' });
+      if (!b.name || typeof b.name !== 'string' || !b.name.trim()) return res.status(400).json({ error: 'no_name', reason: 'the template has no name' });
+      // A key that is a property of every object would land on the store's own prototype instead.
+      if (b.name === '__proto__' || b.name === 'constructor' || b.name === 'prototype') return res.status(400).json({ error: 'bad_name', reason: 'that name cannot be used for a template' });
       const t = host.store.get('templates', {}); t[b.name] = b.data || {}; host.store.set('templates', t);
       res.json({ ok: true });
     });
+    // One name, or `names` for the ticked rows of a bulk delete.
     host.routes.post('/templates/delete', (req, res) => {
-      const b = req.body || {}; const t = host.store.get('templates', {}); delete t[b.name]; host.store.set('templates', t);
-      res.json({ ok: true });
+      const b = req.body || {}; const t = host.store.get('templates', {});
+      const names = Array.isArray(b.names) ? b.names.map(String) : [b.name];
+      let removed = 0;
+      for (const n of names) if (n != null && Object.prototype.hasOwnProperty.call(t, n)) { delete t[n]; removed++; }
+      host.store.set('templates', t);
+      res.json({ ok: true, removed });
     });
 
     // The styler half — same host, so its routes land on this plugin's API base and its
     // `server-data` service is visible to the editor's own /tokens route. Failing to load it must
     // not take the editor down with it: writing a message is the more basic of the two jobs.
+    let stylerUp = true;
     try {
-      await require('./styler').register(host);
+      await require('./styler').register(host, shared);
     } catch (e) {
+      stylerUp = false;
       host.logger.error('embed styling half failed to start: ' + e.message);
     }
+
+    // ── Settings screen ─────────────────────────────────────────────────────────────────────
+    // Complete with the server stopped and the bot offline: nothing here asks either.
+    host.routes.get('/settings', (req, res) => {
+      res.json({ ok: true, settings: settings(), defaults: DEFAULTS, ranges: RANGES });
+    });
+    host.routes.post('/settings', (req, res) => {
+      try {
+        const body = (req.body && typeof req.body === 'object') ? (req.body.settings && typeof req.body.settings === 'object' ? req.body.settings : req.body) : {};
+        const stored = (host.config && typeof host.config.get === 'function') ? (host.config.get() || {}) : {};
+        // Keys this version does not know stay where they are rather than being dropped.
+        const next = Object.assign({}, overlaySettings(stored, body), normalizeSettings(overlaySettings(stored, body)));
+        host.config.set(next);
+        const now = settings();
+        if (activity.length > now.activity.max) { activity.length = now.activity.max; activityDirty = true; }
+        res.json({ ok: true, settings: now });
+      } catch (e) { res.status(500).json({ error: e.message }); }
+    });
+
+    // ── Activity screen ─────────────────────────────────────────────────────────────────────
+    host.routes.get('/activity', (req, res) => {
+      const day = Date.now() - 86400000;
+      res.json({
+        ok: true, items: activity, max: settings().activity.max,
+        counts: { total: activity.length, failed: activity.filter((a) => !a.ok).length, failedToday: activity.filter((a) => !a.ok && a.at >= day).length },
+      });
+    });
+    host.routes.post('/activity/clear', (req, res) => { activity = []; activityDirty = true; flushActivity(); res.json({ ok: true }); });
+
+    // ── the header every screen draws: is the bot there, is the game running, what is going on ──
+    host.routes.get('/status', async (req, res) => {
+      const s = settings();
+      const c = botClient();
+      const bot = { connected: !!c, ready: botUp(), tag: '', guild: null, channels: null };
+      try {
+        if (c && c.user) bot.tag = String(c.user.tag || c.user.username || '');
+        const g = c && c.guilds && c.guilds.cache && typeof c.guilds.cache.first === 'function' ? c.guilds.cache.first() : null;
+        if (g) {
+          bot.guild = { id: String(g.id), name: String(g.name || '') };
+          try { if (g.channels && g.channels.cache) bot.channels = g.channels.cache.filter((ch) => ch && ch.type === 0).size; } catch (e) { bot.channels = null; }
+        }
+      } catch (e) { /* a half-started client answers what it has */ }
+      let serverRunning = null;
+      try { if (host.server && typeof host.server.isRunning === 'function') serverRunning = !!host.server.isRunning(); } catch (e) { serverRunning = null; }
+      const sch = scheduled();
+      const now = Date.now();
+      const day = now - 86400000;
+      let live = [];
+      try { live = typeof shared.liveStatus === 'function' ? (shared.liveStatus() || []) : []; } catch (e) { live = []; }
+      let styling = { enabledKinds: 0, kinds: {} };
+      try { if (typeof shared.styleStats === 'function') styling = shared.styleStats() || styling; } catch (e) { /* counters optional */ }
+      let templates = 0;
+      try { templates = Object.keys(host.store.get('templates', {}) || {}).length; } catch (e) { templates = 0; }
+      res.json({
+        ok: true,
+        serverRunning,
+        bot,
+        stylerUp,
+        switches: { styling: s.styling.enabled, liveEmbeds: s.liveEmbeds.enabled, clickActions: s.clickActions.enabled, scheduler: s.scheduler.enabled },
+        counts: {
+          history: history().length, scheduled: sch.length, scheduledDue: sch.filter((x) => x.at <= now).length,
+          templates, custom: live.length, customActive: live.filter((x) => x.enabled).length,
+          customFailing: live.filter((x) => x.enabled && x.ok === false).length,
+          styled: styling.enabledKinds || 0,
+          failedToday: activity.filter((a) => !a.ok && a.at >= day).length,
+        },
+        scheduler: {
+          next: sch.length ? sch.reduce((m, x) => Math.min(m, x.at), Infinity) : null,
+          waitingForBot: schedState.waitingForBot, paused: !s.scheduler.enabled, lastPassAt: schedState.lastPassAt || null,
+        },
+        live,
+        styling,
+      });
+    });
 
     host.logger.info('Discord Embeds ready (editor + styler)');
   },

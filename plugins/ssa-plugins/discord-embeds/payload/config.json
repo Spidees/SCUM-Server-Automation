@@ -1,1 +1,26 @@
-{}
+{
+  "styling": {
+    "enabled": true
+  },
+  "liveEmbeds": {
+    "enabled": true,
+    "defaultIntervalSec": 60,
+    "reverifyMinutes": 10
+  },
+  "clickActions": {
+    "enabled": true
+  },
+  "scheduler": {
+    "enabled": true,
+    "lateLimitMinutes": 0
+  },
+  "history": {
+    "max": 100
+  },
+  "activity": {
+    "max": 300
+  },
+  "defaultChannelId": "",
+  "replies": {},
+  "repliesI18n": {}
+}

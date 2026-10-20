@@ -224,7 +224,7 @@
 .ce-head-f { min-width: 150px; }
 .ce-head-f.grow { flex: 1 1 200px; }
 .ce-head .es-chk { padding-bottom: .4rem; }
-.ce-head input, .ce-head select { width: 100%; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .86rem; padding: .45rem .6rem; }
+.ce-head input:not([type=checkbox]), .ce-head select { width: 100%; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .86rem; padding: .45rem .6rem; }
 .ce-acts { margin-top: 14px; border-top: 1px solid var(--line, #24272e); padding-top: 12px; }
 .ce-acts-h { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #8b9099); margin-bottom: 10px; }
 /* One select menu's group of options, so a long action list stays readable as menus and buttons mix. */
@@ -332,3 +332,65 @@
 /* Without this the select inside cannot shrink below its own 220px minimum. */
 .es-f { min-width: 0; }
 .es-f > select, .es-f > input { min-width: 0; max-width: 100%; }
+
+/* ── the header every screen draws: bot, game, counters, notes ───────────────── */
+.ee-top { margin-bottom: 10px; }
+.ee-statbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; }
+.ee-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: .78rem; border: 1px solid var(--line-2, #343943); background: var(--panel-2, #1c1f25); color: var(--text, #f1f3f5); }
+.ee-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted, #8b9099); flex: none; }
+.ee-pill.ok .ee-dot { background: var(--ok, #3fb950); }
+.ee-pill.off .ee-dot { background: var(--warn, #e0a63a); }
+.ee-stat { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line-2, #343943); background: var(--panel-2, #1c1f25); font-size: .78rem; color: var(--muted, #8b9099); }
+.ee-stat b { color: var(--text, #f1f3f5); font-variant-numeric: tabular-nums; }
+.ee-stat.warn { border-color: var(--warn, #e0a63a); }
+.ee-stat.warn b { color: var(--warn, #e0a63a); }
+.ee-topnotes, .ee-firstrun { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.ee-topnotes:empty, .ee-firstrun:empty { display: none; }
+.ee-note-off, .ee-note-err { padding: 8px 12px; border-radius: 6px; font-size: .82rem; line-height: 1.45; color: var(--text, #f1f3f5); border: 1px solid var(--line-2, #343943); background: var(--panel-2, #1c1f25); }
+.ee-note-err { border-color: var(--alarm, #e5443f); }
+
+/* ── cards, lists, ticks ─────────────────────────────────────────────────────── */
+.ee-cardh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.ee-cardh > b { font-size: .9rem; color: var(--text, #f1f3f5); }
+.ee-cardh-r { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ee-subh { margin: 14px 0 6px; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #8b9099); }
+.es-card + .es-card { margin-top: 12px; }
+.ee-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-bulk-n { font-size: .78rem; color: var(--muted, #8b9099); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.ee-bulk.has .ee-bulk-n { color: var(--amber-hi, #ff9a2e); }
+.ee-tick { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.ee-tick input { width: 16px; height: 16px; cursor: pointer; margin: 0; }
+.ee-tickcol { width: 1%; white-space: nowrap; }
+.ee-rowacts { white-space: nowrap; text-align: right; }
+.ee-rowbtns { display: inline-flex; gap: 4px; }
+.ee-linkbtn, .ee-linkbtn:active { white-space: nowrap; background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text, #f1f3f5); cursor: pointer; text-align: left; transform: none; --hov-bg: transparent; --hov-fg: var(--amber-hi, #ff9a2e); --hov-line: transparent; }
+.ee-linkbtn:hover { background: var(--hov-bg); color: var(--hov-fg); text-decoration: underline; }
+.ee-filter { background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .82rem; padding: .35rem .5rem; max-width: 100%; }
+.ee-bad { color: #ff8b80; }
+.ee-good { color: var(--ok, #3fb950); }
+.ee-when.due { color: var(--warn, #e0a63a); }
+.ee-sw { font-family: inherit; font-size: .86rem; }
+
+/* ── Activity ────────────────────────────────────────────────────────────────── */
+.ee-kv { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); gap: 6px 14px; font-size: .86rem; }
+.ee-kv-r { display: contents; }
+.ee-kv-k { color: var(--muted, #8b9099); }
+.ee-kv-v { color: var(--text, #f1f3f5); min-width: 0; overflow-wrap: anywhere; }
+
+/* ── Settings ────────────────────────────────────────────────────────────────── */
+.ee-savebar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
+.ee-setrow { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+.ee-setcard .ee-setrow:first-of-type { border-top: 0; }
+.ee-sethint { margin: 0; font-size: .78rem; color: var(--muted, #8b9099); line-height: 1.45; }
+.ee-num { width: 9rem; max-width: 100%; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .86rem; padding: .4rem .55rem; }
+.ee-chsel { max-width: 100%; background: var(--bg, #0b0c0e); border: 1px solid var(--line-2, #343943); border-radius: 6px; color: var(--text, #f1f3f5); font: inherit; font-size: .86rem; padding: .4rem .55rem; }
+.ee-setcard .ssa-loctext { padding: 8px 0; border-top: 1px solid var(--line-2, rgba(255,255,255,.06)); }
+
+/* Phones: every new control gets a 44px target, the house floor. */
+@media (max-width: 640px) {
+  .ee-btn.xs, .ee-linkbtn, .ee-filter, .ee-num, .ee-chsel { min-height: 44px; }
+  .ee-btn.xs, .ee-linkbtn { min-width: 44px; }
+  .ee-tick, .ee-sw { min-height: 44px; min-width: 44px; }
+  .ee-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .ee-kv-k { margin-top: 6px; }
+}
