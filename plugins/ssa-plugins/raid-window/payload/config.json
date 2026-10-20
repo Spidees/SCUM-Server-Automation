@@ -5,6 +5,7 @@
   "reapplySeconds": 600,
   "holdSeconds": 3600,
   "minHits": 3,
+  "destroyedOpens": true,
   "acceptDeclared": false,
   "useOwnerAlerts": true,
   "resetCooldownFirst": false,

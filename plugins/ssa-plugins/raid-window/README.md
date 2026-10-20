@@ -46,22 +46,34 @@ was**, and the pushing stops once the base has been **quiet for a while**.
 ## Configuration
 Everything is configured from the plugin's **admin tab** (⏳ Raid Window):
 
-- **Keep raids going when defenders log out**: the main switch.
-- **Push protection back by**: how far ahead protection is set to start (default 60 minutes).
-- **A raid is over after no damage for**: how long a base must be quiet (default 60 minutes).
-- **Every hit restarts the countdown**: protection starts **Push protection back by** after the
-  **last** hit (off by default). Set that to your server's offline start delay and a raided base
-  behaves as if its owners had only just logged off.
-- **Hits needed to count as a raid** (default 3). A destroyed building part always counts.
-- **More options**: **Repeat the push every** (default 10 minutes), **Most pushes for one raid**
-  (default 24), **Protection length**, base attack alerts, the cooldown skip, bases and flags to never
-  touch, and **Check a flag**.
-- **Under raid now**: every base being pushed, its last hit, when pushing stops and the last result,
-  with a **Stop pushing** button.
-- **Recent activity**: every push and every raid that ended.
+- **Raids**: every base under raid now, its last hit, the last result for each flag, and
+  **Stop pushing** and **Never touch** buttons. **What happens next** says when the plugin looks
+  again, when each flag is pushed next and when each raid ends if it stays quiet. Raids that ended
+  in the last week are listed too, and one an admin stopped can be **pushed again** while it goes on.
+- **Protection**, every rule with its own control:
+  - **What counts as a raid**: **Hits needed to count as a raid** (default 3), **A destroyed
+    building part counts as a raid** (on), **Base attack alerts keep a raid going** (on) and
+    **Accept raids declared by other tools** (off).
+  - **How protection is held back**: **Push protection back by** (default 60 minutes), **Every hit
+    restarts the countdown** (off), **Repeat the push every** (default 10 minutes), **A raid is
+    over after no damage for** (default 60 minutes) and **Most pushes for one raid** (default 24).
+    With **Every hit restarts the countdown** on, protection starts that long after the **last**
+    hit, so a raided base behaves as if its owners had only just logged off.
+  - **Flag-specific protection**: **Protection length**, asking the running game for a length,
+    and the cooldown skip.
+  - **Never touch**: the bases and flags the plugin leaves alone, as searchable lists with names
+    from the save, a tick per row and **Remove ticked**.
+- **Activity**: every raid seen or ended, every push and every refusal with its reason, as a table
+  you can search and filter, in your own time zone.
+- **Settings**: the main switch **Keep raids going when defenders log out**, **Look for raid damage
+  every**, the **Bridge** box and **Check a flag**.
 
 ## Good to know
 - **Nothing is put back when a raid ends.** The last push already set when protection starts.
+- **It sends no message to players.** It only moves when offline protection starts, and only on a
+  base under raid.
+- **It counts lengths of time, not the clock**, so midnight or a daylight saving change never
+  shortens or ends a raid. The tab shows times in your own time zone.
 - **No change is normal while someone from the base is online.** The game keeps offline protection off
   while an owner or squadmate is connected, so the push that matters is the one after they log out.
   That is why it repeats, and on offline protection a base in that state is checked again **every

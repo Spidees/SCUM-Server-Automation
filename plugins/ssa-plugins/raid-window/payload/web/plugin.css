@@ -10,6 +10,30 @@
 
 .rw { display: flex; flex-direction: column; gap: 1rem; }
 .rw-lead { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; max-width: 75ch; }
+.rw-firstrun:empty { display: none; }
+.rw-view { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+/* ── the four screens ──────────────────────────────────────────────────────────────────────────── */
+.rw-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
+.rw-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+.rw-tab {
+  --hov-bg: transparent; --hov-fg: var(--amber-hi); --hov-line: var(--amber);
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  font: inherit; font-size: 0.85rem; cursor: pointer;
+  padding: 0.5rem 1rem; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+}
+.rw-tab:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.rw-tab .ico, .rw-tab svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.rw-tab.active {
+  --hov-bg: var(--inset); --hov-fg: var(--text); --hov-line: var(--amber);
+  color: var(--text); background: var(--inset); border-color: var(--amber);
+}
+.rw-tab.active .ico, .rw-tab.active svg { color: var(--amber); }
+.rw-top > .rw-dirty { margin-left: auto; }
+@media (max-width: 640px) {
+  .rw-nav > * { flex: 1 1 auto; justify-content: center; }
+}
 
 /* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
 .rw-figs {
@@ -36,6 +60,9 @@
   font-size: 1.15rem; font-weight: 700; color: var(--amber-hi); line-height: 1.25;
 }
 .rw-card > h3 .ico, .rw-card > h3 svg { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+.rw-card-sub { margin: -0.35rem 0 0.6rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere; }
+.rw-sub { margin: 0.9rem 0 0.4rem; font-size: 0.95rem; font-weight: 600; color: var(--text); }
+.rw-card > .rw-sub:first-of-type { margin-top: 0.2rem; }
 
 /* ── notes ─────────────────────────────────────────────────────────────────────────────────────── */
 .rw-notes { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -151,7 +178,7 @@
 .rw-base:last-child { margin-bottom: 0; }
 .rw-base-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
 .rw-base-head strong { overflow-wrap: anywhere; }
-.rw-stop { margin-left: auto; }
+.rw-base-acts { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 0.4rem; }
 .rw-flag { border-top: 1px dashed var(--line); padding-top: 0.45rem; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .rw-flag-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
 .rw-say { margin: 0; font-size: 0.85rem; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
@@ -167,6 +194,38 @@
 }
 .rw-h-who { font-weight: 600; overflow-wrap: anywhere; }
 .rw-h-t { flex: 1 1 14rem; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+
+/* ── what happens next, and the raids that ended ──────────────────────────────────────────────── */
+.rw-due {
+  display: flex; gap: 0.5rem; align-items: flex-start;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--line-2);
+  font-size: 0.85rem; line-height: 1.45; overflow-wrap: anywhere; min-width: 0;
+}
+.rw-due:last-child { border-bottom: 0; }
+.rw-due svg, .rw-due .ico { flex: 0 0 auto; width: 1em; height: 1em; margin-top: 0.2rem; color: var(--muted); }
+.rw-ended {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.7rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--line-2); min-width: 0;
+}
+.rw-ended:last-child { border-bottom: 0; }
+.rw-ended > button { margin-left: auto; }
+.rw-link { padding: 0.2rem 0.6rem; font-size: 0.8rem; }
+
+/* ── a never-touch list ────────────────────────────────────────────────────────────────────────── */
+.rw-idlist { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.rw-add { width: min(100%, 16rem); }
+.rw-kind { width: auto; max-width: 100%; }
+
+/* ── the Activity table ────────────────────────────────────────────────────────────────────────
+   A time is one value and a word is one word: the table scrolls sideways in its own wrap on a
+   phone rather than cutting either in half. */
+.rw-when { white-space: nowrap; }
+.data-table .rw-h-t { display: inline-block; min-width: 12rem; overflow-wrap: normal; }
+
+/* A long figure label (German "Verschiebungen") fits a phone's half-width cell in lower case. */
+@media (max-width: 480px) {
+  .rw-fig span { text-transform: none; letter-spacing: 0; }
+}
 
 /* ── a thumb, at 320px ────────────────────────────────────────────────────────────────────────
    The panel's own stylesheet puts a 44px floor under every control inside a plugin tab, and a

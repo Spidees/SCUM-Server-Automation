@@ -151,6 +151,7 @@ const CONFIG_TTL_MS = 15000;        // re-read the config file at most this ofte
 const NAME_TTL_MS = 600000;         // base names barely change; the tab polls every ten seconds
 const QUIET_MS = 3600000;           // a repeating warning is said at most once an hour
 const MODE_TTL_MS = 300000;         // the manager is built at boot; a known answer is re-asked every 5 min
+const HISTORY_KEEP = 300;           // feed entries kept; the Activity screen pages through all of them
 
 /** The game's manager class, to the protection mode it means. Anything else writes nothing. */
 const MODE_BY_CLASS = {
@@ -166,6 +167,7 @@ const DEFAULTS = {
   reapplySeconds: 600,        // how often to re-apply while the raid is still going
   holdSeconds: 3600,          // real time with NO new evidence before a raid counts as over
   minHits: 3,                 // hits on one base before it counts as a raid (a destroyed structure always does)
+  destroyedOpens: true,       // a destroyed building part counts as a raid on its own, however few hits
   acceptDeclared: false,      // act on a raid window some other caller DECLARED rather than one that was observed
   useOwnerAlerts: true,       // let the manager's own raid alerts extend a window this plugin already opened
   resetCooldownFirst: false,  // send the game's cooldown reset before each push (see the note above)
@@ -186,7 +188,7 @@ const CLAMP = {
   maxPushesPerRaid: [1, 1000],
 };
 
-const BOOLS = ['enabled', 'acceptDeclared', 'useOwnerAlerts', 'resetCooldownFirst', 'allowDecodedDuration', 'countFromLastHit'];
+const BOOLS = ['enabled', 'acceptDeclared', 'useOwnerAlerts', 'resetCooldownFirst', 'allowDecodedDuration', 'countFromLastHit', 'destroyedOpens'];
 
 /** The words on the tab, so a refused save names the box rather than a key. */
 const LABELS = {
@@ -196,6 +198,7 @@ const LABELS = {
   reapplySeconds: 'Repeat the push every',
   holdSeconds: 'A raid is over after no damage for',
   minHits: 'Hits needed to count as a raid',
+  destroyedOpens: 'A destroyed building part counts as a raid',
   acceptDeclared: 'Accept raids declared by other tools',
   useOwnerAlerts: 'Base attack alerts keep a raid going',
   resetCooldownFirst: 'Clear the protection cooldown before each push',
@@ -267,6 +270,8 @@ function normalizeConfig(raw) {
   c.resetCooldownFirst = c.resetCooldownFirst === true;
   c.allowDecodedDuration = c.allowDecodedDuration !== false;
   c.countFromLastHit = c.countFromLastHit === true;
+  // Absent is ON: every config written before 1.6.0 lacks the key and behaved that way.
+  c.destroyedOpens = c.destroyedOpens !== false;
   // `null` is "read the flag's own", and it is NOT the same as 0. A 0 here would be a Duration this
   // plugin refuses to send, so it is rejected back to null rather than stored as a number.
   {
@@ -417,12 +422,16 @@ module.exports = {
     //     pushes, capped, snapshotAt, knownFlags, flagsAt,
     //     flags: { <flagId>: { pushes, lastPushAt, lastTryAt, lastVerdict, before } } }
     const raids = Object.assign({}, host.store.get('raids', {}) || {});
-    let history = (host.store.get('history', []) || []).slice(0, 200);
+    // ⚠ A STORE VALUE THAT IS NOT A LIST IS NOT A LIST. `(x || []).slice` throws on an object, and a
+    // throw here is a `register()` that never mounts a route, which takes the whole tab down with it.
+    let history = (() => {
+      try { const v = host.store.get('history', []); return Array.isArray(v) ? v.slice(0, HISTORY_KEEP) : []; } catch (e) { return []; }
+    })();
     let snapshotTaken = host.store.get('snapshotTaken', null);     // { at, note } | null — for the tab
     let historyDirty = false;
 
     const persistRaids = () => { try { host.store.set('raids', raids); } catch (e) { /* ignore */ } };
-    const persistHistory = () => { historyDirty = false; try { host.store.set('history', history.slice(0, 200)); } catch (e) { /* ignore */ } };
+    const persistHistory = () => { historyDirty = false; try { host.store.set('history', history.slice(0, HISTORY_KEEP)); } catch (e) { /* ignore */ } };
 
     // What the last read of each source said, so the tab can show an owner why nothing is happening
     // rather than showing them a plugin that looks idle. `null` means the last attempt answered.
@@ -430,6 +439,8 @@ module.exports = {
     // Why the last pass did no work at all, or null when it did. Different from a note: a note is a
     // source that could not answer, this is a pass that had no reason to ask.
     let idle = null;
+    // When the last pass finished. The tab's "last look" line, and only that.
+    let lastPassAt = 0;
 
     // The bridge's own names for the two modules, the words on its cards under Plugins → SSA Bridge.
     const MODULE_NAME = { raid: 'Raid detection', protect: 'Raid protection control' };
@@ -663,7 +674,7 @@ module.exports = {
     function qualifies(row, c) {
       if (row.declared === true && !c.acceptDeclared) return false;
       const destroyed = Number(row.destroyed);
-      if (Number.isFinite(destroyed) && destroyed >= 1) return true;    // a structure came down
+      if (c.destroyedOpens && Number.isFinite(destroyed) && destroyed >= 1) return true;    // a structure came down
       const hits = Number(row.hits);
       return Number.isFinite(hits) && hits >= c.minHits;
     }
@@ -700,7 +711,7 @@ module.exports = {
     /** Add a feed entry. Written to the store once per pass, not once per entry. */
     function remember(what) {
       history.unshift(Object.assign({ at: now0() }, what));
-      history = history.slice(0, 200);
+      history = history.slice(0, HISTORY_KEEP);
       historyDirty = true;
     }
 
@@ -1086,6 +1097,72 @@ module.exports = {
       return state === 'moved';
     }
 
+    /**
+     * When one flag's next push is due, and whether it is due now. ONE rule, asked by the pass that
+     * pushes and by the tab that shows "due next", so the screen cannot promise a time the pass does
+     * not keep. `{ at, due, ending }`: `at` is an instant (in the past means the next pass pushes it),
+     * `ending` is "protection starts within the minute anyway, so nothing more is sent".
+     *
+     * ⚠ A CLOCK THAT WENT BACK IS "DUE NOW", never "due in an hour and a half": `now < last` would
+     * otherwise read as a push made in the future and hold the next one back until the clock caught up.
+     */
+    function pushDue(r, flagId, c, kind, now) {
+      const f = r.flags ? r.flags[flagId] : null;
+      const last = f ? (f.lastTryAt || f.lastPushAt || 0) : 0;
+      if (c.countFromLastHit) {
+        const left = c.pushSeconds - Math.max(0, Math.round((now - r.lastHitAt) / 1000));
+        if (left < 60) return { at: null, due: false, ending: true };      // protection is about to start anyway
+      }
+      if (!last || now < last) return { at: now, due: true, ending: false };
+      // ⚠ ON OFFLINE PROTECTION, "NOT ARMED YET" IS ASKED AGAIN WITHIN A MINUTE, NOT A RE-APPLY
+      // PERIOD LATER. The game arms the flag the moment the last defender logs out, to start after
+      // the SERVER's own start delay — and an owner who set that delay shorter than the repeat
+      // would see protection switch on between two pushes, ending the raid this plugin exists to
+      // keep going. A push on an entry that is not armed writes nothing, so asking once a minute
+      // costs a read, and the feed still says it once.
+      const waitMs = (kind === 'offline' && f && f.lastVerdict && f.lastVerdict.state === 'unchanged')
+              ? Math.min(c.reapplySeconds, 60) * 1000 : c.reapplySeconds * 1000;
+      let at = last + waitMs;
+      // EVERY HIT RESTARTS THE COUNTDOWN: a NEW hit is pushed at once, at most once a minute per flag.
+      if (c.countFromLastHit && (!f || !(f.pushedForHitAt >= r.lastHitAt))) at = Math.min(at, last + 60000);
+      return { at, due: now >= at, ending: false };
+    }
+
+    /**
+     * Something that stops every push, said once when it starts and not again until it changes.
+     * `kind` is mode | db; a null `code` clears it. Kept in memory: after a restart it is said once
+     * more, which is the right number of times for a reason nobody may have seen.
+     */
+    const blockedNow = { mode: null, db: null };
+    function noteBlocked(kind, code, params, text) {
+      if (blockedNow[kind] === (code || null)) return;
+      blockedNow[kind] = code || null;
+      if (!code) return;
+      remember({ base: null, baseName: null, flag: null, state: 'blocked', code: kind === 'mode' ? 'mode_' + code : code,
+        params: params || {}, text: text || null });
+    }
+    /** A raid on a base the owner exempted, said once per raid (a gap of a whole hold is a new one). */
+    const exemptSeen = new Map();
+    function noteExemptBase(base, at, row, c) {
+      const seen = exemptSeen.get(base);
+      if (!seen || at - seen >= c.holdSeconds * 1000) {
+        remember({ base, baseName: baseName(base), flag: null, state: 'exempt', code: 'exempt_base',
+          params: { hits: Number(row.hits) || 0, destroyed: Number(row.destroyed) || 0 },
+          text: 'raid damage on a base set to never be touched, so nothing is pushed' });
+      }
+      if (exemptSeen.size > 2000) exemptSeen.clear();
+      exemptSeen.set(base, Math.max(seen || 0, at));
+    }
+    /** A flag the owner exempted, on a base being pushed: said once per raid. */
+    function noteExemptFlag(r, flagId) {
+      if (!r.skipNoted || typeof r.skipNoted !== 'object') r.skipNoted = {};
+      if (r.skipNoted[flagId]) return false;
+      r.skipNoted[flagId] = true;
+      remember({ base: r.base, baseName: baseName(r.base), flag: Number(flagId), state: 'exempt', code: 'exempt_flag', params: {},
+        text: 'this flag is set to never be touched, so it is not pushed' });
+      return true;
+    }
+
     // ── one pass ────────────────────────────────────────────────────────────────────────────────
     async function poll() {
       const c = cfg();
@@ -1116,10 +1193,12 @@ module.exports = {
           }
 
           // OPENING one takes evidence that is FRESH, NEW and over the floor.
-          if (c.exemptBaseIds.indexOf(base) >= 0) continue;
           if (now - at >= c.holdSeconds * 1000) continue;          // quiet for a whole hold already
           if (!qualifies(row, c)) continue;
           if (known && !(at > known.lastHitAt)) continue;          // the hit the last window closed on
+          // A base the owner said never to touch opens nothing, and the feed says so ONCE per raid:
+          // a raid on it used to leave no trace anywhere an owner could look.
+          if (c.exemptBaseIds.indexOf(base) >= 0) { noteExemptBase(base, at, row, c); continue; }
           const r = rec(base);
           // The gap SINCE the last evidenced hit, read before the update below overwrites it. It is
           // what tells a raid that never stopped from a new one that started later.
@@ -1141,10 +1220,17 @@ module.exports = {
           r.flags = {};
           r.knownFlags = null;
           r.flagsAt = 0;
+          r.noFlagNoted = false;
+          r.skipNoted = {};
           // A new raid's evidence is its own. The last raid's counters are not carried into it.
           r.hits = 0; r.destroyed = 0; r.damage = 0; r.elements = 0;
           absorb(r, row);
           host.logger.info(`base ${base} is under raid (${Number(row.hits) || 0} hit(s), ${Number(row.destroyed) || 0} destroyed) — its protection window will be pushed out while this lasts`);
+          // The feed used to list every push and every END, and never a start: a raid on a server
+          // whose protection could not be pushed left no line at all.
+          remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'opened', code: 'opened',
+            params: { hits: r.hits || 0, destroyed: r.destroyed || 0 },
+            text: `raid damage seen (${r.hits || 0} hit(s), ${r.destroyed || 0} destroyed), so protection is kept from starting while this lasts` });
         }
       }
 
@@ -1173,11 +1259,14 @@ module.exports = {
           code: mode.code || mode.kind, kind: mode.kind, cls: mode.managerClass || null, cause: mode.cause || null,
           text: mode.text || 'the raid protection this server runs could not be read', at: now0(),
         };
+        noteBlocked('mode', pushable ? null : (mode.code || mode.kind), { cls: mode.managerClass || null, cause: mode.cause || null }, mode.text);
         if (!pushable) {
           warnQuietly('mode:' + mode.kind, `${mode.text || 'the raid protection mode could not be read'}.`);
           mode = null;
         }
-      }
+      } else if (!anyToPush) noteBlocked('mode', null);
+      // Whether the save answered for the bases asked about on this pass: null nobody was asked.
+      let dbBlocked = null;
       if (mode) {
         for (const key of Object.keys(raids)) {
           const r = raids[key];
@@ -1202,12 +1291,21 @@ module.exports = {
               r.knownFlags = null;
               r.flagsAt = 0;
               notes.db = { code: 'save_unreadable', text: 'the game database could not be read, so the plugin cannot find this base\'s flag yet', at: now0() };
+              dbBlocked = 'save_unreadable';
               warnQuietly('note:db', 'the game database could not be read, so the plugin cannot find a raided base\'s flag yet. Nothing is being ended on that account.');
               continue;
             }
             clearNote('db');
+            if (dbBlocked === null) dbBlocked = false;
             r.knownFlags = flags;
             r.flagsAt = now;
+            if (!flags.length && !r.noFlagNoted) {
+              // Said once per raid: a base with no flag has no protection, so nothing is pushed.
+              r.noFlagNoted = true;
+              dirty = true;
+              remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'noflag', code: 'no_flag', params: {},
+                text: 'this base has no flag, so it has no protection to push' });
+            }
           }
           /**
            * ⚠ **EVERY HIT RESTARTS THE COUNTDOWN.** The owner: *"kdyz tam neco poskodej … tak se zase ten
@@ -1222,24 +1320,8 @@ module.exports = {
           const sinceHit = Math.max(0, Math.round((now - r.lastHitAt) / 1000));
           const left = c.pushSeconds - sinceHit;
           for (const flagId of r.knownFlags) {
-            if (c.exemptFlagIds.indexOf(flagId) >= 0) continue;
-            const f = r.flags[flagId];
-            const last = f ? (f.lastTryAt || f.lastPushAt || 0) : 0;
-            // ⚠ ON OFFLINE PROTECTION, "NOT ARMED YET" IS ASKED AGAIN WITHIN A MINUTE, NOT A RE-APPLY
-            // PERIOD LATER. The game arms the flag the moment the last defender logs out, to start after
-            // the SERVER's own start delay — and an owner who set that delay shorter than the repeat
-            // would see protection switch on between two pushes, ending the raid this plugin exists to
-            // keep going. A push on an entry that is not armed writes nothing, so asking once a minute
-            // costs a read, and the feed still says it once.
-            const waitMs = (mode.kind === 'offline' && f && f.lastVerdict && f.lastVerdict.state === 'unchanged')
-              ? Math.min(c.reapplySeconds, 60) * 1000 : c.reapplySeconds * 1000;
-            if (c.countFromLastHit) {
-              if (left < 60) continue;                                   // protection is about to start anyway
-              const newHit = !f || !(f.pushedForHitAt >= r.lastHitAt);
-              const dueByHit = newHit && (!last || now - last >= 60000 || now < last);
-              const dueByRepeat = !last || now - last >= waitMs || now < last;
-              if (!dueByHit && !dueByRepeat) continue;
-            } else if (last && now - last < waitMs && now >= last) continue;
+            if (c.exemptFlagIds.indexOf(flagId) >= 0) { if (noteExemptFlag(r, flagId)) dirty = true; continue; }
+            if (!pushDue(r, flagId, c, mode.kind, now).due) continue;
             if ((r.pushes || 0) >= c.maxPushesPerRaid) break;
             if (mode.kind === 'offline') await pushOffline(r, flagId, c, c.countFromLastHit ? left : undefined);
             else await push(r, flagId, c, cache, c.countFromLastHit ? left : undefined);
@@ -1247,6 +1329,8 @@ module.exports = {
           }
         }
       }
+
+      if (mode && dbBlocked !== null) noteBlocked('db', dbBlocked || null);
 
       // 4) forget a closed raid once nothing will ever look at it again.
       for (const key of Object.keys(raids)) {
@@ -1256,6 +1340,7 @@ module.exports = {
 
       if (dirty) persistRaids();
       if (historyDirty) persistHistory();
+      lastPassAt = now0();
     }
 
     // ── scheduling ──────────────────────────────────────────────────────────────────────────────
@@ -1388,37 +1473,95 @@ module.exports = {
       } catch (e) { res.status(500).json({ error: e.message }); }
     });
 
+    /**
+     * What the feed holds for the last day, counted from the feed itself. `full` says the feed is at
+     * its cap AND its oldest line is inside the day, so the true count may be higher: the tab then
+     * says "n+" rather than a number it cannot stand behind.
+     */
+    function lastDay(now) {
+      const since = now - 86400000;
+      const out = { pushes: 0, refusals: 0, opened: 0, ended: 0, full: false };
+      for (const e of history) {
+        if (!e || !(e.at >= since)) continue;
+        if (e.state === 'moved') out.pushes++;
+        else if (e.state === 'refused' || e.state === 'no_duration' || e.state === 'blocked') out.refusals++;
+        else if (e.state === 'opened') out.opened++;
+        else if (e.state === 'closed') out.ended++;
+      }
+      const oldest = history.length ? history[history.length - 1] : null;
+      out.full = history.length >= HISTORY_KEEP && !!oldest && oldest.at >= since;
+      return out;
+    }
+
     host.routes.get('/status', (req, res) => {
       const c = cfg();
       const now = now0();
       const save = saveState();
       const open = [], recent = [];
+      const kind = modeInfo ? modeInfo.kind : null;
+      const pushable = kind === 'offline' || kind === 'flagSpecific';
       for (const key of Object.keys(raids)) {
         const r = raids[key];
+        const exempt = c.exemptBaseIds.indexOf(r.base) >= 0;
+        const flagsOf = (r.flags && typeof r.flags === 'object') ? r.flags : {};
         const row = {
           base: r.base, name: baseName(r.base),
           hits: r.hits, destroyed: r.destroyed, damage: r.damage, elements: r.elements,
           openedAt: r.openedAt, lastHitAt: r.lastHitAt, closedAt: r.closedAt || null,
           pushes: r.pushes || 0,
           capped: r.capped === true,
-          flags: Object.keys(r.flags || {}).map((f) => ({
+          // A base the owner exempted AFTER its raid opened is still listed until it goes quiet, and
+          // it must not read "Pushing": the pass skips it.
+          exempt,
+          closedByAdmin: r.closedByAdmin === true,
+          flags: Object.keys(flagsOf).map((f) => ({
             flag: Number(f),
-            pushes: r.flags[f].pushes || 0,
-            lastPushAt: r.flags[f].lastPushAt || null,
-            lastVerdict: r.flags[f].lastVerdict || null,
-            before: r.flags[f].before || null,
+            pushes: flagsOf[f].pushes || 0,
+            lastPushAt: flagsOf[f].lastPushAt || null,
+            lastVerdict: flagsOf[f].lastVerdict || null,
+            before: flagsOf[f].before || null,
+            exempt: c.exemptFlagIds.indexOf(Number(f)) >= 0,
           })),
           knownFlags: Array.isArray(r.knownFlags) ? r.knownFlags : null,
           // Present only when it is knowable. `null` is "this raid has no evidenced hit yet", which
           // is a different fact from "the countdown is at zero".
           endsInSeconds: r.closedAt ? null : (r.lastHitAt > 0 ? Math.max(0, Math.round((r.lastHitAt + c.holdSeconds * 1000 - now) / 1000)) : null),
+          endsAt: r.closedAt ? null : (r.lastHitAt > 0 ? r.lastHitAt + c.holdSeconds * 1000 : null),
         };
+        if (r.closedAt) {
+          // An admin's stop can be taken back while the raid is still live: the pass would otherwise
+          // only open it again after a whole quiet hold.
+          row.resumable = r.closedByAdmin === true && r.lastHitAt > 0 && now - r.lastHitAt < c.holdSeconds * 1000 && now >= r.lastHitAt;
+        } else {
+          // What is due next on this base, by the very rule the pass pushes by (`pushDue`). Nothing is
+          // due while the mode is not one that can be pushed, the raid is at its limit, or it is exempt.
+          row.due = [];
+          const blockedBy = !c.enabled ? 'off' : (exempt ? 'exempt' : (row.capped ? 'capped' : (kind && !pushable ? 'mode' : null)));
+          row.dueBlocked = blockedBy;
+          if (!blockedBy && Array.isArray(r.knownFlags)) {
+            for (const fid of r.knownFlags) {
+              if (c.exemptFlagIds.indexOf(fid) >= 0) { row.due.push({ flag: fid, at: null, exempt: true }); continue; }
+              const d = pushDue(r, fid, c, kind, now);
+              row.due.push({ flag: fid, at: d.at, ending: d.ending === true });
+            }
+          }
+        }
         (r.closedAt ? recent : open).push(row);
       }
       open.sort((a, b) => b.lastHitAt - a.lastHitAt);
       recent.sort((a, b) => b.closedAt - a.closedAt);
       res.json({
+        // The server's own clock, so the tab measures "ago" and "in" from the instant these numbers
+        // were taken rather than from a browser clock that may be minutes off.
+        now,
         enabled: c.enabled,
+        // When the plugin last looked and when it looks next. `null` before the first look and while
+        // the plugin is off.
+        lastPassAt: lastPassAt || null,
+        nextPassAt: c.enabled ? (lastRun ? lastRun + c.pollSeconds * 1000 : now) : null,
+        pollSeconds: c.pollSeconds,
+        day: lastDay(now),
+        historyTotal: history.length,
         open, recent: recent.slice(0, 20), history: history.slice(0, 60),
         snapshot: snapshotTaken,
         // Why nothing may be happening. An owner looking at an idle plugin has to be able to tell
@@ -1472,6 +1615,59 @@ module.exports = {
       remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'closed', code: 'admin', params: {}, text: 'stopped by an admin. Nothing was written to the game' });
       persistHistory();
       res.json({ ok: true });
+    });
+
+    /**
+     * Take an admin's "Stop pushing" back while the raid is still live. Writes nothing into the game;
+     * the next pass pushes again on the same evidence, and the pushes made so far still count
+     * towards "Most pushes for one raid".
+     */
+    host.routes.post('/resume', (req, res) => {
+      const c = cfg();
+      const now = now0();
+      const base = Number((req.body || {}).base);
+      const r = raids[base];
+      const live = !!(r && r.closedAt && r.closedByAdmin === true && r.lastHitAt > 0
+        && now - r.lastHitAt < c.holdSeconds * 1000 && now >= r.lastHitAt);
+      if (!live) return res.json({ ok: false, code: 'not_resumable', reason: 'that base has no raid stopped by an admin that is still going on' });
+      r.closedAt = 0;
+      r.closedByAdmin = false;
+      persistRaids();
+      remember({ base: r.base, baseName: baseName(r.base), flag: null, state: 'resumed', code: 'admin_resumed', params: {}, text: 'pushing started again by an admin' });
+      persistHistory();
+      lastRun = 0;
+      res.json({ ok: true });
+    });
+
+    /**
+     * The whole feed, newest first, for the Activity screen. A POST for the same reason as `/flag`:
+     * the path stays a plain literal on both sides.
+     */
+    host.routes.post('/activity', (req, res) => {
+      res.json({ now: now0(), total: history.length, keep: HISTORY_KEEP, history: history.slice(0, HISTORY_KEEP) });
+    });
+
+    /**
+     * Names for ids an owner typed, so the never-touch lists read "Bravo (base 12)" rather than a
+     * bare number. `readable: false` is "the save could not be read", which is not "no such base":
+     * the names are then null and the tab says why.
+     */
+    host.routes.post('/names', (req, res) => {
+      const body = req.body || {};
+      const baseIds = idList(body.bases).slice(0, 500);
+      const flagIds = idList(body.flags).slice(0, 500);
+      const readable = dbReadable();
+      const bases = {}, flags = {};
+      for (const id of baseIds) bases[id] = readable ? baseName(id) : null;
+      for (const id of flagIds) {
+        let row = null;
+        if (readable) {
+          try { row = host.db.scum.get('SELECT base_id AS baseId FROM base_element WHERE element_id = ?', id); } catch (e) { row = null; }
+        }
+        const b = row ? Number(row.baseId) : NaN;
+        flags[id] = (Number.isFinite(b) && b > 0) ? { base: b, name: baseName(b) } : null;
+      }
+      res.json({ readable, bases, flags });
     });
 
     host.routes.post('/clear-history', (req, res) => { history = []; persistHistory(); res.json({ ok: true }); });
