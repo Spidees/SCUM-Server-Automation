@@ -68,6 +68,12 @@
 // it; only the live counters wait for a game.
 
 const DEFAULTS = {
+  // ⚠ **THE MASTER SWITCH, AND IT SHIPS ON.** It is the "say nothing for now" an owner reaches for
+  // during an event night or a wipe, and it must not cost them the eight choices underneath it:
+  // switching every announcement off by hand and back on again is how a careful setup is lost. ON
+  // by default because every installed config written before this key existed means "announce what
+  // is switched on below", and a merge by key presence gives such a config exactly that.
+  enabled: true,
   // Every announcement is off. A plugin that starts talking the moment it is installed is a plugin
   // an owner turns off rather than configures.
   kills: {
@@ -83,6 +89,9 @@ const DEFAULTS = {
     // tell a placeholder from a player's name. See the handler below.
     messageNoKiller: '{victim} died',
     messageNoKillerI18n: {},
+    // Its own switch, like every other line here. ON, which is what the section did before the key
+    // existed: the line is the fallback the kill and cause lines take when nothing is named.
+    announceNoKiller: true,
     selfMessage: '{victim} killed themselves',
     selfMessageI18n: {},
     minDistance: 0,
@@ -173,6 +182,8 @@ const DEFAULTS = {
     openMessageI18n: {},
     closeMessage: 'The secret bunker in {sector} has closed',
     closeMessageI18n: {},
+    // The opening line's own switch. ON: before it existed the section's switch was this line's.
+    announceOpen: true,
     announceClose: false,
   },
   bunkersAbandoned: {
@@ -183,6 +194,7 @@ const DEFAULTS = {
     openMessageI18n: {},
     closeMessage: 'The abandoned bunker in {sector} has locked',
     closeMessageI18n: {},
+    announceOpen: true,
     announceClose: true,
   },
   raids: {
@@ -318,7 +330,12 @@ function channelOf(v) { return CHANNELS.includes(String(v)) ? String(v) : 'globa
 
 /** `{name}` substitution. A placeholder with no value becomes an empty string, never `undefined`. */
 function fill(tpl, vars) {
-  return String(tpl == null ? '' : tpl).replace(/\{(\w+)\}/g, (_, k) => {
+  const empty = (k) => vars[k] === undefined || vars[k] === null || String(vars[k]) === '';
+  // ⚠ A PLACEHOLDER ALONE IN BRACKETS THAT FILLS WITH NOTHING TAKES ITS BRACKETS WITH IT. The shipped
+  // join line is "{name} joined the server ({sector})", and a server whose map is not calibrated has
+  // no sector to give, so every join went out as "Petr joined the server ()". Only a bracket pair
+  // holding nothing but that one placeholder is dropped; an owner's own words inside it stay.
+  return String(tpl == null ? '' : tpl).replace(/\s*\(\s*\{(\w+)\}\s*\)/g, (m, k) => (empty(k) ? '' : m)).replace(/\{(\w+)\}/g, (_, k) => {
     const v = vars[k];
     return v === undefined || v === null ? '' : String(v);
   });
@@ -375,20 +392,50 @@ function pointsOf(o) {
 
 async function register(host) {
   const log = host.logger;
-  let cfg = merge(host.config.get());
-  host.config.onChange(() => { cfg = merge(host.config.get()); });
+  // Which section a section OBJECT is, for the activity log. A pass captures `cfg.cargo` before an
+  // await and says its line after it, by when a save may have replaced `cfg` -- so identity against
+  // the current config is not enough, and every merged config's sections are remembered here.
+  const SEC_KEY = new WeakMap();
+  const load = () => {
+    const c = merge(host.config.get());
+    for (const k of Object.keys(DEFAULTS)) if (c[k] && typeof c[k] === 'object') SEC_KEY.set(c[k], k);
+    return c;
+  };
+  let cfg = load();
+  host.config.onChange(() => { cfg = load(); });
+  const keyOf = (section) => SEC_KEY.get(section) || '';
+  /** The master switch. Absent is ON -- see DEFAULTS. */
+  const live = () => cfg.enabled !== false;
 
   // What was said, so a screen can show it and so an owner can tell "switched off" from "nothing
   // has happened yet". Capped, because this is a ring buffer in memory and not a log.
+  //
+  // ⚠ **A LINE NOT SAID IS RECORDED TOO, WITH ITS REASON.** It used to be a bare `skipped` count,
+  // so "a kill happened and nothing was announced" had no answer on the screen: switched off for
+  // that kind of death, under the minimum distance, a blank message and a victim the game did not
+  // name all read as the same silence. 200 rows, because those refusals now share the ring.
+  const RING = 200;
   const recent = [];
   const stats = { sent: 0, failed: 0, skipped: 0 };
+  const record = (o) => {
+    recent.unshift(Object.assign({ at: Date.now() }, o));
+    if (recent.length > RING) recent.length = RING;
+  };
   // `why` is a CODE the screen translates (`nobody`, `failed`), never a sentence: this list is read
   // in nineteen languages and the backend speaks none of them. `detail` is the raw failure the chat
   // call threw (`bridge_unavailable`, …), which the screen turns into words for the ones it knows.
-  const note = (kind, text, ok, why, detail) => {
-    recent.unshift({ at: Date.now(), kind, text, ok: !!ok, why: why || '', detail: detail || '' });
-    if (recent.length > 60) recent.length = 60;
+  // `result` is the one field a filter needs: `sent`, `nobody` (sent, and nobody was online),
+  // `failed` (the game did not take it) or `skipped` (the plugin decided not to say it).
+  const note = (kind, text, ok, why, detail, extra) => {
+    record(Object.assign({ kind, text, ok: !!ok, why: why || '', detail: detail || '',
+      result: ok ? (why === 'nobody' ? 'nobody' : 'sent') : 'failed' }, extra || {}));
     if (ok) stats.sent += 1; else stats.failed += 1;
+  };
+  /** A line the plugin chose not to say, and the code for why. `field` names the message. */
+  const skip = (kind, section, field, why, detail) => {
+    stats.skipped += 1;
+    record({ kind, sec: keyOf(section), field: field || '', text: '', ok: false, why, detail: detail == null ? '' : String(detail),
+      result: 'skipped', channel: channelOf(section && section.channel) });
   };
 
   /**
@@ -467,13 +514,15 @@ async function register(host) {
    * screen with red on a quiet night.
    */
   async function say(kind, section, field, vars) {
-    if (!section.enabled) return;
+    if (!section.enabled || !live()) return;
     // One line per language: each player reads the variant written for their language (/lang in
     // game, the Field Console or Discord), else the server's. `loc.text` is the server's line, and it
     // is what the history and this screen's feed record.
     const loc = linesFor(section, field, vars);
     const text = loc.text;
-    if (!text) { stats.skipped += 1; return; }
+    if (!text) { skip(kind, section, field, 'blank'); return; }
+    const where = { sec: keyOf(section), field, channel: channelOf(section.channel),
+      history: section.history === true && typeof host.chat.record === 'function' };
     /**
      * The chat HISTORY — the admin chat view, the Field Console and the Discord chat channel.
      *
@@ -502,9 +551,12 @@ async function register(host) {
       if (r && r.history && r.history.ok === false) {
         log.warn(`[more-chat-messages] the chat history was not written: ${r.history.reason}`);
       }
-      note(kind, text, true, r && r.delivered === 0 ? 'nobody' : '');
+      // `delivered` is how many players the line reached: the "to whom" of the activity log. A
+      // manager that does not report it leaves the cell empty rather than claiming a number.
+      const delivered = r && typeof r.delivered === 'number' ? r.delivered : null;
+      note(kind, text, true, r && r.delivered === 0 ? 'nobody' : '', '', Object.assign({ delivered }, where));
     } catch (e) {
-      note(kind, text, false, 'failed', e && e.message ? e.message : '');
+      note(kind, text, false, 'failed', e && e.message ? e.message : '', Object.assign({ delivered: null }, where));
     }
   }
 
@@ -558,6 +610,8 @@ async function register(host) {
     return e.killerName || e.victimName ? 'pvp' : null;
   }
   const KIND_SWITCH = { pvp: 'announcePvp', npc: 'announceNpc', cause: 'announceCause', suicide: 'announceSuicide', event: 'announceEvent' };
+  // The message each kind says, so a refusal in the activity log names the line it did not send.
+  const KIND_FIELD = { pvp: 'message', npc: 'npcMessage', cause: 'causeMessage', suicide: 'selfMessage', event: 'eventMessage' };
 
   /**
    * A cause of death in one language, or '' for a token this build has no word for.
@@ -611,11 +665,11 @@ async function register(host) {
 
   async function onKill(e) {
     const s = cfg.kills;
-    if (!s.enabled || !e) return;
+    if (!s.enabled || !e || !live()) return;
     const kind = killKind(e);
     if (!kind) return;
     // By KEY PRESENCE through merge(): `false` is an owner's choice, absent takes the default.
-    if (s[KIND_SWITCH[kind]] !== true) { stats.skipped += 1; return; }
+    if (s[KIND_SWITCH[kind]] !== true) { skip('kill', s, KIND_FIELD[kind], 'off'); return; }
 
     // ⚠ **A SUICIDE IS ITS OWN EVENT SHAPE AND CARRIES NONE OF A KILL'S FIELDS.** `killFeed.js`
     // returns `{ type: 'suicide', playerName, steamId, location, … }` — no `victimName`, no
@@ -634,8 +688,9 @@ async function register(host) {
       const victim = actorName(e.victimName);
       // The manager names the victim from the save before it emits; a death it could not name is a
       // line that says "died" about nobody, so it stays quiet.
-      if (!victim) { stats.skipped += 1; return; }
+      if (!victim) { skip('kill', s, 'causeMessage', 'noname'); return; }
       if (!causeWord(e.cause, null)) {
+        if (s.announceNoKiller !== true) { skip('kill', s, 'messageNoKiller', 'off'); return; }
         say('kill', s, 'messageNoKiller', { killer: '', victim, weapon: itemName(e.weaponName), distance: '', sector });
         return;
       }
@@ -645,7 +700,8 @@ async function register(host) {
 
     const dist = Number(e.distance);
     if (Number.isFinite(dist) && Number(s.minDistance) > 0 && dist < Number(s.minDistance)) {
-      stats.skipped += 1;
+      // The distance rides along so the activity log can say how short it was.
+      skip('kill', s, 'message', 'short', Math.round(dist));
       return;
     }
     const base = {
@@ -689,7 +745,8 @@ async function register(host) {
     // literal `'Unknown'` for a killer the game did not name, and telling that apart from a player
     // really called Unknown needs `unnamedActor()`, which is not on the host. This branch fires only
     // on a genuinely empty name.
-    if (!base.killer) say('kill', s, 'messageNoKiller', base);
+    if (!base.killer && s.announceNoKiller !== true) skip('kill', s, 'messageNoKiller', 'off');
+    else if (!base.killer) say('kill', s, 'messageNoKiller', base);
     else say('kill', s, 'message', base);
   }
   // The listener stays synchronous: `host.events.on` wraps a throw, and an async listener that
@@ -730,10 +787,14 @@ async function register(host) {
   };
 
   const onLoginLine = async (kind, section, e) => {
-    if (!section.enabled || !e) return;
+    if (!section.enabled || !e || !live()) return;
     const steamId = (e && e.steamId) || '';
+    const name = (e && (e.playerName || e.name)) || '';
+    // ⚠ A LOGIN WITH NO NAME IS NOT A LINE. It went out as " joined the server (C2)", a sentence
+    // with a hole where its subject belongs, in front of every player. Refused, with the reason.
+    if (!String(name).trim()) { skip(kind, section, 'message', 'noname'); return; }
     say(kind, section, 'message', {
-      name: (e && (e.playerName || e.name)) || '',
+      name,
       steamId,
       squad: squadOf(steamId),
       sector: await sectorAt(e && e.location),
@@ -787,6 +848,7 @@ async function register(host) {
   const onRaid = async (e) => {
     const s = cfg.raids;
     if (!s.enabled || !isAttack(e)) return;
+    if (!live()) return;
     const vars = {
       owner: e.ownerName || e.owner || '',
       sector: await sectorAt(e.location),
@@ -870,14 +932,17 @@ async function register(host) {
    * after it, on every server, for ever. It is exactly the shape this session has been finding all
    * day: a call that succeeds, answers a plausible type, and is wrong in one direction always.
    */
-  const cargoVars = async (c) => {
+  const cargoVars = async (c, said) => {
     // Whichever pair the bridge managed to publish. `x`/`y` is the landing point where that is
     // decided and the crate's own position where it is not (`targetSet` says which); `actorX`/
     // `actorY` is the position on its own, and it is what is left on a row whose landing point is
     // the only thing that read. A sentence wants a place, not a provenance.
     const p = pointsOf(c)[0] || [];
+    const sector = await sectorAt({ x: p[0], y: p[1] });
+    // Kept on the crate, so the Activity screen can say where a drop it is following is.
+    if (said && sector) said.sector = sector;
     return {
-      sector: await sectorAt({ x: p[0], y: p[1] }),
+      sector,
       // ⚠ `Math.round(Number(v) || 0)` stood here and it is the shape this whole file is about: a
       // coordinate nobody could read became the middle of the map. See `coord`.
       x: coord(p[0]),
@@ -950,8 +1015,10 @@ async function register(host) {
       const was = last.get(sector);
       const open = b.state === 'active';
       const wasOpen = !!(was && was.state === 'active');
-      if (open && !wasOpen) say('bunker', section, 'openMessage', varsOf(sector, b));
+      if (open && !wasOpen && section.announceOpen !== true) skip('bunker', section, 'openMessage', 'off', sector);
+      else if (open && !wasOpen) say('bunker', section, 'openMessage', varsOf(sector, b));
       else if (wasOpen && !open && section.announceClose) say('bunker', section, 'closeMessage', varsOf(sector, b));
+      else if (wasOpen && !open) skip('bunker', section, 'closeMessage', 'off', sector);
     }
     // Leaving the list IS closing. `getBunkers()` drops a keycard bunker whose window has elapsed
     // and `getSecretBunkers()` drops every row whose window ran out, and in both cases the bunker
@@ -965,7 +1032,7 @@ async function register(host) {
       if (list.length === 0 && was.state === 'active' && !elapsed) { now.set(sector, was); continue; }
       if (section.announceClose && was.state === 'active') {
         say('bunker', section, 'closeMessage', varsOf(sector, was));
-      }
+      } else if (was.state === 'active') skip('bunker', section, 'closeMessage', 'off', sector);
     }
     return now;
   }
@@ -1393,6 +1460,8 @@ async function register(host) {
 
       if (s.announceStart && run && !wasRun) say('event', s, 'startMessage', await varsOf(e));
       else if (s.announceEnd && !run && wasRun) say('event', s, 'endMessage', await varsOf(e));
+      else if (run && !wasRun) skip('event', s, 'startMessage', 'off', e.name);
+      else if (!run && wasRun) skip('event', s, 'endMessage', 'off', e.name);
     }
     // A location this reply did not name is not a location that went away: the twenty-five are
     // placed in the level and stay there. Its last known state is kept, so the reading where it is
@@ -1415,6 +1484,8 @@ async function register(host) {
   // the bridge answers two heavy requests a frame and a plugin must never be the one that queues.
   const TICK_SECONDS = 5;
   let reading = false;
+  // When the last tick ran, for the Activity screen's "next check in" line. 0 until the first one.
+  let lastPollAt = 0;
 
   /**
    * Is the server KNOWN to have nobody on it?
@@ -1442,10 +1513,28 @@ async function register(host) {
    */
   async function poll(nowMs) {
     void nowMs;
-    const doAbandoned = !!cfg.bunkersAbandoned.enabled;
-    const doSecret = !!cfg.bunkersSecret.enabled;
-    const doCargo = !!cfg.cargo.enabled;
-    const doEvents = !!cfg.events.enabled;
+    const on = live();
+    const doAbandoned = on && !!cfg.bunkersAbandoned.enabled;
+    const doSecret = on && !!cfg.bunkersSecret.enabled;
+    const doCargo = on && !!cfg.cargo.enabled;
+    const doEvents = on && !!cfg.events.enabled;
+    lastPollAt = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+
+    // ⚠ **A SECTION SWITCHED OFF FORGETS WHAT IT SAW.** Its last reading used to survive the switch,
+    // so turning game events back on an hour later compared the world against the one it saw when
+    // it was turned off: an event that started forty minutes ago was announced as starting, a crate
+    // that landed meanwhile as landing, a bunker that opened at noon as opening now. A section that
+    // is off is not watching, and the first reading after it comes back on is a baseline, exactly as
+    // it is after a manager start. The master switch does the same to all four.
+    if (!doAbandoned) lastBunkers = null;
+    if (!doSecret) lastSecret = null;
+    if (!doCargo) { lastCargo = null; lastCargoUnplaceable = 0; }
+    if (!doEvents && lastEvents !== null) {
+      lastEvents = null;
+      openSaid.clear();
+      namelessWaiting.clear();
+      namelessSaid.clear();
+    }
 
     // ── bunkers: the manager's own reading, and it needs no bridge ─────────────────────────────
     //
@@ -1562,19 +1651,22 @@ async function register(host) {
       // a guess. `phase` stays unknown, so the first reading that knows decides.
       if (phase === 'air' && !said.incoming && !said.landed) {
         said.incoming = true;
-        if (s.announceIncoming) say('cargo', s, 'incomingMessage', await cargoVars(c));
+        if (s.announceIncoming) say('cargo', s, 'incomingMessage', await cargoVars(c, said));
+        else skip('cargo', s, 'incomingMessage', 'off');
       } else if (phase === 'down' && !said.landed) {
         said.landed = true;
         // Also marks the incoming line as spent: a crate first seen on the ground was never news
         // on its way down, and must not become it if a later reading says otherwise.
         said.incoming = true;
-        if (s.announceLanded) say('cargo', s, 'landedMessage', await cargoVars(c));
+        if (s.announceLanded) say('cargo', s, 'landedMessage', await cargoVars(c, said));
+        else skip('cargo', s, 'landedMessage', 'off');
       }
       // The crate has blown up and the row has not left yet. See `blownUp`.
       const ends = phase === 'down' && blownUp(c) ? ((before && before.ends) || 0) + 1 : 0;
       if (ends >= END_READINGS && !said.gone) {
         said.gone = true;
-        if (s.announceGone) say('cargo', s, 'goneMessage', await cargoVars(c));
+        if (s.announceGone) say('cargo', s, 'goneMessage', await cargoVars(c, said));
+        else skip('cargo', s, 'goneMessage', 'off');
       }
       next.push({ cls: rows[j].cls, points, phase, said, ends, missing: 0, row: c });
     }
@@ -1591,7 +1683,8 @@ async function register(host) {
       // ⚠ A crate already said gone when it blew up is still FOLLOWED until it has really left,
       // and only then dropped in silence. Dropping it on the first reply without it made the wreck
       // a new crate the next time it was in the list: "landed", "gone", again, every few seconds.
-      if (s.announceGone && !t.said.gone) say('cargo', s, 'goneMessage', await cargoVars(t.row));
+      if (s.announceGone && !t.said.gone) say('cargo', s, 'goneMessage', await cargoVars(t.row, t.said));
+      else if (!t.said.gone) skip('cargo', s, 'goneMessage', 'off');
     }
 
     lastCargo = next;
@@ -1608,6 +1701,37 @@ async function register(host) {
   // Mounted unconditionally. A `register()` that stands down takes the whole tab with it: every
   // fetch 404s and the plugin's own `api()` helper turns that into `{}`, so the screen draws empty
   // and says nothing about why.
+
+  /**
+   * What the polled passes are following right now, for the Activity screen.
+   *
+   * Read off their own state rather than asked for again: a crate the cargo pass follows, an event
+   * location with somebody signed up or a round running, a bunker that is open. A crate already said
+   * gone is left out, because nothing more will be said about it. `null` for a section that has no
+   * reading yet, which is not the same claim as an empty list.
+   */
+  function watchNow() {
+    const cargo = lastCargo === null ? null : lastCargo
+      .filter((t) => t && !(t.said && t.said.gone))
+      .slice(0, 25)
+      .map((t) => ({ phase: t.phase || '', sector: (t.said && t.said.sector) || '',
+        landedSaid: !!(t.said && t.said.landed) }));
+    let events = null;
+    if (lastEvents !== null) {
+      events = [];
+      for (const e of lastEvents.values()) {
+        if (!e || !e.name) continue;
+        const reg = typeof e.registered === 'number' && Number.isFinite(e.registered) ? e.registered : null;
+        if (e.running === true || (reg !== null && reg > 0)) {
+          events.push({ name: String(e.name), location: String(e.locationName || ''), registered: reg, running: e.running === true });
+        }
+        if (events.length >= 25) break;
+      }
+    }
+    const open = (m) => (m === null ? null
+      : [...m.values()].filter((b) => b && b.state === 'active').map((b) => String(b.sector)).slice(0, 50));
+    return { cargo, events, bunkersAbandoned: open(lastBunkers), bunkersSecret: open(lastSecret) };
+  }
 
   host.routes.get('/config', (req, res) => res.json({ ok: true, config: cfg, defaults: DEFAULTS, channels: CHANNELS }));
 
@@ -1667,6 +1791,16 @@ async function register(host) {
       recent,
       // How often cargo, game events and bunkers are checked. Fixed; see TICK_SECONDS.
       checkSeconds: TICK_SECONDS,
+      // How many lines the activity log keeps, so the screen can say so rather than guess.
+      ring: RING,
+      // The master switch, said apart from "nothing is on": the eight choices under it are kept.
+      paused: !live(),
+      // When the last check ran and when the next one is due, on the manager's clock.
+      lastCheckAt: lastPollAt || null,
+      nextCheckAt: lastPollAt ? lastPollAt + TICK_SECONDS * 1000 : null,
+      // What the polled announcements are following right now: the "what is due next" of the
+      // Activity screen. Built from the passes' own state, never from a second reading.
+      watch: watchNow(),
       // ⚠ **THREE ZEROES AND AN EMPTY LIST ARE TWO OPPOSITE FACTS.** "Nothing has happened yet" and
       // "the server is not running, so nothing CAN happen" look identical on this screen, and a
       // reader who cannot tell them apart concludes the plugin is broken. The screen can only say

@@ -136,32 +136,6 @@
 .mcm-chip b { color: var(--text); font-weight: 600; }
 .mcm-chip.wait { color: var(--standby); border-color: rgba(230, 178, 58, 0.35); }
 
-/* ── a block inside a card ──────────────────────────────────────────────────────────────────────
-   One surface step up from the card, with a name on it, so "where it goes", "what it announces"
-   and "what it says" are three things rather than one column of controls. */
-.mcm-body { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
-/* Dimmed, never inert: writing the wording before switching the announcement on is the ordinary
-   way round, and a card that empties itself when it is off cannot be prepared. */
-.mcm-body.mcm-dim { filter: grayscale(0.85); }
-
-.mcm-block {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 0.7rem 0.9rem 0.85rem;
-  min-width: 0;
-}
-.mcm-block-t {
-  margin-bottom: 0.35rem;
-  font-size: 0.72rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.07em;
-  color: var(--muted);
-}
-/* A hint standing on its own under a block title, rather than in a row's `desc` cell. `.mcm-hint`
-   names a grid area, which is simply ignored outside a grid — stated back to `auto` so the rule
-   reads as deliberate rather than as a leftover. */
-.mcm-block > .mcm-hint { grid-area: auto; margin: 0 0 0.5rem; }
-
 /* ── a settings row ─────────────────────────────────────────────────────────────────────────────
    Label and hint on the left, control on the right, exactly as the panel's own settings screens do
    it. ⚠ `minmax(0, 1fr)` and never a bare `1fr`: a bare one is `minmax(auto, 1fr)`, so the track
@@ -251,34 +225,6 @@
 }
 .mcm-tok:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
 
-/* ── a choice that reads as a word rather than as a bare tick box ───────────────────────────────
-   Tinted: its own soft fill with normal text. The 7% amber wash on `.on` is the panel's own "this
-   one is chosen" — `.mf-opt.on` says it in exactly these values. */
-.mcm-chks { display: flex; flex-wrap: wrap; gap: 0.35rem; min-width: 0; }
-.mcm-chk {
-  --hov-bg: var(--hover-bg);
-  --hov-fg: var(--text);
-  --hov-line: var(--line-amber);
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  background: var(--inset);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--text);
-  font: inherit; font-size: 0.85rem;
-  padding: 0.35rem 0.6rem;
-  cursor: pointer;
-  transition: border-color .12s ease, background .12s ease, color .12s ease;
-}
-.mcm-chk .ico, .mcm-chk svg { width: 0.8rem; height: 0.8rem; flex: 0 0 auto; }
-.mcm-chk.on {
-  --hov-bg: rgba(255, 106, 26, 0.14);
-  --hov-fg: var(--amber-hi);
-  border-color: var(--amber);
-  background: rgba(255, 106, 26, 0.07);
-  color: var(--amber-hi);
-}
-.mcm-chk:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
-
 /* ── notes ──────────────────────────────────────────────────────────────────────────────────────
    Four meanings and four colours, carried by the left rule. Neutral is a fact, green is something
    that worked, red is something that did not, amber is something waiting. Shaped like the panel's
@@ -302,46 +248,6 @@
 /* A plain fact with nothing to feel about it — no wash, so the coloured ones keep their meaning. */
 .mcm-note.flat { background: var(--panel-2); border-left-color: var(--faint); }
 
-/* ── the figures at the top ─────────────────────────────────────────────────────────────────────
-   The panel's own `.mod-stat` proportions, so a counter here is the same object as a counter
-   anywhere else in the product. */
-.mcm-figs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
-  gap: 0.7rem;
-  margin-bottom: 0.9rem;
-}
-.mcm-figs:empty { display: none; }
-.mcm-fig { text-align: center; min-width: 0; }
-.mcm-fig b {
-  display: block;
-  font-size: 1.35rem; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-.mcm-fig span {
-  display: block;
-  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--muted);
-}
-.mcm-fig.good b { color: var(--online); }
-.mcm-fig.bad  b { color: var(--alarm); }
-.mcm-fig.wait b { color: var(--standby); }
-
-/* ── the save bar ───────────────────────────────────────────────────────────────────────────────
-   Rides at the bottom of a long page and says whether there is anything to save at all. */
-.mcm-save {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
-  position: sticky; bottom: 0; z-index: 2;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 0.75rem 1rem;
-}
-.mcm-save .ico, .mcm-save svg { width: 1.05em; height: 1.05em; }
-.mcm-dirty { color: var(--muted); font-size: 0.85rem; }
-.mcm-dirty.unsaved { color: var(--standby); }
-
 /* What a save really did. Empty until it has something to say, so it takes no room on a screen
    where nothing went wrong; it sits under the button because a toast is gone before an owner has
    read which setting did not land. */
@@ -358,11 +264,153 @@
   .mcm-tok { min-width: 44px; }
 }
 
-/* On a phone a wrapping row of buttons stretches to the column instead of
-   falling into a staircase of boxes, one per line, each at its own width. */
-@media (max-width: 480px) {
-  .mcm-chks > * { flex: 1 1 auto; }
-}
-
 /* A time is one value: it never breaks between its digits and its AM/PM. */
 .mcm-nowrap { white-space: nowrap; }
+
+/* ── the page's frame: lead, first-run note, nav, save, stat header ───────────────────────────────
+   The shape commands-kits uses, so two plugins side by side read as one product. */
+.mcm [hidden] { display: none; }
+.mcm-top-lead { margin: 0; }
+.mcm-firstrun:empty { display: none; }
+.mcm-top {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
+  position: sticky; top: 0; z-index: 3;
+  background: var(--bg, var(--panel));
+  padding: 0.35rem 0;
+}
+.mcm-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+.mcm-tab {
+  --hov-bg: transparent;
+  --hov-fg: var(--amber-hi);
+  --hov-line: var(--amber);
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  font: inherit; font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+.mcm-tab:hover { background: var(--hov-bg); color: var(--hov-fg); border-color: var(--hov-line); }
+.mcm-tab .ico, .mcm-tab svg { width: 0.95rem; height: 0.95rem; flex: 0 0 auto; }
+.mcm-tab.active { color: var(--text); background: rgba(255, 106, 26, 0.14); border-color: var(--amber); }
+.mcm-tab.active .ico, .mcm-tab.active svg { color: var(--amber); }
+.mcm-top-r { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.mcm-savebtn .ico, .mcm-savebtn svg { width: 1.05em; height: 1.05em; }
+
+.mcm-statbar { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.mcm-stat {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  min-width: 0;
+}
+.mcm-stat-v { font-weight: 700; font-size: 0.95rem; color: var(--text); font-variant-numeric: tabular-nums; }
+.mcm-stat-l { color: var(--muted); }
+.mcm-stat-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
+.mcm-stat.ok { border-color: rgba(84, 201, 138, 0.4); }
+.mcm-stat.ok .mcm-stat-dot { background: var(--online); }
+.mcm-stat.warn { border-color: rgba(230, 178, 58, 0.45); }
+.mcm-stat.warn .mcm-stat-v { color: var(--standby); }
+.mcm-stat.warn .mcm-stat-dot { background: var(--standby); }
+.mcm-stat.bad { border-color: rgba(255, 92, 92, 0.45); }
+.mcm-stat.bad .mcm-stat-v { color: var(--alarm); }
+
+.mcm-view, .mcm-screen { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+/* ── search, filters, ticks and the bulk bar ─────────────────────────────────────────────────── */
+.mcm-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.mcm-bulk > .mcm-in { width: auto; flex: 0 1 auto; }
+.mcm-bulk > .mcm-search { flex: 1 1 14rem; min-width: min(100%, 12rem); }
+.mcm-bulk button .ico, .mcm-bulk button svg { width: 0.9rem; height: 0.9rem; }
+.mcm-bulk-sel {
+  background: var(--panel-2);
+  border: 1px solid var(--line-amber);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+}
+.mcm-count { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.mcm-pick { width: 1.1rem; height: 1.1rem; flex: 0 0 auto; accent-color: var(--amber); }
+
+/* ── one moment of an announcement ───────────────────────────────────────────────────────────── */
+.mcm-trigs { display: flex; flex-direction: column; min-width: 0; }
+.mcm-trig {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--line-2);
+}
+.mcm-trig:first-child { border-top: 0; padding-top: 0.1rem; }
+.mcm-trig-t { min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.mcm-trig-t b { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.mcm-trig-say {
+  margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.mcm-trig.off .mcm-trig-t b, .mcm-trig.off .mcm-trig-say { color: var(--faint); }
+@media (max-width: 520px) {
+  .mcm-trig { grid-template-columns: minmax(0, 1fr) auto; }
+  .mcm-trig > .mcm-trig-t { grid-column: 1 / -1; grid-row: 1; }
+}
+
+/* ── the message list ────────────────────────────────────────────────────────────────────────── */
+.mcm-msglist { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.mcm-msgitem.on { border-color: var(--line-amber); box-shadow: inset 3px 0 0 var(--amber); }
+.mcm-msg-sec { color: var(--muted); font-weight: 600; }
+.mcm-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.mcm-pg.cur { border-color: var(--amber); color: var(--amber-hi); }
+
+/* ── activity ────────────────────────────────────────────────────────────────────────────────── */
+.mcm-act-what { display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-start; }
+.mcm-act-what small { color: var(--muted); font-size: 0.75rem; }
+.mcm-watchlist { display: flex; flex-direction: column; gap: 0.35rem; }
+.mcm-watch {
+  display: flex; flex-wrap: wrap; gap: 0.5rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.mcm-watch b { color: var(--text); font-weight: 600; }
+.mcm-watch span { color: var(--muted); }
+
+/* ── settings: one row per announcement ──────────────────────────────────────────────────────── */
+.mcm-chanhead, .mcm-chanrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(min(100%, 9rem), 14rem) minmax(0, 9rem);
+  align-items: center;
+  gap: 0.75rem;
+}
+.mcm-chanhead { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-bottom: 0.3rem; }
+.mcm-chanrow { padding: 0.45rem 0; border-top: 1px solid var(--line-2); }
+.mcm-chan-t { display: flex; align-items: center; gap: 0.5rem; min-width: 0; font-weight: 600; }
+.mcm-chan-t .ico, .mcm-chan-t svg { width: 1rem; height: 1rem; flex: 0 0 auto; color: var(--amber-hi); }
+@media (max-width: 640px) {
+  .mcm-chanhead { display: none; }
+  .mcm-chanrow { grid-template-columns: minmax(0, 1fr) auto; }
+  .mcm-chan-t { grid-column: 1 / -1; }
+}
+
+/* ── a thumb, at 320px: the controls this sheet draws itself ─────────────────────────────────────
+   The panel's own plugin floor excludes a checkbox, so the tick on each announcement is given the
+   square here; Chrome scales the native tick to the box. A page number carries one digit, so it is
+   given the square too. A wrapping nav stretches to the column instead of a ragged stack. */
+@media (max-width: 760px) {
+  .mcm-pick { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+  .mcm-pg { min-width: 44px; }
+}
+@media (max-width: 480px) {
+  .mcm-nav { flex: 1 1 100%; }
+  .mcm-nav > * { flex: 1 1 auto; justify-content: center; }
+}
+/* A tag inside a moment's row sits in a narrow grid column, so it may wrap there. */
+.mcm-trig .mcm-tag { white-space: normal; text-align: center; max-width: 9rem; }
+.mcm-trig-say code { font-family: var(--mono); font-size: 0.95em; color: var(--text); }

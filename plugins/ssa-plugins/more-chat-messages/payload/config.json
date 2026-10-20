@@ -1,4 +1,5 @@
 {
+  "enabled": true,
   "kills": {
     "enabled": false,
     "channel": "global",
@@ -7,6 +8,7 @@
     "messageI18n": {},
     "messageNoKiller": "{victim} died",
     "messageNoKillerI18n": {},
+    "announceNoKiller": true,
     "selfMessage": "{victim} killed themselves",
     "selfMessageI18n": {},
     "minDistance": 0,
@@ -78,6 +80,7 @@
     "openMessageI18n": {},
     "closeMessage": "The secret bunker in {sector} has closed",
     "closeMessageI18n": {},
+    "announceOpen": true,
     "announceClose": false
   },
   "bunkersAbandoned": {
@@ -88,6 +91,7 @@
     "openMessageI18n": {},
     "closeMessage": "The abandoned bunker in {sector} has locked",
     "closeMessageI18n": {},
+    "announceOpen": true,
     "announceClose": true
   },
   "raids": {
