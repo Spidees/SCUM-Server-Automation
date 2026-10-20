@@ -94,6 +94,9 @@ function textDefaults(host) {
     extendOk: host.i18n.t('pl.vehicle-rental.default.extendOk', '🔄 Extended. Your {vehicle} now runs for another {duration}.'),
     notAllowedHere: host.i18n.t('pl.vehicle-rental.default.notAllowedHere', '🚫 Renting is not allowed in sector {sector}.'),
     disabled: host.i18n.t('pl.vehicle-rental.default.disabled', '🚧 Vehicle rentals are currently disabled.'),
+    // A vehicle or one of its plans an owner switched off on the Fleet screen. It is not listed any
+    // more; this is what a player hears who typed its old number, or held an open Discord menu.
+    offerOff: host.i18n.t('pl.vehicle-rental.default.offerOff', '🚫 {vehicle} is not offered for rent right now.'),
     // {window} is filled with the manager's own sentence for the window that refused, which
     // always names the clock — a player reading "from 20:00" has no way to know otherwise
     // whether that is the server's evening or the game's.
@@ -288,6 +291,24 @@ module.exports = {
     if (db) { try { db.exec('ALTER TABLE rentals ADD COLUMN paidCurrency TEXT'); } catch (e) {} }
     if (db) { try { db.exec('ALTER TABLE rentals ADD COLUMN paidMinutes INTEGER'); } catch (e) {} }
     if (db) { try { db.exec('ALTER TABLE rentals ADD COLUMN vehCode TEXT'); } catch (e) {} }
+    // WHICH VEHICLE OF THE FLEET a rental is, by the vehicle's own id rather than its position.
+    //
+    // ⚠ `vehIdx` is a position, and the per-vehicle rules were all read through it: the per-vehicle
+    // limits counted rows by position, `/extend` read its extension cap and its time window off
+    // `vehicles[vehIdx]`, and the reminder sweep its reminder time. Add a vehicle above another and
+    // every running rental of it obeyed its new neighbour's rules — a cap of one on the Laika let a
+    // player hold two because their first was now counted against the Quad. A vehicle carries an `id`
+    // from 1.11 (given on its first save) and a rental records it; a row from before has none and is
+    // read by position exactly as it always was.
+    if (db) { try { db.exec('ALTER TABLE rentals ADD COLUMN vehKey TEXT'); } catch (e) {} }
+    // What the plugin did, for the Activity screen: every rental, extension, return, expiry and admin
+    // ending, and every REFUSAL with the reason the player was given. A refusal never reached a row
+    // anywhere before, so "a player says the rental does not work" had nothing an owner could look at.
+    if (db) {
+      try {
+        db.exec('CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, action TEXT, result TEXT, code TEXT, steamId TEXT, playerName TEXT, rentalId INTEGER, vehName TEXT, via TEXT, said TEXT, amount INTEGER, currency TEXT, minutes INTEGER)');
+      } catch (e) { host.logger.warn('the activity log could not be created, so the Activity screen keeps this session only: ' + e.message); }
+    }
 
     function defaultConfig() {
       return {
@@ -433,7 +454,39 @@ module.exports = {
       }
       return keyedCache.get(lang);
     }
-    const txt = (c, key) => {
+    /**
+     * A chat command word as the dispatcher stores it: one word, no prefix, lower case.
+     *
+     * The dispatcher strips a leading `/` and lower-cases; it does not split on a space, so a name
+     * typed as "my rent" registered a command nobody can type (chat splits the word at the space),
+     * and one typed as "!rent" on a server whose prefix is `!` made players type `!!rent`. What is
+     * registered and what the messages name are the same word, read through this.
+     */
+    function cmdWord(name, fallback) {
+      const w = String(name == null ? '' : name).trim().replace(/^[/!.#\\]+/, '').split(/\s+/)[0].toLowerCase();
+      return w || fallback;
+    }
+    const CMD_DEFAULTS = { cmdRent: 'rent', cmdMine: 'myrent', cmdExtend: 'extend', cmdReturn: 'return' };
+    /**
+     * ⚠ **A RENAMED COMMAND WAS STILL THE OLD WORD IN EVERY MESSAGE.** The shipped lines say
+     * "Type {cmd}myrent" and "{cmd}extend to keep it" with the WORD written into the sentence, and
+     * `{cmd}` is only the prefix — so a server that renamed `/myrent` to `/mujrent` told every player,
+     * in their own language, to type a command that does nothing. The lines cannot simply change:
+     * every owner who ever saved holds the shipped English in their config, and a changed default
+     * would read as their own wording and stop being translated. So the shipped word right after
+     * `{cmd}` is read as "this command, whatever it is called", in every language and in an owner's
+     * own line alike.
+     */
+    function cmdWords(c, s) {
+      if (typeof s !== 'string' || s.indexOf('{cmd}') < 0) return s;
+      const map = {
+        rent: cmdWord(c && c.cmdRent, 'rent'), myrent: cmdWord(c && c.cmdMine, 'myrent'),
+        extend: cmdWord(c && c.cmdExtend, 'extend'), return: cmdWord(c && c.cmdReturn, 'return'),
+      };
+      return s.replace(/\{cmd\}(myrent|extend|return|rent)(?![A-Za-z0-9_])/g, function (m, w) { return '{cmd}' + map[w]; });
+    }
+    const txt = (c, key) => cmdWords(c, txtRaw(c, key));
+    const txtRaw = (c, key) => {
       const own = c && c.texts && c.texts[key];
       const d = defaultConfig().texts[key];
       const lang = langOf(c);
@@ -531,6 +584,28 @@ module.exports = {
 
     /** The same question with no message attached — for listing what a player can rent right now. */
     function windowOpen(c, v, o) { return windowError(c, v, o) === null; }
+
+    /**
+     * The vehicles ON OFFER, each a copy with only its plans on offer and `at` — its real position
+     * in the configuration — on the vehicle and on every plan; `src` is the configured vehicle. A
+     * vehicle switched off, or with every plan switched off, is not offered. Read by the chat list,
+     * the Discord menus and `/help`, so all three show the same fleet.
+     */
+    function offerList(c) {
+      const out = [];
+      (c.vehicles || []).forEach(function (v, vi) {
+        if (!v || typeof v !== 'object' || !offered(v)) return;
+        const plans = [];
+        (Array.isArray(v.options) ? v.options : []).forEach(function (o, oi) {
+          if (o && typeof o === 'object' && offeredPlan(o)) plans.push(Object.assign({}, o, { at: oi }));
+        });
+        // A vehicle with no plans at all stays listed (as "no plans"), exactly as before; one whose
+        // plans are all switched off is switched off in effect.
+        if (!plans.length && Array.isArray(v.options) && v.options.length) return;
+        out.push(Object.assign({}, v, { options: plans, at: vi, src: v }));
+      });
+      return out;
+    }
 
     /**
      * Tidy a window list on the way IN, before it is stored.
@@ -752,6 +827,10 @@ module.exports = {
           // may not exist when it probably does would be worse than saying nothing.
           host.logger.warn('rental #' + rentalId + ': the spawned vehicle could not be identified — it will NOT be removed automatically, and it may not have spawned at all (a stale spawn code after a game update looks exactly like this)');
           try {
+            const row = db.prepare('SELECT steamId, playerName, vehName FROM rentals WHERE id=?').get(rentalId) || {};
+            logAct({ action: 'rent', result: 'problem', code: 'notCaptured', steamId: row.steamId, playerName: row.playerName, rentalId, vehName: row.vehName, via: 'game' });
+          } catch (e) { /* the warning above stands */ }
+          try {
             host.notify('admin.alert', {
               message: 'Vehicle rental #' + rentalId + ': the spawned vehicle could not be found. Check the spawn code is still valid — a game update moves blueprint ids, and the player is charged either way.',
               severity: 'warning',
@@ -789,6 +868,112 @@ module.exports = {
     // them are live" is the same answer as having none — which is what the sweep is about to make
     // true anyway.
     const liveFor = (steamId) => activeFor(steamId).filter((r) => !r.expiresAt || r.expiresAt > Date.now());
+
+    // ── the fleet: which vehicles and plans are on offer ──────────────────────────────────────────
+    //
+    // Each vehicle and each plan has its own switch (`enabled`, absent = on, so every config written
+    // before 1.11 offers everything it always offered). An offer that is off is not listed in chat or
+    // in Discord and cannot be rented or extended; rentals already running are left alone.
+    const offered = (v) => !!v && v.enabled !== false;
+    const offeredPlan = (o) => !!o && o.enabled !== false;
+    /** The vehicle a rental row belongs to, or null: by its id when the row has one, else by position. */
+    function vehicleOf(r, c) {
+      const list = (c && Array.isArray(c.vehicles)) ? c.vehicles : [];
+      if (r && r.vehKey) return list.find((v) => v && String(v.id || '') === String(r.vehKey)) || null;
+      return list[Number(r && r.vehIdx)] || null;
+    }
+    /** …and the plan it was sold on, by the same rule. `null` when either has gone. */
+    function planRowOf(r, c) {
+      const v = vehicleOf(r, c);
+      return (v && (v.options || [])[Number(r && r.optIdx)]) || null;
+    }
+    /** A short id for a vehicle or a plan. Random, because a counter restarts with the process. */
+    function newId(prefix, taken) {
+      for (let i = 0; i < 50; i++) {
+        const id = prefix + Math.random().toString(36).slice(2, 8);
+        if (!taken.has(id)) { taken.add(id); return id; }
+      }
+      return prefix + Date.now().toString(36);
+    }
+    /** Give every vehicle that has no id one, keeping the ones it has. Answers the ids in order. */
+    function ensureVehicleIds(vehicles) {
+      if (!Array.isArray(vehicles)) return [];
+      const taken = new Set();
+      vehicles.forEach((v) => { if (v && typeof v.id === 'string' && v.id && !taken.has(v.id)) taken.add(v.id); else if (v && v.id) delete v.id; });
+      return vehicles.map((v) => {
+        if (!v || typeof v !== 'object') return null;
+        if (!(typeof v.id === 'string' && v.id)) v.id = newId('v', taken);
+        return v.id;
+      });
+    }
+
+    // ── the activity log ──────────────────────────────────────────────────────────────────────────
+    //
+    // One row per thing the plugin did or refused, written beside the rental itself and never in its
+    // way: a log that cannot be written never stops a rental. Kept to the newest ACT_KEEP rows.
+    const ACT_KEEP = 5000;
+    const actMem = [];
+    let actSeq = 0;
+    let actWrites = 0;
+    let actIns = null;
+    if (db) { try { actIns = db.prepare('INSERT INTO activity (at,action,result,code,steamId,playerName,rentalId,vehName,via,said,amount,currency,minutes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'); } catch (e) { actIns = null; } }
+    function logAct(e) {
+      const num = (x) => (x == null || x === '' || !Number.isFinite(Number(x)) ? null : Math.round(Number(x)));
+      const row = {
+        at: Date.now(), action: String(e.action || ''), result: String(e.result || 'ok'), code: e.code ? String(e.code) : null,
+        steamId: e.steamId ? String(e.steamId) : '', playerName: e.playerName ? String(e.playerName) : '',
+        rentalId: num(e.rentalId), vehName: e.vehName ? String(e.vehName) : '', via: e.via ? String(e.via) : '',
+        said: e.said ? String(e.said).slice(0, 600) : '', amount: num(e.amount),
+        currency: e.currency === 'gold' ? 'gold' : (e.currency ? 'money' : null), minutes: num(e.minutes),
+      };
+      try {
+        if (actIns) {
+          const r = actIns.run(row.at, row.action, row.result, row.code, row.steamId, row.playerName, row.rentalId, row.vehName,
+            row.via, row.said, row.amount, row.currency, row.minutes);
+          row.id = Number(r.lastInsertRowid);
+          if (++actWrites % 100 === 0) {
+            try { db.prepare('DELETE FROM activity WHERE id <= ?').run(row.id - ACT_KEEP); } catch (x) { /* kept a little longer */ }
+          }
+          return row;
+        }
+      } catch (err) { host.logger.debug('activity log write failed: ' + err.message); }
+      row.id = ++actSeq;
+      actMem.push(row);
+      if (actMem.length > 500) actMem.shift();
+      return row;
+    }
+    /** The newest rows, newest first; `after` answers only rows newer than that id. */
+    function actRows(limit, after) {
+      const n = Math.max(1, Math.min(ACT_KEEP, Number(limit) || 1000));
+      const since = Number(after) || 0;
+      if (actIns) {
+        try { return db.prepare('SELECT * FROM activity WHERE id > ? ORDER BY id DESC LIMIT ?').all(since, n); }
+        catch (e) { /* the session copy below */ }
+      }
+      return actMem.filter((r) => r.id > since).slice(-n).reverse();
+    }
+    /** Totals since `from`, for the stat header. */
+    function actTotals(from) {
+      const out = { rented: 0, refused: 0, extended: 0, returned: 0, expired: 0, ended: 0, problems: 0, money: 0, gold: 0 };
+      const rows = actIns ? (() => { try { return db.prepare('SELECT action, result, amount, currency FROM activity WHERE at >= ?').all(from); } catch (e) { return []; } })()
+        : actMem.filter((r) => r.at >= from);
+      rows.forEach((r) => {
+        if (r.result === 'refused') out.refused++;
+        else if (r.result === 'problem') out.problems++;
+        if (r.result !== 'refused') {
+          if (r.action === 'rent' && r.result === 'ok') out.rented++;
+          if (r.action === 'extend' && r.result === 'ok') out.extended++;
+          if (r.action === 'return') out.returned++;
+          if (r.action === 'expire') out.expired++;
+          if (r.action === 'end') out.ended++;
+        }
+        // Money that moved: a charge is positive, a refund negative, and only a confirmed one is here.
+        if (r.amount && (r.result === 'ok' || r.result === 'problem')) {
+          if (r.currency === 'gold') out.gold += r.amount; else if (r.currency === 'money') out.money += r.amount;
+        }
+      });
+      return out;
+    }
 
     // ── admin routes ──
     /**
@@ -907,19 +1092,107 @@ module.exports = {
         });
         if (problems.length) return res.json({ ok: false, error: problems.join('\n') });
       }
+      // The four command words, judged together because two of them can be the same: the later
+      // registration takes the word and the other command silently stops answering. Only the words
+      // this body names are judged against what is stored for the rest.
+      {
+        const body = req.body || {};
+        const stored = Object.assign({}, CMD_DEFAULTS, host.store.get('config', {}) || {});
+        const named = Object.keys(CMD_DEFAULTS).filter((k) => Object.prototype.hasOwnProperty.call(body, k));
+        if (named.length) {
+          const words = {};
+          const bad = [];
+          Object.keys(CMD_DEFAULTS).forEach((k) => {
+            const raw = Object.prototype.hasOwnProperty.call(body, k) ? body[k] : stored[k];
+            const w = cmdWord(raw, '');
+            if (Object.prototype.hasOwnProperty.call(body, k) && String(raw == null ? '' : raw).trim() && /\s/.test(String(raw).trim())) {
+              bad.push(`the command "${String(raw).trim()}" has a space in it; a command is one word`);
+            }
+            words[k] = w || CMD_DEFAULTS[k];
+          });
+          const seen = {};
+          Object.keys(words).forEach((k) => { (seen[words[k]] = seen[words[k]] || []).push(k); });
+          Object.keys(seen).forEach((w) => { if (seen[w].length > 1) bad.push(`two commands are both called "${w}"; give each its own word`); });
+          if (bad.length) return res.json({ ok: false, code: 'commandWords', error: bad.join('\n') });
+        }
+      }
+      // Every vehicle gets an id on its way in (one it has is kept), and the ids go back to the panel
+      // so its copy and the stored one name each vehicle the same way.
+      const ids = (req.body && Array.isArray(req.body.vehicles)) ? ensureVehicleIds(req.body.vehicles) : null;
       // Over what is STORED first, filled from the template second. The other order resets every
       // setting the caller did not name — see `overlay`.
       setCfg(overlay(host.store.get('config', {}), req.body || {}));
       // The chat commands are named in this config, so saving it re-registers them. Without this a
       // rename or an on/off toggle needed a manager restart to take effect, and nothing said so.
       try { registerCommands(); } catch (e) { host.logger.warn('re-registering chat commands failed: ' + e.message); }
-      res.json({ ok: true });
+      res.json(ids ? { ok: true, ids: ids } : { ok: true });
     });
     host.routes.get('/rentals', function (req, res) { res.json(db ? db.prepare('SELECT * FROM rentals WHERE active=1 ORDER BY expiresAt').all() : []); });
     // The last rentals that have finished, so an admin can see what happened rather than only what
     // is happening. `endedReason` tells an expiry from an early return from an admin's intervention.
     host.routes.get('/history', function (req, res) {
-      res.json(db ? db.prepare('SELECT * FROM rentals WHERE active=0 ORDER BY id DESC LIMIT 200').all() : []);
+      // `limit` from 1.11, for the Rentals screen's pages; without one the 200 it always answered.
+      const q = (req && req.query) || {};
+      const n = Math.max(1, Math.min(5000, Number(q.limit) || 200));
+      res.json(db ? db.prepare('SELECT * FROM rentals WHERE active=0 ORDER BY id DESC LIMIT ?').all(n) : []);
+    });
+    // The Rentals screen's list of finished rentals: the newest 2000, paged on the tab.
+    host.routes.get('/history/all', function (req, res) {
+      res.json(db ? db.prepare('SELECT * FROM rentals WHERE active=0 ORDER BY id DESC LIMIT 2000').all() : []);
+    });
+    /**
+     * The live picture for the stat header, the Rentals screen and the Activity screen, in ONE
+     * request so a tab left open asks once per tick.
+     *
+     * Everything here is a reading of what is happening; nothing on the tab waits for it. With the
+     * server stopped it answers all the same, says so (`serverRunning: false`), and the counts are
+     * whatever the plugin's own database holds.
+     */
+    host.routes.get('/status', async function (req, res) {
+      const now = Date.now();
+      let bridgeUp = null;
+      try { const b = await host.server.bridge(); bridgeUp = b ? b.available !== false : null; } catch (e) { bridgeUp = null; }
+      const active = db ? db.prepare('SELECT * FROM rentals WHERE active=1 ORDER BY expiresAt').all() : [];
+      const c = cfg();
+      res.json({
+        serverRunning: (host.server && typeof host.server.isRunning === 'function') ? !!host.server.isRunning() : null,
+        bridge: bridgeUp,
+        storage: !!db,
+        now,
+        active: active.length,
+        running: active.filter((r) => !r.expiresAt || r.expiresAt > now).length,
+        // Ran out, and the vehicle is still to be taken away: the sweep waits while the game cannot.
+        awaitingRemoval: active.filter((r) => r.expiresAt && r.expiresAt <= now).length,
+        notCaptured: active.filter((r) => !r.vehId).length,
+        endingSoon: active.filter((r) => r.expiresAt > now && r.expiresAt - now <= 10 * 60000).length,
+        day: actTotals(now - 86400000),
+        inFlight: { renting: renting.size, extending: extending.size, identifying: pendingCapture.size },
+        sweep: { at: lastSweepAt || null, waiting: sweepWaiting },
+        fleet: {
+          vehicles: (c.vehicles || []).length,
+          offered: (c.vehicles || []).filter((v) => offered(v) && (v.options || []).some(offeredPlan)).length,
+        },
+        enabled: c.enabled !== false,
+        rentals: active,
+        lastActivity: (actRows(1, 0)[0] || {}).id || 0,
+      });
+    });
+    /** The activity log, newest first. `after=<id>` answers only what is newer, for the live tick. */
+    host.routes.get('/activity', function (req, res) {
+      const q = (req && req.query) || {};
+      res.json({ rows: actRows(q.limit || 1000, q.after || 0), keep: ACT_KEEP, stored: !!actIns });
+    });
+    // The same with the id in the body, which is how the tab asks on its tick.
+    host.routes.post('/activity/since', function (req, res) {
+      const b = (req && req.body) || {};
+      res.json({ rows: actRows(b.limit || 1000, b.after || 0), keep: ACT_KEEP, stored: !!actIns });
+    });
+    host.routes.post('/activity/clear', function (req, res) {
+      try {
+        if (actIns) db.exec('DELETE FROM activity');
+        actMem.length = 0;
+        res.json({ ok: true });
+      } catch (e) { res.json({ ok: false, error: e.message }); }
     });
     /**
      * The chat prefix, so the tab's opening sentence names the commands the way a player types them.
@@ -960,7 +1233,21 @@ module.exports = {
       const id = Number((req.body || {}).id);
       const r = db.prepare('SELECT * FROM rentals WHERE id=? AND active=1').get(id);
       if (!r) return res.json({ ok: false, error: 'that rental is not active' });
+      const out = await endByAdmin(r);
+      if (out.alreadyClosed) return res.json({ ok: false, error: 'that rental is not active' });
+      res.json({ ok: true, removed: out.removed, stillThere: out.stillThere });
+    }
+    /**
+     * End one rental for an admin: the vehicle, the player's line, the log.
+     *
+     * ⚠ **A RENTAL THE SWEEP HAD JUST CLOSED WAS "ENDED BY AN ADMIN" ALL THE SAME.** `endRental`
+     * answers `alreadyClosed` when another caller won the row, and this path never looked: the player
+     * read their rental had been ended by an admin a moment after reading it had expired, the panel
+     * said it had been ended, and nothing had been. Losing the row is now the end of it.
+     */
+    async function endByAdmin(r) {
       const out = await endRental(r, 'admin');
+      if (out.alreadyClosed) return out;
       // Two things the player has to be told, and neither was said here.
       //
       // That an ADMIN ended it: the wording is "your rental has ended", which reads as expiry, so a
@@ -973,11 +1260,37 @@ module.exports = {
       await say(r.steamId, (ce) => fill(txt(ce, 'ended'), rentalVars(r, ce))
         + note(ce, 'endedByAdmin')
         + (out.removed ? '' : note(ce, 'endedStuck')));
-      host.logger.info('rental #' + id + ' ended by an admin (' + (r.playerName || r.steamId) + ')'
+      host.logger.info('rental #' + r.id + ' ended by an admin (' + (r.playerName || r.steamId) + ')'
         + (out.removed ? '' : ' — the vehicle could NOT be removed')
         + '. No refund was paid: ending a rental from the panel does not refund, unlike a player returning one.');
-      res.json({ ok: true, removed: out.removed, stillThere: out.stillThere });
+      logAct({ action: 'end', result: (out.removed || !out.stillThere) ? 'ok' : 'problem', code: (out.removed || !out.stillThere) ? null : 'endedStuck',
+        steamId: r.steamId, playerName: r.playerName, rentalId: r.id, vehName: r.vehName, via: 'panel' });
+      return out;
     }
+    /**
+     * End several rentals at once, the ones ticked when the button was pressed. Each is ended exactly
+     * as the single End button ends it, one after another, and each answers for itself.
+     */
+    host.routes.post('/rentals/end-many', async function (req, res) {
+      try {
+        if (!db) return res.json({ ok: false, error: 'no database' });
+        const ids = Array.isArray((req.body || {}).ids) ? req.body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+        if (!ids.length) return res.json({ ok: false, error: 'no rental was ticked' });
+        const results = [];
+        for (const id of ids.slice(0, 500)) {
+          const r = db.prepare('SELECT * FROM rentals WHERE id=? AND active=1').get(id);
+          if (!r) { results.push({ id, ok: false, error: 'that rental is not active' }); continue; }
+          try {
+            const out = await endByAdmin(r);
+            results.push(out.alreadyClosed ? { id, ok: false, error: 'that rental is not active' } : { id, ok: true, removed: out.removed, stillThere: out.stillThere });
+          } catch (e) { results.push({ id, ok: false, error: e.message }); }
+        }
+        res.json({ ok: true, results });
+      } catch (e) {
+        host.logger.warn('ending rentals failed: ' + e.message);
+        res.json({ ok: false, error: e.message });
+      }
+    });
     /**
      * Is there a Discord bot at all?
      *
@@ -1087,6 +1400,11 @@ module.exports = {
     // vehicle's rentals and stop consulting the global cap at all — so two vehicles each capped at 1
     // let a player hold two under a server cap of one. The message says which rule stopped them.
     function limitsError(steamId, vehIdx, v, c) {
+      const why = limitsWhy(steamId, vehIdx, v, c);
+      return why ? why.error : null;
+    }
+    /** The same rule with the reason's name beside its sentence: `{ code, error }` or null. */
+    function limitsWhy(steamId, vehIdx, v, c) {
       if (!db) return null;
       const vi = String(vehIdx);
       const pv = (field) => {
@@ -1095,16 +1413,22 @@ module.exports = {
         const n = Number(raw);
         return Number.isFinite(n) ? n : null;      // "abc" typed into the box is not a limit of NaN
       };
+      // This vehicle's rows: by its id where the vehicle has one, and — for rows written before it
+      // had one — by the position it holds now, which is what every row was counted by before.
+      const key = (typeof v.id === 'string' && v.id) ? v.id : null;
+      const mine = key ? '(vehKey=? OR (vehKey IS NULL AND vehIdx=?))' : '(vehKey IS NULL AND vehIdx=?)';
+      const mineArgs = key ? [key, vi] : [vi];
       const nAll = () => db.prepare('SELECT COUNT(*) n FROM rentals WHERE active=1 AND steamId=?').get(steamId).n;
-      const nVeh = () => db.prepare('SELECT COUNT(*) n FROM rentals WHERE active=1 AND steamId=? AND vehIdx=?').get(steamId, vi).n;
+      const nVeh = () => db.prepare('SELECT COUNT(*) n FROM rentals WHERE active=1 AND steamId=? AND ' + mine).get(steamId, ...mineArgs).n;
+      const says = (code, extra) => ({ code, error: fill(txt(c, code), vars(c, extra)) });
 
       const gMax = Number(c.maxPerPlayer) || 0;
-      if (gMax > 0 && nAll() >= gMax) return fill(txt(c, 'limitActive'), vars(c, { max: gMax }));
+      if (gMax > 0 && nAll() >= gMax) return says('limitActive', { max: gMax });
       const mMax = pv('maxPerPlayer');
-      if (mMax != null && mMax > 0 && nVeh() >= mMax) return fill(txt(c, 'limitActiveVehicle'), vars(c, { max: mMax }));
+      if (mMax != null && mMax > 0 && nVeh() >= mMax) return says('limitActiveVehicle', { max: mMax });
 
       const tooSoon = (minutes, last) => (minutes && last && (Date.now() - last) < minutes * 60000)
-        ? fill(txt(c, 'tooOften'), vars(c, { left: fmtLeft(last + minutes * 60000 - Date.now(), durWords(c)) }))
+        ? says('tooOften', { left: fmtLeft(last + minutes * 60000 - Date.now(), durWords(c)) })
         : null;
       const gCd = Number(c.cooldownMinutes) || 0;
       if (gCd) {
@@ -1113,19 +1437,23 @@ module.exports = {
       }
       const mCd = pv('cooldownMinutes');
       if (mCd) {
-        const e = tooSoon(mCd, db.prepare('SELECT MAX(startedAt) m FROM rentals WHERE steamId=? AND vehIdx=?').get(steamId, vi).m);
+        const e = tooSoon(mCd, db.prepare('SELECT MAX(startedAt) m FROM rentals WHERE steamId=? AND ' + mine).get(steamId, ...mineArgs).m);
         if (e) return e;
       }
 
       const gDl = Number(c.dailyLimit) || 0;
       if (gDl && db.prepare('SELECT COUNT(*) n FROM rentals WHERE steamId=? AND startedAt >= ?').get(steamId, Date.now() - 86400000).n >= gDl) {
-        return fill(txt(c, 'limitDaily'), vars(c, { max: gDl }));
+        return says('limitDaily', { max: gDl });
       }
       const mDl = pv('dailyLimit');
-      if (mDl && db.prepare('SELECT COUNT(*) n FROM rentals WHERE steamId=? AND vehIdx=? AND startedAt >= ?').get(steamId, vi, Date.now() - 86400000).n >= mDl) {
-        return fill(txt(c, 'limitDailyVehicle'), vars(c, { max: mDl }));
+      if (mDl && db.prepare('SELECT COUNT(*) n FROM rentals WHERE steamId=? AND ' + mine + ' AND startedAt >= ?').get(steamId, ...mineArgs, Date.now() - 86400000).n >= mDl) {
+        return says('limitDailyVehicle', { max: mDl });
       }
       return null;
+    }
+    /** Which of the two refusals `affordError` gave, by the sentence it gave. */
+    function affordCode(said, c) {
+      return said === fill(txt(c, 'balanceListCut'), vars(c)) ? 'balanceListCut' : 'notEnough';
     }
 
     /**
@@ -1346,10 +1674,40 @@ module.exports = {
     const renting = new Set();
 
     async function rent(who, vehIdx, optIdx) {
+      const out = await rentOnce(who, vehIdx, optIdx);
+      noteRent(who, vehIdx, optIdx, out);
+      return out;
+    }
+    async function rentOnce(who, vehIdx, optIdx) {
       const key = String(who.steamId || '');
-      if (renting.has(key)) { const cb = forLang(who.lang); return { ok: false, error: fill(txt(cb, 'busy'), vars(cb)) }; }
+      if (renting.has(key)) { const cb = forLang(who.lang); return { ok: false, code: 'busy', error: fill(txt(cb, 'busy'), vars(cb)) }; }
       renting.add(key);
       try { return await rentInner(who, vehIdx, optIdx); } finally { renting.delete(key); }
+    }
+    // How the last refused charge for a player went, handed from `rentInner` to `noteRent`.
+    const lastPayFail = new Map();
+    /** One line in the activity log for a rental asked for: what it was, and how it went. */
+    function noteRent(who, vehIdx, optIdx, out) {
+      try {
+        const c = cfg();
+        const v = (out && out.v) || c.vehicles[Number(vehIdx)] || null;
+        const o = (out && out.o) || (v && (v.options || [])[Number(optIdx)]) || null;
+        const sid = String(who.steamId || '');
+        // A "still being processed" answer is the second of two calls; the first owns the entry.
+        const pf = (out.ok || out.code === 'busy') ? null : (lastPayFail.get(sid) || null);
+        if (out.code !== 'busy') lastPayFail.delete(sid);
+        // The one refusal with no code of its own is the time window: its two lines are kept as
+        // they always were, because the window rule is tested on them.
+        const code = out.ok ? null : ((pf && pf.code) || out.code || 'closedNow');
+        const price = (out.ok && !c.free && o) ? Math.max(0, parseInt(o.amount, 10) || 0) : 0;
+        logAct({
+          action: 'rent', result: out.ok ? 'ok' : (pf && pf.stray ? 'problem' : 'refused'), code,
+          steamId: sid, playerName: who.playerName, rentalId: out.rentalId, vehName: (v && v.name) || '', via: who.via || '',
+          said: out.ok ? '' : out.error,
+          amount: price || null, currency: price ? (o.currency === 'gold' ? 'gold' : 'money') : null,
+          minutes: o ? planMinutes(o) : null,
+        });
+      } catch (e) { host.logger.debug('activity: ' + e.message); }
     }
 
     async function rentInner(who, vehIdx, optIdx) {
@@ -1361,13 +1719,16 @@ module.exports = {
       // says why so an owner can fix it rather than wonder where the vehicles came from.
       if (!db) {
         host.logger.error('rental refused: the plugin has no database, so limits and expiry cannot work');
-        return { ok: false, error: fill(txt(c, 'noStorage'), vars(c)) };
+        return { ok: false, code: 'noStorage', error: fill(txt(c, 'noStorage'), vars(c)) };
       }
       const v = c.vehicles[Number(vehIdx)];
       const o = v && (v.options || [])[Number(optIdx)];
-      if (c.enabled === false) return { ok: false, error: fill(txt(c, 'disabled'), vars(c)) };
-      if (!v || !o) return { ok: false, error: fill(txt(c, 'badChoice'), vars(c)) };
-      if (!v.code) return { ok: false, error: fill(txt(c, 'noSpawnCode'), vars(c, { vehicle: v.name || '' })) };
+      if (c.enabled === false) return { ok: false, code: 'disabled', error: fill(txt(c, 'disabled'), vars(c)) };
+      if (!v || !o) return { ok: false, code: 'badChoice', error: fill(txt(c, 'badChoice'), vars(c)) };
+      // Switched off on the Fleet screen. Not listed anywhere, so only an old number or an open
+      // Discord menu reaches it — and it must not rent all the same.
+      if (!offered(v) || !offeredPlan(o)) return { ok: false, code: 'offerOff', error: fill(txt(c, 'offerOff'), vars(c, { vehicle: v.name || vehWord(c) })) };
+      if (!v.code) return { ok: false, code: 'noSpawnCode', error: fill(txt(c, 'noSpawnCode'), vars(c, { vehicle: v.name || '' })) };
       // A NEGATIVE duration puts the expiry in the past: the player is charged and the very next
       // sweep destroys the vehicle. Refusing is the only answer that does not cost someone money.
       //
@@ -1378,7 +1739,7 @@ module.exports = {
       // costs nothing.
       if (parseInt(o.minutes, 10) < 0) {
         host.logger.warn(`rental refused: plan ${optIdx} on "${v.name || 'vehicle'}" has a NEGATIVE duration (${JSON.stringify(o.minutes)}), which would expire the moment it is paid for`);
-        return { ok: false, error: fill(txt(c, 'badDuration'), vars(c, { vehicle: v.name || '' })) };
+        return { ok: false, code: 'badDuration', error: fill(txt(c, 'badDuration'), vars(c, { vehicle: v.name || '' })) };
       }
 
       // Before the limits, because "you already have one" is the wrong complaint to hand somebody
@@ -1386,21 +1747,21 @@ module.exports = {
       const winErr = windowError(c, v, o);
       if (winErr) return { ok: false, error: winErr };
 
-      const limErr = limitsError(who.steamId, vehIdx, v, c);
-      if (limErr) return { ok: false, error: limErr };
-      if (c.requireOnline && isOnline(who.steamId) === false) return { ok: false, error: fill(txt(c, 'mustBeOnline'), vars(c)) };
+      const lim = limitsWhy(who.steamId, vehIdx, v, c);
+      if (lim) return { ok: false, code: lim.code, error: lim.error };
+      if (c.requireOnline && isOnline(who.steamId) === false) return { ok: false, code: 'mustBeOnline', error: fill(txt(c, 'mustBeOnline'), vars(c)) };
 
       // need a valid in-game position — never spawn a phantom vehicle at 0,0,0
       const loc = await playerLoc(who.steamId);
-      if (!loc || (!loc.x && !loc.y && !loc.z)) return { ok: false, error: fill(txt(c, 'notFound'), vars(c)) };
+      if (!loc || (!loc.x && !loc.y && !loc.z)) return { ok: false, code: 'notFound', error: fill(txt(c, 'notFound'), vars(c)) };
       const sec = await sectorAllowed(loc);
-      if (!sec.ok) return { ok: false, error: fill(txt(c, 'notAllowedHere'), vars(c, { sector: sec.sector })) };
+      if (!sec.ok) return { ok: false, code: 'notAllowedHere', error: fill(txt(c, 'notAllowedHere'), vars(c, { sector: sec.sector })) };
 
       // Asks the RUNNING GAME for the balance, not the last save (see `affordError`). This used to
       // read `SCUM.db` only, so for as long as the save interval a player who had just been paid was
       // refused and one who had just spent it all was let through.
       const affErr = await affordError(who.steamId, o, c);
-      if (affErr) return { ok: false, error: affErr };
+      if (affErr) return { ok: false, code: affordCode(affErr, c), error: affErr };
 
       // What was already parked here, so the vehicle we are about to spawn can be told apart from
       // the player's own. Taken BEFORE the spawn — after it, the two are indistinguishable.
@@ -1424,7 +1785,7 @@ module.exports = {
         const key = unconfirmed ? 'rentFailedUnconfirmed'
           : (spawnRes && /unavailable|offline|refused/i.test(String(spawnRes.error || ''))) ? 'rentFailedNoBridge'
             : 'rentFailedSpawn';
-        return { ok: false, error: fill(txt(c, key), vars(c, { vehicle: v.name || vehWord(c) })) };
+        return { ok: false, code: key, error: fill(txt(c, key), vars(c, { vehicle: v.name || vehWord(c) })) };
       }
       // ⚠ **A SPAWN CAN BE DISPATCHED, CONFIRMED, AND STILL HAVE SPAWNED NOTHING.** That is what a
       // stale code is: the command is perfect, the game answers *"'X' is not allowed to be spawned."*,
@@ -1440,12 +1801,14 @@ module.exports = {
             severity: 'warning',
           });
         } catch (e) { /* notifications are optional */ }
-        return { ok: false, error: fill(txt(c, 'spawnRefused'), vars(c, { vehicle: v.name || vehWord(c) })) };
+        return { ok: false, code: 'spawnRefused', error: fill(txt(c, 'spawnRefused'), vars(c, { vehicle: v.name || vehWord(c) })) };
       }
       // A charge that silently fails hands out a free vehicle, so take the vehicle back rather than
       // leave the player with something they didn't pay for.
       const paid = await charge(who.steamId, o, 1);
       if (!paid.ok) {
+        // Whether the vehicle could be taken back, for the log (see `noteRent`).
+        let stray = false;
         // The payment failed, so take the vehicle back rather than leave the player with one they did
         // not pay for. This one CANNOT be deferred — it has to find the vehicle now to remove it.
         const orphan = spawnedIdFrom(spawnRes) || await captureVehicleId({ x: loc.x + 300, y: loc.y, z: loc.z }, before);
@@ -1459,8 +1822,9 @@ module.exports = {
             const r = await host.server.command(fill(c.removeCmd, { vehId: orphan, steamid: who.steamId }));
             removed = ran(r);
           } catch (e) { removed = false; }
-          if (!removed) host.logger.warn(`rental: payment failed and the vehicle (${orphan}) could NOT be removed — ${who.playerName || who.steamId} has a ${v.name || 'vehicle'} they did not pay for`);
-        } else if (!orphan) host.logger.warn('rental: payment failed and the spawned vehicle could not be found to remove — check for a stray ' + (v.name || 'vehicle'));
+          if (!removed) { stray = true; host.logger.warn(`rental: payment failed and the vehicle (${orphan}) could NOT be removed — ${who.playerName || who.steamId} has a ${v.name || 'vehicle'} they did not pay for`); }
+        } else if (!orphan) { stray = true; host.logger.warn('rental: payment failed and the spawned vehicle could not be found to remove — check for a stray ' + (v.name || 'vehicle')); }
+        lastPayFail.set(String(who.steamId || ''), { code: paid.why === 'unconfirmed' ? 'chargeUnknown' : 'chargeFailed', stray: stray });
         // Which of the two it was decides the SENTENCE and nothing else: the rental is cancelled
         // either way, because handing out a vehicle on a payment nobody confirmed is the mistake in
         // the other direction. What must not happen is telling somebody whose money may be gone that
@@ -1471,9 +1835,10 @@ module.exports = {
       const now = Date.now(), exp = now + planMinutes(o) * 60000;
       let rentalId = null;
       if (db) {
-        const ins = db.prepare('INSERT INTO rentals (discordId,steamId,playerName,vehIdx,vehName,vehId,optIdx,startedAt,expiresAt,paidAmount,paidCurrency,paidMinutes,vehCode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        const ins = db.prepare('INSERT INTO rentals (discordId,steamId,playerName,vehIdx,vehName,vehId,optIdx,startedAt,expiresAt,paidAmount,paidCurrency,paidMinutes,vehCode,vehKey) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
           .run(who.discordId || '', who.steamId, who.playerName || '', String(vehIdx), v.name || '', '', Number(optIdx), now, exp,
-            c.free ? 0 : Math.max(0, parseInt(o.amount, 10) || 0), o.currency === 'gold' ? 'gold' : 'money', planMinutes(o), v.code || '');
+            c.free ? 0 : Math.max(0, parseInt(o.amount, 10) || 0), o.currency === 'gold' ? 'gold' : 'money', planMinutes(o), v.code || '',
+            (typeof v.id === 'string' && v.id) ? v.id : null);
         rentalId = ins.lastInsertRowid;
       }
       // Filled in behind the confirmation — see captureLater.
@@ -1696,18 +2061,21 @@ module.exports = {
     async function openVehicleMenu(i) {
       const c = forLang(discordLang(i), cfg());
       if (c.enabled === false) return i.reply({ content: fill(txt(c, 'disabled'), vars(c)), ...EPHEMERAL });
-      if (!c.vehicles.length) return i.reply({ content: fill(txt(c, 'noVehicles'), vars(c)), ...EPHEMERAL });
+      // What is on offer, and nothing else: a vehicle switched off is not in the menu. Each option
+      // still carries the vehicle's REAL position, so the menu and a rental agree on which it is.
+      const shown = offerList(c);
+      if (!shown.length) return i.reply({ content: fill(txt(c, 'noVehicles'), vars(c)), ...EPHEMERAL });
       const B = host.discord.js;
       const menu = new B.StringSelectMenuBuilder().setCustomId(VEH).setPlaceholder(txt(c, 'dcChooseVehicle').slice(0, 150))
         // Out-of-hours vehicles stay in the menu with the reason in their description, for the same
         // reason the chat listing keeps them: a menu that changes shape through the evening teaches
         // players that things vanish, and the one question they have — when? — goes unanswered.
-        .addOptions(c.vehicles.slice(0, 25).map(function (v, idx) {
+        .addOptions(shown.slice(0, 25).map(function (v) {
           const shut = windowError(c, v, null);
           return {
-            label: (v.name || ('#' + (idx + 1))).slice(0, 100),
-            value: (idx + '.' + vehSig(v)).slice(0, 100),
-            description: (shut || fill(txt(c, 'dcPlanCount'), vars(c, { n: (v.options || []).length }))).slice(0, 100),
+            label: (v.name || ('#' + (v.at + 1))).slice(0, 100),
+            value: (v.at + '.' + vehSig(v)).slice(0, 100),
+            description: (shut || fill(txt(c, 'dcPlanCount'), vars(c, { n: v.options.length }))).slice(0, 100),
           };
         }));
       return i.reply({ content: fill(txt(c, 'dcPickVehicle'), vars(c)), components: [host.discord.row(menu)], ...EPHEMERAL });
@@ -1715,10 +2083,14 @@ module.exports = {
     async function openDurationMenu(i, vehRef) {
       const c = forLang(discordLang(i), cfg()); const ref = splitRef(vehRef); const v = c.vehicles[Number(ref.idx)];
       if (!v || (ref.sig && vehSig(v) !== ref.sig)) return i.update({ content: STALE(i), components: [] });
-      if (!(v.options || []).length) return i.update({ content: fill(txt(c, 'dcNoPlans'), vars(c, { vehicle: v.name || '' })), components: [] });
+      if (!offered(v)) return i.update({ content: fill(txt(c, 'offerOff'), vars(c, { vehicle: v.name || vehWord(c) })), components: [] });
+      // The plans on offer, each keeping its real position for the value it sends back.
+      const plans = (v.options || []).map(function (o, oi) { return { o: o, oi: oi }; }).filter(function (x) { return offeredPlan(x.o); });
+      if (!plans.length) return i.update({ content: fill(txt(c, (v.options || []).length ? 'offerOff' : 'dcNoPlans'), vars(c, { vehicle: v.name || '' })), components: [] });
       const B = host.discord.js;
       const menu = new B.StringSelectMenuBuilder().setCustomId((OPT + ':' + ref.idx + '.' + vehSig(v)).slice(0, 100)).setPlaceholder(txt(c, 'dcChoosePlan').slice(0, 150))
-        .addOptions(v.options.slice(0, 25).map(function (o, oi) {
+        .addOptions(plans.slice(0, 25).map(function (x) {
+          const o = x.o, oi = x.oi;
           const shut = windowError(c, v, o);
           const opt = {
             label: (fmtDur(planMinutes(o), durWords(c)) + ' — ' + (c.free ? txt(c, 'free') : money(o, c))).slice(0, 100),
@@ -1748,7 +2120,7 @@ module.exports = {
         return i.update({ content: STALE(i), components: [] });
       }
       await i.update({ content: fill(txt(c0, 'dcProcessing'), vars(c0)), components: [] });
-      const res = await rent({ steamId: prof.steamId, discordId: i.user.id, playerName: prof.name || prof.discordUsername || '', lang: lang || undefined }, vr.idx, or.idx);
+      const res = await rent({ steamId: prof.steamId, discordId: i.user.id, playerName: prof.name || prof.discordUsername || '', lang: lang || undefined, via: 'discord' }, vr.idx, or.idx);
       if (!res.ok) { try { await i.editReply({ content: res.error, embeds: [] }); } catch (e) {} return; }
       const embed = confirmEmbed(res.v, res.o, res.exp, forLang(lang, cfg()));
       try { await i.editReply(withUploads({ content: '', embeds: [embed] })); } catch (e) {}
@@ -1774,7 +2146,7 @@ module.exports = {
       // with a message they also never see. Deferring buys 15 minutes, which is longer than any of
       // that can take.
       try { await i.deferReply(EPHEMERAL); } catch (e) { /* already acknowledged */ }
-      const out = await extendRental(r, lang || undefined);
+      const out = await extendRental(r, lang || undefined, 'discord');
       const said = out.ok ? fill(txt(cd, 'dcExtended'), rentalVars(r, cd, { expires: '<t:' + Math.floor(out.exp / 1000) + ':R>' })) : out.error;
       try { return await i.editReply({ content: said }); }
       catch (e) {
@@ -1796,22 +2168,52 @@ module.exports = {
      * to hit twice, and both calls would charge before either had written the new expiry.
      */
     const extending = new Set();
-    async function extendRental(r, lang) {
+    async function extendRental(r, lang, via) {
       const key = 'r' + r.id;
-      if (extending.has(key)) { const ce = forLang(lang); return { ok: false, error: fill(txt(ce, 'extendBusy'), vars(ce)) }; }
-      extending.add(key);
-      try { return await extendInner(r, lang); } finally { extending.delete(key); }
+      let out;
+      if (extending.has(key)) { const ce = forLang(lang); out = { ok: false, code: 'extendBusy', error: fill(txt(ce, 'extendBusy'), vars(ce)) }; }
+      else {
+        extending.add(key);
+        try { out = await extendInner(r, lang); } finally { extending.delete(key); }
+      }
+      try {
+        const c = cfg();
+        const price = (out.ok && out.o && !c.free) ? Math.max(0, parseInt(out.o.amount, 10) || 0) : 0;
+        logAct({
+          action: 'extend', result: out.ok ? 'ok' : (out.code === 'extendRaceFailed' || out.code === 'extendRaceUnknown' ? 'problem' : 'refused'),
+          code: out.ok ? null : (out.code || 'closedNow'), steamId: r.steamId, playerName: r.playerName, rentalId: r.id,
+          vehName: r.vehName, via: via || '', said: out.ok ? '' : out.error,
+          amount: price || null, currency: price ? (out.o.currency === 'gold' ? 'gold' : 'money') : null,
+          minutes: out.o ? planMinutes(out.o) : null,
+        });
+      } catch (e) { host.logger.debug('activity: ' + e.message); }
+      return out;
     }
 
     // `lang` is the language of whoever asked (a chat command); Discord passes none.
     async function extendInner(r, lang) {
       const c = forLang(lang);
-      if (c.allowExtend === false) return { ok: false, error: fill(txt(c, 'extendOff'), vars(c)) };
-      const v = c.vehicles[Number(r.vehIdx)];
+      // ⚠ **"RENTALS ENABLED" OFF STILL SOLD EXTENSIONS.** The master switch was read by renting
+      // alone, so an owner who shut rentals for the evening went on taking money for more time on
+      // every rental already out, and the Extend button on each reminder kept working. An extension
+      // is a purchase; returning is not, and stays open.
+      if (c.enabled === false) return { ok: false, code: 'disabled', error: fill(txt(c, 'disabled'), vars(c)) };
+      if (c.allowExtend === false) return { ok: false, code: 'extendOff', error: fill(txt(c, 'extendOff'), vars(c)) };
+      // The rental's OWN vehicle, by its id (see `vehicleOf`), not whatever sits at its old position.
+      const v = vehicleOf(r, c);
       const o = planOf(r, c);
       const effMaxExt = (v && v.maxExtensions != null && v.maxExtensions !== '') ? Number(v.maxExtensions) : c.maxExtensions;
-      if (effMaxExt && (r.extensions || 0) >= effMaxExt) return { ok: false, error: fill(txt(c, 'extendMaxed'), rentalVars(r, c, { max: effMaxExt })) };
-      if (!o) return { ok: false, error: fill(txt(c, 'extendNoPrice'), rentalVars(r, c)) };
+      if (effMaxExt && (r.extensions || 0) >= effMaxExt) return { ok: false, code: 'extendMaxed', error: fill(txt(c, 'extendMaxed'), rentalVars(r, c, { max: effMaxExt })) };
+      if (!o) return { ok: false, code: 'extendNoPrice', error: fill(txt(c, 'extendNoPrice'), rentalVars(r, c)) };
+      // More time on a vehicle or a plan that is no longer for sale is not for sale either. A
+      // rental row from 1.11 on knows its vehicle; one that does not (its vehicle was deleted) is
+      // not offered any more by definition.
+      {
+        const plan = v ? (v.options || [])[Number(r.optIdx)] : null;
+        const gone = !!r.vehKey && !v;                       // its vehicle was deleted from the fleet
+        const off = !!v && (!offered(v) || (plan && !offeredPlan(plan)));
+        if (gone || off) return { ok: false, code: 'offerOff', error: fill(txt(c, 'offerOff'), rentalVars(r, c)) };
+      }
       // An extension is a fresh purchase at the same price, so it has to obey the same window. Without
       // this the happy hour has a hole you can drive through: rent at 20:30 for the cheap plan, then
       // top it up at that price all night. The rental itself is NOT cut short — what a player already
@@ -1831,19 +2233,19 @@ module.exports = {
       // RETURNING deliberately does NOT check this. Handing the vehicle back is how a player stops
       // paying, and refusing it while they are offline would trap them in a rental they are trying
       // to end — the opposite of what the setting is for.
-      if (c.requireOnline && isOnline(r.steamId) === false) return { ok: false, error: fill(txt(c, 'extendMustBeOnline'), rentalVars(r, c)) };
+      if (c.requireOnline && isOnline(r.steamId) === false) return { ok: false, code: 'extendMustBeOnline', error: fill(txt(c, 'extendMustBeOnline'), rentalVars(r, c)) };
       // `endRental` checks this before claiming to have removed something; extending has to check it
       // before taking money for more time on it. Someone else blowing the car up at minute 50 should
       // not cost the renter another full price at minute 55.
       const liveId = await vehIdOf(r);
       if (c.verifyVehicle !== false && liveId && !(await vehicleExists(liveId))) {
-        return { ok: false, error: fill(txt(c, 'extendGone'), rentalVars(r, c)) };
+        return { ok: false, code: 'extendGone', error: fill(txt(c, 'extendGone'), rentalVars(r, c)) };
       }
       const affErr = await affordError(r.steamId, o, c, true);
-      if (affErr) return { ok: false, error: affErr };
+      if (affErr) return { ok: false, code: affordCode(affErr, c) === 'notEnough' ? 'notEnoughExtend' : 'balanceListCut', error: affErr };
       // Same rule as renting: if the charge doesn't land, don't hand out the time.
       const paid = await charge(r.steamId, o, 1);
-      if (!paid.ok) return { ok: false, error: fill(txt(c, paid.why === 'unconfirmed' ? 'extendUnknown' : 'extendFailed'), rentalVars(r, c)) };
+      if (!paid.ok) return { ok: false, code: paid.why === 'unconfirmed' ? 'extendUnknown' : 'extendFailed', error: fill(txt(c, paid.why === 'unconfirmed' ? 'extendUnknown' : 'extendFailed'), rentalVars(r, c)) };
       const exp = Math.max(Date.now(), r.expiresAt) + planMinutes(o) * 60000;
       // `AND active=1`, and check it landed. Without it a player could click Extend on the reminder
       // DM at the exact moment the sweep expired the rental: they were charged, the row was already
@@ -1860,7 +2262,7 @@ module.exports = {
         catch (e) { back = { ok: false, why: 'refused' }; }
         if (!back.ok) host.logger.warn(`rental #${r.id}: extension lost the race and the refund ${back.why === 'unconfirmed' ? 'could NOT BE CONFIRMED (it may or may not have been paid)' : 'FAILED'} — check ${r.playerName || r.steamId}`);
         const raceKey = back.ok ? 'extendRace' : (back.why === 'unconfirmed' ? 'extendRaceUnknown' : 'extendRaceFailed');
-        return { ok: false, error: fill(txt(c, raceKey), rentalVars(r, c)) };
+        return { ok: false, code: raceKey, error: fill(txt(c, raceKey), rentalVars(r, c)) };
       }
       const told = await say(r.steamId, (cc) => fill(txt(cc, 'extendOk'), rentalVars(r, cc, { duration: fmtDur(planMinutes(o), durWords(cc)) })));
       return { ok: true, exp: exp, v: v, o: o, told: told };
@@ -1935,14 +2337,14 @@ module.exports = {
           const last = db.prepare('SELECT MAX(startedAt) m FROM rentals WHERE steamId=?').get(sid).m;
           if (last && (Date.now() - last) < gCd * 60000) return { ready: false, until: last + gCd * 60000 };
         }
-        const list = (c.vehicles || []);
+        const list = offerList(c);
         if (!list.length) return { ready: false, why: fill(txt(c, 'noVehicles'), vars(c)) };
         // Ready when ANY vehicle can be rented: a per-vehicle cap on one of six is not "you cannot
         // rent". The first vehicle's refusal is the one quoted, because a list of six is not a chat
         // line — and a server-wide cap refuses every vehicle identically anyway.
         let first = null;
         for (let i = 0; i < list.length; i++) {
-          const why = limitsError(sid, i, list[i], c);
+          const why = limitsError(sid, list[i].at, list[i].src, c);
           if (!why) return { ready: true };
           if (first === null) first = why;
         }
@@ -1954,11 +2356,20 @@ module.exports = {
         return liveFor(String(steamId || '')).length ? { ready: true } : { ready: false, why: fill(txt(c, 'noRentals'), vars(c)) };
       };
 
-      cmdOffs.push(host.chat.onCommand(c0.cmdRent || 'rent', async function (ctx) {
+      cmdOffs.push(host.chat.onCommand(cmdWord(c0.cmdRent, 'rent'), async function (ctx) {
         const c = forLang(ctx.lang);
-        if (c.enabled === false) return reply(ctx, fill(txt(c, 'disabled'), vars(c)));
-        const list = (c.vehicles || []);
-        if (!list.length) return reply(ctx, fill(txt(c, 'noVehicles'), vars(c)));
+        // The two refusals answered before any vehicle is chosen, logged like every other one.
+        const refuse = (code) => {
+          const line = fill(txt(c, code), vars(c));
+          logAct({ action: 'rent', result: 'refused', code, steamId: ctx.steamId, playerName: ctx.name || '', via: 'chat', said: line });
+          return reply(ctx, line);
+        };
+        if (c.enabled === false) return refuse('disabled');
+        // What is ON OFFER, numbered the way it is shown: a vehicle or a plan switched off on the
+        // Fleet screen is not listed, and the numbers a player types are the ones they were shown.
+        // `vi` / `pi` are the real positions in the configuration, which is what a rental records.
+        const list = offerList(c);
+        if (!list.length) return refuse('noVehicles');
         const n = parseInt(ctx.args[0], 10);
         const p = parseInt(ctx.args[1], 10);
         // No arguments (or nonsense) → show what can be rented, numbered, so the next command is obvious.
@@ -1967,16 +2378,16 @@ module.exports = {
           // changes shape through the evening, and a player who was told about a cheap night plan
           // yesterday cannot find it or learn when it comes back.
           const lines = list.map(function (v, idx) {
-            const plans = (v.options || []).map(function (o, oi) {
+            const plans = v.options.map(function (o, oi) {
               return (oi + 1) + ') ' + fmtDur(planMinutes(o), durWords(c)) + (c.free ? '' : ' ' + money(o, c)) + (windowOpen(c, v, o) ? '' : ' ⏳');
             }).join('  ');
             return (idx + 1) + '. ' + (v.name || vehTitle(c)) + ' — ' + (plans || txt(c, 'noPlans')) + (windowOpen(c, v, null) ? '' : ' ⏳');
           });
-          const anyShut = list.some(function (v) { return !windowOpen(c, v, null) || (v.options || []).some(function (o) { return !windowOpen(c, v, o); }); });
+          const anyShut = list.some(function (v) { return !windowOpen(c, v, null) || v.options.some(function (o) { return !windowOpen(c, v, o); }); });
           return reply(ctx, fill(txt(c, 'rentUsage'), vars(c, { list: fitLines(lines, txt(c, 'moreElsewhere')) + (anyShut ? '\n' + txt(c, 'closedMark') : '') })));
         }
         const v = list[n - 1];
-        const opts = v.options || [];
+        const opts = v.options;
         if (!Number.isFinite(p) || p < 1 || p > opts.length) {
           const plans = opts.map(function (o, oi) { return (oi + 1) + ') ' + fmtDur(planMinutes(o), durWords(c)) + (c.free ? '' : ' ' + money(o, c)) + (windowOpen(c, v, o) ? '' : ' ⏳'); }).join('  ');
           // Asking about one vehicle is specific enough to be told the actual times rather than a
@@ -1984,8 +2395,9 @@ module.exports = {
           const shut = windowError(c, v, null);
           return reply(ctx, fill(txt(c, 'pickPlan'), vars(c, { vehicle: v.name || vehTitle(c), list: plans || txt(c, 'noPlansPick') })) + (shut ? '\n' + shut : ''));
         }
+        const at = { vi: v.at, pi: opts[p - 1].at };
         const prof = host.players.bySteamId(ctx.steamId);
-        const res = await rent({ lang: ctx.lang, steamId: ctx.steamId, discordId: (prof && prof.discord_user_id) || (prof && prof.discordUserId) || '', playerName: ctx.name || (prof && prof.player_name) || '' }, String(n - 1), String(p - 1));
+        const res = await rent({ lang: ctx.lang, via: 'chat', steamId: ctx.steamId, discordId: (prof && prof.discord_user_id) || (prof && prof.discordUserId) || '', playerName: ctx.name || (prof && prof.player_name) || '' }, String(at.vi), String(at.pi));
         if (!res.ok) return reply(ctx, res.error);
         // The confirmation normally arrives through say(). With "Send messages in-game" switched OFF
         // that never fires, and this reply used to stay silent too — so the player was charged and
@@ -2000,7 +2412,7 @@ module.exports = {
         }
       }, { status: rentStatus }));
 
-      cmdOffs.push(host.chat.onCommand(c0.cmdMine || 'myrent', async function (ctx) {
+      cmdOffs.push(host.chat.onCommand(cmdWord(c0.cmdMine, 'myrent'), async function (ctx) {
         const c = forLang(ctx.lang);
         const rows = liveFor(ctx.steamId);
         if (!rows.length) return reply(ctx, fill(txt(c, 'noRentals'), vars(c)));
@@ -2009,13 +2421,17 @@ module.exports = {
         return reply(ctx, fitLines(lines, txt(c, 'moreElsewhere')));
       }, { status: haveRentalStatus }));
 
-      cmdOffs.push(host.chat.onCommand(c0.cmdExtend || 'extend', async function (ctx) {
+      cmdOffs.push(host.chat.onCommand(cmdWord(c0.cmdExtend, 'extend'), async function (ctx) {
         const c = forLang(ctx.lang);
         const rows = liveFor(ctx.steamId);
-        if (!rows.length) return reply(ctx, fill(txt(c, 'noRentals'), vars(c)));
+        if (!rows.length) {
+          const line = fill(txt(c, 'noRentals'), vars(c));
+          logAct({ action: 'extend', result: 'refused', code: 'noRentals', steamId: ctx.steamId, playerName: ctx.name || '', via: 'chat', said: line });
+          return reply(ctx, line);
+        }
         // The one running out first is the one they mean.
         const row = rows[0];
-        const out = await extendRental(row, ctx.lang);
+        const out = await extendRental(row, ctx.lang, 'chat');
         if (!out.ok) return reply(ctx, out.error);
         // Same as /rent: with in-game messages off — or with the line refused, which looks identical
         // to the player — extendRental's say() is silent, and this is the only thing that can tell
@@ -2026,28 +2442,36 @@ module.exports = {
         }
       }, { status: haveRentalStatus }));
 
-      cmdOffs.push(host.chat.onCommand(c0.cmdReturn || 'return', async function (ctx) {
+      cmdOffs.push(host.chat.onCommand(cmdWord(c0.cmdReturn, 'return'), async function (ctx) {
         const c = forLang(ctx.lang);
-        if (c.allowReturn === false) return reply(ctx, fill(txt(c, 'returnOff'), vars(c)));
+        // A refusal answers the player and goes in the log with its reason, in one step.
+        const refuse = (code, line, r) => {
+          logAct({ action: 'return', result: 'refused', code, steamId: ctx.steamId, playerName: ctx.name || (r && r.playerName) || '',
+            rentalId: r ? r.id : null, vehName: r ? r.vehName : '', via: 'chat', said: line });
+          return reply(ctx, line);
+        };
+        if (c.allowReturn === false) return refuse('returnOff', fill(txt(c, 'returnOff'), vars(c)));
         // `liveFor`, like /extend and /myrent. `activeFor()[0]` is the row expiring FIRST, which can
         // be one that ran out a moment ago and the minute sweep has not closed yet — so a player
         // holding that and a live rental was told "nothing to return" about the live one.
         const rows = liveFor(ctx.steamId);
-        if (!rows.length) return reply(ctx, fill(txt(c, 'noRentals'), vars(c)));
+        if (!rows.length) return refuse('noRentals', fill(txt(c, 'noRentals'), vars(c)));
         const r = rows[0];
         // An expired rental is not returnable. The sweep runs once a minute, so between expiry and
         // the next tick a player could hand back a rental that had already run out and collect the
         // full early-return refund — every single time, and for the whole backlog after a restart.
         if (r.expiresAt && r.expiresAt <= Date.now()) {
-          return reply(ctx, fill(txt(c, 'nothingToReturn'), vars(c)));
+          return refuse('nothingToReturn', fill(txt(c, 'nothingToReturn'), vars(c)), r);
         }
         // Only a definite NO stops it — `available` absent or the health call failing is "I could
         // not find out", and refusing a return on that would strand a player whose bridge is fine.
         let health = null;
         try { health = await host.server.bridge(); } catch (e) { health = null; }
-        if (health && health.available === false) return reply(ctx, fill(txt(c, 'returnNoBridge'), vars(c)));
+        if (health && health.available === false) return refuse('returnNoBridge', fill(txt(c, 'returnNoBridge'), vars(c)), r);
         const out = await endRental(r, 'returned');
-        if (out.alreadyClosed) return reply(ctx, fill(txt(c, 'nothingToReturn'), vars(c)));
+        if (out.alreadyClosed) return refuse('nothingToReturn', fill(txt(c, 'nothingToReturn'), vars(c)), r);
+        // What the log says happened to the money and the vehicle, filled in below.
+        let back = null, backCode = null;
         // Refund only what was actually given back: no vehicle to reclaim, no refund.
         const pct = Math.max(0, Math.min(100, Number(c.refundPercent) || 0));
         let refundNote = '';
@@ -2065,14 +2489,17 @@ module.exports = {
         const gone = !!(pct && !out.stillThere);
         if (pct) {
           const o = planOf(r, c);
-          if (!o) refundNote = note(c, 'refundNoPrice');
+          if (!o) { refundNote = note(c, 'refundNoPrice'); backCode = 'refundNoPrice'; }
           else {
             // A refund that fails must not be reported as a refund that happened. This used to be a
             // bare `catch {}` around a return value nobody read, so a bridge refusal reached the
             // player as "Thanks!" and nothing in their bank.
             let paid = { ok: false, why: 'refused' };
             try { paid = await charge(r.steamId, o, -(pct / 100)); } catch (e) { paid = { ok: false, why: 'refused' }; }
+            // A refund is owed in free mode too (see `charge`), so it is logged whenever it was paid.
+            if (paid.ok) back = { amount: -Math.round(Math.max(0, parseInt(o.amount, 10) || 0) * pct / 100), currency: o.currency };
             if (!paid.ok) {
+              backCode = paid.why === 'unconfirmed' ? 'refundUnknown' : 'refundFailed';
               // "The refund could not be paid out" is a claim about the money, and on the
               // unconfirmed path it is a claim nobody can make: the delta went to the game's static
               // dispatch, which answers nothing at all. Saying it failed sends the player to an
@@ -2087,12 +2514,17 @@ module.exports = {
         } else if (gone) refundNote = note(c, 'refundGone');
         if (!out.removed && out.stillThere) {
           refundNote += note(c, 'returnStuck');
+          backCode = backCode || 'returnStuck';
           host.logger.warn(`rental #${r.id}: returned but the vehicle could not be removed — it is still in the world untracked`);
         }
-        return reply(ctx, fill(txt(c, 'returned'), rentalVars(r, c)) + refundNote);
+        const line = fill(txt(c, 'returned'), rentalVars(r, c)) + refundNote;
+        logAct({ action: 'return', result: backCode && backCode !== 'refundNoPrice' ? 'problem' : 'ok', code: backCode,
+          steamId: ctx.steamId, playerName: ctx.name || r.playerName, rentalId: r.id, vehName: r.vehName, via: 'chat',
+          said: backCode ? line : '', amount: back && back.amount ? back.amount : null, currency: back && back.amount ? back.currency : null });
+        return reply(ctx, line);
       }, { status: haveRentalStatus }));
 
-      host.logger.info('in-game commands: ' + [c0.cmdRent || 'rent', c0.cmdMine || 'myrent', c0.cmdExtend || 'extend', c0.cmdReturn || 'return'].map(function (n) { return (host.chat.prefix ? host.chat.prefix() : '/') + n; }).join(' '));
+      host.logger.info('in-game commands: ' + [cmdWord(c0.cmdRent, 'rent'), cmdWord(c0.cmdMine, 'myrent'), cmdWord(c0.cmdExtend, 'extend'), cmdWord(c0.cmdReturn, 'return')].map(function (n) { return (host.chat.prefix ? host.chat.prefix() : '/') + n; }).join(' '));
     }
     registerCommands();
 
@@ -2101,6 +2533,11 @@ module.exports = {
     // plus a DM plus a chat line PER expired rental. A sweep still running when the next minute ticks
     // re-selected the same rows — the vehicle was destroyed twice and the player told twice.
     let sweeping = false;
+    // When the sweep last ran, and how many rentals it is holding because the game cannot take their
+    // vehicle back right now — both read by `/status`.
+    let lastSweepAt = 0;
+    let sweepWaiting = 0;
+    let sweepWaitSaid = 0;
     host.schedule.every(60000, async function () {
       if (!db || sweeping) return;
       sweeping = true;
@@ -2113,16 +2550,25 @@ module.exports = {
     async function sweep() {
       if (!db) return;
       const c = cfg(), now = Date.now();
+      lastSweepAt = now;
       const B = host.discord.js;
       const perVehRems = (c.vehicles || []).map((v) => (v && v.reminderMinutes != null && v.reminderMinutes !== '') ? Number(v.reminderMinutes) : 0).filter((x) => x > 0);
       const maxRem = Math.max.apply(null, [(c.reminderMinutes != null && c.reminderMinutes !== '' ? Number(c.reminderMinutes) : 10)].concat(perVehRems));
-      const soon = db.prepare('SELECT * FROM rentals WHERE active=1 AND reminded=0 AND (expiresAt - ?) <= ?').all(now, maxRem * 60000);
+      // ⚠ **A REMINDER FOR A RENTAL THAT HAD ALREADY RUN OUT.** This took every unreminded row whose
+      // time left was under the reminder window — and a row that ran out is under every window,
+      // including zero. So a rental that expired while the manager was down, or any rental at all with
+      // the reminder set to 0, was told "your rental ends in 1 min" and, in the same sweep, that it had
+      // ended. Only a rental still running is reminded, and 0 now means no reminder.
+      const soon = db.prepare('SELECT * FROM rentals WHERE active=1 AND reminded=0 AND expiresAt > ? AND (expiresAt - ?) <= ?').all(now, now, maxRem * 60000);
       for (const r of soon) {
-        const rv = c.vehicles[Number(r.vehIdx)];
+        const rv = vehicleOf(r, c);
         const effRem = (rv && rv.reminderMinutes != null && rv.reminderMinutes !== '') ? Number(rv.reminderMinutes) : (c.reminderMinutes != null && c.reminderMinutes !== '' ? Number(c.reminderMinutes) : 10);
         if ((r.expiresAt - now) > effRem * 60000) continue; // not within this rental's own reminder window yet
         const effMaxExt = (rv && rv.maxExtensions != null && rv.maxExtensions !== '') ? Number(rv.maxExtensions) : c.maxExtensions;
-        const canExtend = c.allowExtend !== false && (!effMaxExt || (r.extensions || 0) < effMaxExt);
+        // The Extend button is offered only where pressing it can work: not with rentals switched
+        // off, and not for a vehicle that is no longer on offer.
+        const canExtend = c.enabled !== false && c.allowExtend !== false && (!effMaxExt || (r.extensions || 0) < effMaxExt)
+          && !(r.vehKey && !rv) && (!rv || offered(rv));
         // The DM is read by the renter alone, so it is in their language; the rules above stay the server's.
         const cr = forLang(playerLang(r.steamId), cfg());
         const em = host.discord.embed().setTitle(txt(cr, 'embSoonTitle').slice(0, 256)).setColor(0xe6b23a)
@@ -2135,8 +2581,33 @@ module.exports = {
         db.prepare('UPDATE rentals SET reminded=1 WHERE id=?').run(r.id);
       }
       const expired = db.prepare('SELECT * FROM rentals WHERE active=1 AND expiresAt <= ?').all(now);
+      // ⚠ **WITH THE GAME UNREACHABLE, EXPIRY CLOSED THE RENTAL AND LEFT ITS VEHICLE IN THE WORLD FOR
+      // GOOD.** `endRental` claims the row first, then asks the bridge to remove the vehicle — and with
+      // the bridge down (the server stopped, restarting, or the bridge off) the removal fails, the row
+      // is closed all the same, and nothing ever tries again: every rental that ran out during a
+      // restart left a free, untracked vehicle on the map. `/return` has refused on a definite "the
+      // bridge is not there" for exactly this reason; the sweep now waits the same way and finishes
+      // the job once the game can take the vehicle back. Commands already treat such a rental as
+      // over (see `liveFor`), so nobody can extend or return it meanwhile.
+      if (expired.length) {
+        let health = null;
+        try { health = await host.server.bridge(); } catch (e) { health = null; }
+        if (health && health.available === false) {
+          sweepWaiting = expired.length;
+          if (now - sweepWaitSaid > 3600000) {
+            sweepWaitSaid = now;
+            host.logger.info(`${expired.length} rental(s) have run out and wait for the game: their vehicles are removed when the SSA Bridge answers again.`);
+          }
+          return;
+        }
+      }
+      sweepWaiting = 0;
       for (const r of expired) {
         const out = await endRental(r, 'expired');
+        if (!out.alreadyClosed) {
+          logAct({ action: 'expire', result: (out.removed || !out.stillThere) ? 'ok' : 'problem', code: (out.removed || !out.stillThere) ? null : 'expiredStuck',
+            steamId: r.steamId, playerName: r.playerName, rentalId: r.id, vehName: r.vehName, via: 'sweep' });
+        }
         const cr = forLang(playerLang(r.steamId), cfg());
         const em = host.discord.embed().setTitle(txt(cr, 'embEndedTitle').slice(0, 256)).setColor(0xff5c5c)
           .setDescription(fill(txt(cr, out.removed ? 'embEndedRemoved' : 'embEnded'), rentalVars(r, cr)).slice(0, 4096));
