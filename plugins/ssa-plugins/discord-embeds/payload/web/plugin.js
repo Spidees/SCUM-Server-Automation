@@ -2918,7 +2918,7 @@
     }
     var logTable = SSA.table({
       columns: [
-        { key: 'at', label: T('pl.discord-embeds.col.when', 'When'), sort: true, sortVal: function (a) { return a.at; }, render: function (a) { return h('span', { title: new Date(a.at).toLocaleString(SSA.lang()) }, new Date(a.at).toLocaleString(SSA.lang())); } },
+        { key: 'at', label: T('pl.discord-embeds.col.when', 'When'), sort: true, sortVal: function (a) { return a.at; }, render: function (a) { return h('span', { class: 'ee-when', title: new Date(a.at).toLocaleString(SSA.lang()) }, new Date(a.at).toLocaleString(SSA.lang())); } },
         { key: 'kind', label: T('pl.discord-embeds.col.what', 'What'), render: function (a) { return h('span', {}, actKind(a.kind)); } },
         { key: 'title', label: T('pl.discord-embeds.col.subject', 'Message or button'), render: function (a) {
           var bits = [h('b', {}, a.title || T('pl.discord-embeds.noTitle', '(no title)'))];

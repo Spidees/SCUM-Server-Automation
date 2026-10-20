@@ -48,6 +48,8 @@
 .ee-embed .ee-thumb img{width:72px;height:72px;object-fit:cover;border-radius:4px}
 .ee-embed .ee-footer{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-top:8px;color:#949ba4;font-size:.75rem}
 .ee-embed .ee-footer .ee-foot-time{white-space:nowrap}
+/* A time is one value: the When cell of the activity and scheduled tables never breaks across lines, on a phone either. */
+.ee-when{white-space:nowrap}
 .ee-embed .ee-footer img{width:18px;height:18px;border-radius:50%}
 .ee-pv-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;max-width:520px}
 .ee-pv-btn{font-size:.82rem;font-weight:600;padding:.42rem .8rem;border-radius:4px;border:0;color:#fff;background:#4e5058}
