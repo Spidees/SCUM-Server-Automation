@@ -8,7 +8,8 @@ told in your own words. Inside a zone you can also **keep sentries and zombies o
 **busier or quieter** by changing the spawn plan the game itself uses. A zone can carry **variants**,
 one picked at random every server restart, built in one click from **presets**, and the whole list,
 a hundred zones or more, is set up from the tab: **create one zone per loot set in one go**, filter,
-tick and change many at once.
+tick and change many at once. An **Activity** screen shows **every switch, rotation step, guard and
+refusal** with its time and zone, what is live now and what comes next.
 
 ## How it works
 
@@ -90,6 +91,11 @@ tick and change many at once.
   none at all. *Makes up to five each time* and *makes none at all* are two different lines.
 - **Everything it changes, it puts back**: when the zone goes off, when the plugin is switched off,
   by itself after a while even if the manager stops running, and at the next server restart.
+  Switching the plugin off also **takes its own guards away** and puts SCUM's sentry respawn delay back.
+- **Everything it does is written down.** Each zone switched on or off (and by what: the schedule,
+  the restart rotation or you), each variant picked, each guard sent or taken away, each sentry or
+  zombie kept out, each loot reload and spawn plan change, and **each refusal in the bridge's own
+  words**, with the time and the zone. A refusal that repeats is one line with a count.
 
 ## Requirements
 
@@ -107,8 +113,15 @@ tick and change many at once.
 ## Configuration
 
 Everything is configured from the plugin's **admin tab** (📦 Loot Zones). Nothing needs `config.json`.
-The tab has three parts:
+The tab has four screens under one header:
 
+- **The header**, on every screen: whether Loot Zones is on, the zones, how many are in rotation and
+  live, the posts held and the guards standing in the live zones. With the server stopped it says
+  so, since everything can be set up then. It also names, with their live state, the bridge settings
+  this setup uses that decide whether a guard ever appears or a zone can be cleared: **Load a class
+  the game has not made yet** and **Bosses** on Precise spawning, **Time of day and day length** on
+  Live player data, and **Largest radius one call may use** on Remove from the world. A new owner
+  gets a note naming the screens to start with.
 - **Zones**: the whole list on one page, one row per zone with its name and loot set, its sector,
   its shape and size, what is in the area (sentry posts, an abandoned bunker, or no sentries), the
   variant running this session, whether anything needs fixing, and its rotation switch. Search it,
@@ -144,16 +157,28 @@ The tab has three parts:
     now* swaps this session's variant.
 - **Messages**: the chat channel and the four messages, each with its text per language, where it
   goes, and a *Try it in game* button. Tokens such as `{zone}`, `{zones}` and `{player}` are filled in.
-- **Settings and actions**: the zone name prefix and the rectangle players see (one of your zone
-  configurations, or the plugin's own with its visibility, entry notice and colour), how zones are
-  chosen (by hand, on a schedule or one per restart, and under *More options* the zones at once, the
-  time between switches, the reload, the check interval and the loot sets folder), and *Switch
-  everything off*, *Reload loot now* and *Check against the game*.
+- **Settings and actions**: **Loot Zones on**, the plugin's own switch; how zones are chosen (by
+  hand, on a schedule or one per restart, the zones at once, the time between switches, *Reload loot
+  after a switch*, the check interval and the loot sets folder); the zone name prefix and the
+  rectangle players see (one of your zone configurations, or the plugin's own with its visibility,
+  entry notice and colour); **Defaults for new zones**, the guard, protection and spawn settings a
+  zone runs on until it has its own; and *Switch everything off*, *Reload loot now* and *Check
+  against the game*.
+- **Activity**: **Live now** (each live zone, since when, its variant, whether a player is near and
+  how many of its places are held, and the first thing it could not do), **Comes next** (the next
+  opening or closing on a schedule, the zone the next restart takes, the gap before the next switch)
+  and **What happened**, the last 400 entries with a filter, a zone search and pages of 25.
 - **Bridge**: at the top of the zone list, the switches your settings need, with one button to turn
   on the ones an owner may.
 
 ## Good to know
 
+- **Loot Zones on is the plugin's own switch.** Off, no zone is switched on (not even by hand),
+  guarded or announced; its guards are taken away and spawn plans go back, and zones already live
+  keep their loot until you switch them off. It ships off.
+- **A restart rotation the gap between switches holds back keeps its turn.** The zone stays as it
+  was, the Activity screen says why, and the next stop takes the zone that was due.
+- **The Activity screen keeps the last 400 entries**, across manager restarts.
 - **"In rotation" means a zone may be chosen, not that it goes live.** How many zones are live at once
   and how they are chosen are set under *Settings and actions*: with rotation by hand and one zone at
   a time, putting fifty zones in rotation still leaves one live. The list says which rotation runs,

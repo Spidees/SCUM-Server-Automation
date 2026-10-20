@@ -1241,9 +1241,129 @@ module.exports = {
       }
     }
 
+    /**
+     * ── WHAT THIS PLUGIN DID, IN ORDER: THE ACTIVITY JOURNAL ───────────────────────────────────────
+     *
+     * Every switch, rotation step, variant pick, guard sent, guard or sentry taken away, loot reload
+     * and refusal is one entry, with the time, the zone and, for a refusal, the bridge's own words.
+     * The manager's log has all of it already, but a log is a file an owner has to go and find, and
+     * the tab's Activity screen is where they look for "what happened at Small Port last night".
+     *
+     * ⚠ **AN ENTRY THAT REPEATS IS COUNTED, NOT ADDED.** A refusal comes back every few seconds while
+     * a player stands in the zone, and a schedule waiting for the switch gap asks again every tick;
+     * a list of five hundred copies of one sentence is a list nobody reads, and it pushes everything
+     * else out of the ring. So an entry whose kind, zone and words match one of the last few is
+     * folded into it (`times`, `last`).
+     *
+     * In the store, so a manager restart keeps what happened before it, and written at most every
+     * two seconds: one patrol round can add three entries and a store write is a file write.
+     */
+    const JOURNAL_MAX = 400;
+    const JOURNAL_FOLD = 12;
+    let journalBuf = null;
+    let journalTimer = null;
+    let journalSeq = 0;
+    function journalList() {
+      if (!journalBuf) {
+        const v = safe(() => host.store.get('journal', []), []);
+        journalBuf = Array.isArray(v) ? v.filter((e) => e && typeof e === 'object').slice(-JOURNAL_MAX) : [];
+        journalSeq = journalBuf.reduce((m, e) => Math.max(m, nz(e.seq, 0)), 0);
+      }
+      return journalBuf;
+    }
+    function flushJournal() {
+      if (journalTimer) { clearTimeout(journalTimer); journalTimer = null; }
+      if (!journalBuf) return;
+      try { host.store.set('journal', journalBuf); } catch (e) { if (log) log.warn(`store write failed: ${e && e.message}`); }
+    }
+    /**
+     * One entry. `kind` is what happened, `zone` the configured entry it happened to (or null for the
+     * whole island), and `f` the facts: `by` (who caused it: schedule, restart, owner, patrol, boot),
+     * `ok`, `n`, `why` (the bridge's or the game's own sentence, travelling with its code where it has
+     * one) and whatever else that kind carries. Never throws: it is called from inside every flow
+     * this plugin has, and a journal that cannot be written must not stop the thing it records.
+     */
+    function journal(kind, zone, f) {
+      try {
+        const list = journalList();
+        const facts = Object.assign({}, f || {});
+        const e = {
+          at: Date.now(), kind: String(kind),
+          zone: zone && zone.id != null ? String(zone.id) : null,
+          name: zone ? String(zone.name || zone.set || zone.id || '') : null,
+        };
+        for (const k of Object.keys(facts)) {
+          const v = facts[k];
+          if (v === undefined || v === null || v === '') continue;
+          e[k] = (typeof v === 'string' && v.length > 400) ? `${v.slice(0, 400)}…` : v;
+        }
+        if (typeof e.why === 'string') {
+          const c = codeOf(e.why);
+          if (c) e.whyCode = c;
+        }
+        // Everything but WHEN and how often, in one key order: a stored entry carries `seq`, `last`
+        // and `times` and a new one does not, so a copy with those zeroed out compared unequal by
+        // the order its keys came in.
+        const gist = (x) => JSON.stringify(Object.keys(x).filter((k) => k !== 'at' && k !== 'last' && k !== 'times' && k !== 'seq')
+          .sort().map((k) => [k, x[k]]));
+        const g = gist(e);
+        for (let i = list.length - 1; i >= 0 && i >= list.length - JOURNAL_FOLD; i--) {
+          if (gist(list[i]) === g) {
+            list[i].times = nz(list[i].times, 1) + 1;
+            list[i].last = e.at;
+            // Moved to the end: it is the newest thing that happened, again.
+            const again = list.splice(i, 1)[0];
+            again.seq = ++journalSeq;
+            list.push(again);
+            pushJournal(again);
+            scheduleJournal();
+            return again;
+          }
+        }
+        e.seq = ++journalSeq;
+        list.push(e);
+        if (list.length > JOURNAL_MAX) list.splice(0, list.length - JOURNAL_MAX);
+        pushJournal(e);
+        scheduleJournal();
+        return e;
+      } catch (err) {
+        if (log) log.debug(`journal: ${err && err.message}`);
+        return null;
+      }
+    }
+    function scheduleJournal() {
+      if (journalTimer) return;
+      journalTimer = setTimeout(() => { journalTimer = null; flushJournal(); }, 2000);
+      if (journalTimer && typeof journalTimer.unref === 'function') journalTimer.unref();
+    }
+    // The tab's Activity screen redraws on this rather than waiting for its next poll. An older
+    // manager has no realtime door, and the screen then simply polls.
+    function pushJournal(e) {
+      try {
+        if (host.realtime && typeof host.realtime.toAdmins === 'function') host.realtime.toAdmins('loot-zones:journal', { seq: e.seq });
+      } catch { /* the poll covers it */ }
+    }
+
     const patrolClock = {};
     const patrolSeen = {};
     const lastRefusalLog = {};
+    /**
+     * Each refusal of a zone's patrol goes into the journal ONCE, when it is new for that zone.
+     *
+     * ⚠ **BY ITS CODE, NOT BY ITS WORDS.** Most of these carry a count that moves every round — a
+     * cooldown's seconds left, the places waiting near a player — so a refusal judged by its text is
+     * a new entry every five seconds for as long as somebody stands in the zone, which is the page of
+     * copies the journal folds exactly to avoid. A sentence with no code is judged by its text.
+     */
+    const lastRefusalKeys = {};
+    function journalRefusals(entry, refusals) {
+      const keyOf = (w) => { const c = codeOf(w); return c ? `#${c.code}` : String(w); };
+      const k = String(entry && entry.id);
+      const was = lastRefusalKeys[k] || new Set();
+      const list = (refusals || []).slice(0, 4);
+      for (const w of list) if (!was.has(keyOf(w))) journal('refusal', entry, { ok: false, why: w });
+      lastRefusalKeys[k] = new Set(list.map(keyOf));
+    }
     const wasAwake = {};
     /**
      * When each zone was first seen with nobody near it, and whether its own guards have already
@@ -1526,11 +1646,26 @@ module.exports = {
         if (valid && !force) { next[id] = had; continue; }
         const o = drawVariant(list);
         next[id] = { i: o.i, label: o.label, of: z.variants.length, at: Date.now(), why: String(why || '') };
-        changed.push({ z, from: valid ? had.i : null, to: o.i });
+        changed.push({ z, from: valid ? had.i : null, to: o.i, label: o.label });
         log.info(`"${z.name || z.set}" — ${why}: this server session runs variant ${o.i + 1} of `
           + `${z.variants.length}, "${o.label}"`);
       }
       if (JSON.stringify(next) !== JSON.stringify(was)) st.set(K.variants, next);
+      /**
+       * In the journal by zone for the zones that are LIVE, and as one line for the rest. A stop rolls
+       * every zone that has variants, which on a server with sixty of them is sixty lines about zones
+       * nobody can meet tonight, and they would push the switch that matters out of the list.
+       */
+      if (changed.length) {
+        const by = why === 'the server stopped' ? 'restart' : 'first';
+        const liveIds = new Set(getActive().map((a) => String(a.id)));
+        let rest = 0;
+        for (const ch of changed) {
+          if (liveIds.has(String(ch.z.id))) journal('variant', ch.z, { by, label: ch.label, index: ch.to, of: ch.z.variants.length });
+          else rest++;
+        }
+        if (rest) journal('variants', null, { by, n: rest });
+      }
       for (const ch of changed) {
         // A post holds the word of the guard it was given. A different variant starts from no posts,
         // so a rifleman's post is never kept waiting for a rifleman the new variant does not have.
@@ -2095,10 +2230,12 @@ module.exports = {
       if (r && r.ok && r.confirmed !== false && /reloaded/i.test(said)) {
         st.set(K.lootReloadedAt, Date.now());
         log.info(`loot reloaded on the running server — the game said: ${said}`);
+        journal('reload', null, { ok: true, said });
         return { ok: true, said };
       }
       const why = (r && (r.error || r.reason)) || (said ? `the game said: ${said}` : 'the game did not confirm it');
       log.warn(`loot reload was not confirmed (${why}); the loot lands at the next server start`);
+      journal('reload', null, { ok: false, why });
       return { ok: false, why };
     }
     // Read at once when the reload after a switch is on and the bridge is 2.22.2 or newer.
@@ -2945,6 +3082,13 @@ module.exports = {
         log.info(`"${entry.name || entry.set}" — ${out.removed} guard(s) removed (${why}); `
           + 'they return when somebody is near.');
       }
+      if (out.removed || out.refusals.length) {
+        // Why, as a word the tab translates: the three callers each pass one fixed sentence.
+        const reason = /Loot Zones was switched off/.test(String(why)) ? 'master'
+          : /switched off/.test(String(why)) ? 'off' : (/nobody is near/.test(String(why)) ? 'asleep'
+          : (/re-rolled/.test(String(why)) ? 'reroll' : 'other'));
+        journal('guardsAway', entry, { n: out.removed, reason, ok: !out.refusals.length, why: out.refusals[0] || null });
+      }
       return out;
     }
 
@@ -3136,6 +3280,7 @@ module.exports = {
       if (taken) {
         out.strayed = (out.strayed || 0) + taken;
         log.info(`"${entry.name || entry.set}" — ${taken} guard(s) that had left the zone's reach were taken away`);
+        journal('strayed', entry, { n: taken });
       }
       if (loose && life.leash === 'zone' && why) {
         out.refusals.push(coded('loose', { n: loose, why }, `${loose} guard(s) outside the zone could not be taken back yet: ${why}`));
@@ -3201,6 +3346,7 @@ module.exports = {
         }
         log.info(`"${entry.name || entry.set}" — ${removed} guard(s) walked out and were removed; `
           + 'their places refill.');
+        journal('strayed', entry, { n: removed });
       }
       if (stuck) {
         // Still counted as this zone's, so nothing is sent beside them; retried next round.
@@ -4627,6 +4773,9 @@ module.exports = {
         wasAwake[String(entry.id)] = false;
         markPatrolled(entry.id);
         rememberPatrol(entry.id, out);
+        // "Positions unknown" and a sleep sweep that could not remove its guards are refusals too,
+        // and this round returns before the summary that journals the rest.
+        journalRefusals(entry, out.refusals);
         return out;
       }
       out.awake = true;
@@ -5047,11 +5196,21 @@ module.exports = {
       // so it is logged only when its wording changes, and the card carries it every round.
       const said = out.refusals.join(' | ');
       const saidBefore = lastRefusalLog[String(entry.id)];
-      if (out.removed || out.stowed || out.spawned || (said && said !== saidBefore)) {
+      // ⚠ ZOMBIES COUNT AS SOMETHING DONE. `out.puppets` is its own counter, and a round that took
+      // only zombies out of the zone was neither logged nor counted as having done anything.
+      const puppets = nz(out.puppets, 0);
+      if (out.removed || out.stowed || out.spawned || puppets || (said && said !== saidBefore)) {
         log.info(`"${entry.name || entry.set}" patrol — put away ${out.stowed}, removed ${out.removed}, `
+          + `${puppets ? `${puppets} zombie(s) removed, ` : ''}`
           + `${out.held}/${out.posts} post(s) held, ${out.spawned} guard(s) sent`
           + `${out.refusals.length ? `, ${out.refusals.length} refused: ${out.refusals[0]}` : ''}`);
       }
+      if (out.spawned) journal('spawn', entry, { n: out.spawned, held: out.held, posts: out.posts });
+      if (out.stowed || out.removed || puppets) {
+        journal('despawn', entry, { stowed: out.stowed || null, removed: out.removed || null, puppets: puppets || null });
+      }
+      // Each refusal once, when it is NEW for this zone: the card carries it every round.
+      journalRefusals(entry, out.refusals);
       lastRefusalLog[String(entry.id)] = said;
       return out;
     }
@@ -6989,6 +7148,7 @@ module.exports = {
         if (back > 0) {
           const r = await bx('setSentryTuning', 'respawn', back);
           log.info(`sentry respawn delay put back to ${back}s ${r && r.ok ? '' : '(the bridge did not confirm it)'}`);
+          journal('respawn', null, { back: true, seconds: back, ok: !!(r && r.ok) });
         }
         return;
       }
@@ -7025,10 +7185,12 @@ module.exports = {
       const r = await bx('setSentryTuning', 'respawn', seconds);
       if (!r || r.ok !== true) {
         log.warn(`the sentry respawn delay could not be set: ${(r && (r.reason || r.error)) || NO_BRIDGE_ANSWER}`);
+        journal('respawn', null, { seconds, ok: false, why: (r && (r.reason || r.error)) || NO_BRIDGE_ANSWER });
         return;
       }
       if (was > 0 && !mine) st.set(K.respawnWas, was);
       st.set(K.respawnSet, seconds);
+      journal('respawn', null, { seconds, was: was > 0 ? was : null, ok: true });
       log.info(`sentry respawn delay set to ${seconds}s for EVERY guarded zone on the map`
         + `${was > 0 ? ` (it was ${was}s)` : ' (the old value could not be read, so it will not be put back)'}`);
     }
@@ -7510,6 +7672,7 @@ module.exports = {
       for (const nm of failed) next[nm] = held[nm];
       st.set(K.activitySet, next);
       dropPlacesCache();
+      if (restored || failed.length) journal('activityBack', null, { n: restored, failed: failed.length || null, ok: !failed.length });
       if (failed.length) {
         // The bridge also puts each back when its hold lapses.
         log.warn(`${failed.length} spawn schedule(s) are still changed (${failed.join(', ')}). `
@@ -7619,12 +7782,16 @@ module.exports = {
         }
         if (sent.length) {
           for (const s of sent) {
+            journal('activity', { name: s.zone }, { ok: true, asset: s.asset, chance: s.chance, base: s.base, usedBy: s.usedBy });
             log.info(`"${s.zone}" — ${s.asset} now spawns at ${s.chance}% of its ${s.base}% `
               + `(SHARED by ${s.usedBy == null ? 'an unknown number of' : s.usedBy} place(s) on the island). `
               + 'It resets on its own; nothing spawns until a player is near.');
           }
         }
-        for (const f of failed) log.warn(`${f.asset} was not changed — ${f.why}`);
+        for (const f of failed) {
+          log.warn(`${f.asset} was not changed — ${f.why}`);
+          journal('activity', null, { ok: false, asset: f.asset, why: f.why });
+        }
         return { known: true, sent, failed, refused: plan.refused, zones: plan.zones, holdSec: hold };
       } finally {
         activityBusy = false;
@@ -7688,7 +7855,7 @@ module.exports = {
       return out;
     };
 
-    async function deliver(which, tokens, steamId) {
+    async function deliver(which, tokens, steamId, opts) {
       const c = cfg();
       const m = (c.messages || {})[which];
       if (!m) return { sent: false, why: 'there is no such message', routes: 0, failed: [] };
@@ -7748,6 +7915,13 @@ module.exports = {
       const res = await Promise.all(jobs.map((p) => Promise.resolve(p).catch((e) => ({ ok: false, error: e && e.message }))));
       // `bx()` answers null for a bridge that is not there, which is a route that did not arrive too.
       const bad = res.map((r) => (r === null ? { ok: false, error: NO_BRIDGE_ANSWER } : r)).filter((r) => r && r.ok === false);
+      const quietTest = !!(opts && opts.test);
+      if (bad.length && !steamId && !quietTest) {
+        journal('message', null, { which, ok: false, n: bad.length, of: jobs.length,
+          why: String(bad[0].reason || bad[0].error || 'refused') === 'bridge_unavailable' ? NO_BRIDGE_ANSWER : String(bad[0].reason || bad[0].error || 'refused') });
+      } else if (!steamId && jobs.length && !quietTest) {
+        journal('message', null, { which, ok: true, of: jobs.length });
+      }
       if (bad.length) {
         log.warn(`the "${which}" message did not reach ${bad.length} of its ${jobs.length} route(s): `
           + bad.map((b) => b.reason || b.error || 'refused').join('; '));
@@ -7879,7 +8053,11 @@ module.exports = {
       st.set(K.lootWrittenAt, Date.now());
       st.set(K.lootPendingKind, 'off');
       log.info(`"${entry.name || entry.set}" off — loot files removed; normal loot from the next start`);
-      return { erased, nothingThere };
+      // `cleared`: the rectangle is off the map by one route or the other, or there was none. Without
+      // it a caller has only the bridge's rows, and a save that took the rectangle out after the bridge
+      // refused reads as a failure.
+      const owedWhy = (!byBridge && !bySave && !nothingThere) ? (erased.map((x) => x.why).filter(Boolean)[0] || '') : null;
+      return { erased, nothingThere, cleared: byBridge || bySave || nothingThere, by: byBridge ? 'bridge' : (bySave ? 'save' : null), owedWhy };
     }
 
     async function activate(entry) {
@@ -8047,6 +8225,7 @@ module.exports = {
               }
             }
           }
+          journal('drawn', e, { ok: true, drawnBy: a.drawnBy || null });
           log.info(`"${e.name || e.set}" — the rectangle is ${a.drawnBy === 'save'
             ? 'in the save, and players see it when the server starts' : 'on the map now'}`);
         }
@@ -8061,7 +8240,13 @@ module.exports = {
      * one place that knows how to switch and one place the guard lives.
      */
     async function applyWanted(wantIds, why) {
-      if (busy) return { ok: false, why: 'a switch is already in progress' };
+      // Who asked, for the journal: the schedule, the restart rotation, the owner on the tab.
+      const by = String((why && why.by) || 'owner');
+      if (busy) {
+        const r = { ok: false, why: 'a switch is already in progress' };
+        journal('refused', null, { by, why: r.why });
+        return r;
+      }
       const c = cfg();
       const byId = new Map((c.zones || []).map((z) => [String(z.id), z]));
       const want = wantIds.map(String).filter((id) => byId.has(id)).slice(0, Math.max(1, nz(c.maxActive, 1)));
@@ -8078,6 +8263,9 @@ module.exports = {
       const last = nz(st.get(K.lastSwitch, 0), 0);
       if (gap && last && (Date.now() - last) < gap && !(why && why.force)) {
         const leftM = Math.ceil((gap - (Date.now() - last)) / 60000);
+        // Journalled WITHOUT the minutes left, which move every tick: the entry is folded into one
+        // line with a count, and the screen reads the wait off the status beside it.
+        journal('gap', null, { by, gap: nz(c.minMinutesBetweenSwitches, 0) });
         return { ok: false, why: `each switch resets containers map-wide, so wait ${leftM} more minute(s) (minimum gap ${c.minMinutesBetweenSwitches} min)` };
       }
 
@@ -8087,8 +8275,11 @@ module.exports = {
         for (const a of have) {
           if (want.includes(String(a.id))) continue;
           const e = byId.get(String(a.id)) || a;
-          await deactivate(Object.assign({}, e, { rectCount: a.rectCount, drawnBy: a.drawnBy }));
+          const gone = await deactivate(Object.assign({}, e, { rectCount: a.rectCount, drawnBy: a.drawnBy }));
           out.off.push(a.id);
+          // A rectangle neither route could take off the map is a refusal worth its own line: the loot
+          // is back to normal and the zone is still drawn until a sweep can reach it.
+          journal('off', e, { by, ok: !(gone && gone.cleared === false), why: gone && gone.cleared === false ? (gone.owedWhy || '') : null });
         }
         const nowActive = have.filter((a) => want.includes(String(a.id)));
         for (const id of want) {
@@ -8102,8 +8293,11 @@ module.exports = {
               guards: res.guards ? { removed: res.guards.removed, spawned: res.guards.spawned } : null,
             });
             out.on.push({ id: e.id, ok: true, drawn: res.drawn, drawnWhy: res.drawnWhy, drawnBy: res.drawnBy, guards: res.guards });
+            journal('on', e, { by, ok: true, drawn: !!res.drawn, drawnBy: res.drawnBy || null, files: res.copied,
+              variant: e.variant ? e.variant.label : null, why: res.drawn ? null : res.drawnWhy });
           } else {
             out.on.push({ id: e.id, ok: false, why: res.why });
+            journal('on', e, { by, ok: false, why: res.why });
             log.warn(`"${e.name || e.set}" could not be switched on: ${res.why}`);
           }
         }
@@ -8166,26 +8360,37 @@ module.exports = {
       return out;
     }
 
-    /** Advance to the next zone and remember it as THIS server session's pick. */
-    function wantedByRestart() {
-      const picked = pickNext();
-      if (picked.length) st.set(K.sessionPick, picked[0]);
-      return picked;
-    }
-
-    function pickNext() {
+    /**
+     * The zone the next restart takes, WITHOUT taking it: `{ ids, turn, pick }`.
+     *
+     * ⚠ **THE TURN USED TO MOVE BEFORE THE SWITCH WAS KNOWN TO HAVE HAPPENED.** `pickNext()` wrote
+     * the new turn and the session pick the moment it was asked, and the switch after it can be
+     * refused: the gap between switches (30 minutes shipped) on a server that crashes and comes back,
+     * or a switch the owner started a moment before. The zone then stayed as it was while the store
+     * said the next one was this session's, so the rotation skipped a zone at every refused stop and
+     * a manager restart re-applied, with force, a zone the rotation had never switched on. Now the
+     * pick is read here and written by `rotateForStop` once the switch has run.
+     */
+    function peekRestart() {
       const c = cfg();
       const list = (c.zones || []).filter((z) => z.enabled !== false).map((z) => String(z.id));
-      if (!list.length) return [];
-      if (c.restartPick === 'random') return [list[Math.floor(Math.random() * list.length)]];
+      if (!list.length) return { ids: [], turn: null, pick: c.restartPick === 'random' ? 'random' : 'order' };
+      if (c.restartPick === 'random') return { ids: [list[Math.floor(Math.random() * list.length)]], turn: null, pick: 'random' };
       // ⚠ `Number(x) || -1` is the bug this line exists to not have: turn 0 is a legitimate
       // position and it is FALSY, so the fallback fired on it and the rotation sat on the first
       // zone for ever. Driven, four starts in a row, all of them zone one.
       const raw = st.get(K.turn, -1);
       const turn = Number.isFinite(Number(raw)) ? Number(raw) : -1;
       const next = (((turn + 1) % list.length) + list.length) % list.length;
-      st.set(K.turn, next);
-      return [list[next]];
+      return { ids: [list[next]], turn: next, pick: 'order' };
+    }
+    /** The zone the next restart would take in turn, for the screen; `null` at random or with none. */
+    function restartNextForScreen() {
+      const c = cfg();
+      if (c.rotation !== 'restart') return null;
+      if (c.restartPick === 'random') return { pick: 'random', id: null, inRotation: (c.zones || []).filter((z) => z.enabled !== false).length };
+      const p = peekRestart();
+      return { pick: 'order', id: p.ids[0] || null, inRotation: (c.zones || []).filter((z) => z.enabled !== false).length };
     }
 
     // ── reconcile: the game is the authority ─────────────────────────────────────────────────────
@@ -8284,6 +8489,7 @@ module.exports = {
           if (gone && gone.ok === true) {
             removed.push(n);
             log.warn(`removed "${n}", a zone of ours the game still held that nothing here had switched on`);
+            journal('leftover', null, { names: [n] });
           } else {
             stubborn.push(n);
             lastWhy = (gone && (gone.reason || gone.error)) || NO_BRIDGE_ANSWER;
@@ -8360,6 +8566,7 @@ module.exports = {
       for (const f of strayFolders) {
         removeOwned(f);
         log.warn(`removed the loot folder "${f}", which nothing here had switched on`);
+        journal('leftover', null, { folder: f });
       }
       return Object.assign({}, swept, { strayFolders });
     }
@@ -8455,7 +8662,7 @@ module.exports = {
         await reconcile().catch((e) => log.warn(`reconcile: ${e && e.message}`));
       }
       if (c.rotation === 'time') {
-        await applyWanted(wantedByTime(), {}).catch((e) => log.warn(`${e && e.message}`));
+        await applyWanted(wantedByTime(), { by: 'schedule' }).catch((e) => log.warn(`${e && e.message}`));
       }
       // A rectangle that could not be written when the zone went live, and the guards the game has
       // respawned since. Both only ever touch what is already on.
@@ -8564,6 +8771,55 @@ module.exports = {
       await deliver('reminder', { zones: names.join(', '), zone: names[0], count: names.length });
     }
 
+    /**
+     * ── THE PLUGIN SWITCHED OFF: PUT BACK WHAT IT IS HOLDING ───────────────────────────────────────
+     *
+     * ⚠ **EVERY LOOP THAT PUTS THINGS BACK STOPS ON THE SAME SWITCH, SO NOTHING DID.** The slow tick
+     * returns on its first line while the plugin is off, and it is the tick that hands the spawn
+     * plans back (`applyActivity`) and the island's sentry respawn delay (`applyGlobalRespawn`); the
+     * patrol returns too, and it is the patrol that takes a zone's own guards away once nobody is
+     * near. So switching the plugin off left the plans to lapse on the bridge's own clock, left the
+     * respawn delay at this plugin's number until the next server restart, and left every guard it
+     * had placed walking the island for the rest of the session. This runs once when the switch goes
+     * off, and at the first pass of a manager that starts with it off and still holds something.
+     *
+     * The zones themselves are left as they are: their loot and rectangle stay until the owner
+     * switches them off, which is what the switch has always promised.
+     */
+    let standingDown = null;
+    function standDown(why) {
+      if (standingDown) return standingDown;
+      standingDown = (async () => {
+        const c = cfgRaw();
+        const byId = new Map((c.zones || []).map((z) => [String(z.id), z]));
+        let removed = 0;
+        let refused = null;
+        for (const a of getActive()) {
+          const posts = postsOf(a.id);
+          if (!posts.length) continue;
+          const e = cfg().zones.find((z) => String(z.id) === String(a.id)) || byId.get(String(a.id)) || a;
+          const r = zoneRects(e);
+          if (!r.ok) continue;
+          const gone = await takeOwnGuardsAway(e, guardsFor(e) || {}, posts, r.rects, 'Loot Zones was switched off')
+            .catch((err) => ({ removed: 0, refusals: [String((err && err.message) || err)] }));
+          removed += nz(gone.removed, 0);
+          if (!refused && (gone.refusals || []).length) refused = gone.refusals[0];
+          setPosts(e.id, []);
+        }
+        await restoreActivity(null).catch(() => {});
+        await applyGlobalRespawn(false).catch(() => {});
+        journal('master', null, { on: false, by: why || 'owner', n: removed || null, ok: !refused, why: refused });
+      })().finally(() => { standingDown = null; });
+      return standingDown;
+    }
+    /** Anything a switched-off plugin may still be holding: guards, spawn plans, the respawn delay. */
+    function holdingAnything() {
+      const posts = st.get(K.posts, {}) || {};
+      return Object.keys(posts).some((k) => Array.isArray(posts[k]) && posts[k].length)
+        || Object.keys(st.get(K.activitySet, {}) || {}).length > 0
+        || nz(st.get(K.respawnSet, 0), 0) > 0;
+    }
+
     async function boot() {
       if (bootDone) return;
       bootDone = true;
@@ -8574,7 +8830,10 @@ module.exports = {
       // they really are.
       forgetGuardIds();
       await reconcile().catch((e) => log.warn(`reconcile: ${e && e.message}`));
-      if (!c.enabled) return;
+      if (!c.enabled) {
+        if (holdingAnything()) await standDown('boot').catch(() => {});
+        return;
+      }
       if (c.rotation === 'restart') {
         // NOT a rotation. The manager restarting is not the server restarting — that is the whole
         // point of this mode — so it re-applies the zone this server session already picked and
@@ -8582,7 +8841,7 @@ module.exports = {
         // up, which is the signal that really moves it.
         const mine = String(st.get(K.sessionPick, '') || '');
         if (mine) {
-          await applyWanted([mine], { force: true }).catch((e) => log.warn(`${e && e.message}`));
+          await applyWanted([mine], { force: true, by: 'boot' }).catch((e) => log.warn(`${e && e.message}`));
         }
       } else if (c.rotation === 'time') {
         await tick();
@@ -8620,6 +8879,7 @@ module.exports = {
       host.onUnload(() => {
         // A round's held bookkeeping reaches the disk before anything else is let go.
         flushStore();
+        flushJournal();
         clearInterval(timer);
         clearInterval(patrolTimer);
         clearTimeout(bootTimer);
@@ -8631,6 +8891,10 @@ module.exports = {
         // not waited for either, and the bridge's own hold is the guarantee behind this one: if the
         // process is gone before these land, the schedules come back on their own anyway.
         restoreActivity(null).catch(() => {});
+        // The island's sentry respawn delay too: the game does not save it, so a server restart puts
+        // it back anyway, but a plugin removed or switched off must not leave it at its own number
+        // for the rest of the session.
+        applyGlobalRespawn(false).catch(() => {});
       });
     }
 
@@ -8765,12 +9029,28 @@ module.exports = {
       if (stopRotation) return stopRotation;
       const c = cfg();
       if (!c.enabled || c.rotation !== 'restart') return Promise.resolve(null);
+      let pick = null;
       stopRotation = Promise.resolve()
         // NOT forced past the switch floor. The server is down, so no reload runs and no container
         // is reset by this switch. What the floor is still for is a server crash-looping every two
         // minutes walking through every zone an owner has.
-        .then(() => applyWanted(wantedByRestart(), {}))
+        .then(() => { pick = peekRestart(); return applyWanted(pick.ids, { by: 'restart' }); })
         .then((r) => {
+          const want = pick && pick.ids.length ? pick.ids[0] : null;
+          const live = getActive().some((a) => String(a.id) === String(want));
+          // The turn moves once the switch RAN, whether or not the zone it picked could go live: a
+          // zone whose loot set cannot be read must not hold the rotation on itself for ever. The
+          // session pick is what a manager restart re-applies, so it names only a zone that is live.
+          if (r && r.ok !== false) {
+            if (pick && pick.turn != null) st.set(K.turn, pick.turn);
+            if (want && live) st.set(K.sessionPick, want);
+          }
+          const z = want ? ((cfg().zones || []).find((q) => String(q.id) === String(want)) || { id: want }) : null;
+          const failedOn = r && r.changed && Array.isArray(r.changed.on) ? r.changed.on.find((o) => String(o.id) === String(want) && o.ok === false) : null;
+          journal('rotation', z, {
+            by: 'restart', pick: pick ? pick.pick : null, ok: !!(r && r.ok !== false) && (live || !want),
+            why: (r && r.ok === false) ? r.why : (failedOn ? failedOn.why : null),
+          });
           if (r && r.ok === false) log.info(`the server stopped and the zone stayed as it was: ${r.why}`);
           else log.info('the server stopped — the next session\'s loot zone is in place');
           return r;
@@ -8889,9 +9169,19 @@ module.exports = {
         const t = setTimeout(() => {
           joinTimers.delete(t);
           if (!cfg().enabled) return;
+          /**
+           * ⚠ **THE LIST IS READ AGAIN HERE.** It was taken when the player joined and the line goes
+           * out up to five minutes later, so a zone switched off in between was still named to them
+           * as the place with the better loot, and one switched on in between was left out. Nothing
+           * live by now is nothing to say.
+           */
+          const now = liveNames();
+          if (!now.length) return;
           deliver('join', {
-            player: (p && p.playerName) || '', zones: names.join(', '), zone: names[0], count: names.length,
-          }, p && p.steamId).catch(() => {});
+            player: (p && p.playerName) || '', zones: now.join(', '), zone: now[0], count: now.length,
+          }, p && p.steamId).then((r) => {
+            if (r && r.sent === false && r.routes) journal('message', null, { which: 'join', ok: false, why: r.why || (r.failed || [])[0] || '' });
+          }).catch(() => {});
         }, wait);
         joinTimers.add(t);
       });
@@ -9473,6 +9763,8 @@ module.exports = {
       st.set(K.variants, next);
       log.info(`"${z.name || z.set}" — ${why}: this server session now runs variant ${o.i + 1} of `
         + `${z.variants.length}, "${o.label}"${res.removed ? ` (${res.removed} guard(s) of the previous one taken away)` : ''}`);
+      journal('variant', z, { by: 'owner', label: o.label, index: o.i, of: z.variants.length, n: res.removed || null,
+        ok: !res.refusals.length, why: res.refusals[0] || null });
       return res;
     }
 
@@ -9592,9 +9884,15 @@ module.exports = {
             breaks: broken });
         }
       }
+      const wasOn = merge(stored || {}, DEFAULTS).enabled === true;
       host.config.set(next);
       arm();
       syncOwnConfig().catch(() => {});
+      {
+        const nowOn = cfgRaw().enabled === true;
+        if (wasOn && !nowOn) standDown('owner').catch((e) => log.warn(`${e && e.message}`));
+        else if (!wasOn && nowOn) journal('master', null, { on: true, by: 'owner' });
+      }
       // A pipe is the kill feed's field separator and the bridge REFUSES text carrying one rather
       // than mangling it, so a message that can never be delivered is said here, at the save, and
       // not discovered when a zone switches at three in the morning.
@@ -10017,6 +10315,31 @@ module.exports = {
       });
     });
 
+    /**
+     * ── THE ACTIVITY SCREEN: WHAT HAPPENED, NEWEST FIRST ─────────────────────────────────────────
+     *
+     * `GET /journal?limit=&kind=&zone=` answers the journal's entries, newest first, with the whole
+     * count beside them so the screen can say "showing 50 of 312". It answers with the server stopped
+     * and the bridge absent: the journal is this plugin's own record, and an empty one is an answer
+     * (`entries: []`, `total: 0`), never a failure.
+     */
+    host.routes.get('/journal', (req, res) => {
+      const q = (req && req.query) || {};
+      const limit = Math.max(1, Math.min(JOURNAL_MAX, Math.round(nz(q.limit, JOURNAL_MAX))));
+      const kinds = String(q.kind || '').split(',').map((x) => x.trim()).filter(Boolean);
+      const zone = String(q.zone || '').trim();
+      const all = journalList();
+      const hit = all.filter((e) => (!kinds.length || kinds.includes(e.kind)) && (!zone || String(e.zone) === zone));
+      res.json({
+        ok: true,
+        total: all.length,
+        matched: hit.length,
+        max: JOURNAL_MAX,
+        lastSeq: journalSeq,
+        entries: hit.slice(-limit).reverse(),
+      });
+    });
+
     host.routes.post('/reload-loot', async (req, res) => {
       res.json(await reloadLoot().catch((e) => ({ ok: false, why: e && e.message })));
     });
@@ -10079,6 +10402,11 @@ module.exports = {
       res.json({
         enabled: c.enabled,
         rotation: c.rotation,
+        // What the next restart takes, for the Activity screen's "what comes next". Read, never taken.
+        restartNext: restartNextForScreen(),
+        // The newest journal entry's number, so the tab can tell a new entry from an old one without
+        // asking for the list on every poll.
+        journalSeq: journalList().length ? journalSeq : 0,
         /**
          * Which keys a single guard's row may override, as DATA rather than as a sentence in a
          * README nothing reads. The three here are the ones a post can really be asked about on its
@@ -10201,8 +10529,21 @@ module.exports = {
       if (!(cfg().zones || []).some((z) => z && String(z.id) === id)) {
         return res.json({ ok: false, why: 'this zone is not saved yet. Save, then switch it on' });
       }
+      /**
+       * ⚠ **WITH THE PLUGIN SWITCHED OFF, A ZONE SWITCHED ON BY HAND WAS HALF A ZONE.** The loot went
+       * in and the rectangle was drawn, and then nothing worked it: the patrol, the redraw, the spawn
+       * plan's hold, the reminders and the login line all stop on this switch, so its guards never
+       * came, its sentries stood and its "busier" setting lapsed after a few minutes. The tab called
+       * the switch "Rotation on" and said manual switches still worked. It is the plugin's own
+       * switch, it is named that now, and a zone is not switched on while it is off.
+       */
+      if (!cfg().enabled) {
+        const why = saidFixed('plugin_off', {}, 'Loot Zones is switched off. Switch it on under Settings first.');
+        journal('on', (cfg().zones || []).find((z) => z && String(z.id) === id) || { id }, { by: 'owner', ok: false, why });
+        return res.json({ ok: false, code: 'plugin_off', why });
+      }
       const others = getActive().map((a) => String(a.id)).filter((x) => x !== id);
-      const r = await applyWanted([id].concat(others), { force }).catch((e) => ({ ok: false, why: e && e.message }));
+      const r = await applyWanted([id].concat(others), { force, by: 'owner' }).catch((e) => ({ ok: false, why: e && e.message }));
       // A zone that could not be switched on is a REFUSAL, even though the switch as a whole ran:
       // answering `ok: true` over it put "Switched on" on the screen for a zone whose loot set could
       // not be read and whose files never reached the server.
@@ -10212,7 +10553,7 @@ module.exports = {
     });
 
     host.routes.post('/deactivate', async (req, res) => {
-      const r = await applyWanted([], { force: !!(req.body && req.body.force) })
+      const r = await applyWanted([], { force: !!(req.body && req.body.force), by: 'owner' })
         .catch((e) => ({ ok: false, why: e && e.message }));
       res.json(r);
     });
@@ -10437,7 +10778,7 @@ module.exports = {
         // A sample name, so a join line reads in the test the way it will read for a real player;
         // an empty `{player}` left "Welcome , the loot is…" and made the wording look broken.
         zone: names2[0], set: names2[0], zones: names2.join(', '), count: names2.length, player: TEST_PLAYER,
-      }, to || undefined).catch((e) => ({ sent: false, why: (e && e.message) || 'it could not be sent', failed: [] }));
+      }, to || undefined, { test: true }).catch((e) => ({ sent: false, why: (e && e.message) || 'it could not be sent', failed: [] }));
       res.json(Object.assign({ ok: !!(r && r.sent), sentTo: to || 'everyone' }, r || {}));
     });
 

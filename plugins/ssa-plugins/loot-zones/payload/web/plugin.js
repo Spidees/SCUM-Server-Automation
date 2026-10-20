@@ -202,6 +202,8 @@
       case 'prefix_empty':
         return T('pl.loot-zones.c.prefixEmpty',
           'Nothing was saved: the zone name prefix cannot be empty. It is how this plugin tells its zones from yours.');
+      case 'plugin_off':
+        return T('pl.loot-zones.c.pluginOff', 'Loot Zones is switched off. Turn it on under {tab} first.', { tab: navLabels().settings });
       case 'config_unreadable':
         return T('pl.loot-zones.c.configUnreadable',
           'Nothing was saved: the plugin\'s config.json could not be read. Try again; if it repeats, check nothing holds it open.');
@@ -283,7 +285,7 @@
   function labMaxPosts() { return T('pl.loot-zones.set.maxPosts', 'At most this many places'); }
   function labTechnical() { return T('pl.loot-zones.more.technical', 'Technical settings'); }
   function labPerGuard() { return T('pl.loot-zones.ovr.only', 'Only for this guard'); }
-  function labRotationOn() { return T('pl.loot-zones.set.rotationOn', 'Rotation on'); }
+  function labMasterOn() { return T('pl.loot-zones.set.masterOn', 'Loot Zones on'); }
   function labReloadOnSwitch() { return T('pl.loot-zones.set.reloadOnSwitch', 'Reload loot after a switch'); }
   function labConfigMode() { return T('pl.loot-zones.set.configMode', 'Colour and visibility'); }
   function labSave() { return T('pl.loot-zones.save', 'Save'); }
@@ -626,6 +628,8 @@
     refreshBridge();
     refreshActivity();
     refreshPresets();
+    // Only while the Activity screen is open: every other screen polls exactly what it did before.
+    if (view === 'activity') refreshJournal();
     var reqs = [api('/config'), api('/sets'), api('/status')];
     // The shipped wording in every language, asked once: it changes only with the plugin.
     if (shippedByLang === undefined) reqs.push(api('/text-defaults').catch(function () { return null; }));
@@ -2050,7 +2054,9 @@
      * something that already happened. Both are decidable here.
      */
     var isNew = !!savedIds && savedIds.indexOf(String(z.id)) < 0;
-    var onBlocked = !z.set
+    var onBlocked = c.enabled !== true
+      ? T('pl.loot-zones.c.pluginOff', 'Loot Zones is switched off. Turn it on under {tab} first.', { tab: navLabels().settings })
+      : !z.set
       ? T('pl.loot-zones.zone.blockedNoSet', 'Pick a loot set for this zone first.')
       : (isNew ? T('pl.loot-zones.zone.blockedNew', 'This zone is not on the server yet. Press {save}, then switch it on.', { save: labSave() }) : null);
 
@@ -2064,7 +2070,7 @@
           onclick: function () {
             if (onBlocked) return;
             api('/activate', { method: 'POST', body: { id: z.id } }).then(function (r) {
-              if (r && r.ok === false) SSA.toast(r.why || T('pl.loot-zones.refused', 'Refused'));
+              if (r && r.ok === false) SSA.toast(codedText(r.code ? { code: r.code, vars: r.vars } : null, r.why || T('pl.loot-zones.refused', 'Refused')));
               else if (r && r.unchanged) SSA.toast(T('pl.loot-zones.zone.alreadyOn', 'That one is already on'));
               else {
                 SSA.toast(unsaved
@@ -4085,6 +4091,12 @@
       T('pl.loot-zones.set.wake.hint', 'Acts only with a player this close. Over 500 m, it acts before sentries appear.')),
     ].concat(guardsOn ? [h('h4', { class: 'lz-group' }, T('pl.loot-zones.group.life', 'How long they stay'))]
       .concat(ownLifeRows(sm)) : []).concat([
+      // ⚠ A FEATURE WITH A SWITCH OF ITS OWN, AND THE ONE WHOSE EFFECT LEAVES THE ZONE: it was inside
+      // "Technical settings", where nobody looking for it would open.
+      row(T('pl.loot-zones.set.globalRespawn', 'Also slow SCUM\'s own sentry respawn'), toggle(!!gr.enabled, function (v) { gr.enabled = v; markDirty(); }),
+        T('pl.loot-zones.set.globalRespawn.hint', 'For the whole island, not just this zone.')),
+      gr.enabled ? row(T('pl.loot-zones.set.respawnDelay', 'Sentry respawn delay'), numIn(gr.seconds, function (v) { gr.seconds = v; markDirty(); }, 0, 1440, T('pl.loot-zones.unit.minutes', 'minutes'), MIN),
+        T('pl.loot-zones.set.respawnDelay.hint', 'The game ships 10 minutes.')) : null,
       more('guards:' + (scope || 'default'), labTechnical(), [
         guardsOn ? row(labMaxPosts(), field(numIn(rp.maxPosts, function (v) { rp.maxPosts = v; markDirty(); }, 1, 60, T('pl.loot-zones.unit.places', 'places')),
           overriddenNote(rp, 'maxPosts')),
@@ -4097,10 +4109,6 @@
           h('small', { 'data-fragment': '' }, T('pl.loot-zones.set.searchBox.reach', 'Up and down')),
           numIn(sm.reachZ, function (v) { sm.reachZ = v; markDirty(); }, 0, null, T('pl.loot-zones.unit.metres', 'm'), M),
         ]), T('pl.loot-zones.set.searchBox.hint', 'Where the zone looks for sentries and zombies. Defaults cover the whole map.')),
-        row(T('pl.loot-zones.set.globalRespawn', 'Also slow SCUM\'s own sentry respawn'), toggle(!!gr.enabled, function (v) { gr.enabled = v; markDirty(); }),
-          T('pl.loot-zones.set.globalRespawn.hint', 'For the whole island, not just this zone.')),
-        gr.enabled ? row(T('pl.loot-zones.set.respawnDelay', 'Sentry respawn delay'), numIn(gr.seconds, function (v) { gr.seconds = v; markDirty(); }, 0, 1440, T('pl.loot-zones.unit.minutes', 'minutes'), MIN),
-          T('pl.loot-zones.set.respawnDelay.hint', 'The game ships 10 minutes.')) : null,
       ]),
     ]);
   }
@@ -4781,6 +4789,484 @@
    * (`diffInto`), and only the elements that really differ are swapped in. The zone table is never
    * part of either: a draw holds a placeholder for it (`placeTable`).
    */
+  // ══ THE FOUR SCREENS, THE HEADER ABOVE THEM, AND THE ACTIVITY SCREEN ════════════════════════════
+  /**
+   * THE SCREEN NAMES, IN ONE PLACE, BECAUSE SENTENCES POINT AT THEM.
+   *
+   * "Change it under Settings and actions", the first-run note and the Activity screen's own lines
+   * all name a screen this tab really has. A route written out a second time is a route free to be
+   * wrong, so the tabs and every sentence that points at one read the SAME key.
+   */
+  function navLabels() {
+    return {
+      zones: T('pl.loot-zones.nav.zonesName', 'Zones'),
+      messages: T('pl.loot-zones.nav.messages', 'Messages'),
+      settings: T('pl.loot-zones.nav.settings', 'Settings and actions'),
+      activity: T('pl.loot-zones.nav.activity', 'Activity'),
+    };
+  }
+
+  /**
+   * ── THE HEADER EVERY SCREEN OPENS WITH ─────────────────────────────────────────────────────────
+   *
+   * The figures an owner opens this tab to see, the plugin's own switch, and the two things it cannot
+   * do without: a running game, and the bridge switches this configuration really uses. Those four
+   * switches are named by the bridge's own captions (the words on its card), each with the state the
+   * bridge reports; the full list stays on the Bridge card under Zones.
+   */
+  function statHeader(c, st) {
+    var held = 0; var postsAll = 0; var guardsUp = 0;
+    Object.keys(st.patrols || {}).forEach(function (k) {
+      var p = st.patrols[k] || {};
+      if (!liveIdsOf(st)[String(k)]) return;
+      held += Number(p.held) || 0;
+      postsAll += Number(p.posts) || 0;
+      guardsUp += Number(p.inZone) || 0;
+    });
+    var enabledZones = (c.zones || []).filter(function (z) { return z.enabled !== false; }).length;
+    var on = c.enabled === true;
+    var kids = [h('div', { class: 'lz-figs' }, [
+      h('div', { class: 'lz-fig lz-fig-sw' + (on ? ' good' : ' off') }, [h('span', { class: 'lz-dot' }),
+        h('span', {}, on ? T('pl.loot-zones.stat.on', 'Loot Zones on') : T('pl.loot-zones.stat.off', 'Loot Zones off'))]),
+      h('div', { class: 'lz-fig' }, [h('b', {}, String((c.zones || []).length)), h('span', {}, T('pl.loot-zones.fig.zones', 'zones'))]),
+      h('div', { class: 'lz-fig' }, [h('b', {}, String(enabledZones)), h('span', {}, T('pl.loot-zones.fig.inRotation', 'in rotation'))]),
+      h('div', { class: 'lz-fig' + ((st.active || []).length ? ' good' : '') },
+        [h('b', {}, String((st.active || []).length)), h('span', {}, T('pl.loot-zones.fig.liveNow', 'live now'))]),
+      postsAll ? h('div', { class: 'lz-fig' + (held < postsAll ? ' wait' : ' good') },
+        [h('b', {}, held + '/' + postsAll), h('span', {}, T('pl.loot-zones.fig.postsHeld', 'posts held'))]) : null,
+      guardsUp ? h('div', { class: 'lz-fig' }, [h('b', {}, String(guardsUp)), h('span', {}, T('pl.loot-zones.fig.guardsOut', 'guards in the zones'))]) : null,
+    ].filter(Boolean))];
+    // Everything on the four screens is configured with the server stopped, and that is the better
+    // moment to do it; only what is drawn, guarded and announced waits for a running game. Said in
+    // words, because zeroes and an empty log otherwise read as "it is not working".
+    if (st.serverRunning === false) {
+      kids.push(h('div', { class: 'lz-note wait' }, [
+        h('b', {}, T('pl.loot-zones.stat.stoppedTitle', 'The server is not running.')),
+        ' ', T('pl.loot-zones.stat.stoppedText', 'Set up everything now. Zones are drawn, guarded and announced once it runs.'),
+      ]));
+    }
+    var need = headerNeeds(c, st);
+    if (need) kids.push(need);
+    return h('div', { class: 'lz-stat' }, kids);
+  }
+
+  /**
+   * The four bridge settings that decide whether a guard ever appears and whether a zone can be
+   * cleared, each only where this configuration uses it: the class loader, the boss switch and the
+   * game clock come from `/bridge-check` (which lists a switch only when something here needs it),
+   * and the reach of one despawn call comes from `/status`.
+   */
+  var HEADER_SWITCHES = [['spawn', 'makeResident'], ['spawn', 'bosses'], ['live', 'time']];
+  // The despawn module's own caption for the reach of one call, as its card ships it (not translated,
+  // for the reason `ACTIVITY_SWITCH` gives).
+  var DESPAWN_RADIUS = 'Largest radius one call may use';
+  function headerNeeds(c, st) {
+    var items = (state.bridge && state.bridge.items) || [];
+    var chips = [];
+    HEADER_SWITCHES.forEach(function (k) {
+      var x = items.filter(function (it) { return it && it.module === k[0] && it.key === k[1]; })[0];
+      if (!x) return;
+      var stateWord = x.state === 'on' ? T('pl.loot-zones.stat.swOn', 'on')
+        : (x.state === 'off' ? T('pl.loot-zones.stat.swOff', 'off') : T('pl.loot-zones.stat.swUnknown', 'not known'));
+      chips.push(h('span', { class: 'lz-swchip ' + (x.state === 'on' ? 'good' : (x.state === 'off' ? 'bad' : 'wait')) },
+        [String(x.moduleName || x.module) + ' → ' + String(x.label || x.key) + ': ', h('b', {}, stateWord)]));
+    });
+    var d = st.despawn || {};
+    var clearing = [c.sentries || {}].concat((c.zones || []).map(function (z) { return z && z.sentries; }))
+      .some(function (s) { return s && (s.mode === 'remove' || s.mode === 'replace'); });
+    if (clearing && d.maxRadius > 0) {
+      var over = (d.zones || []).filter(function (z) { return z && z.overCeiling; });
+      var most = over.reduce(function (m, z) { return Math.max(m, Number(z.need) || 0); }, 0);
+      // The module's name and the caption are the bridge's own words, exactly as its card shows them.
+      var dmod = (items.filter(function (it) { return it && it.module === 'despawn' && it.moduleName; })[0] || {}).moduleName || 'Remove from the world';
+      var sw = dmod + ' → ' + DESPAWN_RADIUS;
+      chips.push(h('span', { class: 'lz-swchip ' + (over.length ? 'bad' : 'good') }, over.length
+        ? [sw + ': ', h('b', {}, T('pl.loot-zones.stat.reachShort', '{max} m; {n} zones need up to {need} m', { max: metres(d.maxRadius), n: over.length, need: metres(most) }))]
+        : [sw + ': ', h('b', {}, T('pl.loot-zones.stat.reachOk', '{max} m, enough for every zone', { max: metres(d.maxRadius) }))]));
+    }
+    if (!chips.length) return null;
+    return h('div', { class: 'lz-swline' }, [h('small', {}, T('pl.loot-zones.stat.bridge', 'Bridge settings this setup uses:'))].concat(chips));
+  }
+
+  /**
+   * What a new owner meets first. Shown while there is no zone at all, and it names the screens in
+   * the order they are worth visiting, by the names the tabs above carry.
+   */
+  function firstRunNote(c) {
+    if ((c.zones || []).length) return null;
+    var L = navLabels();
+    return h('div', { class: 'lz-note lz-first' }, [
+      h('b', {}, T('pl.loot-zones.first.title', 'New here? Three screens to start with.')),
+      T('pl.loot-zones.first.on', ' On '), h('b', {}, L.zones),
+      T('pl.loot-zones.first.zones', ' you create zones from your loot sets. On '), h('b', {}, L.settings),
+      T('pl.loot-zones.first.settings', ' you switch Loot Zones on and pick how zones change. '),
+      h('b', {}, L.activity),
+      T('pl.loot-zones.first.activity', ' then shows every switch, guard and refusal.'),
+    ]);
+  }
+
+  // ── the Activity screen ─────────────────────────────────────────────────────────────────────────
+  /**
+   * `null` while nobody has answered, `{ err }` when the request failed, the backend's answer
+   * otherwise. Asked only while the Activity screen is open, so the other screens' poll is unchanged.
+   */
+  var journal = null;
+  var journalAsking = false;
+  var journalFilter = { kind: '', q: '', page: 0 };
+  var JOURNAL_PAGE = 25;
+  var journalSocket = false;
+  var journalTimer = null;
+  function refreshJournal() {
+    if (journalAsking) return Promise.resolve(journal);
+    journalAsking = true;
+    return Promise.resolve(api('/journal'))
+      .then(function (r) {
+        journalAsking = false;
+        journal = (r && Array.isArray(r.entries)) ? r : { err: T('pl.loot-zones.act.noJournal', 'The plugin did not answer with its activity. Update the plugin, or check the manager log.') };
+        if (view === 'activity') render({ ifChanged: true });
+        return journal;
+      })
+      .catch(function (err) {
+        journalAsking = false;
+        journal = { err: (SSA.apiError ? SSA.apiError(err) : ((err && err.message) || T('pl.loot-zones.noAnswer', 'no answer'))) };
+        if (view === 'activity') render({ ifChanged: true });
+        return journal;
+      });
+  }
+  /** A new entry was written: the screen asks again a moment later, once, however many arrive. */
+  function bindJournalSocket() {
+    if (journalSocket || !SSA.socket || typeof SSA.socket.on !== 'function') return;
+    journalSocket = true;
+    SSA.socket.on('loot-zones:journal', function () {
+      if (view !== 'activity' || !root || !document.body.contains(root)) return;
+      if (journalTimer) return;
+      journalTimer = setTimeout(function () { journalTimer = null; refreshJournal(); }, 800);
+    });
+  }
+
+  var JOURNAL_GROUPS = {
+    switch: ['on', 'off', 'rotation', 'gap', 'refused', 'master'],
+    guards: ['spawn', 'guardsAway', 'strayed'],
+    despawn: ['despawn'],
+    variant: ['variant', 'variants'],
+    island: ['reload', 'activity', 'activityBack', 'respawn', 'drawn', 'leftover', 'message'],
+  };
+  function journalShown() {
+    var list = (journal && journal.entries) || [];
+    var f = journalFilter;
+    var q = String(f.q || '').trim().toLowerCase();
+    return list.filter(function (e) {
+      if (f.kind === 'refusal') { if (!(e.ok === false || e.kind === 'refusal' || e.kind === 'gap' || e.kind === 'refused')) return false; }
+      else if (f.kind && JOURNAL_GROUPS[f.kind] && JOURNAL_GROUPS[f.kind].indexOf(e.kind) < 0) return false;
+      if (q && String(e.name || '').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  function byWord(by) {
+    if (by === 'schedule') return T('pl.loot-zones.j.by.schedule', 'by the schedule');
+    if (by === 'restart') return T('pl.loot-zones.j.by.restart', 'by the restart rotation');
+    if (by === 'boot') return T('pl.loot-zones.j.by.boot', 'again after a manager restart');
+    return T('pl.loot-zones.j.by.owner', 'by hand');
+  }
+  function jWhy(e) {
+    if (e.why == null || e.why === '') return '';
+    return codedText(e.whyCode, String(e.why));
+  }
+  /** One entry, as a sentence in the reader's language. The bridge's own words travel as a value. */
+  function journalText(e) {
+    var n = Number(e.n) || 0;
+    var why = jWhy(e);
+    switch (e.kind) {
+      case 'on':
+        if (e.ok === false) return T('pl.loot-zones.j.onFailed', 'Not switched on: {why}', { why: why });
+        return T('pl.loot-zones.j.on', 'Switched on {by}.', { by: byWord(e.by) })
+          + (e.variant ? ' ' + T('pl.loot-zones.j.onVariant', 'Variant: {label}.', { label: e.variant }) : '')
+          + (e.drawn === false ? ' ' + T('pl.loot-zones.j.onNotDrawn', 'The rectangle waits: {why}', { why: why }) : '')
+          + (e.drawnBy === 'save' ? ' ' + T('pl.loot-zones.j.onSave', 'The rectangle is in the save; players see it at the next start.') : '');
+      case 'off':
+        return T('pl.loot-zones.j.off', 'Switched off {by}.', { by: byWord(e.by) })
+          + (e.ok === false ? ' ' + T('pl.loot-zones.j.offStuck', 'The rectangle stays on the map until it can be removed: {why}', { why: why }) : '');
+      case 'rotation':
+        if (e.ok === false) return T('pl.loot-zones.j.rotationFailed', 'The restart rotation could not switch: {why}', { why: why });
+        return e.pick === 'random'
+          ? T('pl.loot-zones.j.rotationRandom', 'The server stopped. The restart rotation picked this zone at random.')
+          : T('pl.loot-zones.j.rotationOrder', 'The server stopped. The restart rotation took the next zone in turn.');
+      case 'gap':
+        return T('pl.loot-zones.j.gap', 'A switch waited: at least {n} min between switches, because each one resets loot map-wide.', { n: Number(e.gap) || 0 });
+      case 'refused':
+        return T('pl.loot-zones.j.refused', 'A switch was refused: {why}', { why: why });
+      case 'master':
+        return e.on
+          ? T('pl.loot-zones.j.masterOn', 'Loot Zones was switched on.')
+          : T('pl.loot-zones.j.masterOff', 'Loot Zones was switched off. Spawn plans and the respawn delay were put back.')
+            + (n ? ' ' + T('pl.loot-zones.j.masterGuards', 'Guards taken away: {n}.', { n: n }) : '')
+            + (why ? ' ' + why : '');
+      case 'variant':
+        if (e.by === 'owner') {
+          return T('pl.loot-zones.j.reroll', 'A new variant was picked by hand: {label}.', { label: e.label || '' })
+            + (n ? ' ' + T('pl.loot-zones.j.rerollGuards', 'Guards of the old one taken away: {n}.', { n: n }) : '')
+            + (why ? ' ' + why : '');
+        }
+        return e.by === 'restart'
+          ? T('pl.loot-zones.j.variantRestart', 'Variant for the next session: {label}.', { label: e.label || '' })
+          : T('pl.loot-zones.j.variantFirst', 'First variant picked: {label}.', { label: e.label || '' });
+      case 'variants':
+        return e.by === 'restart'
+          ? T('pl.loot-zones.j.variantsRestart', 'Zones not live picked their variant for the next session: {n}.', { n: n })
+          : T('pl.loot-zones.j.variantsFirst', 'Zones not live picked their first variant: {n}.', { n: n });
+      case 'spawn':
+        return T('pl.loot-zones.j.spawn', 'Guards sent: {n}. Places held: {held} of {posts}.', { n: n, held: Number(e.held) || 0, posts: Number(e.posts) || 0 });
+      case 'despawn': {
+        var parts = [];
+        if (Number(e.stowed)) parts.push(T('pl.loot-zones.j.stowed', 'fixed sentries put away: {n}', { n: Number(e.stowed) }));
+        if (Number(e.removed)) parts.push(T('pl.loot-zones.j.removedSentries', 'deployed sentries removed: {n}', { n: Number(e.removed) }));
+        if (Number(e.puppets)) parts.push(T('pl.loot-zones.j.puppets', 'zombies removed: {n}', { n: Number(e.puppets) }));
+        return T('pl.loot-zones.j.despawn', 'Kept out of the zone: {list}.', { list: parts.join(', ') });
+      }
+      case 'guardsAway': {
+        var r = e.reason === 'off' ? T('pl.loot-zones.j.awayWhy.off', 'the zone was switched off')
+          : (e.reason === 'asleep' ? T('pl.loot-zones.j.awayWhy.asleep', 'nobody was near')
+            : (e.reason === 'reroll' ? T('pl.loot-zones.j.awayWhy.reroll', 'a new variant was picked')
+              : (e.reason === 'master' ? T('pl.loot-zones.j.awayWhy.master', 'Loot Zones was switched off') : T('pl.loot-zones.j.awayWhy.misc', 'the zone asked for it'))));
+        return T('pl.loot-zones.j.away', 'Guards taken away because {why}: {n}.', { why: r, n: n })
+          + (e.ok === false && why ? ' ' + T('pl.loot-zones.j.awayLeft', 'Some stayed: {why}', { why: why }) : '');
+      }
+      case 'strayed':
+        return T('pl.loot-zones.j.strayed', 'Guards walked out of the zone and were taken away: {n}.', { n: n });
+      case 'refusal':
+        return why;
+      case 'reload':
+        return e.ok === false
+          ? T('pl.loot-zones.j.reloadFailed', 'Loot not reloaded: {why}', { why: why })
+          : T('pl.loot-zones.j.reload', 'Loot reloaded on the running server.');
+      case 'activity':
+        return e.ok === false
+          ? T('pl.loot-zones.j.activityFailed', '{asset} was not changed: {why}', { asset: e.asset || '', why: why })
+          : T('pl.loot-zones.j.activity', '{asset} now spawns at {chance}% of its {base}%.', { asset: e.asset || '', chance: e.chance, base: e.base });
+      case 'activityBack':
+        return T('pl.loot-zones.j.activityBack', 'Spawn plans put back: {n}.', { n: n })
+          + (Number(e.failed) ? ' ' + T('pl.loot-zones.j.activityBackFailed', 'Still changed: {n}. A server restart puts them back.', { n: Number(e.failed) }) : '');
+      case 'respawn':
+        if (e.ok === false) return T('pl.loot-zones.j.respawnFailed', 'The sentry respawn delay was not set: {why}', { why: why });
+        return e.back
+          ? T('pl.loot-zones.j.respawnBack', 'The sentry respawn delay was put back to {t}.', { t: humanMins((Number(e.seconds) || 0) / 60) })
+          : T('pl.loot-zones.j.respawnSet', 'The sentry respawn delay is {t} for the whole island.', { t: humanMins((Number(e.seconds) || 0) / 60) });
+      case 'drawn':
+        return e.drawnBy === 'save'
+          ? T('pl.loot-zones.j.drawnSave', 'The rectangle was written into the save; players see it at the next start.')
+          : T('pl.loot-zones.j.drawn', 'The rectangle is on the map now.');
+      case 'leftover':
+        return e.folder
+          ? T('pl.loot-zones.j.leftoverFolder', 'A leftover loot folder was removed: {name}.', { name: e.folder })
+          : T('pl.loot-zones.j.leftover', 'A leftover zone was taken off the map: {name}.', { name: (e.names || []).join(', ') });
+      case 'message':
+        return e.ok === false
+          ? T('pl.loot-zones.j.messageFailed', 'Message "{title}" did not arrive: {why}', { title: messageTitle(e.which), why: why })
+          : T('pl.loot-zones.j.message', 'Message "{title}" sent to the game.', { title: messageTitle(e.which) });
+      default:
+        return String(e.kind || '');
+    }
+  }
+  function clockOf(ms) {
+    var d = new Date(Number(ms) || 0);
+    var hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    var now = new Date();
+    if (d.toDateString() === now.toDateString()) return hm;
+    return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + ' ' + hm;
+  }
+  function journalRow(e, c) {
+    var z = e.zone != null ? zoneById(e.zone) : null;
+    var bad = e.ok === false || e.kind === 'refusal' || e.kind === 'refused';
+    var waitK = e.kind === 'gap';
+    var zoneCell = z
+      ? navLink(zoneRoute(z.id), { class: 'lz-zname' }, z.name || z.set || String(z.id), function () { openZone(z.id); })
+      : h('span', { class: 'lz-dim' }, e.name || T('pl.loot-zones.j.island', 'whole island'));
+    return h('div', { class: 'lz-jrow' + (bad ? ' bad' : (waitK ? ' wait' : '')) }, [
+      h('span', { class: 'lz-jt' }, [clockOf(e.at), Number(e.times) > 1
+        ? h('small', {}, T('pl.loot-zones.j.times', '{n}×, last {at}', { n: Number(e.times), at: clockOf(e.last) })) : null]),
+      h('span', { class: 'lz-jz' }, [zoneCell]),
+      h('span', { class: 'lz-jw' }, journalText(e)),
+      h('span', { class: 'lz-badge' + (bad ? ' bad' : (waitK ? ' wait' : ' on')) }, bad
+        ? T('pl.loot-zones.j.refusedBadge', 'refused') : (waitK ? T('pl.loot-zones.j.waitBadge', 'waiting') : T('pl.loot-zones.j.doneBadge', 'done'))),
+    ]);
+  }
+
+  /** What is live this moment, zone by zone, with what its guards are doing. */
+  function nowCard(c, st) {
+    var kids = [];
+    if (c.enabled !== true) {
+      kids.push(note('bad', T('pl.loot-zones.now.off', 'Loot Zones is switched off: nothing is switched, guarded or announced. Turn it on under {tab}.', { tab: navLabels().settings })));
+    }
+    kids.push(rotationNote(c, null, true));
+    var live = st.active || [];
+    if (!live.length) {
+      kids.push(note('', T('pl.loot-zones.now.none', 'No zone is live right now.')));
+    } else {
+      live.forEach(function (a) {
+        var z = zoneById(a.id);
+        var pat = (st.patrols || {})[String(a.id)] || null;
+        var v = (st.variants || {})[String(a.id)];
+        var bits = [];
+        if (a.at) bits.push(T('pl.loot-zones.now.since', 'live since {at}', { at: clockOf(a.at) }));
+        if (v && v.label) bits.push(T('pl.loot-zones.now.variant', 'variant {label}', { label: v.label }));
+        if (a.drawn === false) bits.push(T('pl.loot-zones.now.notDrawn', 'rectangle not drawn yet'));
+        else if (a.drawnBy === 'save') bits.push(T('pl.loot-zones.now.inSave', 'rectangle in the save'));
+        var guard = null;
+        if (pat && pat.awake === true) {
+          guard = T('pl.loot-zones.now.awake', 'A player is near: {held} of {posts} places held, {n} guards in the zone.',
+            { held: Number(pat.held) || 0, posts: Number(pat.posts) || 0, n: Number(pat.inZone) || 0 });
+        } else if (pat && pat.awake === false) {
+          guard = T('pl.loot-zones.now.asleep', 'Nobody is near, so the zone rests.');
+        } else if (pat && pat.awake === null && pat.playersKnown === false) {
+          guard = T('pl.loot-zones.now.blind', 'Player positions are unknown, so the zone is not worked.');
+        }
+        var first = pat && (pat.refusals || [])[0];
+        kids.push(h('div', { class: 'lz-nowrow' }, [
+          h('div', { class: 'lz-nowhead' }, [icon('map'), z
+            ? navLink(zoneRoute(z.id), { class: 'lz-zname' }, z.name || z.set, function () { openZone(z.id); })
+            : h('b', {}, a.name || a.set || String(a.id)),
+            h('small', {}, bits.join(' · '))]),
+          guard ? h('small', {}, guard) : null,
+          first ? h('small', { class: 'lz-warn' }, refusalText(pat, first)) : null,
+        ]));
+      });
+    }
+    if (st.lootPending === true) {
+      kids.push(note('wait', T('pl.loot-zones.now.pending', 'Loot changed since the server read it; it lands on "{button}" or at the next start.',
+        { button: T('pl.loot-zones.act.reloadLoot', 'Reload loot now') })));
+    }
+    return card('pulse', T('pl.loot-zones.card.now', 'Live now'), null, kids);
+  }
+
+  /** What changes next by itself, in the rotation this server has. Read, never taken. */
+  function nextCard(c, st) {
+    var kids = [];
+    var nameOf = function (id) { var z = zoneById(id); return z ? (z.name || z.set || String(id)) : String(id); };
+    if (c.enabled !== true) {
+      kids.push(note('', T('pl.loot-zones.next.off', 'Nothing changes by itself while Loot Zones is switched off.')));
+    } else if (c.rotation === 'time') {
+      var sch = st.schedule || {};
+      var steps = [];
+      Object.keys(sch).forEach(function (id) {
+        var s = sch[id] || {};
+        if (s.disabled || s.unscheduled) return;
+        if (s.open && s.closesInMinutes != null) steps.push({ id: id, m: Number(s.closesInMinutes), open: false });
+        else if (!s.open && s.opensInMinutes != null) steps.push({ id: id, m: Number(s.opensInMinutes), open: true });
+      });
+      steps.sort(function (a, b) { return a.m - b.m; });
+      if (!steps.length) kids.push(note('', T('pl.loot-zones.next.timeNone', 'No zone in rotation has times set, so they stay on while rotation runs.')));
+      steps.slice(0, 6).forEach(function (s) {
+        kids.push(h('div', { class: 'lz-nextrow' }, [icon('clock'), h('span', {}, s.open
+          ? T('pl.loot-zones.next.opens', '{zone} opens in {t}.', { zone: nameOf(s.id), t: humanMins(s.m) })
+          : T('pl.loot-zones.next.closes', '{zone} closes in {t}.', { zone: nameOf(s.id), t: humanMins(s.m) }))]));
+      });
+      if (steps.length > 6) kids.push(h('small', {}, T('pl.loot-zones.next.more', 'And {n} more changes after those.', { n: steps.length - 6 })));
+    } else if (c.rotation === 'restart') {
+      var rn = st.restartNext || {};
+      var when = st.nextRestartUnix
+        ? T('pl.loot-zones.next.restartAt', 'The next restart the manager has scheduled is {when}.', { when: whenPhrase(st.nextRestartUnix) })
+        : T('pl.loot-zones.next.restartNone', 'No restart is scheduled; it happens whenever the server next stops.');
+      kids.push(h('div', { class: 'lz-nextrow' }, [icon('refresh'), h('span', {}, rn.pick === 'random'
+        ? T('pl.loot-zones.next.restartRandom', 'At the next restart: one of {n} zones in rotation, at random.', { n: Number(rn.inRotation) || 0 })
+        : (rn.id ? T('pl.loot-zones.next.restartOrder', 'At the next restart: {zone}, next in turn.', { zone: nameOf(rn.id) })
+          : T('pl.loot-zones.next.restartEmpty', 'No zone is in rotation, so the next restart switches everything off.')))]));
+      kids.push(h('small', {}, when));
+    } else {
+      kids.push(note('', T('pl.loot-zones.next.manual', 'Rotation is by hand: nothing changes until you switch a zone on or off.')));
+    }
+    var withVariants = (c.zones || []).filter(function (z) { return Array.isArray(z.variants) && z.variants.some(function (v) { return v && v.enabled !== false; }); }).length;
+    if (withVariants) {
+      kids.push(h('div', { class: 'lz-nextrow' }, [icon('refresh'), h('span', {},
+        T('pl.loot-zones.next.variants', 'Zones with variants pick a new one each time the server stops: {n}.', { n: withVariants }))]));
+    }
+    if (st.nextSwitchInMs > 0) {
+      kids.push(note('wait', T('pl.loot-zones.next.gap', 'The next switch can happen in {t}: each one resets loot map-wide.', { t: humanMins(st.nextSwitchInMs / 60000) })));
+    }
+    return card('clock', T('pl.loot-zones.card.next', 'Comes next'), null, kids);
+  }
+
+  /** The journal, with a filter, a zone search and pages of 25. */
+  function journalCard(c) {
+    var kids = [];
+    if (!journal) {
+      kids.push(note('', T('pl.loot-zones.loading', 'Loading…')));
+      return card('list', T('pl.loot-zones.card.journal', 'What happened'), null, kids);
+    }
+    if (journal.err) {
+      kids.push(note('bad', T('pl.loot-zones.j.failed', 'The activity could not be read: {why}', { why: journal.err })));
+      kids.push(h('div', { class: 'lz-actions' }, [h('button', { class: 'secondary', type: 'button', onclick: function () { refreshJournal(); } },
+        [icon('refresh'), T('pl.loot-zones.tryAgain', 'Try again')])]));
+      return card('list', T('pl.loot-zones.card.journal', 'What happened'), null, kids);
+    }
+    var shown = journalShown();
+    var pages = Math.max(1, Math.ceil(shown.length / JOURNAL_PAGE));
+    if (journalFilter.page > pages - 1) journalFilter.page = pages - 1;
+    var from = journalFilter.page * JOURNAL_PAGE;
+    var search = h('input', { class: 'lz-in lz-jsearch', type: 'search', value: journalFilter.q || '',
+      placeholder: T('pl.loot-zones.j.search', 'Search a zone'), 'aria-label': T('pl.loot-zones.j.search', 'Search a zone') });
+    var sTimer = null;
+    search.addEventListener('input', function () {
+      journalFilter.q = search.value; journalFilter.page = 0;
+      if (sTimer) clearTimeout(sTimer);
+      sTimer = setTimeout(function () { sTimer = null; render({ ifChanged: true }); }, 150);
+    });
+    kids.push(h('div', { class: 'lz-bulk' }, [
+      sel(journalFilter.kind, [
+        ['', T('pl.loot-zones.j.kind.all', 'Everything')],
+        ['switch', T('pl.loot-zones.j.kind.switch', 'Switches and rotation')],
+        ['guards', T('pl.loot-zones.j.kind.guards', 'Guards')],
+        ['despawn', T('pl.loot-zones.j.kind.despawn', 'Sentries and zombies kept out')],
+        ['variant', T('pl.loot-zones.j.kind.variant', 'Variants')],
+        ['refusal', T('pl.loot-zones.j.kind.refusal', 'Refusals and waits')],
+        ['island', T('pl.loot-zones.j.kind.island', 'Loot, spawn plans and messages')],
+      ], function (v) { journalFilter.kind = v; journalFilter.page = 0; render({ ifChanged: true }); }, T('pl.loot-zones.j.kind.label', 'Show')),
+      search,
+      h('span', { class: 'lz-bulk-n' }, T('pl.loot-zones.j.count', '{n} of {total} entries', { n: shown.length, total: Number(journal.total) || 0 })),
+      h('button', { class: 'secondary', type: 'button', onclick: function () { refreshJournal(); } }, [icon('refresh'), T('pl.loot-zones.j.refresh', 'Refresh')]),
+    ]));
+    if (!shown.length) {
+      kids.push(note('', (journal.entries || []).length
+        ? T('pl.loot-zones.j.noMatch', 'Nothing matches this filter.')
+        : T('pl.loot-zones.j.empty', 'Nothing yet. Switches, guards and refusals appear here as they happen.')));
+    } else {
+      kids.push(h('div', { class: 'lz-journal' }, shown.slice(from, from + JOURNAL_PAGE).map(function (e) { return journalRow(e, c); })));
+      if (pages > 1) {
+        kids.push(h('div', { class: 'lz-actions lz-pager' }, [
+          h('button', { class: 'secondary', type: 'button', disabled: journalFilter.page <= 0 ? '' : null,
+            onclick: function () { if (journalFilter.page > 0) { journalFilter.page--; render({ ifChanged: true }); } } }, T('pl.loot-zones.j.newer', 'Newer')),
+          h('span', {}, T('pl.loot-zones.j.page', 'Page {n} of {of}', { n: journalFilter.page + 1, of: pages })),
+          h('button', { class: 'secondary', type: 'button', disabled: journalFilter.page >= pages - 1 ? '' : null,
+            onclick: function () { if (journalFilter.page < pages - 1) { journalFilter.page++; render({ ifChanged: true }); } } }, T('pl.loot-zones.j.older', 'Older')),
+        ]));
+      }
+    }
+    kids.push(h('small', { class: 'lz-dim' }, T('pl.loot-zones.j.keeps', 'The last {n} entries are kept, across manager restarts.', { n: Number(journal.max) || 400 })));
+    return card('list', T('pl.loot-zones.card.journal', 'What happened'), null, kids);
+  }
+
+  /**
+   * ── THE DEFAULTS EVERY ZONE STARTS FROM ────────────────────────────────────────────────────────
+   *
+   * ⚠ **THESE TWO BLOCKS WERE ONLY EVER IN `config.json`.** A zone with no guard or spawn settings of
+   * its own runs on them, and a zone opened in its editor for the first time copies them as its own
+   * — so they decide what every new zone starts with, and nothing on this tab could show or change
+   * them. Same controls as a zone's own sections, with the scope named so an explanation opened here
+   * does not open on every zone.
+   */
+  function defaultsCard(c) {
+    var kids = [];
+    var was = hintScope;
+    hintScope = 'defaults';
+    try {
+      kids.push(h('h4', { class: 'lz-group' }, T('pl.loot-zones.defaults.guards', 'Sentries, zombies and guards')));
+      guardControls(c.sentries, 'defaults', null, null).forEach(function (x) { if (x) kids.push(x); });
+      kids.push(h('h4', { class: 'lz-group' }, cardActivity()));
+      activityControls(c.activity, 'defaults', false).forEach(function (x) { if (x) kids.push(x); });
+    } finally { hintScope = was; }
+    return card('shield', T('pl.loot-zones.card.defaults', 'Defaults for new zones'),
+      T('pl.loot-zones.card.defaults.lead', 'A zone with no settings of its own runs on these. A zone keeps its own once you change it.'), kids);
+  }
+
   var lastTree = null;
   // The configuration object the last full draw was made from. A different one (a save, a discard, a
   // poll that brought back somebody else's change) is always a full draw: every control on the page
@@ -4963,10 +5449,10 @@
       parts.push(T('pl.loot-zones.rot.line.manual', 'Rotation: by hand. A zone goes live only when you switch it on in its editor; at most {n} at once.', { n: n }));
       if (picked) parts.push(T('pl.loot-zones.rot.line.bulkManual', 'Putting zones in rotation does not switch them on while rotation is by hand.'));
     }
-    if (c.enabled === false && c.rotation !== 'manual') {
-      parts.push(T('pl.loot-zones.rot.line.off', 'Rotation is switched off, so nothing goes live by itself.'));
+    if (c.enabled === false) {
+      parts.push(T('pl.loot-zones.rot.line.pluginOff', 'Loot Zones is switched off, so no zone can go live.'));
     }
-    var tab = T('pl.loot-zones.nav.settings', 'Settings and actions');
+    var tab = navLabels().settings;
     // `plain`: on the Settings card itself, and inside a dialog, where a link away is no help.
     if (plain) return h('div', { class: 'lz-rotline' }, [icon('clock'), h('span', {}, parts.join(' '))]);
     return h('div', { class: 'lz-rotline' }, [icon('clock'), h('span', {}, parts.join(' ')),
@@ -4984,7 +5470,7 @@
   var EDIT_TABS = ['general', 'area', 'guards', 'busy', 'variants'];
   /** The sub-route of what is on screen now. */
   function routeNow() {
-    if (view === 'messages' || view === 'settings') return view;
+    if (view === 'messages' || view === 'settings' || view === 'activity') return view;
     if (editId != null) return 'zone/' + encodeURIComponent(String(editId)) + (editTab && editTab !== 'general' ? '/' + editTab : '');
     return '';
   }
@@ -4997,7 +5483,7 @@
   /** Read an address into the screen state. Answers false for one this page cannot draw. */
   function applyRoute(sub) {
     var p = String(sub || '').split('/');
-    if (p[0] === 'messages' || p[0] === 'settings') { view = p[0]; editId = null; editVariant = null; return true; }
+    if (p[0] === 'messages' || p[0] === 'settings' || p[0] === 'activity') { view = p[0]; editId = null; editVariant = null; return true; }
     if (p[0] === 'zone' && p[1]) {
       var id;
       try { id = decodeURIComponent(p[1]); } catch (ignored) { id = p[1]; }
@@ -5034,13 +5520,18 @@
         class: 'lz-tab' + (on ? ' on' : ''), 'aria-current': on ? 'page' : null,
       }, [icon(ico), label], function () {
         view = key; if (key === 'zones') { editId = null; editVariant = null; }
+        if (key === 'activity') refreshJournal();
         render(); noteRoute();
       });
     };
+    var L = navLabels();
+    // ⚠ Activity is the FOURTH tab, after Settings, so the three that were there keep their places:
+    // a bookmark, a habit and the render check all find Messages second and Settings third.
     return h('nav', { class: 'lz-tabs', 'aria-label': T('pl.loot-zones.nav.label', 'Loot Zones sections') }, [
       b('zones', 'list', T('pl.loot-zones.nav.zones', 'Zones ({n})', { n: (c.zones || []).length })),
-      b('messages', 'chat', T('pl.loot-zones.nav.messages', 'Messages')),
-      b('settings', 'sliders', T('pl.loot-zones.nav.settings', 'Settings and actions')),
+      b('messages', 'chat', L.messages),
+      b('settings', 'sliders', L.settings),
+      b('activity', 'pulse', L.activity),
     ]);
   }
   function openZone(id, tab, replace) {
@@ -6297,11 +6788,19 @@
     var sets = (state.sets && state.sets.sets) || [];
 
     root.appendChild(tabNav(c));
+    root.appendChild(statHeader(c, st));
+    var first = firstRunNote(c);
+    if (first) root.appendChild(first);
     var zEdit = editId != null ? zoneById(editId) : null;
     // An address naming a zone this configuration does not have (removed since, or an unsaved one
     // opened in a new tab) lands on the list, and the address says so.
     if (editId != null && !zEdit) { editId = null; editVariant = null; noteRoute(true); }
-    if (view === 'messages') {
+    if (view === 'activity') {
+      // ── what happened, what is live, what comes next ──────────────────────────────────────────
+      root.appendChild(nowCard(c, st));
+      root.appendChild(nextCard(c, st));
+      root.appendChild(journalCard(c));
+    } else if (view === 'messages') {
       // ── what players are told ────────────────────────────────────────────────────────────────────
       root.appendChild(card('chat', T('pl.loot-zones.card.messages', 'What players are told'),
         T('pl.loot-zones.card.messages.lead', 'Four messages. Leave one empty to switch it off.'), [
@@ -6317,6 +6816,12 @@
       ].concat(MESSAGES.map(function (d) { return messageBlock(d, c); }))));
 
     } else if (view === 'settings') {
+      // ── the plugin's own switch, on a card of its own ────────────────────────────────────────────
+      root.appendChild(card('power', T('pl.loot-zones.card.master', 'Loot Zones'),
+        T('pl.loot-zones.card.master.lead', 'The plugin\'s own switch. Every zone, message and guard has its own switch too.'), [
+        row(labMasterOn(), toggle(c.enabled === true, function (v) { c.enabled = v; markDirty(); }),
+          T('pl.loot-zones.set.masterOn.hint', 'Off: nothing is switched on, guarded or announced, and spawn plans go back. Live zones keep their loot.')),
+      ]));
       // ── the zone as players meet it ──────────────────────────────────────────────────────────────
       var own = c.zone.configMode === 'own';
       root.appendChild(card('map', cardRectangle(),
@@ -6354,8 +6859,6 @@
       // ── settings ─────────────────────────────────────────────────────────────────────────────────
       root.appendChild(card('sliders', cardRotation(),
         T('pl.loot-zones.card.rotation.lead', 'Which loot zone is live, and what may change it.'), [
-        row(labRotationOn(), toggle(!!c.enabled, function (v) { c.enabled = v; markDirty(); }),
-          T('pl.loot-zones.set.rotationOn.hint', 'Off keeps whatever is switched on; it does not remove a live zone.')),
         row(T('pl.loot-zones.set.rotation', 'How zones change'), sel(c.rotation, [
           ['manual', T('pl.loot-zones.rot.manual', 'Only by hand, from this page')],
           ['time', T('pl.loot-zones.rot.time', 'On a schedule, per zone')],
@@ -6383,7 +6886,9 @@
         row(T('pl.loot-zones.set.maxActive', 'Zones at once'), numIn(c.maxActive, function (v) { c.maxActive = v; markDirty(); }, 1, 10, T('pl.loot-zones.unit.zones', 'zones')),
           T('pl.loot-zones.set.maxActive.hint', 'The game allows several. Each one is another folder the game reads when it starts.')),
         rotationNote(c, null, true),
-        more('rotation', T('pl.loot-zones.more.options', 'More options'), [
+          // ⚠ OUT OF THE FOLD, all four. "Reload loot after a switch" is a feature with a switch of
+          // its own and the gap between switches decides whether a switch happens at all; neither
+          // belongs behind "More options".
           row(T('pl.loot-zones.set.minBetween', 'Time between switches'), numIn(c.minMinutesBetweenSwitches, function (v) { c.minMinutesBetweenSwitches = v; markDirty(); }, 0, 1440, T('pl.loot-zones.unit.minutes', 'minutes')),
             T('pl.loot-zones.set.minBetween.hint',
               'Minimum time between loot swaps; switching off counts. Stops a crash loop cycling every zone.')),
@@ -6395,8 +6900,8 @@
             (state.sets && state.sets.root)
               ? T('pl.loot-zones.set.setsDir.hintPath', 'Leave it empty for the plugin\'s own folder: {path}', { path: state.sets.root })
               : T('pl.loot-zones.set.setsDir.hint', 'Leave it empty for the plugin\'s own folder.')),
-        ]),
       ]));
+      root.appendChild(defaultsCard(c));
 
       // ── everything else ──────────────────────────────────────────────────────────────────────────
       root.appendChild(card('cog', cardActions(),
@@ -6543,10 +7048,9 @@
        * read them. That is one switch on a card further down the page, and it is the first thing to
        * check when the answer to "why does nothing happen" is "nothing is meant to".
        */
-      if (c.enabled === false && c.rotation !== 'manual') {
-        live.push(note('bad', c.rotation === 'time'
-          ? T('pl.loot-zones.live.rotationOffTime', 'Rotation off: zone times ignored. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })
-          : T('pl.loot-zones.live.rotationOffRestart', 'Rotation off: no zone per restart. Turn on "{control}" under "{card}". Manual switches work.', { control: labRotationOn(), card: cardRotation() })));
+      if (c.enabled === false) {
+        live.push(note('bad', T('pl.loot-zones.live.pluginOff', 'Loot Zones is off: no zone is switched on, guarded or announced. Turn on "{control}" under {tab}.',
+          { control: labMasterOn(), tab: navLabels().settings })));
       }
       if (st.nextSwitchInMs > 0) {
         live.push(note('', T('pl.loot-zones.live.held', 'Next switch waits {n} more min: each switch resets containers across the whole map.',
@@ -6639,25 +7143,7 @@
         root.appendChild(card('check-shield', cardBridge(), null, kidsB));
       }
 
-      // The figures an owner opens this tab to see. They were in prose inside each zone, which is the
-      // right place for the detail and the wrong place for the answer to "is this working at all".
-      var held = 0; var postsAll = 0; var guardsUp = 0;
-      Object.keys(st.patrols || {}).forEach(function (k) {
-        var p = st.patrols[k] || {};
-        held += Number(p.held) || 0;
-        postsAll += Number(p.posts) || 0;
-        guardsUp += Number(p.spawned) || 0;
-      });
-      var enabledZones = (c.zones || []).filter(function (z) { return z.enabled !== false; }).length;
-      root.appendChild(h('div', { class: 'lz-figs' }, [
-        h('div', { class: 'lz-fig' }, [h('b', {}, String((c.zones || []).length)), h('span', {}, T('pl.loot-zones.fig.zones', 'zones'))]),
-        h('div', { class: 'lz-fig' }, [h('b', {}, String(enabledZones)), h('span', {}, T('pl.loot-zones.fig.inRotation', 'in rotation'))]),
-        h('div', { class: 'lz-fig' + ((st.active || []).length ? ' good' : '') },
-          [h('b', {}, String((st.active || []).length)), h('span', {}, T('pl.loot-zones.fig.liveNow', 'live now'))]),
-        postsAll ? h('div', { class: 'lz-fig' + (held < postsAll ? ' wait' : ' good') },
-          [h('b', {}, held + '/' + postsAll), h('span', {}, T('pl.loot-zones.fig.postsHeld', 'posts held'))]) : null,
-        guardsUp ? h('div', { class: 'lz-fig' }, [h('b', {}, String(guardsUp)), h('span', {}, T('pl.loot-zones.fig.guardsSent', 'guards sent'))]) : null,
-      ].filter(Boolean)));
+      // The figures are in the header above every screen (`statHeader`), so they are not repeated here.
       root.appendChild(rotationNote(c, null));
 
       root.appendChild(zonesCard(c, st, sets));
@@ -6726,6 +7212,7 @@
       render: function (container) {
         root = container;
         root.classList.add('lz');
+        bindJournalSocket();
         // The screen the address names: a zone opened in a new tab, a bookmark, Back into this page.
         if (ROUTE) applyRoute(ROUTE.get());
         refresh();

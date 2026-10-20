@@ -877,3 +877,63 @@ a.lz-btnlink .ico, a.lz-btnlink svg { width: 1em; height: 1em; }
 .lz-presetpick span { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
 .lz-presetpick b { font-size: 0.88rem; }
 .lz-presetpick small { color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+
+/* ── the header above every screen: the switch, the figures, what it needs ──────────────────── */
+.lz-stat { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.4rem; min-width: 0; }
+.lz-stat > .lz-figs { margin-top: 0.2rem; }
+.lz-fig-sw { display: flex; align-items: center; justify-content: center; gap: 0.4rem; }
+.lz-fig-sw span { display: inline; font-size: 0.74rem; font-weight: 700; }
+.lz-fig-sw .lz-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
+.lz-fig-sw.good .lz-dot { background: var(--online); }
+.lz-fig-sw.good span { color: var(--online); }
+.lz-fig-sw.off span { color: var(--muted); }
+.lz-swline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.45rem; min-width: 0; }
+.lz-swline > small { color: var(--muted); font-size: 0.78rem; }
+.lz-swchip {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.2rem;
+  padding: 0.12rem 0.5rem; border-radius: var(--pill);
+  border: 1px solid var(--line); background: var(--inset);
+  color: var(--muted); font-size: 0.76rem; line-height: 1.4;
+  min-width: 0; max-width: 100%; white-space: normal;
+}
+.lz-swchip b { font-weight: 700; }
+.lz-swchip.good b { color: var(--online); }
+.lz-swchip.bad { border-color: rgba(255, 92, 92, 0.35); }
+.lz-swchip.bad b { color: var(--alarm); }
+.lz-swchip.wait b { color: var(--standby); }
+.lz-first b { color: var(--text); }
+.lz-badge.bad { color: var(--alarm); border-color: rgba(255, 92, 92, 0.35); }
+
+/* ── the Activity screen ────────────────────────────────────────────────────────────────────── */
+.lz-journal { display: flex; flex-direction: column; min-width: 0; border-top: 1px solid var(--line-2); }
+.lz-jrow {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 9rem) minmax(0, 1fr) auto;
+  gap: 0.3rem 0.7rem; align-items: start;
+  padding: 0.45rem 0.1rem; border-bottom: 1px solid var(--line-2);
+  min-width: 0;
+}
+.lz-jt { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.8rem; }
+.lz-jt small { color: var(--faint); font-size: 0.7rem; }
+.lz-jz { min-width: 0; overflow-wrap: anywhere; }
+.lz-jz .lz-zname { white-space: normal; font-size: 0.86rem; }
+.lz-jw { min-width: 0; font-size: 0.86rem; line-height: 1.45; color: var(--text); overflow-wrap: anywhere; }
+.lz-jrow.bad .lz-jw { color: var(--text); }
+.lz-jsearch { flex: 1 1 10rem; min-width: 0; }
+.lz-pager { justify-content: center; align-items: center; }
+.lz-nowrow { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.4rem 0; border-bottom: 1px solid var(--line-2); min-width: 0; }
+.lz-nowrow small { color: var(--muted); font-size: 0.8rem; line-height: 1.4; }
+.lz-nowhead { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; min-width: 0; }
+.lz-nowhead > .ico, .lz-nowhead > svg { width: 0.95rem; height: 0.95rem; flex: 0 0 auto; }
+.lz-nowhead .lz-zname { white-space: normal; }
+.lz-nextrow { display: flex; align-items: flex-start; gap: 0.45rem; font-size: 0.86rem; line-height: 1.45; min-width: 0; }
+.lz-nextrow > .ico, .lz-nextrow > svg { width: 0.95rem; height: 0.95rem; flex: 0 0 auto; margin-top: 0.15rem; }
+.lz-nextrow > span { min-width: 0; flex: 1 1 auto; }
+@media (max-width: 640px) {
+  .lz-jrow { grid-template-columns: minmax(0, 1fr) auto; }
+  .lz-jrow > .lz-jz { grid-column: 1 / -1; grid-row: 2; }
+  .lz-jrow > .lz-jw { grid-column: 1 / -1; grid-row: 3; }
+}
+/* A zone's fact chips carry an owner's own words (a variant's label, "Sentries in this area: not known
+   yet"), which on a phone are wider than the screen; they wrap like the variant rows' badges do. */
+.lz-facts .lz-badge { white-space: normal; max-width: 100%; min-width: 0; text-align: left; }
