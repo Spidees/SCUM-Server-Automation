@@ -13,6 +13,10 @@
   },
   "mutedSteamIds": [],
   "eventDeaths": false,
+  "liveReads": {
+    "players": true,
+    "squads": true
+  },
   "events": {
     "join": {
       "enabled": true,

@@ -32,6 +32,10 @@ const DEFAULTS = {
   // A death inside a game event (a tournament, a ring) is part of that event. Off, the squad hears
   // nothing about it; on, it is told with the same lines as any other death.
   eventDeaths: false,
+  // Where a squad line asks the running game rather than the last save. Both on: positions for
+  // {distance} and {direction}, and the roster that decides who hears a line. Switched off, that read
+  // is never asked and the save answers, as it does whenever the bridge cannot.
+  liveReads: { players: true, squads: true },
   events: {
     join:       { enabled: true,  message: '{player} just connected.', messageI18n: {} },
     leave:      { enabled: true,  message: '{player} went offline.', messageI18n: {} },
@@ -124,6 +128,8 @@ const SUB_KEYS = Object.keys(DEFAULTS.commands.subs);
 // rendering (and therefore one send per player instead of one send for the whole squad).
 const RELATIVE_TOKENS = /\{(distance|direction)\}/i;
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+// How many Activity rows are kept. The panel pages them, so this is a memory bound, not a screen one.
+const LOG_MAX = 300;
 
 module.exports = {
   async register(host) {
@@ -140,6 +146,10 @@ module.exports = {
       return Object.assign({}, DEFAULTS, c, {
         events,
         quietHours: Object.assign({}, DEFAULTS.quietHours, c.quietHours),
+        liveReads: Object.assign({}, DEFAULTS.liveReads, c.liveReads),
+        // A list that is not a list (a hand-edited file) would throw inside every announcement,
+        // where the throw is swallowed: the squad would simply stop hearing anything.
+        mutedSteamIds: Array.isArray(c.mutedSteamIds) ? c.mutedSteamIds : [],
         commands: Object.assign({}, DEFAULTS.commands, cc, {
           subs,
           texts: Object.assign({}, DEFAULTS.commands.texts, cc.texts),
@@ -384,12 +394,30 @@ module.exports = {
     let persistTimer = null;
     const flushNow = () => {
       if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-      try { host.store.set('stats', stats); host.store.set('recent', recent.slice(0, 60)); host.store.set('prefs', prefs); } catch { /* ignore */ }
+      try { host.store.set('stats', stats); host.store.set('recent', recent.slice(0, LOG_MAX)); host.store.set('prefs', prefs); } catch { /* ignore */ }
     };
     const persist = () => { if (!persistTimer) persistTimer = setTimeout(flushNow, 1000); };
-    function note(kind, actor, text, recipients) {
-      recent.unshift({ at: Date.now(), kind, actor, text, recipients });
-      if (recent.length > 60) recent.length = 60;
+    /**
+     * One line of the Activity log: what the plugin did, for whom, and how it ended.
+     *
+     * It used to hold only the alerts that ARRIVED, so a line that reached nobody, one held back by
+     * quiet hours or a cooldown, every command a player ran and every admin action left no trace an
+     * owner could read: "my squad heard nothing" had no answer on the screen. `extra` carries
+     * `group` (alert, command, admin), `sid`, `result` (sent, partial, failed, held, refused, done),
+     * `why` (a code the panel words) and `targets` (who it was aimed at). A row an older version
+     * wrote has none of them and reads as an alert that was sent, which is all it ever recorded.
+     */
+    function note(kind, actor, text, recipients, extra) {
+      const x = extra || {};
+      recent.unshift({
+        at: Date.now(), kind, actor, text, recipients,
+        group: x.group || (EVENT_KEYS.includes(kind) ? 'alert' : 'command'),
+        sid: x.sid ? String(x.sid) : undefined,
+        result: x.result || 'sent',
+        why: x.why || undefined,
+        targets: x.targets != null ? x.targets : undefined,
+      });
+      if (recent.length > LOG_MAX) recent.length = LOG_MAX;
       persist();
     }
     // Read without creating: this is called for every candidate recipient of every message, and an
@@ -567,6 +595,8 @@ module.exports = {
     }
     async function readLive() {
       if (!canQuery()) return null;
+      // The owner's own switch: the save answers, and no note is left saying the game would not.
+      if (cfg().liveReads.players === false) { liveNote.players = null; return null; }
       const q = await host.bridge.query('live', 'players');
       if (!q || !q.ok) { noteLive('players', q); return null; }
       // ⚠ BOTH SHAPES. `mod_live` answers with a BARE ARRAY, and this read only `data.players` — so
@@ -655,6 +685,7 @@ module.exports = {
      */
     async function squadLive(steamId) {
       if (!canQuery()) return undefined;
+      if (cfg().liveReads.squads === false) { liveNote.squads = null; return undefined; }
       const pid = profileIdOf(steamId);
       if (!pid) return undefined;
       const q = await host.bridge.query('squads', `member:${pid}`);
@@ -839,8 +870,15 @@ module.exports = {
       const evc = c.events[kind];
       if (!evc || !evc.enabled || !evc.message) return;
       const key = `events.${kind}`;
-      if (inQuietHours(c)) { stats.suppressed++; persist(); return; }
-      if (onCooldown(`${kind}:${subject}`, c.cooldownSeconds)) { stats.suppressed++; persist(); return; }
+      // ⚠ **HELD BACK IS COUNTED ONLY WHEN SOMEBODY WOULD HAVE HEARD IT.** Quiet hours and the
+      // cooldown used to be asked first, so every solo player's join at night and every event of a
+      // squad with nobody else online went into "Suppressed": the counter measured the server's
+      // traffic, not what this plugin kept from a squad. Both are asked below, once there is an
+      // audience, and each one held back is a row in the Activity log saying why.
+      const held = (why, n) => {
+        stats.suppressed++;
+        note(kind, vars.player || actorSteamId, '', 0, { group: 'alert', sid: subject, result: 'held', why, targets: n });
+      };
 
       // If the line names someone and we could not work out who, say nothing. A message reading
       // "76561198... was killed" is worse to a squad than no message at all. Asked before the squad
@@ -866,6 +904,14 @@ module.exports = {
         && (c.includeSelf || sid !== subject)
       );
       if (![...online.keys()].some(canHear)) return;
+      // Inside quiet hours nothing goes out, so the running game is not asked who is in the squad:
+      // the save says whether anybody would have heard it, which is all the log needs.
+      if (inQuietHours(c)) {
+        const saved = squadOf(actorSteamId);
+        const n = saved ? saved.members.map((m) => m.steamId).filter(canHear).length : 0;
+        if (n) held('quiet', n);
+        return;
+      }
 
       // Live where the game will say who is in this squad, saved where it will not. This is the
       // decision the whole plugin turns on: it is who hears a line nobody else is meant to.
@@ -874,6 +920,7 @@ module.exports = {
 
       const targets = squad.members.map((m) => m.steamId).filter(canHear);
       if (!targets.length) return;
+      if (onCooldown(`${kind}:${subject}`, c.cooldownSeconds)) { held('cooldown', targets.length); return; }
 
       // Where it happened is read only NOW, once a line is really going to somebody. The handlers
       // used to fetch it first, and asking the running game where everybody is walks its player
@@ -901,10 +948,15 @@ module.exports = {
       const pos = relative ? await positions(targets) : new Map();
       const cost = relative ? targets.length : 1;
       if (!rateOk(cost, Number(c.maxPerMinute) || 0)) {
-        stats.suppressed++; persist();
+        held('rate', targets.length);
         host.logger.warn(`rate limit hit — dropped a "${kind}" message for ${targets.length} player(s)`);
         return;
       }
+      const who = vars.player || actorSteamId;
+      const failed = (why) => {
+        stats.failed = (stats.failed || 0) + 1;
+        note(kind, who, '', 0, { group: 'alert', sid: subject, result: 'failed', why, targets: targets.length });
+      };
       try {
         if (!relative) {
           // One line per language among the recipients; a manager without `host.i18n` gets one.
@@ -919,11 +971,11 @@ module.exports = {
           const delivered = said == null ? targets.length : said;
           if (delivered <= 0) {
             host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s).`);
-            stats.failed = (stats.failed || 0) + 1; persist();
+            failed('reached_nobody');
             return;
           }
           stats.sent++;
-          note(kind, vars.player || actorSteamId, text, delivered);
+          note(kind, who, text, delivered, { group: 'alert', sid: subject, result: delivered < targets.length ? 'partial' : 'sent', targets: targets.length });
         } else {
           // One send per reader: {distance}/{direction} mean "from where YOU are".
           let first = '';
@@ -958,15 +1010,18 @@ module.exports = {
           // nothing, the panel said otherwise, and the only trace was a debug line nobody reads.
           if (!reached) {
             host.logger.warn(`"${kind}" reached none of its ${targets.length} recipient(s) — every individual send failed.`);
-            stats.failed = (stats.failed || 0) + 1; persist();
+            failed('reached_nobody');
             return;
           }
           if (failedFor.length) host.logger.warn(`"${kind}" reached ${reached} of ${targets.length} — ${failedFor.length} player(s) did not get it.`);
           stats.sent++;
-          note(kind, vars.player || actorSteamId, first, reached);
+          note(kind, who, first, reached, { group: 'alert', sid: subject, result: failedFor.length ? 'partial' : 'sent', targets: targets.length });
         }
       } catch (e) {
-        host.logger.debug(`chat send failed (${kind}): ${e && e.message}`);
+        // A shared send that THREW used to end here as a debug line: no "Reached nobody", no row,
+        // so the panel said nothing at all about a squad that heard nothing.
+        host.logger.warn(`"${kind}" could not be sent: ${e && e.message}`);
+        failed('send_error');
       }
     }
 
@@ -1131,7 +1186,9 @@ module.exports = {
     let rosters = new Map();   // squadId -> { name, at, members: Map(steamId -> name) }
     const ROSTER_TTL_MS = 15 * 60 * 1000;
     let rosterTimer = null;
+    let rosterLast = 0;            // when the last sweep ran, for the Activity screen
     function pollRosters() {
+      rosterLast = Date.now();
       try {
         const online = onlineIndex();
         const seen = new Set();
@@ -1192,7 +1249,9 @@ module.exports = {
       const c = cfg();
       const secs = Math.max(5, Number(c.rosterPollSeconds) || 60);
       const anyOn = c.events.squadJoin.enabled || c.events.squadLeave.enabled;
-      if (!anyOn) return;
+      // The master switch too: with the plugin off, every sweep read the save for nothing, because
+      // each line it found was then dropped by `announce`. A change of config re-wires this.
+      if (!anyOn || !c.enabled) return;
       const stop = every(secs * 1000, pollRosters);
       rosterTimer = stop;
       offs.push(() => { stop(); if (rosterTimer === stop) rosterTimer = null; });
@@ -1227,11 +1286,26 @@ module.exports = {
       }, base), [lang])));
     }
 
+    /**
+     * A command, and the Activity row that says how it ended. The row is written here, once, whatever
+     * branch answered: every refusal a player met ("not in a squad", "nobody online", a usage line)
+     * used to leave nothing behind, so "the command does nothing" had no trace an owner could read.
+     */
     async function handleCommand(ctx) {
+      const out = { ran: false, sub: 'roster', result: 'done', why: undefined, text: '', n: null, who: '', sid: '' };
+      try { await runCommand(ctx, out); }
+      catch (e) { out.result = 'failed'; out.why = 'error'; throw e; }
+      finally {
+        if (out.ran) note(out.sub, out.who || out.sid, out.text, out.n == null ? 0 : out.n, { group: 'command', sid: out.sid, result: out.result, why: out.why });
+      }
+    }
+
+    async function runCommand(ctx, out) {
       const c = cfg();
       if (!c.enabled) return;
       stats.commands++; persist();
       const me = String(ctx.steamId || '');
+      out.ran = true; out.sid = me; out.who = displayName(me, ctx.name) || '';
       // The language this player reads: the manager hands it over as `ctx.lang`.
       const L = ctx.lang || langOf(me);
       // One of the owner's texts, filled for this player: `{ text, i18n }`.
@@ -1241,13 +1315,17 @@ module.exports = {
       // What a player TYPES, prefix included: every reply that tells them what to type uses this,
       // because "Use squad on" is a command nobody can run.
       const root = cmdPrefix() + c.commands.root;
-      const squad = await squadFor(me);
+      out.sub = SUB_KEYS.filter((k) => sub && subOn(c, k) && sub === subName(c, k))[0] || 'roster';
+      // How this one ended, for the Activity row. A refusal is the player's answer, not a fault.
+      const refuse = (why) => { out.result = 'refused'; out.why = why; };
 
       // A LocText carrying this player's language. `ctx.lang` arrived with LocText replies, so a
       // context without it takes the line already rendered for this player as a plain string.
-      const reply = (set) => ((set && (set.text || set.i18n[L]))
-        ? ctx.reply(host.i18n && ctx.lang ? { text: set.text, i18n: set.i18n } : (set.i18n[L] || set.text), { channel: safeChannel(c.channel) })
-        : Promise.resolve());
+      const reply = (set) => {
+        if (!(set && (set.text || set.i18n[L]))) return Promise.resolve();
+        if (!out.text) out.text = set.text;
+        return ctx.reply(host.i18n && ctx.lang ? { text: set.text, i18n: set.i18n } : (set.i18n[L] || set.text), { channel: safeChannel(c.channel) });
+      };
       const mutedList = (p) => (lang) => Object.keys(p.muted).join(', ') || say(c, 'texts.mutedNone', {}, lang) || '';
 
       // Self-service switches work even without a squad — a player can pre-silence things.
@@ -1256,6 +1334,7 @@ module.exports = {
       if (sub && subOn(c, 'mute') && sub === subName(c, 'mute')) {
         const p = prefFor(me);
         const arg = rest.toLowerCase();
+        if (!arg) refuse('usage');
         if (!arg) return reply(line('muteUsage', { root, mute: subName(c, 'mute'), events: EVENT_KEYS.join('|'), muted: mutedList(p) }));
         const unknown = [];
         if (arg === 'none') p.muted = {};
@@ -1283,10 +1362,14 @@ module.exports = {
         return reply(line('help', { root, list }));
       }
 
+      // Read only now: the self-service switches above answer without it, so a slow or refusing
+      // bridge can no longer stand between a player and `off`.
+      const squad = await squadFor(me);
+
       // `undefined` is "the save could not be read"; `null` is "this player is in no squad". Only the
       // second is something we may state.
-      if (squad === undefined) return reply(line('squadUnknown'));
-      if (!squad) return reply(line('notInSquad'));
+      if (squad === undefined) { refuse('squad_unknown'); return reply(line('squadUnknown')); }
+      if (!squad) { refuse('not_in_squad'); return reply(line('notInSquad')); }
 
       const online = onlineIndex();
       const world = worldSnapshot();
@@ -1328,6 +1411,7 @@ module.exports = {
         // squad spammer and a runaway loop are bounded by the same number the owner set.
         if (!rateOk(targets.length, Number(c.maxPerMinute) || 0)) {
           host.logger.warn(`"${root} ${kind}" from ${who} was dropped — the outbound ceiling (${c.maxPerMinute}/min) is already reached.`);
+          out.result = 'held'; out.why = 'rate';
           return 0;
         }
         try {
@@ -1335,20 +1419,25 @@ module.exports = {
           const res = await host.chat.send(host.i18n ? { text: set.text, i18n: set.i18n } : set.text, { channel: chan, targets });
           const said = deliveredOf(res);
           const n = said == null ? targets.length : said;
+          // The Activity row shows what the SQUAD read, not the confirmation the sender got.
+          out.text = set.text;
           if (n <= 0) {
             host.logger.warn(`"${root} ${kind}" from ${who} reached none of its ${targets.length} recipient(s).`);
+            out.result = 'failed'; out.why = 'reached_nobody';
             return 0;
           }
-          note(kind, who, set.text, n);
+          out.n = n;
+          if (n < targets.length) out.result = 'partial';
           return n;
         } catch (e) {
           host.logger.warn(`"${root} ${kind}" from ${who} could not be delivered: ${e && e.message}`);
+          out.result = 'failed'; out.why = 'send_error';
           return 0;
         }
       };
 
       if (sub && subOn(c, 'here') && sub === subName(c, 'here')) {
-        if (!reachable.length) return reply(line('nobodyOnline'));
+        if (!reachable.length) { refuse('nobody_online'); return reply(line('nobodyOnline')); }
         const who = displayName(me, ctx.name);
         const vars = { player: who, sector: mine ? await sectorOf(mine.x, mine.y) : '', squad: sqName(c, squad) };
         const sent = await sendToSquad('here', vars, reachable.map((m) => m.steamId), 'here', who);
@@ -1356,12 +1445,12 @@ module.exports = {
       }
 
       if (sub && subOn(c, 'msg') && sub === subName(c, 'msg')) {
-        if (!rest) return reply(line('msgUsage', { root, msg: subName(c, 'msg') }));
+        if (!rest) { refuse('usage'); return reply(line('msgUsage', { root, msg: subName(c, 'msg') })); }
         // Free text from one player shown to others: keep it to one readable line. Braces are
         // stripped so a message can't smuggle a token into the template it gets rendered into.
         rest = rest.replace(/[\u0000-\u001f{}]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
-        if (!rest) return reply(line('msgUsage', { root, msg: subName(c, 'msg') }));
-        if (!reachable.length) return reply(line('nobodyOnline'));
+        if (!rest) { refuse('usage'); return reply(line('msgUsage', { root, msg: subName(c, 'msg') })); }
+        if (!reachable.length) { refuse('nobody_online'); return reply(line('nobodyOnline')); }
         const who = displayName(me, ctx.name);
         const vars = { player: who, text: rest, squad: sqName(c, squad) };
         // …and the count the player is told is the number the BRIDGE delivered to, never the number
@@ -1377,14 +1466,14 @@ module.exports = {
           (b.squad && squad.name && String(b.squad).toLowerCase() === String(squad.name).toLowerCase())
           || (b.owner && names.has(String(b.owner).toLowerCase()))
         ));
-        if (!bases.length) return reply(line('baseNone'));
+        if (!bases.length) { refuse('no_base'); return reply(line('baseNone')); }
         // Nearest one: a squad often has several, and "your base" means the one you'd walk to.
         let best = bases[0], bestD = mine ? metres(mine, bases[0]) : null;
         for (const b of bases) { const d = mine ? metres(mine, b) : null; if (d != null && (bestD == null || d < bestD)) { best = b; bestD = d; } }
         const bSector = await sectorOf(best.x, best.y);
         // Knowing a base exists but nothing about WHERE would render "Your base is." — say we
         // couldn't locate it instead of sending a sentence with no content in it.
-        if (!bSector && bestD == null) return reply(line('baseNone'));
+        if (!bSector && bestD == null) { refuse('no_base'); return reply(line('baseNone')); }
         return reply(line('base', {
           sector: bSector,
           distance: bestD == null ? '' : bestD,
@@ -1415,7 +1504,10 @@ module.exports = {
 
     function registerCommand() {
       const c = cfg();
-      if (!c.commands.enabled || !c.commands.root) return;
+      // With the plugin switched off the word is not claimed at all: it used to be registered and
+      // then answer nothing, so a player typing it met silence instead of the manager's own
+      // "unknown command".
+      if (!c.enabled || !c.commands.enabled || !c.commands.root) return;
       offs.push(host.chat.onCommand(c.commands.root, (ctx) => handleCommand(ctx).catch((e) => host.logger.debug(`command: ${e && e.message}`))));
     }
 
@@ -1445,7 +1537,7 @@ module.exports = {
       res.json({ english, byLang });
     });
     /**
-     * A caller's body laid over what is already STORED, one level deep.
+     * A caller's body laid over what is already STORED, at every depth.
      *
      * ⚠ **A SETTING NOBODY SENT IS NOT A SETTING TO RESET.** Every field below is rebuilt from the
      * body with a DEFAULTS fallback, which is what makes an older config safe to read — and it means
@@ -1456,20 +1548,42 @@ module.exports = {
      *
      * By KEY PRESENCE, never truthiness — `"mutedSteamIds": []` is an owner who cleared the list.
      * An ARRAY replaces rather than merging; merging two lists by index is never what was meant.
+     *
+     * ⚠ **ONE LEVEL WAS NOT ENOUGH.** `{ events: { join: { message } } }` replaced the stored
+     * `join` whole, so its `enabled` fell back to the default, and `{ commands: { texts: { help } } }`
+     * dropped every other reply the owner had written. The merge now goes all the way down, except
+     * for a language map (`messageI18n`, `helpI18n`): the editor sends one whole, and a language
+     * cleared there has to stay cleared rather than be put back from the file.
      */
     function overlay(stored, body) {
       const out = Object.assign({}, (stored && typeof stored === 'object') ? stored : {});
       if (!body || typeof body !== 'object') return out;
       for (const k of Object.keys(body)) {
         const v = body[k]; const cur = out[k];
-        if (v && typeof v === 'object' && !Array.isArray(v)
-            && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = Object.assign({}, cur, v);
+        if (v && typeof v === 'object' && !Array.isArray(v) && !/I18n$/.test(k)
+            && cur && typeof cur === 'object' && !Array.isArray(cur)) out[k] = overlay(cur, v);
         else out[k] = v;
       }
       return out;
     }
 
+    /**
+     * ⚠ **A KEY NEITHER THE BODY NOR THE FILE CARRIES IS THE DEFAULT, NEVER 0 OR OFF.** The overlay
+     * below lays a body over what is stored, which is right, and then every field was rebuilt with
+     * `!!x` and `Number(x) || 0`. So a stored file that came back `{}` (missing, half-written,
+     * an older version's) plus a body naming one key switched the plugin, its commands and every
+     * subcommand OFF, and set the cooldown to 0 and the per-minute ceiling to 0, which means
+     * UNLIMITED. The panel's own one-key saves (a mute, the master switch) are such bodies.
+     * A cleared number box (`''`) reads as the default too: an owner who empties the ceiling has not
+     * asked for no ceiling, and 0 is the explicit way to say that.
+     */
+    const flag = (v, d) => (v == null ? !!d : !!v);
+    const num = (v, d, lo, hi) => {
+      const n = (v == null || v === '' || !Number.isFinite(Number(v))) ? d : Number(v);
+      return Math.max(lo, Math.min(hi, Math.round(n)));
+    };
     host.routes.post('/config', (req, res) => {
+      const before = (cfg().mutedSteamIds || []).map(String);
       const b = overlay(host.config.get() || {}, req.body || {});
       const events = {};
       for (const k of EVENT_KEYS) {
@@ -1487,7 +1601,7 @@ module.exports = {
       for (const k of SUB_KEYS) {
         const src = ((b.commands || {}).subs || {})[k] || {};
         subs[k] = {
-          enabled: !!src.enabled,
+          enabled: flag(src.enabled, DEFAULTS.commands.subs[k].enabled),
           name: String(src.name || k).toLowerCase().replace(/[^\w-]/g, '').slice(0, 16) || k,
         };
       }
@@ -1496,28 +1610,43 @@ module.exports = {
         const v = ((b.commands || {}).texts || {})[k];
         texts[k] = /I18n$/.test(k) ? cleanI18n(v) : String(v == null ? DEFAULTS.commands.texts[k] : v);
       }
+      const qh = (b.quietHours && typeof b.quietHours === 'object') ? b.quietHours : {};
+      const lr = (b.liveReads && typeof b.liveReads === 'object') ? b.liveReads : {};
+      // De-duplicated: a list holding one player twice drew two chips and took two clicks to undo.
+      const muted = Array.isArray(b.mutedSteamIds)
+        ? [...new Set(b.mutedSteamIds.map((x) => String(x).trim()).filter(Boolean))].slice(0, 500)
+        : before.slice(0, 500);
       host.config.set({
-        enabled: !!b.enabled,
+        enabled: flag(b.enabled, DEFAULTS.enabled),
         channel: safeChannel(b.channel),
-        includeSelf: !!b.includeSelf,
-        cooldownSeconds: Math.max(0, Math.min(600, Number(b.cooldownSeconds) || 0)),
-        maxIndividualSends: Math.max(0, Math.min(100, Number(b.maxIndividualSends) || 0)),
-        maxPerMinute: Math.max(0, Math.min(5000, Number(b.maxPerMinute) || 0)),
-        rosterPollSeconds: Math.max(5, Math.min(3600, Number(b.rosterPollSeconds) || 60)),
+        includeSelf: flag(b.includeSelf, DEFAULTS.includeSelf),
+        cooldownSeconds: num(b.cooldownSeconds, DEFAULTS.cooldownSeconds, 0, 600),
+        maxIndividualSends: num(b.maxIndividualSends, DEFAULTS.maxIndividualSends, 0, 100),
+        maxPerMinute: num(b.maxPerMinute, DEFAULTS.maxPerMinute, 0, 5000),
+        rosterPollSeconds: num(b.rosterPollSeconds, DEFAULTS.rosterPollSeconds, 5, 3600),
         eventDeaths: b.eventDeaths === true,
-        quietHours: {
-          enabled: !!(b.quietHours && b.quietHours.enabled),
-          from: Math.max(0, Math.min(23, Number(b.quietHours && b.quietHours.from) || 0)),
-          to: Math.max(0, Math.min(23, Number(b.quietHours && b.quietHours.to) || 0)),
+        liveReads: {
+          players: flag(lr.players, DEFAULTS.liveReads.players),
+          squads: flag(lr.squads, DEFAULTS.liveReads.squads),
         },
-        mutedSteamIds: Array.isArray(b.mutedSteamIds) ? b.mutedSteamIds.map(String).slice(0, 500) : [],
+        quietHours: {
+          enabled: flag(qh.enabled, DEFAULTS.quietHours.enabled),
+          from: num(qh.from, DEFAULTS.quietHours.from, 0, 23),
+          to: num(qh.to, DEFAULTS.quietHours.to, 0, 23),
+        },
+        mutedSteamIds: muted,
         events,
         commands: {
-          enabled: !!(b.commands && b.commands.enabled),
+          enabled: flag(b.commands && b.commands.enabled, DEFAULTS.commands.enabled),
           root: String((b.commands && b.commands.root) || 'squad').toLowerCase().replace(/[^\w-]/g, '').slice(0, 16) || 'squad',
           subs, texts,
         },
       });
+      // Who an admin muted or let back in is an action on a person, so it is a row of its own.
+      const now = new Set(muted);
+      const was = new Set(before);
+      for (const sid of muted) if (!was.has(sid)) note('mute', displayName(sid, '') || sid, '', 0, { group: 'admin', sid, result: 'done' });
+      for (const sid of before) if (!now.has(sid)) note('unmute', displayName(sid, '') || sid, '', 0, { group: 'admin', sid, result: 'done' });
       res.json({ ok: true });
     });
 
@@ -1533,8 +1662,28 @@ module.exports = {
         seen.add(sq.id);
         if (sq.members.filter((m) => online.has(m.steamId)).length > 1) activeSquads++;
       }
+      const c = cfg();
+      const now = Date.now();
+      const inWindow = now - rateWindow <= 60000;
       res.json({
-        stats, recent: recent.slice(0, 40), online: online.size, activeSquads,
+        stats, recent: recent.slice(0, LOG_MAX), online: online.size, activeSquads,
+        // What is running right now, for the Activity screen: the plugin's own switches as they
+        // stand, the ceiling's use this minute, whether quiet hours hold, and the roster sweep.
+        now: {
+          enabled: !!c.enabled,
+          alertsOn: EVENT_KEYS.filter((k) => c.events[k] && c.events[k].enabled).length,
+          alertsTotal: EVENT_KEYS.length,
+          commandsOn: !!(c.enabled && c.commands.enabled),
+          quiet: inQuietHours(c),
+          quietHours: c.quietHours,
+          rate: { used: inWindow ? rateCount : 0, limit: Number(c.maxPerMinute) || 0,
+            resetsIn: inWindow ? Math.max(0, Math.round((60000 - (now - rateWindow)) / 1000)) : 0 },
+          roster: { running: !!rosterTimer, last: rosterLast || null, every: Math.max(5, Number(c.rosterPollSeconds) || 60),
+            watched: rosters.size },
+          liveReads: c.liveReads,
+          muted: (c.mutedSteamIds || []).length,
+          silenced: Object.keys(prefs).filter((k) => prefs[k] && (prefs[k].off || Object.keys(prefs[k].muted || {}).length)).length,
+        },
         geography: !!(host.map && typeof host.map.sector === 'function'),
         // Every number above is a photograph of a running world, so with the server stopped they are
         // all a truthful 0 — and a screenful of zeroes with no caption reads as "this plugin is not
@@ -1581,18 +1730,104 @@ module.exports = {
       out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
       res.json(out);
     });
+    /**
+     * Every squad the save holds, with who is in it and who is on, for the Squads screen.
+     *
+     * The score is the manager's own (`host.players.squad()`), which is the one an owner chose under
+     * the manager's Leaderboards settings: the game's, or one counted from kills and the rest. It is
+     * asked once per squad and kept for half a minute, because a large server has hundreds of them
+     * and the screen polls. With the save unreadable the answer says so instead of listing nothing.
+     */
+    const ALL_SQUADS_SQL = host.db.scum.excludeDeleted(`
+      SELECT u.user_id AS steamId, u.name AS name, sm.rank AS rank, s.name AS squadName, s.id AS squadId
+      FROM user_profile u
+      JOIN squad_member sm ON sm.user_profile_id = u.id
+      JOIN squad s ON s.id = sm.squad_id`);
+    let squadsMemo = null, squadsMemoAt = 0;
+    function allSquads() {
+      if (squadsMemo && Date.now() - squadsMemoAt < 30000) return squadsMemo;
+      if (typeof host.db.scum.available === 'function' && !host.db.scum.available()) return null;
+      const rows = host.db.scum.all(ALL_SQUADS_SQL) || [];
+      const by = new Map();
+      for (const r of rows) {
+        const id = r.squadId;
+        if (!by.has(id)) by.set(id, { id, name: r.squadName || '', members: [] });
+        by.get(id).members.push({ steamId: String(r.steamId), name: r.name || '', rank: Number(r.rank) || 0 });
+      }
+      const list = [...by.values()];
+      for (const sq of list) {
+        let score = null;
+        try {
+          const info = sq.members.length && host.players && typeof host.players.squad === 'function' ? host.players.squad(sq.members[0].steamId) : null;
+          score = info && info.score != null && Number.isFinite(Number(info.score)) ? Math.round(Number(info.score)) : null;
+        } catch { score = null; }
+        sq.score = score;
+      }
+      squadsMemo = list; squadsMemoAt = Date.now();
+      return list;
+    }
+    host.routes.get('/squads', (req, res) => {
+      const list = allSquads();
+      const serverRunning = (host.server && typeof host.server.isRunning === 'function') ? !!host.server.isRunning() : null;
+      if (!list) { res.json({ ok: true, readable: false, serverRunning, squads: [] }); return; }
+      const online = onlineIndex();
+      const adminMuted = new Set((cfg().mutedSteamIds || []).map(String));
+      res.json({
+        ok: true, readable: true, serverRunning,
+        squads: list.map((sq) => ({
+          id: sq.id, name: sq.name, score: sq.score, size: sq.members.length,
+          online: sq.members.filter((m) => online.has(m.steamId)).length,
+          members: sq.members.map((m) => ({
+            steamId: m.steamId, name: m.name || online.get(m.steamId) || '', rank: m.rank,
+            online: online.has(m.steamId), muted: adminMuted.has(m.steamId),
+            off: !!prefOf(m.steamId).off, silenced: Object.keys(prefOf(m.steamId).muted || {}),
+          })),
+        })),
+      });
+    });
+    /**
+     * Undo what players silenced for themselves: one player, a ticked list, or everyone.
+     *
+     * ⚠ A body with no player used to mean EVERYONE, so a request that lost its Steam ID on the way
+     * wiped every player's own choice and answered `ok`. Everyone now has to be asked for by name.
+     */
     host.routes.post('/prefs/reset', (req, res) => {
-      const sid = String((req.body || {}).steamId || '');
-      if (sid) delete prefs[sid]; else prefs = {};
+      const b = req.body || {};
+      const ids = (Array.isArray(b.steamIds) ? b.steamIds : (b.steamId ? [b.steamId] : [])).map(String).filter(Boolean);
+      if (!ids.length && b.all !== true) { res.status(400).json({ ok: false, error: 'no_player', reason: 'no player was named' }); return; }
+      const which = b.all === true ? Object.keys(prefs) : ids;
+      let n = 0;
+      for (const sid of which) {
+        if (!prefs[sid]) continue;
+        delete prefs[sid]; n++;
+        note('reset', displayName(sid, '') || sid, '', 0, { group: 'admin', sid, result: 'done' });
+      }
       persist();
-      res.json({ ok: true });
+      res.json({ ok: true, reset: n });
     });
 
     host.routes.post('/clear-log', (req, res) => { recent = []; persist(); res.json({ ok: true }); });
+    // The header counters, apart from the log: an owner who wants a fresh count keeps the history.
+    host.routes.post('/stats/reset', (req, res) => {
+      stats = { sent: 0, suppressed: 0, commands: 0, failed: 0 };
+      persist();
+      res.json({ ok: true, stats });
+    });
 
     // Fire a real message at one player's squad so an admin can confirm the whole chain works
     // (bridge → squad channel → the right recipients) without waiting for someone to die.
-    host.routes.post('/test', async (req, res) => {
+    host.routes.post('/test', async (req, raw) => {
+      // Every answer this route gives is also an Activity row, whichever line gave it.
+      const res = {
+        status: (code) => { raw.status(code); return res; },
+        json: (body) => {
+          const b = body || {};
+          const who = String((req.body || {}).steamId || '');
+          note('test', (who && displayName(who, '')) || who, b.text || '', b.ok ? b.delivered : 0,
+            { group: 'admin', sid: who || undefined, result: b.ok ? (b.delivered < b.targets ? 'partial' : 'sent') : 'failed', why: b.ok ? undefined : b.error, targets: b.targets });
+          return raw.json(body);
+        },
+      };
       const sid = String((req.body || {}).steamId || '');
       if (!sid) { res.status(400).json({ ok: false, error: 'steamId required' }); return; }
       const c = cfg();
@@ -1620,7 +1855,8 @@ module.exports = {
         if (n != null && n <= 0) { res.json({ ok: false, error: 'reached_nobody', targets: targets.length }); return; }
         res.json({ ok: true, delivered: n == null ? targets.length : n, targets: targets.length });
       } catch (e) {
-        res.json({ ok: false, error: (e && e.message) || 'send_failed' });
+        // A code the panel can word, and the bridge's own sentence beside it.
+        res.json({ ok: false, error: 'send_failed', reason: (e && e.message) || null });
       }
     });
 

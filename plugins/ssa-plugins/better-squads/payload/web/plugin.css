@@ -1,22 +1,55 @@
 /* Better Squads — admin config UI (mirrors the manager's native card + token styling). */
 .bs-body{display:flex;flex-direction:column;gap:1rem}
+.bs-view{display:flex;flex-direction:column;gap:1rem}
 .bs-loading{color:var(--muted,#8b9099);font-size:.86rem}
 .bs-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin:0}
 .bs-head h2{margin:0;font-size:1.05rem}
 .bs-intro{margin:.2rem 0 0;font-size:.86rem;color:var(--muted,#8b9099);max-width:60ch}
-.bs-head-r{flex:none;padding-top:.2rem}
+.bs-firstrun{display:flex;flex-wrap:wrap;gap:8px}
+.bs-firstrun:empty{display:none}
+
+/* ── the nav of screens, the master switch and the one Save ── */
+.bs-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bs-nav{display:flex;gap:8px;flex-wrap:wrap}
+/* A real link per screen, so a middle click opens it in a new tab. Both halves of every state are
+   stated on the element, so the panel's own link and button rules cannot supply the other one. */
+.bs-tab{display:inline-flex;align-items:center;gap:8px;font:inherit;font-size:.82rem;padding:.5rem .9rem;min-height:44px;box-sizing:border-box;border-radius:8px;border:1px solid var(--line,#24272e);background:var(--panel-2,#1c1f25);color:var(--muted,#8b9099);text-decoration:none;cursor:pointer}
+.bs-tab .ico{width:15px;height:15px}
+.bs-tab:hover{background:var(--panel-2,#1c1f25);color:var(--amber-hi,#ff9a2e);border-color:var(--amber,#f0820c);text-decoration:none}
+.bs-tab.active{color:var(--text,#f1f3f5);background:color-mix(in srgb,var(--accent,#ff6a1a) 14%,var(--panel-2,#1c1f25));border-color:var(--accent,var(--amber,#ff6a1a))}
+.bs-tab.active .ico{color:var(--accent,var(--amber,#ff6a1a))}
+.bs-top-r{margin-left:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bs-master{display:inline-flex}
+.bs-top-r .bs-savemsg{flex:0 1 auto}
+/* Unsaved edits are worth seeing from any screen: the Save button carries a ring until they land. */
+.bs-unsaved{box-shadow:0 0 0 2px var(--accent,var(--amber,#ff6a1a))}
+
+/* ── the house switch: a real checkbox drawn as a track, its label beside it ── */
+.bs-sw{display:inline-flex;align-items:center;gap:10px;cursor:pointer;min-height:44px;font-size:.86rem;color:var(--text,#f1f3f5);position:relative}
+.bs-sw input{position:absolute;opacity:0;width:38px;height:22px;margin:0;cursor:pointer}
+.bs-sw-track{position:relative;flex:none;width:38px;height:22px;border-radius:999px;background:var(--line-2,#343943);transition:background .15s}
+.bs-sw-track::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
+.bs-sw input:checked + .bs-sw-track{background:var(--accent,var(--amber,#ff6a1a))}
+.bs-sw input:checked + .bs-sw-track::after{transform:translateX(16px)}
+.bs-sw input:focus-visible + .bs-sw-track{outline:2px solid var(--accent,var(--amber,#ff6a1a));outline-offset:2px}
+.bs-sw input:disabled + .bs-sw-track{opacity:.5}
+.bs-sw-l{min-width:0}
+.bs-sw-master .bs-sw-l{font-weight:600}
 
 .bs-card{margin:0}
+.bs-card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .bs-card-t{margin:0 0 .25rem;font-size:.95rem}
 .bs-card-sub{margin:0 0 .9rem;font-size:.78rem;color:var(--muted,#8b9099);max-width:72ch}
-.bs-card-t + .bs-card-sub{margin-top:-.15rem}
-.bs-card > .bs-card-t:last-of-type{margin-bottom:.9rem}
 
 /* ── status strip ── */
 .bs-stats{display:flex;flex-wrap:wrap;gap:8px;margin:0}
 .bs-stat{display:flex;flex-direction:column;gap:2px;background:var(--panel-2,#1c1f25);border:1px solid var(--line,#24272e);border-radius:8px;padding:.5rem .8rem;min-width:104px}
 .bs-stat-v{font-weight:700;font-size:1.05rem;color:var(--text,#f1f3f5);font-variant-numeric:tabular-nums;line-height:1.1}
 .bs-stat-l{font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.bs-stat-dotted{flex-direction:row;align-items:center;gap:8px}
+.bs-stat-dot{width:8px;height:8px;border-radius:50%;background:#8b9099;flex:none}
+.bs-stat.ok{border-color:rgba(59,165,93,.4)}
+.bs-stat.ok .bs-stat-dot{background:#3ba55d;box-shadow:0 0 8px rgba(59,165,93,.6)}
 /* A non-zero "reached nobody" is worth noticing. Both halves of the pair are stated on the tile, so
    the number and its border read together on either theme. */
 .bs-stat.bad{border-color:rgba(229,68,63,.45);background:rgba(229,68,63,.08)}
@@ -26,61 +59,90 @@
 .bs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
 .bs-f{display:flex;flex-direction:column;gap:5px}
 .bs-f>span{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#8b9099)}
-.bs-f input,.bs-f select,.bs-f textarea{width:100%;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem}
-.bs-f input:focus,.bs-f select:focus,.bs-f textarea:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+.bs-f input,.bs-f select,.bs-f textarea,.bs-in,.bs-sel,.bs-rule-ctl input{width:100%;box-sizing:border-box;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem;min-height:44px}
+.bs-sel{width:auto;max-width:100%}
+.bs-f input:focus,.bs-f select:focus,.bs-f textarea:focus,.bs-in:focus,.bs-sel:focus,.bs-rule-ctl input:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
 .bs-hint{color:var(--muted,#8b9099);font-size:.72rem}
-.bs-checks{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}
-.bs-chk{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--text,#f1f3f5);cursor:pointer}
-.bs-chk input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
+.bs-checks{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
+
+/* ── one rule with its own switch: switch and title on the left, its number on the right ── */
+.bs-rule{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--line,#24272e)}
+.bs-rule:last-child{border-bottom:0}
+.bs-rule-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.bs-rule-t{font-size:.86rem;color:var(--text,#f1f3f5)}
+.bs-rule-ctl{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bs-rule-ctl input{width:6.5rem}
+.bs-rule-ctl input:disabled{opacity:.5}
+.bs-unit{font-size:.78rem;color:var(--muted,#8b9099)}
 
 /* ── one event row ── */
 .bs-ev{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--line,#24272e)}
 .bs-ev:last-of-type{border-bottom:0}
-.bs-ev-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.bs-ev-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .bs-ev-sub{color:var(--muted,#8b9099);font-size:.74rem}
-.bs-ev > textarea{width:100%;min-height:2.4rem;resize:vertical;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem;line-height:1.4}
-.bs-ev > textarea:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
+.bs-plain{width:100%;box-sizing:border-box;min-height:2.4rem;resize:vertical;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:6px;color:var(--text,#f1f3f5);font:inherit;font-size:.86rem;padding:.45rem .6rem;line-height:1.4}
 
-/* ── token palette ── */
-.bs-tokens{display:flex;flex-wrap:wrap;gap:6px}
-.bs-token{background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:.72rem;padding:.2rem .45rem;min-width:44px;transition:border-color .12s,color .12s}
-/* Ghost: no fill, the colour change IS the affordance. Both halves of the hover pair are stated on
-   the ELEMENT, so `button:hover` cannot supply the other one — overriding only `color` left the
-   amber fill in place and the text on it was 1.63:1, which is not readable. */
-.bs-token{--hov-bg:transparent;--hov-fg:var(--amber-hi,#ff9a2e);--hov-line:var(--amber,#f0820c)}
+/* ── bulk bars: what is ticked, and what can be done to it ── */
+.bs-bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.bs-bulk>button{flex-shrink:0;max-width:100%}
+.bs-bulk-n{font-size:.8rem;color:var(--muted,#8b9099);flex:1 1 180px;min-width:0}
+.bs-bulk-n:empty{display:none}
+.bs-search{max-width:22rem}
+.bs-col-pick{width:2.2rem;text-align:center}
+/* The tick box sits in a label as big as a fingertip, so the whole cell takes the tap. */
+.bs-pick{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer}
+.bs-pick input{width:18px;height:18px;margin:0;cursor:pointer;accent-color:var(--accent,var(--amber,#ff6a1a))}
 
-/* ── chips (muted players) ── */
-.bs-chips{display:flex;flex-wrap:wrap;gap:8px;min-height:1.6rem}
-/* A player in the silenced list who is not currently in game. Both halves of the pair are stated,
-   so the tag reads on either theme rather than borrowing whatever is behind it. */
+/* ── the squad list ── */
+.bs-members{display:flex;flex-wrap:wrap;gap:4px 6px}
+.bs-mem{display:inline-flex;align-items:center;gap:4px;font-size:.78rem;color:var(--muted,#8b9099)}
+.bs-mem.on{color:var(--text,#f1f3f5);font-weight:600}
+.bs-mem.muted{text-decoration:line-through}
+.bs-mem.more{font-style:italic}
+.bs-on{color:#7fd69a;font-weight:600}
+
+/* A player in a list who is not in game, or one an admin muted. Both halves of the pair are
+   stated, so the tag reads on either theme rather than borrowing whatever is behind it. */
 .bs-pl-off{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .bs-off-tag{flex:0 0 auto;font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;
   padding:.1rem .35rem;border-radius:4px;color:var(--muted,#8b9099);
-  background:rgba(255,255,255,.06);border:1px solid var(--line-2,#343943)}
-.bs-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:999px;padding:.22rem .5rem .22rem .7rem;font-size:.8rem}
-.bs-chip-x{background:none;border:0;color:var(--muted,#8b9099);cursor:pointer;font:inherit;font-size:1rem;line-height:1;padding:0 .1rem}
-.bs-chip-x{--hov-bg:transparent;--hov-fg:var(--alarm,#e5443f);--hov-line:transparent}
+  background:rgba(255,255,255,.06);border:1px solid var(--line-2,#343943);text-decoration:none}
 .bs-empty{color:var(--muted,#8b9099);font-size:.8rem}
 
-.bs-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+/* ── the live state on the Activity screen ── */
+.bs-live{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}
+.bs-lrow{display:flex;flex-direction:column;gap:2px;background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-left:3px solid var(--line-2,#343943);border-radius:6px;padding:.45rem .65rem}
+.bs-lrow.ok{border-left-color:#3ba55d}
+.bs-lrow.warn{border-left-color:#faa61a}
+.bs-lrow.bad{border-left-color:var(--alarm,#e5443f)}
+.bs-lrow-l{font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.bs-lrow-v{font-size:.84rem;color:var(--text,#f1f3f5);overflow-wrap:anywhere}
+
+/* ── the activity log ── */
+.bs-kind{display:inline-flex;flex-direction:column;gap:1px}
+.bs-kind-g{font-size:.64rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b9099)}
+.bs-res{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px}
+.bs-res-why{font-size:.72rem;color:var(--muted,#8b9099)}
+/* A line is read whole: it may wrap between words, never inside one (the table scrolls instead). */
+.bs-logtext{display:inline-block;min-width:12rem}
+.bs-nowrap{white-space:nowrap}
+
+.bs-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
 /* A button does not shrink below its own words unless they are wider than the column, so the row
    wraps instead; on a phone the buttons stretch to the column so a wrapped row is not a staircase. */
 .bs-actions>button{flex-shrink:0;max-width:100%}
-@media (max-width:480px){.bs-actions>button{flex:1 0 auto;padding-left:.6rem;padding-right:.6rem}}
-/* Carries a whole sentence when a save is refused, so it needs room to wrap onto its own line rather
-   than pushing the button off a narrow screen. Stays next to its button until the next attempt — a
-   toast is gone in four seconds and the owner's edits are still sitting there unsaved. */
-.bs-savemsg{font-size:.82rem;color:var(--muted,#8b9099);min-width:0;flex:1 1 220px}
-
-/* ── relative tokens stand out: they change how the message is delivered ── */
-.bs-token-rel{border-color:color-mix(in srgb,var(--accent,#ff6a1a) 45%,var(--line-2,#343943));color:var(--accent,var(--amber,#ff6a1a))}
+@media (max-width:480px){.bs-actions>button,.bs-bulk>button{flex:1 0 auto;padding-left:.6rem;padding-right:.6rem}.bs-top-r{margin-left:0}}
+/* Carries a whole sentence when a save is refused, so it needs room to wrap onto its own line. */
+.bs-savemsg{font-size:.82rem;color:var(--muted,#8b9099);min-width:0}
 
 /* ── subcommand grid ── */
 .bs-subs{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
 .bs-sub{display:flex;flex-direction:column;gap:4px;background:var(--bg,#0b0c0e);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.6rem .7rem}
-.bs-sub-head{display:flex;align-items:center;gap:10px}
-.bs-sub-head .bs-chk{flex:1;min-width:0}
-.bs-sub-name{width:7.5rem;flex:none;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--text,#f1f3f5);font:inherit;font-size:.8rem;padding:.25rem .4rem}
+.bs-sub-head{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
+/* The switch keeps its whole word; the name box takes what is left, or goes to its own line. */
+.bs-sub-head .bs-sw{flex:0 0 auto}
+.bs-sub-head .bs-sw-l{white-space:nowrap}
+.bs-sub-name{width:7.5rem;flex:1 1 7.5rem;max-width:100%;box-sizing:border-box;min-height:44px;background:var(--panel-2,#1c1f25);border:1px solid var(--line-2,#343943);border-radius:5px;color:var(--text,#f1f3f5);font:inherit;font-size:.8rem;padding:.25rem .4rem}
 .bs-sub-name:focus{outline:none;border-color:var(--accent,var(--amber,#ff6a1a))}
 
 /* ── command preview ── */
@@ -96,17 +158,16 @@
 /* ── warning strip in the status header ── */
 .bs-warn{display:flex;align-items:center;gap:8px;background:var(--panel-2,#1c1f25);border:1px solid rgba(250,166,26,.4);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;color:var(--muted,#8b9099)}
 .bs-warn .ico{width:15px;height:15px;color:#faa61a;flex:none}
-/* A stopped server is INFORMATION, not a warning — configuring before the first start is the right
-   moment, not a mistake. Neutral border, normal text, and both halves in the one rule so the pair
-   travels together (check-contrast). It sits on its own row across the whole status strip. */
+/* A stopped server is INFORMATION, not a warning: configuring before the first start is the right
+   moment. Neutral border, normal text, and both halves in the one rule so the pair travels together
+   (check-contrast). It sits on its own row across the whole status strip. */
 .bs-note-off{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--line-2,#343943);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
 
-/* A REQUEST that failed on a routine poll — a different thing from a world with nothing in it, and
-   the whole reason this plugin no longer swallows a failure. Both halves of the pair are written in
-   the one rule so the cascade cannot leave text nobody can read on a coloured ground (check-contrast). */
+/* A REQUEST that failed on a routine poll, a different thing from a world with nothing in it. Both
+   halves of the pair are written in the one rule (check-contrast). */
 .bs-live-err{flex:1 0 100%;background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-radius:8px;padding:.5rem .8rem;font-size:.78rem;line-height:1.45}
 
-/* The tab itself could not load — a full-width panel in place of the body, not a strip inside it. */
+/* The tab itself could not load: a full-width panel in place of the body, not a strip inside it. */
 .bs-err{background:var(--panel-2,#1c1f25);color:var(--text,#f1f3f5);border:1px solid var(--alarm,#e5443f);border-left-width:3px;border-radius:8px;padding:.9rem 1rem;font-size:.85rem;line-height:1.5}
 .bs-err-act{margin-top:.7rem}
 
@@ -114,7 +175,3 @@
 .bs-note{margin:0 0 12px;padding:.55rem .7rem;background:var(--bg,#0b0c0e);border:1px solid var(--line,#24272e);border-left:2px solid var(--accent,var(--amber,#ff6a1a));border-radius:6px;font-size:.78rem;color:var(--muted,#8b9099);line-height:1.5}
 .bs-note b{color:var(--text,#f1f3f5);font-weight:600}
 .bs-note code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;color:var(--text,#f1f3f5);background:var(--panel-2,#1c1f25);border-radius:4px;padding:.05rem .3rem}
-
-/* The language editor's token chips are the panel's own: a token filled per reader is drawn dashed
-   (the SDK's "player" chip), and the plain token bar an older manager gets says it the same way. */
-.bs-token-rel{border-style:dashed}
