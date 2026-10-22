@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://scumsa.com/docs
+    about: Guides for owners, players and plugin developers. Most questions are answered here.
+  - name: Developer docs
+    url: https://scumsa.com/docs/dev/plugin-sdk
+    about: The plugin SDK, the bridge protocol and how to publish to the library.
+  - name: scumsa.com
+    url: https://scumsa.com
+    about: Downloads, the server browser, the mod library and your account.

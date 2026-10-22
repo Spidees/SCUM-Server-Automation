@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in the manager, the bridge, a plugin or the launcher does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting. Please do not paste tokens, passwords, licence keys or player data you would not want public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: manager
+    attributes:
+      label: Manager version
+      description: The current version on the manager update screen, or the number in the zip you installed.
+      placeholder: "6.1.0"
+    validations:
+      required: true
+  - type: input
+    id: bridge
+    attributes:
+      label: SSA Bridge version
+      description: The version on the SSA Bridge card under Plugins, or the number in the zip you installed. Write "none" if you do not use it.
+      placeholder: "2.44.0"
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin and its version
+      description: Only if the problem is in a plugin.
+      placeholder: "raid-window 1.6.0"
+  - type: dropdown
+    id: hosting
+    attributes:
+      label: Where the server runs
+      options:
+        - Windows
+        - Linux under Wine
+        - A game hosting provider
+        - Other
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: The lines from the manager log around the time it happened. Remove anything private first.
+      render: text
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: |
+        1.
+        2.
+        3.

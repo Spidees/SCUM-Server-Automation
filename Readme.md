@@ -150,6 +150,18 @@ The complete **Plugin SDK**, with every method, all events and the UE4SS guide, 
 
 ---
 
+## 🤝 Contributing
+
+Fixes to the examples and the official plugins are welcome as pull requests. Ideas for the manager, the bridge or the API start as an issue. Before you open a pull request, run the plugin validator. It needs Node 20 and nothing else:
+
+```
+node plugins/tools/validate-plugins.js plugins/ssa-plugins plugins/examples
+```
+
+The same check runs on every pull request. Your own plugins go to the [mod library](https://scumsa.com/mods/) instead. How the repository is organised, what a pull request needs and how changes are reviewed are in [**`CONTRIBUTING.md`**](CONTRIBUTING.md).
+
+---
+
 ## 📄 License
 
 The plugins and the manager release are **© 2026 Martin Zámečník, all rights reserved** (see [`LICENSE`](LICENSE)); the source is public for transparency, not for reuse. The developer examples in [`plugins/examples/`](plugins/examples) and the bridge SDK in [`ssa_bridge/sdk/`](ssa_bridge/sdk) are **MIT-licensed**: copy them freely as a starting point for your own plugins and tools.
