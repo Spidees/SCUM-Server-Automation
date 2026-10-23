@@ -29,6 +29,7 @@ Ship any npm packages your plugin needs inside the plugin. The manager does not 
 
 ## Propose a change
 
+- **Ask on [Discord](https://scumsa.com/discord.php)** for a question, help with a plugin, or before you start something larger.
 - **Open an issue first** for anything beyond a plugin: the manager, the bridge, the launcher or the API. Say what you need and why. The code for those is not here, so the issue is how the change happens.
 - **Open a pull request** against `main` of this repository for a fix to an example or to an official plugin.
 

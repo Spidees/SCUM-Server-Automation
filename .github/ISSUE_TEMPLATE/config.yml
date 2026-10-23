@@ -9,3 +9,6 @@ contact_links:
   - name: scumsa.com
     url: https://scumsa.com
     about: Downloads, the server browser, the mod library and your account.
+  - name: Ask on Discord
+    url: https://scumsa.com/discord.php
+    about: Questions, help with a plugin and talk with other owners and developers.
