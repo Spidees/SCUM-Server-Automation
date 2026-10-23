@@ -1,0 +1,42 @@
+name: Plugin or feature request
+description: Suggest a new plugin, a change to an official plugin, or something the manager, bridge or API should do.
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - A new plugin
+        - An official plugin
+        - The plugin API or SDK
+        - The manager
+        - The SSA Bridge
+        - The SCUMSA Launcher
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The problem on your server or in your game, in your own words. What you do today without it.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: What an owner or a player would see. Screens, commands or messages if you have them in mind.
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin
+      description: Only if it is about an existing plugin.
+      placeholder: "loot-zones"
+  - type: checkboxes
+    id: build
+    attributes:
+      label: Building it
+      options:
+        - label: I would like to build this myself as a plugin

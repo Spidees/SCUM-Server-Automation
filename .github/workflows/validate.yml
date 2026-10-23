@@ -1,0 +1,25 @@
+name: Validate plugins
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validator self-test
+        run: node plugins/tools/test-validate-plugins.js
+      - name: Official plugins and examples
+        run: node plugins/tools/validate-plugins.js plugins/ssa-plugins plugins/examples
+      - name: Example plugin tests
+        run: node plugins/examples/test-hello-plugin.js
