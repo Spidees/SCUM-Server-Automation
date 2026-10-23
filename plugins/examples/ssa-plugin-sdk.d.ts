@@ -2,6 +2,11 @@
  * SCUM Server Automation — Plugin SDK typings (apiVersion 1).
  * Public contract for plugins. Backend: `host`. Admin frontend: `window.SSA`. Field Console: `window.FC`.
  * Full guide: https://scumsa.com/docs. This describes the API only — not the manager's internals.
+ * release measured, so a call tagged with it may be older still.
+ * `@since` on a declaration is the first manager version that has it. Set `minManagerVersion` to the
+ * highest `@since` your plugin calls without a feature test. The oldest version named is the oldest
+ * release measured, so a call tagged with it may be older still. A member that shares its line with
+ * others and has no tag of its own has the version of the namespace it is in.
  */
 
 /**
@@ -31,41 +36,58 @@ export interface Host {
    * `apiVersion` is the contract your manifest asked for. The manager loads a plugin only when that
    * number is one it implements (today: 1). New calls arrive WITHOUT raising it, so test for a call
    * before you use one that is newer than your `minManagerVersion`: `if (host.time && host.time.isOpen)`.
+   * @since 5.0.3
    */
   info: { id: string; dir: string; libDir: string; dataDir: string; version: string; apiVersion: number };
 
+  /** @since 5.0.3 */
   logger: { info(m: string): void; warn(m: string): void; error(m: string): void; debug(m: string): void };
 
+  /** @since 5.0.3 */
   events: {
-    /** Returns `off()`. A listener that throws is caught and logged. A `fn` that is not a function registers nothing. */
+    /** Returns `off()`. A listener that throws is caught and logged. A `fn` that is not a function registers nothing.
+     * @since 5.0.3
+     */
     on(evt: PluginEvent | string, fn: (payload: any) => void): () => void;
+    /** @since 5.0.3 */
     once(evt: PluginEvent | string, fn: (payload: any) => void): () => void;
-    /** Broadcast your own event. Names without a ':' are auto-namespaced `<yourId>:<evt>`. */
+    /** Broadcast your own event. Names without a ':' are auto-namespaced `<yourId>:<evt>`.
+     * @since 5.0.3
+     */
     emit(evt: string, payload?: any): void;
     /**
      * The `kind` values a `kill` event carries: `player`, `npc`, `cause`, `nokiller`, `suicide`, `event`.
      * Build a per-kind switch list from this rather than from a copy. Manager after 5.56.0; feature-test it.
+     * @since 5.57.0
      */
     killKinds?(): KillKind[];
   };
 
+  /** @since 5.0.3 */
   config: {
-    /** The owner's config, parsed. `{}` when the file is missing or unreadable: merge your DEFAULTS by key presence. */
+    /** The owner's config, parsed. `{}` when the file is missing or unreadable: merge your DEFAULTS by key presence.
+     * @since 5.0.3
+     */
     get<T = Record<string, any>>(): T;
     /**
      * Merge `patch` onto the stored config, save it, tell `onChange` listeners, and return the result.
      * Anything other than an object changes nothing and returns the current config. THROWS when the
      * save fails, for example when your manifest names no `config` file. A throw means nothing was written.
+     * @since 5.0.3
      */
     set<T = Record<string, any>>(patch: Partial<T>): T;
+    /** @since 5.0.3 */
     text(): string;
+    /** @since 5.0.3 */
     onChange(fn: (cfg: any) => void): () => void;
   };
 
+  /** @since 5.0.3 */
   db: {
     /**
      * SCUM.db. The reads use better-sqlite3 semantics and return null/[] while the server is
      * stopped. `write()` is the other way round: it runs only while the server is stopped.
+     * @since 5.0.3
      */
     scum: {
       available(): boolean;
@@ -91,11 +113,15 @@ export interface Host {
       /** The same checks as `write()` without writing anything, so a screen can say why not. */
       writable?(opts?: { allowUserVersion?: number }): Promise<SaveWriteResult>;
     };
-    /** Curated read helpers over the manager's own data. */
+    /** Curated read helpers over the manager's own data.
+     * @since 5.0.3
+     */
     manager: { kills(limit?: number): any[]; trades(limit?: number): any[] };
   };
 
-  /** Linked players (Discord ↔ SCUM character) + player data. */
+  /** Linked players (Discord ↔ SCUM character) + player data.
+   * @since 5.0.3
+   */
   players: {
     /**
      * Who this Discord user is in-game, or `null` if they have not linked an account.
@@ -103,14 +129,22 @@ export interface Host {
      * `steamId` is the field to test and the field to act on. `playerName` is nullable — a link
      * made before that player was ever seen in-game has no name yet — so fall back to
      * `discordUsername` when you need something to print, never when you need to know who they are.
+     * @since 5.0.3
      */
     linked(discordUserId: string): LinkedPlayer | null;
-    /** The same record from the other end: which Discord account owns this Steam ID. */
+    /** The same record from the other end: which Discord account owns this Steam ID.
+     * @since 5.0.3
+     */
     bySteamId(steamId: string): LinkedPlayer | null;
+    /** @since 5.0.3 */
     stats(steamId: string): any | null;
+    /** @since 5.0.3 */
     statsByName(name: string): any | null;
-    /** { cash, bank, gold, accountNumber, cards } — `bank` is the pool the Bridge charges. */
+    /** { cash, bank, gold, accountNumber, cards } — `bank` is the pool the Bridge charges.
+     * @since 5.0.3
+     */
     finances(steamId: string): any | null;
+    /** @since 5.0.3 */
     skills(steamId: string): any | null;
     /**
      * That player's squad, with its members' names and ranks.
@@ -118,19 +152,32 @@ export interface Host {
      * The member list WITHHOLDS Steam IDs by design, so this is not the call to build a chat
      * `targets` array from. Read `squad_member` out of the game database yourself when you need to
      * address a squad in-game.
+     * @since 5.0.3
      */
     squad(steamId: string): any | null;
+    /** @since 5.0.3 */
     byName(name: string): any | null;
+    /** @since 5.0.3 */
     online(): any[];
-    /** The language this player reads the server in — same answer as `host.i18n.playerLang()`. */
+    /** The language this player reads the server in — same answer as `host.i18n.playerLang()`.
+     * @since 5.56.0
+     */
     lang?(steamId: string): string;
+    /** @since 5.0.3 */
     vehicles(steamId: string): any[];
+    /** @since 5.0.3 */
     stuff(steamId: string): any | null;
+    /** @since 5.0.3 */
     weeklyDeltas(steamId: string): any | null;
-    /** Player Intelligence (Premium) risk verdict, or null if never assessed. Pair with `player:intel`. */
+    /** Player Intelligence (Premium) risk verdict, or null if never assessed. Pair with `player:intel`.
+     * @since 5.0.3
+     */
     intel(steamId: string): any | null;
-    /** Live join/leave straight from the SSA Bridge — no log-tail lag. Returns an off() (auto-removed). */
+    /** Live join/leave straight from the SSA Bridge — no log-tail lag. Returns an off() (auto-removed).
+     * @since 5.0.3
+     */
     onJoin(cb: (e: { steamId: string; playerName: string }) => void): () => void;
+    /** @since 5.0.3 */
     onLeave(cb: (e: { steamId: string; playerName: string }) => void): () => void;
     /**
      * A player's state, LIVE first and the database second.
@@ -141,17 +188,26 @@ export interface Host {
      * against a balance that no longer exists.
      *
      * `source` says which answered. `null` means neither could — refuse rather than guess.
+     * @since 5.0.3
      */
     live(steamId: string): Promise<({ source: 'live' | 'db'; steamId: string } & Record<string, any>) | null>;
-    /** Every online player as the running game has them, or null. No database substitution. */
+    /** Every online player as the running game has them, or null. No database substitution.
+     * @since 5.0.3
+     */
     liveAll(): Promise<Array<Record<string, any>> | null>;
   };
 
-  /** Game-code database — items AND vehicles/animals/zombies/NPCs by class code. Images are Premium. */
+  /** Game-code database — items AND vehicles/animals/zombies/NPCs by class code. Images are Premium.
+   * @since 5.0.3
+   */
   items: {
+    /** @since 5.0.3 */
     resolve(id: string): any | null;
+    /** @since 5.0.3 */
     name(id: string): string | null;
+    /** @since 5.0.3 */
     image(id: string, variant?: 'vicinity' | string): string | null;
+    /** @since 5.0.3 */
     imageUrl(file: string): string | null;
     /**
      * A world ACTOR's name — what to print for `event.killerName` / `event.victimName`.
@@ -166,16 +222,24 @@ export interface Host {
      *
      * Added in manager 5.2. Call it defensively (`host.items.actorName ? … : name`) if your
      * `minManagerVersion` is lower — an older host does not have it.
+     * @since 5.3.0
      */
     actorName(name: string): string | null;
   };
 
-  /** Live world data. */
+  /** Live world data.
+   * @since 5.0.3
+   */
   map: {
+    /** @since 5.0.3 */
     world(): any | null;
+    /** @since 5.0.3 */
     container(entityId: any): any | null;
+    /** @since 5.0.3 */
     vehicleParts(entityId: any): any[];
-    /** The scheduled abandoned bunkers and their active/locked state. Never the secret ones. */
+    /** The scheduled abandoned bunkers and their active/locked state. Never the secret ones.
+     * @since 5.0.3
+     */
     bunkers(): any[];
     /**
      * The SECRET bunkers a player has opened with a keycard, still inside their keycard window.
@@ -187,6 +251,7 @@ export interface Host {
      *
      * An empty list also means "none has been opened since the manager started", so treat the
      * first reading as a baseline rather than as "nothing is open".
+     * @since 5.14.8
      */
     secretBunkers(): any[];
     /**
@@ -197,6 +262,7 @@ export interface Host {
      * player is not resolvable in it yet). That is not the same as `false`. It is falsy, so an
      * `if (...)` behaves as it always did, but anything that punishes a player on a `false` has to
      * rule out `null` first.
+     * @since 5.0.3
      */
     isInOwnerArea(steamId: string, x: number, y: number, margin?: number): boolean | null;
 
@@ -206,6 +272,7 @@ export interface Host {
      * Reads only — no backup is taken and nothing is written. Ask this before offering a button:
      * `reason` is a sentence meant to be shown, and a disabled control with no explanation is the
      * failure the zone writer is careful about.
+     * @since 5.15.3
      */
     zonesWritable(opts?: { allowUserVersion?: number }): Promise<{
       ok: boolean; code?: string; reason?: string; userVersion?: number;
@@ -230,6 +297,7 @@ export interface Host {
      * and refuses rather than repairing anything it did not expect.
      *
      * `{ ok: false, code, reason }` is a real answer rather than an error.
+     * @since 5.15.3
      */
     writeZones(
       plan: {
@@ -242,12 +310,14 @@ export interface Host {
      * World→map calibration from the host, or null when it has none. ASYNC.
      * Never substitute your own bounds — a wrong calibration places things
      * confidently in the wrong spot. Show nothing instead.
+     * @since 5.0.3
      */
     calibration(): Promise<{ world: { minX: number; maxX: number; minY: number; maxY: number }; width?: number; height?: number } | null>;
     /**
      * A world point → its SCUM grid sector ("B3"), or null when uncalibrated. ASYNC.
      * Uses the same grid the live map draws, so a plugin never invents a second
      * coordinate system.
+     * @since 5.0.3
      */
     sector(x: number, y: number): Promise<string | null>;
   };
@@ -255,6 +325,7 @@ export interface Host {
   /**
    * `span`: `true` is this week; `false` (or nothing) is the overall board, which the owner may run
    * per month; `'all'`, `'week'` or `'month'` asks for that span outright, so `'all'` is always all time.
+   * @since 5.0.3
    */
   leaderboards: { get(cat: string, limit?: number, span?: boolean | 'all' | 'week' | 'month'): any[]; all(limit?: number, span?: boolean | 'all' | 'week' | 'month'): any; categories(): any[] };
   /**
@@ -262,27 +333,45 @@ export interface Host {
    * leaderboard, an item image, map counts — and whatever other plugins publish.
    * Declare a token once; the catalog and the resolver are the same list, so a picker always shows
    * the real current value rather than a sample that can drift.
+   * @since 5.0.3
    */
   data: {
-    /** All tokens with their CURRENT values. ctx `{ steamId }` / `{ playerName }` scopes player ones. */
+    /** All tokens with their CURRENT values. ctx `{ steamId }` / `{ playerName }` scopes player ones.
+     * @since 5.0.3
+     */
     catalog(ctx?: DataCtx): DataToken[];
-    /** One token's value, or null if no such token exists. */
+    /** One token's value, or null if no such token exists.
+     * @since 5.0.3
+     */
     value(key: string, ctx?: DataCtx): string | null;
-    /** Replace every {token} in a string. Unknown tokens are left as-is. */
+    /** Replace every {token} in a string. Unknown tokens are left as-is.
+     * @since 5.0.3
+     */
     render(text: string, ctx?: DataCtx): string;
-    /** Same, for every string inside an object or array. */
+    /** Same, for every string inside an object or array.
+     * @since 5.0.3
+     */
     renderDeep<T>(obj: T, ctx?: DataCtx): T;
-    /** Publish your own tokens; keys are namespaced with your plugin id. Returns the final keys. */
+    /** Publish your own tokens; keys are namespaced with your plugin id. Returns the final keys.
+     * @since 5.0.3
+     */
     provide(tokens: Array<{ key: string; label?: string; group?: string; get(ctx: DataCtx): unknown }>): string[];
   };
+  /** @since 5.0.3 */
   economy: {
+    /** @since 5.0.3 */
     traderFunds(): any;
+    /** @since 5.0.3 */
     outpost(): any;
     /** @deprecated Always returns []. Special deals belong to individual players
-     *  (economy_special_deals is keyed by user_profile_id), so there is no server-wide list. */
+     *  (economy_special_deals is keyed by user_profile_id), so there is no server-wide list.
+     * @since 5.0.3
+     */
     specialDeals(limit?: number): any[];
+    /** @since 5.0.3 */
     goldCapacity(): any;
   };
+  /** @since 5.0.3 */
   stats: { server(): any; counts(): any; onlineCount(): number; gameTime(): any; weather(): any; vehicleCount(): number; baseCount(): number; squadCount(): number };
 
   /**
@@ -292,24 +381,40 @@ export interface Host {
    * it and the manager logs loudly, and your plugin is handed an empty store. Don't let it save over
    * that until somebody has looked, or a rentals or economy plugin reports total loss as a fresh
    * start. Debounce your writes — every `set()` rewrites the whole file.
+   * @since 5.0.3
    */
   store: {
+    /** @since 5.0.3 */
     get<T = any>(key: string, dflt?: T): T | null;
+    /** @since 5.0.3 */
     set<T = any>(key: string, value: T): T;
+    /** @since 5.0.3 */
     delete(key: string): void;
+    /** @since 5.0.3 */
     all(): Record<string, any>;
+    /** @since 5.0.3 */
     clear(): void;
   };
-  /** Open a real better-sqlite3 database in the plugin's dataDir (closed for you on unload). */
+  /** Open a real better-sqlite3 database in the plugin's dataDir (closed for you on unload).
+   * @since 5.0.3
+   */
   sqlite(name?: string): any | null;
 
+  /** @since 5.0.3 */
   server: {
+    /** @since 5.0.3 */
     status(): any | null;
-    /** Read-only address/name/port/version/next-restart. */
+    /** Read-only address/name/port/version/next-restart.
+     * @since 5.0.3
+     */
     info(): { name: string | null; publicIP: string | null; port: number | null; connectPort: number | null; address: string; version: string | null; nextRestartUnix: number | null };
+    /** @since 5.0.3 */
     isRunning(): boolean;
+    /** @since 5.0.3 */
     start(reason?: string): Promise<boolean>;
+    /** @since 5.0.3 */
     stop(reason?: string): Promise<boolean>;
+    /** @since 5.0.3 */
     restart(reason?: string): Promise<boolean>;
     /**
      * Manager 5.42.0+. Work the manager waits for right before EVERY server start (manual, restart,
@@ -317,6 +422,7 @@ export interface Host {
      * `host.map.writeZones()`. A restart otherwise leaves the save free for about five seconds.
      * All plugins run in parallel and the wait is capped at 60 s; a throw is logged and never stops
      * the start. Returns a function that unregisters. Feature-detect it on older managers.
+     * @since 5.42.0
      */
     beforeStart?(fn: (info: { reason: string | null }) => void | Promise<void>): () => void;
     /**
@@ -354,6 +460,7 @@ export interface Host {
      * charge and do not retry) or `'unknown'` (it said nothing). It is sent for those two commands
      * only, so treat an absent field the way you treat an absent `confirmed`: it is not a verdict.
      * Never test `status !== 'spawned'` — that refuses on every server that does not send one.
+     * @since 5.0.3
      */
     command(cmd: string, opts?: { executor?: string; caller?: string; hide?: boolean }): Promise<
       { ok: true; executor: string; output: string[] | null; dispatched?: boolean; confirmed?: boolean;
@@ -364,6 +471,7 @@ export interface Host {
      *
      * `players` is a COUNT, not a list. Never throws — an unreachable bridge answers
      * `{ available: false, licensed: false, players: 0, error }`.
+     * @since 5.0.3
      */
     bridge(): Promise<{ available: boolean; licensed: boolean; players: number; version?: string; error?: string }>;
   };
@@ -378,26 +486,35 @@ export interface Host {
    *
    * A key MISSING from a payload means "this build cannot answer it", never zero. An empty fuel tank
    * and an unreadable one need opposite handling.
+   * @since 5.0.3
    */
   bridge: {
     /** Is the bridge up? Cheap pre-check before anything that depends on it. It does NOT ask about
      *  the licence: the bridge runs every call with or without one, and a licence decides only
-     *  whether joining players are shown a line naming it. Use `health().licensed` if you want that. */
+     *  whether joining players are shown a line naming it. Use `health().licensed` if you want that.
+     * @since 5.0.3
+     */
     available(): Promise<boolean>;
-    /** `{ available, licensed, players, version }` — `players` is a COUNT. Never throws. */
+    /** `{ available, licensed, players, version }` — `players` is a COUNT. Never throws.
+     * @since 5.0.3
+     */
     health(): Promise<{ available: boolean; licensed: boolean; players: number; version?: string; error?: string }>;
-    /** Every module the running bridge has. `[]` when it cannot be asked. */
+    /** Every module the running bridge has. `[]` when it cannot be asked.
+     * @since 5.0.3
+     */
     modules(): Promise<Array<{ id: string; name: string; enabled: boolean; config: Record<string, any>; status: Record<string, any> }>>;
     /**
      * Is one module switched on? `null` when the bridge itself could not be reached.
      *
      * If a module your plugin needs is off, say so BY NAME in your own UI. A feature that silently
      * does nothing is indistinguishable from a broken one.
+     * @since 5.0.3
      */
     moduleEnabled(moduleId: string): Promise<boolean | null>;
     /**
      * The general form. `null` when the bridge is off, the module is off, or it refused that key.
      * Keep writing `if (!d) …fall back…`; use `query()` when you need to know which of those it was.
+     * @since 5.0.3
      */
     data(moduleId: string, what: string): Promise<any | null>;
     /**
@@ -407,6 +524,7 @@ export interface Host {
      * On a refusal `reason` is the module's OWN sentence, written for a human and safe to print
      * ("someone is driving it", "nothing within 800 cm of that point"), or `null` when it refused
      * without saying. Logs nothing, unlike `data()`.
+     * @since 5.0.3
      */
     query(moduleId: string, what: string): Promise<BridgeResult>;
     /**
@@ -427,6 +545,7 @@ export interface Host {
      *
      * Synchronous, and it makes no call. `null` for an array, a number, `null`, and anything with
      * no `error` on it.
+     * @since 5.23.0
      */
     refusalIn(payload: any): { error: string; reason: string | null } | null;
     /**
@@ -434,6 +553,7 @@ export interface Host {
      *
      * `code` says which of the four things went wrong and `reason` carries the module's own words on
      * a refusal. `error` is the raw wire string and is unchanged from earlier manager versions.
+     * @since 5.0.3
      */
     command(moduleId: string, what: string): Promise<BridgeCommandResult>;
     /**
@@ -446,12 +566,17 @@ export interface Host {
      * switch is missing — `switches[].label` is the module's own label for it.
      *
      * `{ declared: false }` when the manifest has no `bridge` block.
+     * @since 5.3.0
      */
     needs(): Promise<BridgeNeeds>;
 
-    /** Money, gold, fame, vitals and body state per online player — whichever groups the owner enabled. */
+    /** Money, gold, fame, vitals and body state per online player — whichever groups the owner enabled.
+     * @since 5.0.3
+     */
     livePlayers(): Promise<Array<Record<string, any>> | null>;
-    /** Time of day, sun, rain/snow/fog/wind/lightning, cloud decks, temperatures, humidity. */
+    /** Time of day, sun, rain/snow/fog/wind/lightning, cloud decks, temperatures, humidity.
+     * @since 5.0.3
+     */
     world(): Promise<Record<string, number> | null>;
     /**
      * What the GAME thinks about the session: player/spectator/bot counts, squads, bunkers, and
@@ -460,14 +585,18 @@ export interface Host {
      * The manager counts players by tailing the log and measures uptime from when it started the
      * service — both are inferences and both drift. `uptimeSeconds` here survives a manager restart
      * because it is the game's own match clock, not ours.
+     * @since 5.0.3
      */
     serverState(): Promise<Record<string, any> | null>;
-    /** Fuel, battery, engine state, RPM, condition, mileage, driver — per loaded vehicle. */
+    /** Fuel, battery, engine state, RPM, condition, mileage, driver — per loaded vehicle.
+     * @since 5.0.3
+     */
     vehicles(): Promise<Array<Record<string, any>> | null>;
     /**
      * The vehicle manager's own settings — the numbers behind "where did all the cars go": the four
      * autosave intervals, how long a spawner remembers a vehicle before the map may put a fresh one
      * there, and the forbidden-zone pair. One lookup rather than a sweep, so it is cheap on a timer.
+     * @since 5.1.0
      */
     vehicleManager(): Promise<any>;
     /**
@@ -476,6 +605,7 @@ export interface Host {
      * `inDanger` has no database equivalent at all — it is the flag the game's own squad UI uses to
      * redden a member's name, i.e. the nearest thing to "a squadmate is being shot at right now"
      * that exists outside the game process.
+     * @since 5.0.3
      */
     squads(): Promise<Array<Record<string, any>> | null>;
     /**
@@ -484,6 +614,7 @@ export interface Host {
      *
      * NOT what it holds. The game reflects a `hasItems` bool and no item list anywhere on the
      * inventory component; `host.map.container(entityId)` answers the contents from `SCUM.db`.
+     * @since 5.0.3
      */
     storage(): Promise<Array<Record<string, any>> | null>;
     /**
@@ -491,6 +622,7 @@ export interface Host {
      *
      * Pass `true` to include raids that have gone quiet — "was this base raided recently" is asked
      * AFTER the shooting stops, which is exactly when an offline-protection rule needs it.
+     * @since 5.0.3
      */
     raids(includeFinished?: boolean): Promise<Array<Record<string, any>> | null>;
 
@@ -511,10 +643,14 @@ export interface Host {
      *
      * Every slot but `kind` and `agoMs` is optional: a kind carries only some of them, and a slot
      * is left out when the read could not be made. Read `eventKinds()` for what each kind puts where.
+     * @since 5.0.3
      */
     events(): Promise<Array<BridgeGameEvent> | null>;
+    /** @since 5.0.3 */
     events(opts: { since: number } | number): Promise<BridgeEventsSince<BridgeGameEvent> | Array<BridgeGameEvent> | null>;
-    /** The same list WITHOUT draining it — for a diagnostic screen, never for a consumer. */
+    /** The same list WITHOUT draining it — for a diagnostic screen, never for a consumer.
+     * @since 5.0.3
+     */
     peekEvents(): Promise<Array<Record<string, any>> | null>;
     /**
      * What each event kind actually puts in `a`, `b`, `c`, `d`, `s1`, `s2`, `s3`.
@@ -529,6 +665,7 @@ export interface Host {
      * Static text, all fifteen kinds, so read it once at start-up.
      *
      * **A key a kind does not carry is ABSENT, not zero.** `0` is a real-looking profile id.
+     * @since 5.7.1
      */
     eventKinds(): Promise<Record<string, any> | null>;
     /**
@@ -543,6 +680,7 @@ export interface Host {
      * Per watch: `fired` (counted **before** the group switch, so it is a fact about the build rather
      * than about the owner's settings), `recorded`, `resolved`, `attempts`, and one sentence naming
      * which of the three states it is in.
+     * @since 5.7.1
      */
     eventWatches(): Promise<Record<string, any> | null>;
 
@@ -552,6 +690,7 @@ export interface Host {
      * **The yes/no counts are not readable**, and the payload says so in `tallyReadable` rather than
      * leaving you to wonder where they went. `message` is the game's own notification line and
      * carries them as text for a screen.
+     * @since 5.20.0
      */
     votes(): Promise<Record<string, any> | null>;
     /**
@@ -560,6 +699,7 @@ export interface Host {
      * **The server writes no log line for a tournament at all**, so this is the only way to see one.
      * `running: false` beside `everStarted: true` is a real state — a tournament started with a
      * delay has not begun yet.
+     * @since 5.20.0
      */
     tournament(): Promise<Record<string, any> | null>;
     /**
@@ -567,10 +707,13 @@ export interface Host {
      *
      * Read `path` rather than building one: the game's own command descriptions name a directory
      * that does not exist on any server.
+     * @since 5.20.0
      */
     lootFiles(): Promise<Array<Record<string, any>> | null>;
 
-    /** Bases, the server-wide flag rules, and the flags the game holds a raid-protection entry for. */
+    /** Bases, the server-wide flag rules, and the flags the game holds a raid-protection entry for.
+     * @since 5.0.3
+     */
     bases(): Promise<Record<string, any> | null>;
     /**
      * The flag ids the game is holding a raid-protection entry for. No other source has this.
@@ -585,6 +728,7 @@ export interface Host {
      *
      * `[]` means the game is holding no entries at all; `null` means the question could not be
      * answered. A rule that reads the second as the first will let somebody raid a protected base.
+     * @since 5.0.3
      */
     protectedFlags(): Promise<number[] | null>;
 
@@ -594,6 +738,7 @@ export interface Host {
      * Death and knockout are separate states with separate exits, and the effect classes are how
      * the game tells them apart — read this BEFORE `act(id, 'revive')` rather than guessing which
      * one you are undoing.
+     * @since 5.0.3
      */
     playerState(steamId: string): Promise<Record<string, any> | null>;
 
@@ -614,6 +759,7 @@ export interface Host {
      * player and refuses `'all'` by name. A broadcast reports success if it reached ANYBODY.
      *
      * `hud`, `warn`, `kick` and the squad verbs have dedicated wrappers below — prefer those.
+     * @since 5.0.3
      */
     act(steamId: string | 'all', verb: BridgeActVerb, value?: string | number): Promise<BridgeCommandResult>;
 
@@ -622,6 +768,7 @@ export interface Host {
      *
      * Chat cannot do this: a HUD message is unmissable, does not scroll away, and reaches somebody
      * who has chat closed or filtered.
+     * @since 5.0.3
      */
     hud(steamId: string | 'all', text: string): Promise<BridgeCommandResult>;
     /**
@@ -640,9 +787,12 @@ export interface Host {
      *
      * `seconds` and any `#rrggbb:` prefix in `text` are accepted and ignored; earlier versions of
      * this file described the colour prefix as working, and it never did.
+     * @since 5.0.3
      */
     warn(steamId: string | 'all', seconds: number, text: string): Promise<BridgeCommandResult>;
-    /** Kick through the game's own `KickPlayer`, so the REASON reaches the player. */
+    /** Kick through the game's own `KickPlayer`, so the REASON reaches the player.
+     * @since 5.0.3
+     */
     kick(steamId: string, reason?: string): Promise<BridgeCommandResult>;
     /**
      * Squad membership, server-side — it takes effect without the player doing anything.
@@ -656,6 +806,7 @@ export interface Host {
      *
      * A profile id is the SCUM **user profile id**, never a Steam ID — `host.players.bySteamId()`
      * resolves one. A squad id is what `host.bridge.squads()` reports.
+     * @since 5.0.3
      */
     squad(steamId: string, verb: 'join' | 'leave' | 'promote' | 'demote' | 'create',
           squadOrProfileId?: number | string): Promise<BridgeCommandResult>;
@@ -676,6 +827,7 @@ export interface Host {
      * progress, capturing team and key carrier; capture the flag's two flags, who holds each, the
      * return timers and the winning score; both deathmatches' round score limit. A mode your map does
      * not run produces no block at all, and an unreadable value is omitted rather than sent as a zero.
+     * @since 5.0.3
      */
     worldEvents(): Promise<{ cargo?: Array<Record<string, any>>; events?: Array<Record<string, any>> } | null>;
 
@@ -684,6 +836,7 @@ export interface Host {
      * switch, on by default): every game event that is running or taking sign-ups, and every one that
      * ended in the last 30 minutes, with its participants and the spans of time each was in play.
      * The one answer to "who is in an event"; the kill feeds read the same one. null when unavailable.
+     * @since 5.55.0
      */
     eventLedger(): Promise<{
       pollEveryMs: number;
@@ -708,6 +861,7 @@ export interface Host {
     /**
      * Was this player in play in a running game event, now or at `atMs` (epoch milliseconds)?
      * null when the ledger was not watching at that moment: "nobody can say", never "no".
+     * @since 5.55.0
      */
     inGameEvent(steamId: string, atMs?: number): Promise<{
       steamId: string; at: number; inEvent: boolean;
@@ -727,11 +881,16 @@ export interface Host {
      * for a fraction of the cost.
      *
      * Resolve each item's `class` to a name and icon with `host.items.resolve()`.
+     * @since 5.0.3
      */
     inventory(steamId: string): Promise<{ found: boolean; items: Array<Record<string, any>> | null; count?: number; truncated?: boolean } | null>;
-    /** Loose items on the ground within `radius` centimetres — what a raid left behind, a dropped bag. */
+    /** Loose items on the ground within `radius` centimetres — what a raid left behind, a dropped bag.
+     * @since 5.0.3
+     */
     itemsNear(x: number, y: number, radius: number): Promise<Record<string, any> | null>;
-    /** How many item actors exist, by where they are — the cheap diagnostic before enabling a sweep. */
+    /** How many item actors exist, by where they are — the cheap diagnostic before enabling a sweep.
+     * @since 5.0.3
+     */
     itemCounts(): Promise<Record<string, number> | null>;
 
     /**
@@ -742,6 +901,7 @@ export interface Host {
      *
      * Animals and sharks carry a stance but NO target — the game does not record one — so an entry
      * with no `target` key means exactly that, not "target unknown".
+     * @since 5.0.3
      */
     threats(): Promise<Array<Record<string, any>> | null>;
     /**
@@ -758,6 +918,7 @@ export interface Host {
      * restart, so read one and use it promptly.
      *
      * The walk is the expensive part - ask it when something happens, never on a timer.
+     * @since 5.5.0
      */
     creaturesNear(steamId: string, radiusM: number): Promise<{ found: boolean; near: Array<Record<string, any>> | null; count?: number; omitted?: number; truncated?: boolean } | null>;
     /**
@@ -772,6 +933,7 @@ export interface Host {
      * Read `movedCm` and `alreadyThere` before believing `arrived: true` on a short hop — arrival is
      * a tolerance around the destination, so a teleport to where somebody already stood reports
      * success without anything having happened, and says so with `provesNothing`.
+     * @since 5.6.0
      */
     teleportInflight(): Promise<Record<string, any> | null>;
     /**
@@ -784,6 +946,7 @@ export interface Host {
      * A record with no `baseElementDoorId` is a world door somebody locked or claimed: the key is
      * ABSENT, never zero. And do not match a lock to a door by position -- thirty pairs of doors on
      * this map share an identical x/y and differ only in height, and one of each pair has a lock.
+     * @since 5.9.0
      */
     savedLocks(): Promise<Record<string, any> | null>;
     /**
@@ -791,6 +954,7 @@ export interface Host {
      *
      * `hunting` is `null`, never `[]`, when the player is not in the world. A rule built on "nothing
      * is hunting them" must not fire because they logged out.
+     * @since 5.0.3
      */
     hunting(steamId: string): Promise<{ found: boolean; hunting: Array<Record<string, any>> | null; count?: number } | null>;
     /**
@@ -809,6 +973,7 @@ export interface Host {
      * `nextHarvestTimeRaw` is NOT a timestamp and must never be rendered as a clock time.
      *
      * A garden has no owner the game will admit to; `gardenId` is for a `SCUM.db` join.
+     * @since 5.0.3
      */
     gardens(): Promise<Record<string, any> | null>;
 
@@ -820,6 +985,7 @@ export interface Host {
      * level that has not streamed in produces nothing at all — no object, no error, no log line.
      *
      * Advisory. It blocks nothing.
+     * @since 5.0.3
      */
     checkPlace(x: number, y: number, z: number): Promise<Record<string, any> | null>;
 
@@ -844,6 +1010,7 @@ export interface Host {
      *
      * A restart rebuilds these rather than restoring them: the start is rebased and the duration
      * comes back as the server's configured maximum, so a shortened window does not survive one.
+     * @since 5.0.3
      */
     setProtection(flagId: number, delay: number, duration: number | 'forever'): Promise<BridgeCommandResult>;
 
@@ -857,6 +1024,7 @@ export interface Host {
      * Same arguments and the same units, `forever` included. An owner logging in clears what this
      * grants, exactly as it clears any other protection, so a permanent window lasts until somebody
      * comes back.
+     * @since 5.21.0
      */
     grantProtection(flagId: number, delay: number, duration: number | 'forever'): Promise<BridgeCommandResult>;
     /**
@@ -872,6 +1040,7 @@ export interface Host {
      * to. For a PLAYER it is a precaution rather than a retry — the game's player teleport returns
      * nothing, so a collision refusal can never be reported here at all, and for the same reason
      * there is no `force` on this one at any setting.
+     * @since 5.0.3
      */
     teleportPlayer(steamId: string, x: number, y: number, z: number, yaw: number,
                    dropCm?: number): Promise<BridgeCommandResult>;
@@ -883,12 +1052,15 @@ export interface Host {
      * genuine retry for a vehicle that would not fit. `force` skips the fit test entirely and puts
      * the vehicle exactly where asked — the last resort for one sunk in terrain, and just as capable
      * of burying it. It needs the module's own `force` switch, which is off by default.
+     * @since 5.0.3
      */
     moveVehicle(idLo: number, idHi: number, x: number, y: number, z: number, yaw: number,
                 dropCm?: number, force?: boolean): Promise<BridgeCommandResult>;
     /** Move a dropped item. Refused unless the game says it is actually lying on the ground — one
      *  inside an inventory, attached to something or on a corpse is not moved. `dropCm` and `force`
-     *  behave exactly as they do for `moveVehicle()`. */
+     *  behave exactly as they do for `moveVehicle()`.
+     * @since 5.0.3
+     */
     moveItem(idLo: number, idHi: number, x: number, y: number, z: number, yaw: number,
              dropCm?: number, force?: boolean): Promise<BridgeCommandResult>;
     /**
@@ -898,6 +1070,7 @@ export interface Host {
      * certainly written by the server path that runs BEFORE them — so a structure spawned this way
      * may last only until the next restart. The bridge refuses to spawn until it has WATCHED the game
      * send a `dataVersion` of its own, and can only replay a base and class it has already observed.
+     * @since 5.0.3
      */
     buildAction(verb: 'spawn' | 'destroy' | 'damage' | 'overtake' | 'setowner' | 'clearowner'
                     | 'chown' | 'transfer' | 'demolish',
@@ -907,15 +1080,20 @@ export interface Host {
      * change its owner or access level, recolour it.
      *
      * Values are clamped to the part's own maximum — putting 999 into a fuel tank is not a favour.
+     * @since 5.0.3
      */
     repairAction(verb: 'repair' | 'damage' | 'destroy' | 'fuel' | 'battery' | 'mileage'
                      | 'owner' | 'access' | 'colors' | 'pattern',
                  args: string): Promise<BridgeCommandResult>;
 
-    /** Reset a flag's protection cooldown. What it resets TO is unverified. */
+    /** Reset a flag's protection cooldown. What it resets TO is unverified.
+     * @since 5.0.3
+     */
     resetProtection(flagId: number): Promise<BridgeCommandResult>;
 
-    /** Killbox rooms: armed or not, seconds left, and how far the run has got. */
+    /** Killbox rooms: armed or not, seconds left, and how far the run has got.
+     * @since 5.0.3
+     */
     killboxes(): Promise<Record<string, any> | null>;
 
     /**
@@ -935,16 +1113,20 @@ export interface Host {
      * the state would run the handler on every CLIENT and start nothing.
      *
      * Read-only, needs the `killbox` module and its own `apex` switch.
+     * @since 5.1.0
      */
     apexFacilities(): Promise<{ facilities: Array<Record<string, any>>; truncated?: boolean } | null>;
 
-    /** How many creatures of each kind exist, and how many are hostile. The cheap summary. */
+    /** How many creatures of each kind exist, and how many are hostile. The cheap summary.
+     * @since 5.0.3
+     */
     creatureCounts(): Promise<Record<string, { total: number; hostile: number; truncated?: boolean }> | null>;
     /**
      * Traps and mines. **`armed`** is the field with no other source: a mine-protection rule
      * otherwise infers it from a log line and a timer.
      *
      * An ABSENT key means the game could not answer — never `false`.
+     * @since 5.0.3
      */
     traps(): Promise<Array<Record<string, any>> | null>;
 
@@ -958,6 +1140,7 @@ export interface Host {
      * fallback and hand it back for a missing setting, so the bridge reads each one twice with
      * different fallbacks — agreement means the value is real. Without that, a returned `0` could be
      * the value or the fallback.
+     * @since 5.0.3
      */
     setting(name: string, type?: 'int' | 'bool' | 'float' | 'string'):
         Promise<{ name: string; type?: string; value?: any; exists?: false } | null>;
@@ -968,6 +1151,7 @@ export interface Host {
      * The game accepts the call and keeps the old value: 214 attempts across three builds, all four
      * types and all six sections moved not one setting. Change it in `ServerSettings.ini` and
      * restart the server. Reading is unaffected — `setting()` still answers.
+     * @since 5.0.3
      */
     setSetting(name: string, type: 'int' | 'bool' | 'float' | 'string',
                value: string | number | boolean): Promise<BridgeCommandResult>;
@@ -977,9 +1161,12 @@ export interface Host {
      *
      * `known: false` is a REAL answer: the live set exists only as the parameters of the game's own
      * reply, so call `refreshZones()` and read a moment later. `ageMs` says how stale it is.
+     * @since 5.0.3
      */
     zones(): Promise<{ known: boolean; ageMs?: number; zones: Array<Record<string, any>> | null; configs?: Array<Record<string, any>> } | null>;
-    /** Ask the server to send its current zone set; the reply lands a frame or two later. */
+    /** Ask the server to send its current zone set; the reply lands a frame or two later.
+     * @since 5.0.3
+     */
     refreshZones(): Promise<BridgeCommandResult>;
     /**
      * Add or replace one zone by name.
@@ -987,6 +1174,7 @@ export interface Host {
      * **The game only accepts the COMPLETE set**, so this rewrites all of them — and is refused
      * until the current set has been read back at least once, or a write would delete every zone it
      * had not seen. Call `refreshZones()` first on a cold start.
+     * @since 5.0.3
      */
     setZone(name: string, shape: 'circle' | 'rectangle', x: number, y: number,
             width: number, height: number, config?: number): Promise<BridgeCommandResult>;
@@ -998,6 +1186,7 @@ export interface Host {
      * leave it and is marked `deleted` instead, so the count does not change. Read `state`.
      *
      * **Pass `{ confirm: true }`.** The one-argument form still works and is logged as unconfirmed.
+     * @since 5.0.3
      */
     deleteZone(name: string, opts?: { confirm?: boolean }): Promise<BridgeCommandResult & { confirmed: boolean }>;
 
@@ -1025,21 +1214,36 @@ export interface Host {
      *
      * **Semantics unverified** — very likely the KNOCKOUT exit rather than a resurrection, and never
      * watched on a live server. Read `playerState()` first to see which of the two you are undoing.
+     * @since 5.1.0
      */
     revive(steamId: string): Promise<BridgeCommandResult>;
-    /** Kill a player through the game's own path. No undo. */
+    /** Kill a player through the game's own path. No undo.
+     * @since 5.1.0
+     */
     suicide(steamId: string): Promise<BridgeCommandResult>;
+    /** @since 5.1.0 */
     godMode(steamId: string, on: boolean): Promise<BridgeCommandResult>;
-    /** Immortality — a separate flag from god mode, with its own meaning in the game. */
+    /** Immortality — a separate flag from god mode, with its own meaning in the game.
+     * @since 5.1.0
+     */
     immortal(steamId: string, on: boolean): Promise<BridgeCommandResult>;
+    /** @since 5.1.0 */
     infiniteAmmo(steamId: string, on: boolean): Promise<BridgeCommandResult>;
+    /** @since 5.1.0 */
     superJump(steamId: string, on: boolean): Promise<BridgeCommandResult>;
+    /** @since 5.1.0 */
     nightVision(steamId: string, on: boolean): Promise<BridgeCommandResult>;
-    /** Force a limp on or off. `clearLimp()` drops the override entirely, which is a third state. */
+    /** Force a limp on or off. `clearLimp()` drops the override entirely, which is a third state.
+     * @since 5.1.0
+     */
     limp(steamId: string, on: boolean): Promise<BridgeCommandResult>;
-    /** Clear the limp OVERRIDE — the game goes back to deciding for itself. */
+    /** Clear the limp OVERRIDE — the game goes back to deciding for itself.
+     * @since 5.1.0
+     */
     clearLimp(steamId: string): Promise<BridgeCommandResult>;
-    /** Set fame points. ABSOLUTE, not a delta. */
+    /** Set fame points. ABSOLUTE, not a delta.
+     * @since 5.1.0
+     */
     setFame(steamId: string, fame: number): Promise<BridgeCommandResult>;
     /**
      * Set a player's CASH balance — absolute, and the wrapper picks the right currency enum, which
@@ -1049,15 +1253,19 @@ export interface Host {
      * **Persistence unconfirmed.** This writes the replicated mirror, and whether that is the
      * authoritative figure has not been observed on a running server. For anything that must survive
      * a restart use the `#SetCurrencyBalance` admin command through `host.server.command()`.
+     * @since 5.1.0
      */
     setMoney(steamId: string, amount: number): Promise<BridgeCommandResult>;
-    /** Set a player's GOLD balance. Same persistence caveat as `setMoney()`. */
+    /** Set a player's GOLD balance. Same persistence caveat as `setMoney()`.
+     * @since 5.1.0
+     */
     setGold(steamId: string, amount: number): Promise<BridgeCommandResult>;
     /**
      * Set how wet a player is, as a ratio 0..1. Omit `part` to set all four.
      *
      * A write is REFUSED rather than made in the wrong unit when the game's own maximum for that
      * part cannot be read.
+     * @since 5.1.0
      */
     setWetness(steamId: string, ratio: number,
                part?: 'head' | 'upperbody' | 'torso' | 'chest' | 'lowerbody' | 'legs' | 'feet'): Promise<BridgeCommandResult>;
@@ -1066,12 +1274,14 @@ export interface Host {
      *
      * **Whether it flushes the balance and fame written above has not been observed on a running
      * server.** Treat it as a request, not a guarantee.
+     * @since 5.1.0
      */
     savePlayer(steamId: string): Promise<BridgeCommandResult>;
     /**
      * Clear everything a player is wearing and carrying.
      *
      * **Irreversible — the items are GONE, not dropped.** Nothing lands on the floor to pick back up.
+     * @since 5.1.0
      */
     stripPlayer(steamId: string): Promise<BridgeCommandResult>;
     /**
@@ -1079,6 +1289,7 @@ export interface Host {
      *
      * **Cuffs are one-way through the bridge**: they can be removed and cannot be applied, because
      * the game's own call needs a real item actor that nothing here can produce.
+     * @since 5.1.0
      */
     uncuff(steamId: string): Promise<BridgeCommandResult>;
 
@@ -1093,6 +1304,7 @@ export interface Host {
      *
      * `{ found: false }` when the id no longer resolves. Animals and sharks additionally need the
      * module's `animals` switch: with it off they are not in the walk at all.
+     * @since 5.1.0
      */
     creature(id: string): Promise<Record<string, any> | null>;
     /**
@@ -1101,6 +1313,7 @@ export interface Host {
      * **Zero is NOT a kill.** The death path runs off damage, not off the field, so a creature at
      * zero health stands there until something hits it — and killing through the damage system is
      * unreachable from here. Use `removeCreature()` to make one go away.
+     * @since 5.1.0
      */
     setCreatureHealth(id: string, hp: number): Promise<BridgeCommandResult>;
     /**
@@ -1108,13 +1321,20 @@ export interface Host {
      *
      * **Impossible for animals and sharks** — the game records a stance for them and no target at
      * all, so this is refused rather than silently doing nothing.
+     * @since 5.1.0
      */
     setCreatureTarget(id: string, steamId: string | null): Promise<BridgeCommandResult>;
-    /** Make a creature fight, or calm it. Works on puppets and NPCs only. */
+    /** Make a creature fight, or calm it. Works on puppets and NPCs only.
+     * @since 5.1.0
+     */
     setCreatureHostile(id: string, on: boolean): Promise<BridgeCommandResult>;
-    /** Set a creature's stance by the name its own kind uses; `creature()` reports the current one. */
+    /** Set a creature's stance by the name its own kind uses; `creature()` reports the current one.
+     * @since 5.1.0
+     */
     setCreatureStance(id: string, stance: string): Promise<BridgeCommandResult>;
-    /** Set one named replicated flag. Powerful, and nothing proves the name exists until you call it. */
+    /** Set one named replicated flag. Powerful, and nothing proves the name exists until you call it.
+     * @since 5.1.0
+     */
     setCreatureField(id: string, field: string, value: string | number | boolean): Promise<BridgeCommandResult>;
     /**
      * Destroy a creature outright.
@@ -1122,6 +1342,7 @@ export interface Host {
      * **It leaves no corpse and no loot and counts as nobody's kill.** Killing through the damage
      * system is unreachable, so this is a removal rather than a death — by construction, not by
      * oversight.
+     * @since 5.1.0
      */
     removeCreature(id: string): Promise<BridgeCommandResult>;
 
@@ -1132,13 +1353,16 @@ export interface Host {
     // both directions: these are multicasts and the database row is almost certainly written by the
     // server path that runs before them.
 
-    /** Bases, the element classes the bridge has watched being spawned, and `dataVersionKnown`. */
+    /** Bases, the element classes the bridge has watched being spawned, and `dataVersionKnown`.
+     * @since 5.1.0
+     */
     baseBuilding(): Promise<Record<string, any> | null>;
     /**
      * The base elements the bridge has SEEN since it started, optionally one base's worth.
      *
      * The payload says `observedOnly: true` and means it — this is not the game's element table,
      * which is native and outside reflection. Capped at 4096.
+     * @since 5.1.0
      */
     buildElements(baseId?: number): Promise<Record<string, any> | null>;
     /**
@@ -1149,6 +1373,7 @@ export interface Host {
      * database has not used, and inventing one that collides means two elements the game believes
      * are the same. `yaw` is DEGREES about Z; an owner of 0 is what makes an element not
      * player-owned.
+     * @since 5.1.0
      */
     spawnElement(baseId: number, cls: string, x: number, y: number, z: number, yaw: number,
                  elementId: number, ownerProfileId?: number, creatorPrisonerId?: number): Promise<BridgeCommandResult>;
@@ -1157,6 +1382,7 @@ export interface Host {
      *
      * `reason` is **not cosmetic**: only `damage` counts as a raid to the raid module, so destroying
      * something as `admincommand` (the default) deliberately does not register as one.
+     * @since 5.1.0
      */
     destroyElement(baseId: number, elementId: number, x: number, y: number, z: number,
                    reason?: 'none' | 'user' | 'upgrade' | 'internal' | 'damage' | 'decay'
@@ -1169,25 +1395,36 @@ export interface Host {
      * health, so this is no way to set a structure to half. Zero is refused and the amount is capped
      * at 10000 — **refused, never clamped**. `repair: true` sends a negative amount, and **whether
      * the game treats that as a repair is unconfirmed**.
+     * @since 5.1.0
      */
     damageElement(baseId: number, elementId: number, x: number, y: number, z: number,
                   amount: number, repair?: boolean): Promise<BridgeCommandResult>;
-    /** Hand one element to a new owner. Nothing checks that it is a flag — the game does not say. */
+    /** Hand one element to a new owner. Nothing checks that it is a flag — the game does not say.
+     * @since 5.1.0
+     */
     overtakeElement(elementId: number, x: number, y: number, z: number, newOwnerProfileId: number): Promise<BridgeCommandResult>;
     /**
      * Refused by bridges newer than 2.32.0: the game keeps nothing this sets. A base belongs to its
      * flag's owner, so use `overtakeElement()` on the base's flag.
+     * @since 5.1.0
      */
     setBaseOwner(baseId: number, x: number, y: number, z: number, newOwnerProfileId: number): Promise<BridgeCommandResult>;
-    /** Refused by bridges newer than 2.32.0, for the same reason as `setBaseOwner()`. */
+    /** Refused by bridges newer than 2.32.0, for the same reason as `setBaseOwner()`.
+     * @since 5.1.0
+     */
     clearBaseOwner(baseId: number, x: number, y: number, z: number): Promise<BridgeCommandResult>;
-    /** Move EVERY flag from one profile to another. **Bulk and unscoped** — it names no flag. */
+    /** Move EVERY flag from one profile to another. **Bulk and unscoped** — it names no flag.
+     * @since 5.1.0
+     */
     chownFlags(oldProfileId: number, newProfileId: number): Promise<BridgeCommandResult>;
-    /** The game's own bulk transfer. **The KIND of id it takes is undocumented** — the game's shape. */
+    /** The game's own bulk transfer. **The KIND of id it takes is undocumented** — the game's shape.
+     * @since 5.1.0
+     */
     transferOwnership(oldId: number, newId: number): Promise<BridgeCommandResult>;
     /**
      * Demolish everything of one element type within `radius` centimetres. Radius is capped at 2000
      * and is **refused, never clamped**. The game reports no count of what it removed.
+     * @since 5.1.0
      */
     demolishArea(x: number, y: number, z: number, radius: number,
                  elementType: 'none' | 'default' | 'woodenpalisade' | 'sandbox' | 'door' | 'well'
@@ -1200,13 +1437,20 @@ export interface Host {
     /**
      * Every weather and time knob with its value, range, group and — the useful part —
      * `basis: 'measured' | 'declared'`, which says whether that knob was actually tested.
+     * @since 5.1.0
      */
     climate(): Promise<Record<string, any> | null>;
-    /** One knob on its own. */
+    /** One knob on its own.
+     * @since 5.1.0
+     */
     climateKnob(key: string): Promise<Record<string, any> | null>;
-    /** The twelve boolean switches, each with its group and what it needs first. */
+    /** The twelve boolean switches, each with its group and what it needs first.
+     * @since 5.1.0
+     */
     climateSwitches(): Promise<Record<string, any> | null>;
-    /** The group names a knob can belong to — `time`, `precipitation`, `fog`, `wind`, … */
+    /** The group names a knob can belong to — `time`, `precipitation`, `fog`, `wind`, …
+     * @since 5.1.0
+     */
     climateGroups(): Promise<Record<string, any> | null>;
     /**
      * Write one knob, in the channel's own unit.
@@ -1220,17 +1464,23 @@ export interface Host {
      * A value outside the knob's range is REFUSED, never clamped. Clock values are given as hours
      * 0..24. **Writes can survive a restart** — the game serialises its climate state on its own
      * timer — so turn persistence off before experimenting.
+     * @since 5.1.0
      */
     setClimate(key: string, value: number): Promise<BridgeCommandResult>;
     /** RETIRED, and the bridge refuses it: the freeze it performed wrote a byte a dedicated server
-     *  never reads. Use `setClimate()` with the channel's own interp speed or roll range. */
+     *  never reads. Use `setClimate()` with the channel's own interp speed or roll range.
+     * @since 5.1.0
+     */
     pinClimate(key: string, value: number): Promise<BridgeCommandResult>;
-    /** One of the twelve boolean switches. */
+    /** One of the twelve boolean switches.
+     * @since 5.1.0
+     */
     setClimateSwitch(key: string, on: boolean): Promise<BridgeCommandResult>;
     /**
      * RETIRED, and the bridge refuses it. Both switches were written, both read back, and the world
      * carried on — the clock included, with the clock switch off. To stop the clock write `timeSpeed`
      * 0; to hold one channel use its interp speed or narrow its roll range.
+     * @since 5.1.0
      */
     holdClimate(on: boolean): Promise<BridgeCommandResult>;
 
@@ -1239,11 +1489,16 @@ export interface Host {
     /**
      * What is being crafted right now. **Ingredient NAMES cannot be resolved** — slots come out as an
      * ordered list matching recipe order, and `recipeId` maps to no reflected table.
+     * @since 5.1.0
      */
     crafting(): Promise<Record<string, any> | null>;
-    /** Base-building placements staked out but not yet paid for, with the per-slot tally. */
+    /** Base-building placements staked out but not yet paid for, with the per-slot tally.
+     * @since 5.1.0
+     */
     placements(): Promise<Record<string, any> | null>;
-    /** Fishing state. Mass and size carry a `Raw` suffix because the units are genuinely unknown. */
+    /** Fishing state. Mass and size carry a `Raw` suffix because the units are genuinely unknown.
+     * @since 5.1.0
+     */
     fishing(): Promise<Record<string, any> | null>;
     /**
      * Crafting and fishing events — `fish.caught`, `craft.start`, `cook.collect` and the rest.
@@ -1255,8 +1510,10 @@ export interface Host {
      *
      * `slotId: -1` is never emitted, so an absent key means the event has no slot — a different
      * thing from slot 0.
+     * @since 5.1.0
      */
     craftEvents(): Promise<Record<string, any> | null>;
+    /** @since 5.1.0 */
     craftEvents(opts: { since: number } | number): Promise<BridgeEventsSince<Record<string, any>> | Record<string, any> | null>;
 
     // ── removing things from the world ───────────────────────────────────────────────────────────
@@ -1265,17 +1522,22 @@ export interface Host {
     // direction a mistake in an irreversible call should fail in.
 
     /** Every kind this bridge will despawn, with its switch and its `maxPerCall` / `maxRadius` —
-     *  which are REFUSED, never clamped. */
+     *  which are REFUSED, never clamped.
+     * @since 5.1.0
+     */
     despawnKinds(): Promise<Record<string, any> | null>;
     /**
      * What a despawn WOULD remove, without removing it.
      *
      * Deliberately does not require the kind's own switch — it reports `allowed: false` instead, so
      * a preview screen works before an owner has turned anything on.
+     * @since 5.1.0
      */
     despawnPreview(kind: string, x: number, y: number, z: number, radius: number,
                    objectId?: string): Promise<Record<string, any> | null>;
-    /** Every kind at one point in a single walk — a survey, cheaper than asking per kind. */
+    /** Every kind at one point in a single walk — a survey, cheaper than asking per kind.
+     * @since 5.1.0
+     */
     despawnSurvey(x: number, y: number, z: number, radius: number): Promise<Record<string, any> | null>;
     /**
      * Remove things. **Irreversible, and the cleanliness is UNVERIFIED** — whether destroying the
@@ -1287,6 +1549,7 @@ export interface Host {
      * behind a deny list. The whole call is ABANDONED, not merely skipped, if any candidate has a
      * player attached. Never available at any setting: base elements, items and floor loot, corpses,
      * and anything a player is inside.
+     * @since 5.1.0
      */
     despawnAt(kind: string, x: number, y: number, z: number, radius: number,
               objectId?: string): Promise<BridgeCommandResult>;
@@ -1295,6 +1558,7 @@ export interface Host {
      * stopped, so the game does not build a replacement. `kind` is `mapsentry` and `objectId` is the
      * id a `despawnPreview()` gave; a preview marks one already put away with `stowed: true`. It
      * lasts until nobody is near that place or the server restarts, so keep putting new ones away.
+     * @since 5.16.1
      */
     despawnStow(kind: string, x: number, y: number, z: number, radius: number,
                 objectId: string): Promise<BridgeCommandResult>;
@@ -1303,13 +1567,18 @@ export interface Host {
     // A door key is `<Level>:<Actor>` and CONTAINS a colon, which is why these take the two halves
     // separately. This is not the `locks` module below, which addresses a door a different way again.
 
-    /** Every level holding a door the module has recorded, with counts. */
+    /** Every level holding a door the module has recorded, with counts.
+     * @since 5.1.0
+     */
     doorLevels(): Promise<Record<string, any> | null>;
-    /** The door CLASSES seen. The rows spell the key `level` although the value is a class name. */
+    /** The door CLASSES seen. The rows spell the key `level` although the value is a class name.
+     * @since 5.1.0
+     */
     doorClasses(): Promise<Record<string, any> | null>;
     /**
      * One door's state. The registry is not always populated: in `random` mode with "close doors
      * players left open" off, only already-open doors are recorded.
+     * @since 5.1.0
      */
     doorState(level: string, actor: string): Promise<Record<string, any> | null>;
     /**
@@ -1318,6 +1587,7 @@ export interface Host {
      * **It returns success even when it was ignored** — outside persist mode it logs and returns
      * true, and inside it only sets a flag, because the doors may not be loaded yet. Do not read
      * success here as "it is saved".
+     * @since 5.1.0
      */
     saveDoors(): Promise<BridgeCommandResult>;
     /**
@@ -1330,6 +1600,7 @@ export interface Host {
      *
      * **`seal` is NOT the game's lock.** It writes the door's own "can open" flag false, which also
      * blocks the module itself, and NOTHING PERSISTS IT — a restart releases every sealed door.
+     * @since 5.1.0
      */
     doorAction(verb: 'open' | 'close' | 'seal' | 'unseal' | 'lock' | 'unlock',
                level: string, actor: string): Promise<BridgeCommandResult>;
@@ -1337,7 +1608,9 @@ export interface Host {
     // ── the live world index ─────────────────────────────────────────────────────────────────────
     // ⚠ Ids here are runtime object-array slots and **change on a restart**.
 
-    /** Which entity kinds this module indexes — the only read here that says whether it is on. */
+    /** Which entity kinds this module indexes — the only read here that says whether it is on.
+     * @since 5.1.0
+     */
     entityKinds(): Promise<Record<string, any> | null>;
     /**
      * The live world index.
@@ -1346,12 +1619,17 @@ export interface Host {
      * `ready`, and anything constructed before that moment is never constructed again until a
      * restart. Twenty-five thousand entities is the better part of a megabyte of string building on
      * the game thread, so this is emphatically not a polling call.
+     * @since 5.1.0
      */
     entities(): Promise<Record<string, any> | null>;
-    /** The bases the entity index holds. Same cost and the same partial/ready caveat. */
+    /** The bases the entity index holds. Same cost and the same partial/ready caveat.
+     * @since 5.1.0
+     */
     entityBases(): Promise<Record<string, any> | null>;
     /** One entity by runtime id. The id is paired with a pinned serial, so a recycled slot fails to
-     *  resolve rather than being written. */
+     *  resolve rather than being written.
+     * @since 5.1.0
+     */
     entity(id: string): Promise<Record<string, any> | null>;
     /**
      * Write one named property on one entity.
@@ -1359,16 +1637,21 @@ export interface Host {
      * **Unchecked**: a property named on the wire has no literal for the manager's build-time name
      * checker to verify, so nothing proves it exists until the call is made. Mitigated by a read-back
      * at the declared width and by nothing else. Powerful, and not undoable.
+     * @since 5.1.0
      */
     setEntityProperty(id: string, property: string, type: 'bool' | 'int' | 'int64' | 'float',
                       value: string | number | boolean): Promise<BridgeCommandResult>;
-    /** Heal an entity to a fraction of its full health, 0..1. */
+    /** Heal an entity to a fraction of its full health, 0..1.
+     * @since 5.1.0
+     */
     healEntity(id: string, ratio: number): Promise<BridgeCommandResult>;
 
     // ── gardens ──────────────────────────────────────────────────────────────────────────────────
 
     /** One garden by id. Both farming reads walk every garden actor, so this is not cheaper than
-     *  `gardens()` — only narrower. */
+     *  `gardens()` — only narrower.
+     * @since 5.1.0
+     */
     garden(gardenId: number): Promise<Record<string, any> | null>;
     /**
      * RETIRED. **Every verb this reaches refuses**, and the method is kept so that a caller is told
@@ -1391,6 +1674,7 @@ export interface Host {
      * `kill` over the whole bed took the literal `'CONFIRM'`.
      *
      * Reading a garden is untouched: `.gardens()` and the per-bed read work exactly as before.
+     * @since 5.1.0
      */
     gardenAction(verb: 'water' | 'grow' | 'clear' | 'kill' | 'fertilize' | 'pesticide' | 'fungicide'
                      | 'weeds' | 'plant',
@@ -1412,36 +1696,59 @@ export interface Host {
     // polling shape and it is off by default. Success means CONFIRMED by read-back, all-or-nothing;
     // these are MOVES, so retrying an unconfirmed one duplicates nothing.
 
-    /** Put an item straight into a player's hands. */
+    /** Put an item straight into a player's hands.
+     * @since 5.1.0
+     */
     giveToHands(steamId: string, selector: string): Promise<BridgeCommandResult>;
-    /** Put one matching item into a player's inventory. */
+    /** Put one matching item into a player's inventory.
+     * @since 5.1.0
+     */
     giveToInventory(steamId: string, selector: string): Promise<BridgeCommandResult>;
-    /** Every match in one sweep. */
+    /** Every match in one sweep.
+     * @since 5.1.0
+     */
     giveAll(steamId: string, selector: string): Promise<BridgeCommandResult>;
-    /** The first `count` matches. */
+    /** The first `count` matches.
+     * @since 5.1.0
+     */
     giveN(steamId: string, count: number, selector: string): Promise<BridgeCommandResult>;
     /**
      * Drop an item on the ground at a coordinate.
      *
      * **The coordinate is not validated against the world**: a drop into a level that has not
      * streamed in produces no object whatsoever, with no error. `checkPlace()` answers that first.
+     * @since 5.1.0
      */
     dropItemAt(steamId: string, x: number, y: number, z: number, selector: string): Promise<BridgeCommandResult>;
     /** Drop `count` items where the player stands — recoverable, by them or by anyone, which is the
-     *  point when a confiscation is meant to be seen. */
+     *  point when a confiscation is meant to be seen.
+     * @since 5.1.0
+     */
     dropItem(steamId: string, count: number, selector: string): Promise<BridgeCommandResult>;
-    /** Take `count` items out of the world entirely. **No undo** — this destroys them. */
+    /** Take `count` items out of the world entirely. **No undo** — this destroys them.
+     * @since 5.1.0
+     */
     removeItemFrom(steamId: string, count: number, selector: string): Promise<BridgeCommandResult>;
-    /** The last give/drop/remove in full, including WHICH no it was when one failed. */
+    /** The last give/drop/remove in full, including WHICH no it was when one failed.
+     * @since 5.1.0
+     */
     lastGive(): Promise<Record<string, any> | null>;
     /** Put a garment (by entity id) on a player. It must be near them. A garment already in that slot
-     *  is not replaced: the call refuses naming it. Bridge 2.35.0. */
+     *  is not replaced: the call refuses naming it. Bridge 2.35.0.
+     * @since 5.43.0
+     */
     equipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
-    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full. */
+    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full.
+     * @since 5.43.0
+     */
     unequipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
-    /** Put the new garment on, letting the game take the named worn one off. Nothing is destroyed. */
+    /** Put the new garment on, letting the game take the named worn one off. Nothing is destroyed.
+     * @since 5.43.0
+     */
     swapClothes(steamId: string, oldEntityId: string | number, newEntityId: string | number): Promise<BridgeCommandResult>;
-    /** Sling an item over a player's left or right shoulder. A taken shoulder is refused. */
+    /** Sling an item over a player's left or right shoulder. A taken shoulder is refused.
+     * @since 5.43.0
+     */
     putOnShoulder(steamId: string, side: 'left' | 'right', entityId: string | number): Promise<BridgeCommandResult>;
 
     // ── live item actors ─────────────────────────────────────────────────────────────────────────
@@ -1449,22 +1756,32 @@ export interface Host {
     // **There is no bare-class shorthand**, unlike the give verbs: these have no acting player to
     // default to, and a silent default on a destroying verb is how the wrong thing goes.
 
-    /** Set an item's condition — an absolute health figure, or a share when the value ends in `%`. */
+    /** Set an item's condition — an absolute health figure, or a share when the value ends in `%`.
+     * @since 5.1.0
+     */
     setItemCondition(value: string | number, selector: string): Promise<BridgeCommandResult>;
     /** Destroy one item. Ambiguity is refused, not resolved — only `floor:` is defined as nearest.
-     *  An unconfirmed destroy reports FAILURE even if it worked, because the retry is harmless. */
+     *  An unconfirmed destroy reports FAILURE even if it worked, because the retry is harmless.
+     * @since 5.1.0
+     */
     destroyItem(selector: string): Promise<BridgeCommandResult>;
-    /** The last item operation in full. */
+    /** The last item operation in full.
+     * @since 5.1.0
+     */
     lastItemOp(): Promise<Record<string, any> | null>;
 
     // ── killboxes ────────────────────────────────────────────────────────────────────────────────
     // Every verb names a LEVEL explicitly: no "all", no default, no nearest match. **Nothing tuned
     // here is saved** — a restart puts every one of them back.
 
-    /** Trigger panic mode. Also unknowable, and there is no panic READING at all. */
+    /** Trigger panic mode. Also unknowable, and there is no panic READING at all.
+     * @since 5.1.0
+     */
     panicKillbox(level: string): Promise<BridgeCommandResult>;
     /** Write the countdown, 0..7200 seconds. `remainingSeconds` holds a leftover while a killbox is
-     *  inactive, so gate on `active` and never on it being non-zero. */
+     *  inactive, so gate on `active` and never on it being non-zero.
+     * @since 5.1.0
+     */
     setKillboxTime(level: string, seconds: number): Promise<BridgeCommandResult>;
     /**
      * Move the replicated activation flag — **and nothing else.**
@@ -1472,14 +1789,18 @@ export interface Host {
      * **This does NOT start a killbox.** There is no server-side activation call in this build:
      * writing the flag makes every CLIENT run its activation handler, while the server's own work —
      * the timer, the spawns, the doors — does not happen, because nothing on the server is listening.
+     * @since 5.1.0
      */
     setKillboxActivated(level: string, on: boolean): Promise<BridgeCommandResult>;
-    /** Move the replicated finale flag. */
+    /** Move the replicated finale flag.
+     * @since 5.1.0
+     */
     setKillboxFinale(level: string, on: boolean): Promise<BridgeCommandResult>;
     /**
      * One tuning field on one killbox. Seconds 0..7200: `duration`, `lockdown`, `reductioncap`,
      * `reductionpenalty`, `panictimecut`, `gasentrance`, `laserentrance`. Counts 0..500:
      * `maxzombies`, `maxzombiespermistake`.
+     * @since 5.1.0
      */
     tuneKillbox(level: string, key: string, value: number): Promise<BridgeCommandResult>;
 
@@ -1492,7 +1813,9 @@ export interface Host {
     // 16800 on a full map — and a COMMAND costs one full walk too.
 
     /** Every door passing the module's `claimed` filter. Combination codes are OFF by default:
-     *  turning them on puts the actual code a player set into the report. */
+     *  turning them on puts the actual code a player set into the report.
+     * @since 5.1.0
+     */
     locks(): Promise<Record<string, any> | null>;
     /**
      * What the game itself passed the last few times a door was locked or unlocked.
@@ -1506,35 +1829,52 @@ export interface Host {
      *
      * Lock one door in game, then call this. Until somebody does, the rows are empty, and that is
      * the correct answer rather than a fault.
+     * @since 5.1.0
      */
     lockReplication(): Promise<any>;
-    /** Only the doors whose state says locked, ignoring the `claimed` filter deliberately. */
+    /** Only the doors whose state says locked, ignoring the `claimed` filter deliberately.
+     * @since 5.1.0
+     */
     lockedDoors(): Promise<Record<string, any> | null>;
-    /** Swing a door open. */
+    /** Swing a door open.
+     * @since 5.1.0
+     */
     openLock(target: string): Promise<BridgeCommandResult>;
-    /** Swing a door shut. */
+    /** Swing a door shut.
+     * @since 5.1.0
+     */
     closeLock(target: string): Promise<BridgeCommandResult>;
     /**
      * Set the game's own Locked flag — a different thing from the swing, and a third thing from the
      * door module's `seal`, which makes a door refuse to open without touching the lock at all. A
      * door can be any combination of the three. This never sets the unpickable state, which belongs
      * to bunker and quest doors and is not on offer.
+     * @since 5.1.0
      */
     lockDoor(target: string): Promise<BridgeCommandResult>;
-    /** Clear the Locked flag. */
+    /** Clear the Locked flag.
+     * @since 5.1.0
+     */
     unlockDoor(target: string): Promise<BridgeCommandResult>;
-    /** Set who may open it. */
+    /** Set who may open it.
+     * @since 5.1.0
+     */
     setDoorAccess(target: string, level: 'public' | 'private' | 'rank1' | 'rank2' | 'rank3' | 'rank4'): Promise<BridgeCommandResult>;
     /**
      * Set a combination, 0..999999 — a bound this module imposes, because the game declares no digit
      * count anywhere. **A code cannot be CLEARED**: there is no value meaning "no code" in this
      * build.
+     * @since 5.1.0
      */
     setDoorCode(target: string, combination: number): Promise<BridgeCommandResult>;
     /** Set EVERY lock's health on that door, 0..10000 — the report has no per-lock handle to aim at.
-     *  Clients keep showing the old number until the game next tells them otherwise. */
+     *  Clients keep showing the old number until the game next tells them otherwise.
+     * @since 5.1.0
+     */
     setLockHealth(target: string, value: number): Promise<BridgeCommandResult>;
-    /** Set every lock's remaining pick attempts, 0..1000. Same "every lock" caveat. */
+    /** Set every lock's remaining pick attempts, 0..1000. Same "every lock" caveat.
+     * @since 5.1.0
+     */
     setLockTries(target: string, count: number): Promise<BridgeCommandResult>;
     // ── medical ──────────────────────────────────────────────────────────────────────────────────
     // A selector is an effect NAME as `medicalCatalogue()` spells it, `'#<id>'` for exactly one
@@ -1544,10 +1884,14 @@ export interface Host {
     // **Privacy**: this is health information about identifiable people, and it leaves the game the
     // moment the switch is on.
 
-    /** Every player in the world with whatever medical state could be read. */
+    /** Every player in the world with whatever medical state could be read.
+     * @since 5.1.0
+     */
     medicalPlayers(): Promise<Record<string, any> | null>;
     /** One player. `{ found: false }` when offline — which is neither an error nor an empty medical
-     *  record; those are three different facts. */
+     *  record; those are three different facts.
+     * @since 5.1.0
+     */
     medicalPlayer(steamId: string): Promise<Record<string, any> | null>;
     /** The effect names this build currently NAMES — not the full class list, and not a fixed set. */
     /**
@@ -1563,21 +1907,30 @@ export interface Host {
      *
      * `count: 0` with `fieldsNotUnderstood` set means the output format moved, not that the player
      * is healthy.
+     * @since 5.9.0
      */
     medicalSeverities(steamId: string): Promise<Record<string, any> | null>;
+    /** @since 5.1.0 */
     medicalCatalogue(): Promise<Record<string, any> | null>;
-    /** Which fields each effect kind carries, so a panel can draw a form without knowing the classes. */
+    /** Which fields each effect kind carries, so a panel can draw a form without knowing the classes.
+     * @since 5.1.0
+     */
     medicalFields(): Promise<Record<string, any> | null>;
-    /** The last medical write with the figures either side of it. */
+    /** The last medical write with the figures either side of it.
+     * @since 5.1.0
+     */
     lastMedicalChange(): Promise<Record<string, any> | null>;
     /**
      * Set how bad one effect is.
      *
      * Severity is QUANTISED: the replicated value only refreshes once it has moved by a configured
      * step, so it is close enough to act on and not exact enough to difference between two polls.
+     * @since 5.1.0
      */
     setEffectSeverity(steamId: string, selector: string, value: number): Promise<BridgeCommandResult>;
-    /** Set one measurement or descriptor on an effect — `medicalFields()` lists what each kind has. */
+    /** Set one measurement or descriptor on an effect — `medicalFields()` lists what each kind has.
+     * @since 5.1.0
+     */
     setEffectField(steamId: string, selector: string, field: string,
                    value: string | number | boolean): Promise<BridgeCommandResult>;
     /**
@@ -1588,12 +1941,17 @@ export interface Host {
      * the game then retires a zero-severity effect is unverified**. Treatment values (a bandage,
      * disinfectant) are deliberately not zeroed: zeroing the bandage on a wound is the opposite of
      * curing it.
+     * @since 5.1.0
      */
     cureEffect(steamId: string, selector: string): Promise<BridgeCommandResult>;
-    /** The same for a player's entire medical record. */
+    /** The same for a player's entire medical record.
+     * @since 5.1.0
+     */
     cureAll(steamId: string): Promise<BridgeCommandResult>;
     /** Add an effect by class name, through the game's own admin command. **It reports nothing back**
-     *  — success means dispatched, not that the effect exists. */
+     *  — success means dispatched, not that the effect exists.
+     * @since 5.1.0
+     */
     addEffect(steamId: string, effectName: string): Promise<BridgeCommandResult>;
     /** Remove an effect through the same route, with the same "reports nothing back" caveat.
      *
@@ -1602,20 +1960,27 @@ export interface Host {
      *  `'CONFIRM'` as the third argument to actually remove. The two-argument form keeps its
      *  old wire on purpose -- a plugin written against it must not start deleting when the
      *  manager is updated -- and `check-bridge-calls` pins both shapes.
+     * @since 5.1.0
      */
     removeEffect(steamId: string, selector: string, confirm?: 'CONFIRM'): Promise<BridgeCommandResult>;
     /** What the last cure actually did: how many effects were set to zero, how many still read
      *  zero four seconds later, and how many the game put straight back. Added in manager 5.4 --
      *  call it defensively. A cure never shortens the medical record; this is how you tell a
-     *  cure that worked from one that did not. */
+     *  cure that worked from one that did not.
+     * @since 5.4.1
+     */
     lastCure(): Promise<any>;
 
     // ── is this a sane spot? ─────────────────────────────────────────────────────────────────────
 
     /** Everything the game knows about a point, not just `checkPlace()`'s summary. Same
-     *  absent-never-false rule. */
+     *  absent-never-false rule.
+     * @since 5.1.0
+     */
     whereIs(x: number, y: number, z: number): Promise<Record<string, any> | null>;
-    /** The map's own extent, so a caller can pick a point at all. */
+    /** The map's own extent, so a caller can pick a point at all.
+     * @since 5.1.0
+     */
     worldExtent(): Promise<Record<string, any> | null>;
 
     // ── fire, generators, lamps and cooking ──────────────────────────────────────────────────────
@@ -1639,33 +2004,53 @@ export interface Host {
     //                            and no heat and only tells clients about a fire the server is not
     //                            simulating. Put fuel in with `setFireFuel()` and let the game burn it.
 
-    /** Every fire, stove, oven and torch the server has loaded. */
+    /** Every fire, stove, oven and torch the server has loaded.
+     * @since 5.1.0
+     */
     heatSources(): Promise<Record<string, any> | null>;
     /** Generators, lamps and (behind its own switch) battery devices. **Zero of each is the world's
      *  state on a stock server, not a narrow filter** — the `seen` counts separate "archetypes exist,
-     *  no live ones" from "this build has no such class". */
+     *  no live ones" from "this build has no such class".
+     * @since 5.1.0
+     */
     powerSources(): Promise<Record<string, any> | null>;
-    /** Every cooking slot, what is in it and how far along it is. */
+    /** Every cooking slot, what is in it and how far along it is.
+     * @since 5.1.0
+     */
     cooking(): Promise<Record<string, any> | null>;
     /** Switch the nearest generator on or off. **Partial success is possible and reports FALSE**: the
-     *  flag write can succeed while the ranged provider fails, and the reason says so. */
+     *  flag write can succeed while the ranged provider fails, and the reason says so.
+     * @since 5.1.0
+     */
     setGenerator(x: number, y: number, z: number, on: boolean): Promise<BridgeCommandResult>;
     /** Fuel in the nearest generator's tank. **There is no maximum** — the game states none, so none
-     *  is imposed; a ceiling invented here would be a made-up number enforced as the game's. */
+     *  is imposed; a ceiling invented here would be a made-up number enforced as the game's.
+     * @since 5.1.0
+     */
     setGeneratorFuel(x: number, y: number, z: number, amount: number): Promise<BridgeCommandResult>;
     /** Switch the nearest lamp on or off. Bunker and vehicle lighting are a different component and
-     *  do not appear here at all. */
+     *  do not appear here at all.
+     * @since 5.1.0
+     */
     setLight(x: number, y: number, z: number, on: boolean): Promise<BridgeCommandResult>;
-    /** How bright the nearest lamp burns, on the game's own raw 0..255 scale. */
+    /** How bright the nearest lamp burns, on the game's own raw 0..255 scale.
+     * @since 5.1.0
+     */
     setLightIntensity(x: number, y: number, z: number, value: number): Promise<BridgeCommandResult>;
-    /** Put fuel in the nearest wood fire's fire box, by mass. */
+    /** Put fuel in the nearest wood fire's fire box, by mass.
+     * @since 5.1.0
+     */
     setFireFuel(x: number, y: number, z: number, mass: number): Promise<BridgeCommandResult>;
-    /** Charge in the nearest battery or canister slot, as a RATIO 0..1 — **not** a percentage. */
+    /** Charge in the nearest battery or canister slot, as a RATIO 0..1 — **not** a percentage.
+     * @since 5.1.0
+     */
     setDeviceCharge(x: number, y: number, z: number, ratio: number): Promise<BridgeCommandResult>;
 
     // ── raid protection windows ──────────────────────────────────────────────────────────────────
 
-    /** The protection RPCs this module has watched go past, with what they asked for. */
+    /** The protection RPCs this module has watched go past, with what they asked for.
+     * @since 5.1.0
+     */
     protectionCalls(): Promise<Record<string, any> | null>;
     /**
      * Every protection the manager holds, with `_raidProtectionPacked` reported RAW.
@@ -1678,33 +2063,50 @@ export interface Host {
      * manager's own clock, which `protectionManager()` carries as `serverTimeInSyncs`, a sync being
      * a minute. That makes the comparison good to about a minute, which is worth saying on a screen
      * rather than printing a figure to the second.
+     * @since 5.1.0
      */
     protections(): Promise<Record<string, any> | null>;
     /** One flag's protection. Needs the raid-protection manager, which the game only spawns when the
-     *  server's protection type is non-zero. */
+     *  server's protection type is non-zero.
+     * @since 5.1.0
+     */
     flagProtection(flagId: number): Promise<Record<string, any> | null>;
-    /** Take a raw snapshot of the protection state, for measuring what a `setProtection()` did. */
+    /** Take a raw snapshot of the protection state, for measuring what a `setProtection()` did.
+     * @since 5.1.0
+     */
     snapshotProtection(): Promise<BridgeCommandResult>;
 
     // ── raid detection and announcements ─────────────────────────────────────────────────────────
     // **`startRaid`, `endRaid` and `forgetRaid` touch NOTHING in the game** — they edit the bridge's
     // own record. A declared window carries `declared: true`, and a real hit clears the mark.
 
-    /** One base's raid record. */
+    /** One base's raid record.
+     * @since 5.1.0
+     */
     raidBase(baseId: number): Promise<Record<string, any> | null>;
-    /** Which bases the module is tracking at all. */
+    /** Which bases the module is tracking at all.
+     * @since 5.1.0
+     */
     raidBases(): Promise<Record<string, any> | null>;
     /** The destroy reasons the module counts as a raid — only `damage` does, which is why
-     *  `destroyElement()`'s reason argument matters. */
+     *  `destroyElement()`'s reason argument matters.
+     * @since 5.1.0
+     */
     raidReasons(): Promise<Record<string, any> | null>;
     /** Declare a raid window. Half a position is worse than none, so the coordinates are recorded
      *  only when all three parse; an existing window is REFRESHED, not restarted, so its hit
-     *  counters survive. */
+     *  counters survive.
+     * @since 5.1.0
+     */
     startRaid(baseId: number, x?: number, y?: number, z?: number): Promise<BridgeCommandResult>;
-    /** Close a declared window. */
+    /** Close a declared window.
+     * @since 5.1.0
+     */
     endRaid(baseId: number): Promise<BridgeCommandResult>;
     /** Discard a base's raid record, or every record with `'all'`. **No undo**: the hit count, the
-     *  damage total and the position are gone, and nothing can reconstruct them. */
+     *  damage total and the position are gone, and nothing can reconstruct them.
+     * @since 5.1.0
+     */
     forgetRaid(baseId: number | 'all'): Promise<BridgeCommandResult>;
     /**
      * Send one of the game's raid announcements. `seconds` (0..86400) applies to `'ending'`.
@@ -1712,6 +2114,7 @@ export interface Host {
      * **This only ANNOUNCES.** It does not open or close the game's protection period, which is
      * driven by the server settings and the manager's own clock — "announce the raid window" and
      * "start the raid window" are one word apart and a very long way apart in consequence.
+     * @since 5.1.0
      */
     announceRaid(kind: 'allowed' | 'ending' | 'concluded', seconds?: number): Promise<BridgeCommandResult>;
 
@@ -1729,32 +2132,54 @@ export interface Host {
 
     /** Which vehicle an address would hit, its heading, the damage REGIONS its attachments carry (the
      *  `~` selector's only source) and its damage-type multipliers — which say whether a
-     *  `damageVehicle()` will do anything at all. */
+     *  `damageVehicle()` will do anything at all.
+     * @since 5.1.0
+     */
     resolveVehicle(target: string): Promise<Record<string, any> | null>;
     /** Raise health towards each part's own maximum. `percent` may be a bare number or end in `%`;
-     *  omit it for a full repair. */
+     *  omit it for a full repair.
+     * @since 5.1.0
+     */
     repairVehicle(target: string, percent?: number | string, part?: string): Promise<BridgeCommandResult>;
     /** Damage through the game's OWN damage call, so destruction, propagation and effects all happen.
      *  A direct health write is deliberately not offered: a part at zero health the game never
-     *  processed as destroyed is a wheel that reads as gone and still drives. */
+     *  processed as destroyed is a wheel that reads as gone and still drives.
+     * @since 5.1.0
+     */
     damageVehicle(target: string, percent: number | string, part?: string): Promise<BridgeCommandResult>;
     /** The same call, lethal, on every destructible part — so whether the wreck burns, explodes or
-     *  becomes a corpse is the game's decision and not the bridge's. */
+     *  becomes a corpse is the game's decision and not the bridge's.
+     * @since 5.1.0
+     */
     destroyVehicle(target: string): Promise<BridgeCommandResult>;
-    /** Set the engine block's fuel, in litres or as a share ending in `%`. */
+    /** Set the engine block's fuel, in litres or as a share ending in `%`.
+     * @since 5.1.0
+     */
     setVehicleFuel(target: string, value: number | string): Promise<BridgeCommandResult>;
-    /** Set the battery's charge, absolute or as a share ending in `%`. */
+    /** Set the battery's charge, absolute or as a share ending in `%`.
+     * @since 5.1.0
+     */
     setVehicleBattery(target: string, value: number | string): Promise<BridgeCommandResult>;
-    /** Set the odometer, in kilometres. */
+    /** Set the odometer, in kilometres.
+     * @since 5.1.0
+     */
     setVehicleMileage(target: string, km: number, part?: string): Promise<BridgeCommandResult>;
-    /** Set the paint pattern index, 0..255. */
+    /** Set the paint pattern index, 0..255.
+     * @since 5.1.0
+     */
     setVehiclePattern(target: string, index: number, part?: string): Promise<BridgeCommandResult>;
-    /** Set the packed colour indexes — a raw uint32, which is why it is not range-checked. */
+    /** Set the packed colour indexes — a raw uint32, which is why it is not range-checked.
+     * @since 5.1.0
+     */
     setVehicleColors(target: string, packed: number, part?: string): Promise<BridgeCommandResult>;
     /** Who may open the vehicle's item container. Acts on the whole vehicle — a part selector here is
-     *  refused rather than ignored. */
+     *  refused rather than ignored.
+     * @since 5.1.0
+     */
     setVehicleAccess(target: string, level: string): Promise<BridgeCommandResult>;
-    /** Who owns the vehicle's item container. Same whole-vehicle rule. */
+    /** Who owns the vehicle's item container. Same whole-vehicle rule.
+     * @since 5.1.0
+     */
     setVehicleOwner(target: string, profileId: number): Promise<BridgeCommandResult>;
 
     // ── the running server's own settings ────────────────────────────────────────────────────────
@@ -1763,35 +2188,55 @@ export interface Host {
     // check a RANGE, and whether a change survives a restart is the game's own per-setting business.
 
     /** The whole catalogue: name, declared type, section. No engine calls, so it costs nothing and
-     *  always answers. `text` filters case-insensitively on the name. */
+     *  always answers. `text` filters case-insensitively on the name.
+     * @since 5.1.0
+     */
     settingsList(text?: string): Promise<Record<string, any> | null>;
     /** The LIVE value of every catalogue entry matching `text`, capped at 60 with `truncated` when the
      *  cap was hit. `from` starts at the n-th match — the only way to reach the rest of a 437-entry
-     *  catalogue. */
+     *  catalogue.
+     * @since 5.1.0
+     */
     settingValues(text?: string, from?: number): Promise<Record<string, any> | null>;
-    /** The catalogue names in one section. No engine calls. */
+    /** The catalogue names in one section. No engine calls.
+     * @since 5.1.0
+     */
     settingsSection(name: string): Promise<Record<string, any> | null>;
     /** Ask all four getters which type this build actually answers for — the honest way to find out
-     *  before writing, since guessing reports a float as a rounded integer. */
+     *  before writing, since guessing reports a float as a rounded integer.
+     * @since 5.1.0
+     */
     probeSetting(name: string): Promise<Record<string, any> | null>;
-    /** The section names, for a panel that wants to group them. */
+    /** The section names, for a panel that wants to group them.
+     * @since 5.1.0
+     */
     settingCategories(): Promise<Record<string, any> | null>;
-    /** Every write this module has made, and what the value was before it. */
+    /** Every write this module has made, and what the value was before it.
+     * @since 5.1.0
+     */
     settingChanges(): Promise<Record<string, any> | null>;
     /** RETIRED, and the bridge refuses it: nothing changes a setting any more, so there is nothing
-     *  to put back. */
+     *  to put back.
+     * @since 5.1.0
+     */
     revertSetting(name: string): Promise<BridgeCommandResult>;
-    /** RETIRED with `revertSetting()`, and refuses for the same reason. */
+    /** RETIRED with `revertSetting()`, and refuses for the same reason.
+     * @since 5.1.0
+     */
     revertAllSettings(): Promise<BridgeCommandResult>;
 
     // ── creating things in the world ─────────────────────────────────────────────────────────────
     // ⚠ Note the shape: the spawn itself is a READ verb — a write wearing a read's shape, because it
     // answers with what it made. So these two return a payload or `null`, not `{ ok }`.
 
-    /** Every kind name this module accepts, with the route it takes and the switch it needs. */
+    /** Every kind name this module accepts, with the route it takes and the switch it needs.
+     * @since 5.1.0
+     */
     spawnKinds(): Promise<Record<string, any> | null>;
     /** What happens to what this module spawns, measured on THIS server: each success records its
-     *  slot, re-resolves it at about 30 s and 5 min, and reports the tallies. */
+     *  slot, re-resolves it at about 30 s and 5 min, and reports the tallies.
+     * @since 5.1.0
+     */
     spawnPersistence(): Promise<Record<string, any> | null>;
     /**
      * Spawn something at a point with a rotation. Coordinates are centimetres, angles degrees.
@@ -1806,6 +2251,7 @@ export interface Host {
      * this.**
      *
      * `spawnPersistent()` is the only route that lasts — and it reports nothing back.
+     * @since 5.1.0
      */
     spawnAt(kind: 'creature' | 'boss' | 'vehicle' | 'actor' | (string & {}),
             x: number, y: number, z: number, yaw: number, pitch: number, roll: number,
@@ -1816,6 +2262,7 @@ export interface Host {
      * **No admin spawn command has a rotation argument**, so a persistent spawn cannot be rotated;
      * that is the game's shape, not a gap here. And the command reports nothing back, so success
      * means dispatched.
+     * @since 5.1.0
      */
     spawnPersistent(kind: string, x: number, y: number, z: number, count: number,
                     type: string): Promise<Record<string, any> | null>;
@@ -1826,9 +2273,13 @@ export interface Host {
     // game state and works when NOBODY from the squad is on — which is exactly when an owner wants
     // it. `profileId` is the SCUM user profile id, not a Steam ID.
 
-    /** One squad by id, through the game state's own index — no walk. */
+    /** One squad by id, through the game state's own index — no walk.
+     * @since 5.1.0
+     */
     squadById(squadId: number): Promise<Record<string, any> | null>;
-    /** Which squad a profile id is in, asked the way the game asks it. */
+    /** Which squad a profile id is in, asked the way the game asks it.
+     * @since 5.1.0
+     */
     squadOfProfile(profileId: number): Promise<Record<string, any> | null>;
     /** Disband a squad, member by member. Works with the whole squad offline. */
     /**
@@ -1840,59 +2291,92 @@ export interface Host {
      * **Pass `{ confirm: true }`.** The bridge gates the verb behind a confirmation, as its ten
      * destructive siblings already were. The one-argument form still works, so nothing that ships
      * today breaks — but it is logged as unconfirmed and the reply carries `confirmed: false`.
+     * @since 5.1.0
      */
     disbandSquad(squadId: number, opts?: { confirm?: boolean }): Promise<BridgeCommandResult & { confirmed: boolean }>;
     /**
      * Put a profile into a squad without asking anyone's permission — an owner conscripting somebody,
      * not the player accepting a place, which is `bridge.squad(id, 'join', …)`. Needs the prisoner
      * online, because the call takes one.
+     * @since 5.1.0
      */
     addSquadMember(squadId: number, profileId: number): Promise<BridgeCommandResult>;
-    /** Evict a profile from one squad. No prisoner needed, so it works while they are offline. */
+    /** Evict a profile from one squad. No prisoner needed, so it works while they are offline.
+     * @since 5.1.0
+     */
     removeSquadMember(squadId: number, profileId: number): Promise<BridgeCommandResult>;
-    /** Evict a profile from EVERY squad it is in, in one call. */
+    /** Evict a profile from EVERY squad it is in, in one call.
+     * @since 5.1.0
+     */
     removeFromAllSquads(profileId: number): Promise<BridgeCommandResult>;
-    /** Rename a squad. Needs a member online — the change travels on the game's own squad-data call. */
+    /** Rename a squad. Needs a member online — the change travels on the game's own squad-data call.
+     * @since 5.1.0
+     */
     renameSquad(squadId: number, name: string): Promise<BridgeCommandResult>;
-    /** Set the squad's message of the day. Same online requirement; the text may contain colons. */
+    /** Set the squad's message of the day. Same online requirement; the text may contain colons.
+     * @since 5.1.0
+     */
     setSquadMessage(squadId: number, text: string): Promise<BridgeCommandResult>;
-    /** Set the squad's information text. Same online requirement. */
+    /** Set the squad's information text. Same online requirement.
+     * @since 5.1.0
+     */
     setSquadInfo(squadId: number, text: string): Promise<BridgeCommandResult>;
 
     // ── survival counters and skills ─────────────────────────────────────────────────────────────
 
-    /** Every player the module currently holds counters for. */
+    /** Every player the module currently holds counters for.
+     * @since 5.1.0
+     */
     survivalStats(): Promise<Record<string, any> | null>;
-    /** One player by the profile id the game files them under. */
+    /** One player by the profile id the game files them under.
+     * @since 5.1.0
+     */
     playerStats(profileId: number): Promise<Record<string, any> | null>;
     /** The same by Steam ID. `{ found: false }` when they are offline — the counters are kept by
-     *  profile id and there is no way to learn one for somebody who is not here. */
+     *  profile id and there is no way to learn one for somebody who is not here.
+     * @since 5.1.0
+     */
     playerStatsBySteamId(steamId: string): Promise<Record<string, any> | null>;
     /** A player's live skill sheet, and the skill names this build actually has — the read-back for a
-     *  write. */
+     *  write.
+     * @since 5.1.0
+     */
     playerSkills(steamId: string): Promise<Record<string, any> | null>;
     /** The last skill write with the figures either side of it, and whether the forced replication
-     *  refresh was accepted. The evidence that an award landed. */
+     *  refresh was accepted. The evidence that an award landed.
+     * @since 5.1.0
+     */
     lastSkillWrite(): Promise<Record<string, any> | null>;
     /** The game's own fame table: what each award is worth and what each penalty costs, read live
-     *  off the asset. This is what the game pays, not what anybody has earned. */
+     *  off the asset. This is what the game pays, not what anybody has earned.
+     * @since 5.20.0
+     */
     fameAwards(): Promise<Record<string, any> | null>;
-    /** The kill registry, all of it or one player's. Behind its own switch. */
+    /** The kill registry, all of it or one player's. Behind its own switch.
+     * @since 5.1.0
+     */
     killRegistry(profileId?: number): Promise<Record<string, any> | null>;
-    /** Ask the game to refresh the snapshot — everyone online, paced, or one player. */
+    /** Ask the game to refresh the snapshot — everyone online, paced, or one player.
+     * @since 5.1.0
+     */
     refreshStats(profileId?: number): Promise<BridgeCommandResult>;
     /**
      * Forget every captured counter.
      *
      * **The only way back is a refresh sweep, which can only reach whoever is online right now** — so
      * anybody who has logged off since is simply gone until they return.
+     * @since 5.1.0
      */
     clearStats(): Promise<BridgeCommandResult>;
     /** Award skill experience through the game's own path. `skill` is a name from `playerSkills()`,
-     *  and the player must be in the world with a skill component. */
+     *  and the player must be in the world with a skill component.
+     * @since 5.1.0
+     */
     awardSkill(steamId: string, skill: string, points: number): Promise<BridgeCommandResult>;
     /** Reach an absolute figure instead. Refused when the player has no record for that skill yet —
-     *  there is nothing to measure a `set` against, so use `awardSkill()` first. */
+     *  there is nothing to measure a `set` against, so use `awardSkill()` first.
+     * @since 5.1.0
+     */
     setSkill(steamId: string, skill: string, points: number): Promise<BridgeCommandResult>;
     /**
      * Set a skill's LEVEL outright -- the only route that can LOWER one.
@@ -1908,84 +2392,135 @@ export interface Host {
      *
      * Behind its own switch, separate from the two above because this one can empty a skill. Needs
      * the bridge's admin switch as well, and the executing player must have elevated status.
+     * @since 5.9.0
      */
     setSkillLevel(steamId: string, skill: string, level: number, experience: number): Promise<BridgeCommandResult>;
 
     // ── containers, and what is inside them ──────────────────────────────────────────────────────
 
-    /** Lockboxes specifically. */
+    /** Lockboxes specifically.
+     * @since 5.1.0
+     */
     lockboxes(): Promise<Record<string, any> | null>;
-    /** What one container holds, by the id `storage()` listed. */
+    /** What one container holds, by the id `storage()` listed.
+     * @since 5.1.0
+     */
     containerContents(containerId: string): Promise<Record<string, any> | null>;
     /** How many of one item class a player is carrying. Matching is EXACT on the listing's `class`
      *  key after one trailing `_C`, never a substring. The three counts mean three different things
      *  and are never added together: `stack` is how many of the thing, `uses` how many uses remain in
      *  one, `quantity` an unrecognised component's raw figure. Read `uncounted` before you trust any
      *  of them — an entry that reported no count is not an entry holding one — and `truncated` makes
-     *  every number a floor. Composed from `inventory()`, so it costs exactly that. */
+     *  every number a floor. Composed from `inventory()`, so it costs exactly that.
+     * @since 5.1.0
+     */
     countHeld(steamId: string, itemClass: string): Promise<ItemTally>;
-    /** The same, for what is inside one container. Same reply, same rules. */
+    /** The same, for what is inside one container. Same reply, same rules.
+     * @since 5.1.0
+     */
     countInContainer(containerId: string | number, itemClass: string): Promise<ItemTally>;
     /** Move an item out of a container into a player's inventory. The player must be SPAWNED IN, not
-     *  merely connected. */
+     *  merely connected.
+     * @since 5.1.0
+     */
     takeFromContainer(containerId: string, itemId: string, steamId: string): Promise<BridgeCommandResult>;
     /** Move an item between containers. Made through a player's inventory component, so it needs at
-     *  least one player spawned in even though no player is involved in the outcome. */
+     *  least one player spawned in even though no player is involved in the outcome.
+     * @since 5.1.0
+     */
     moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string): Promise<BridgeCommandResult>;
-    /** Destroy one item inside a container. No undo. */
+    /** Destroy one item inside a container. No undo.
+     * @since 5.1.0
+     */
     destroyContainerItem(containerId: string, itemId: string): Promise<BridgeCommandResult>;
 
     // ── placing your own items and containers ────────────────────────────────────────────────────
     /** Put one of the game's own items or containers at x, y, z (centimetres), optionally holding
      *  `contents`. It is a real item with a save row. `tag` is your own name for the job (1-40 of
      *  A-Z a-z 0-9 _ -), used once: a repeated tag is refused. Read the result, entity id included,
-     *  with `stashJob(tag)`. Locks and burying are player acts and are not offered. */
+     *  with `stashJob(tag)`. Locks and burying are player acts and are not offered.
+     * @since 5.24.0
+     */
     placeItem(tag: string, x: number, y: number, z: number, code: string,
               contents?: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
     /** Put items into a container the game already holds, named by its entity id. Through a player
-     *  the game only adds while a player stands within about 3 m of the container; otherwise it is refused. */
+     *  the game only adds while a player stands within about 3 m of the container; otherwise it is refused.
+     * @since 5.24.0
+     */
     fillContainer(tag: string, entityId: string | number,
                   contents: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
     /** Put new items into what an online player wears, backpack first. Each job line carries `into`,
-     *  `outcome` and the new items' `entityIds`. Only that player has to be online. Bridge 2.35.0. */
+     *  `outcome` and the new items' `entityIds`. Only that player has to be online. Bridge 2.35.0.
+     * @since 5.43.0
+     */
     fillPlayer(tag: string, steamId: string,
                contents: Array<{ code: string; count?: number }>): Promise<BridgeCommandResult>;
     /** One job: `state` placing | filling | done | failed, `entityId`, `elo`/`ehi`, the position, and
-     *  per fill line what went in and which route answered. */
+     *  per fill line what went in and which route answered.
+     * @since 5.24.0
+     */
     stashJob(tag: string): Promise<any>;
-    /** Every job the bridge still remembers, newest last. */
+    /** Every job the bridge still remembers, newest last.
+     * @since 5.24.0
+     */
     stashJobs(): Promise<any>;
 
     // ── vehicles far from players (module `wake`) ─────────────────────────────────────────────
-    /** Build vehicles up to `cm` (1000..200000) from any player for `seconds`; put back by itself. Needs somebody online. */
+    /** Build vehicles up to `cm` (1000..200000) from any player for `seconds`; put back by itself. Needs somebody online.
+     * @since 5.44.0
+     */
     farVehicles(cm: number, seconds: number): Promise<any>;
-    /** Put the game's own vehicle distance back now. */
+    /** Put the game's own vehicle distance back now.
+     * @since 5.44.0
+     */
     farVehiclesRestore(): Promise<any>;
-    /** The vehicle distance in force and whether it is held wider. */
+    /** The vehicle distance in force and whether it is held wider.
+     * @since 5.44.0
+     */
     farVehicleReach(): Promise<any>;
-    /** What is loaded around a point: vehicles and items with entity ids, and players. */
+    /** What is loaded around a point: vehicles and items with entity ids, and players.
+     * @since 5.44.0
+     */
     loadedNear(x: number, y: number, z: number, radiusCm: number): Promise<any>;
 
     // ── respawn locks (module `respawn`) ──────────────────────────────────────────────────────
-    /** Seconds left on each respawn option for an online player (-1 = not locked). */
+    /** Seconds left on each respawn option for an online player (-1 = not locked).
+     * @since 5.44.0
+     */
     respawnTimers(steamId: string): Promise<any>;
-    /** Lock one option (random|sector|shelter|squad|all) for `seconds`. Live only: not saved. */
+    /** Lock one option (random|sector|shelter|squad|all) for `seconds`. Live only: not saved.
+     * @since 5.44.0
+     */
     setRespawnTimer(steamId: string, option: 'random' | 'sector' | 'shelter' | 'squad' | 'all', seconds: number): Promise<any>;
-    /** Free every respawn option. */
+    /** Free every respawn option.
+     * @since 5.44.0
+     */
     clearRespawnTimers(steamId: string): Promise<any>;
 
     // ── competitive events, creatures, tyres ──────────────────────────────────────────────────
-    /** Register an online player into an event (class plus a point near it). */
+    /** Register an online player into an event (class plus a point near it).
+     * @since 5.44.0
+     */
     joinEvent(cls: string, x: number, y: number, z: number, steamId: string, team?: number): Promise<any>;
-    /** Remove a player from an event. The game then holds a re-join cooldown. */
+    /** Remove a player from an event. The game then holds a re-join cooldown.
+     * @since 5.44.0
+     */
     kickFromEvent(cls: string, x: number, y: number, z: number, steamId: string): Promise<any>;
-    /** Take a player out of whatever event they are in. */
+    /** Take a player out of whatever event they are in.
+     * @since 5.44.0
+     */
     leaveEvent(steamId: string): Promise<any>;
-    /** How long before a player may join an event again; 0 = now. */
+    /** How long before a player may join an event again; 0 = now.
+     * @since 5.44.0
+     */
     setEventCooldown(steamId: string, seconds: number): Promise<any>;
-    /** Send a creature walking to a point; its own AI may turn back after. */
+    /** Send a creature walking to a point; its own AI may turn back after.
+     * @since 5.44.0
+     */
     moveCreature(id: string, x: number, y: number, z: number): Promise<any>;
-    /** Inflate or flatten one tyre while the vehicle stays loaded. Not saved. */
+    /** Inflate or flatten one tyre while the vehicle stays loaded. Not saved.
+     * @since 5.44.0
+     */
     vehicleTyre(target: string, how: 'inflate' | 'deflate', wheel: number): Promise<any>;
 
     // ── teleporting ──────────────────────────────────────────────────────────────────────────────
@@ -1999,14 +2534,19 @@ export interface Host {
      *
      * That facing is the whole reason this is not `#TeleportTo`, which has no argument for it. A
      * facing that cannot be read refuses rather than inventing one.
+     * @since 5.1.0
      */
     teleportToPlayer(steamId: string, targetSteamId: string, dropCm?: number): Promise<BridgeCommandResult>;
     /** Two players exchange places in one call. Both positions are read before either moves, so a
-     *  half-completed swap is not a state this can produce. */
+     *  half-completed swap is not a state this can produce.
+     * @since 5.1.0
+     */
     swapPlayers(steamIdA: string, steamIdB: string, dropCm?: number): Promise<BridgeCommandResult>;
     /** Every online, spawned-in member of one squad to the same point. **They all land on the SAME
      *  spot** — give a drop height if that matters, or move them one at a time. Members who are
-     *  offline or still loading are skipped and counted, never silently dropped. */
+     *  offline or still loading are skipped and counted, never silently dropped.
+     * @since 5.1.0
+     */
     teleportSquad(squadId: number, x: number, y: number, z: number, yaw: number, dropCm?: number): Promise<BridgeCommandResult>;
     /**
      * Put a player back where this module last moved them from.
@@ -2014,9 +2554,12 @@ export interface Host {
      * Memory only, 512 entries, **lost on a restart**, and it replaces rather than stacks: `back`
      * means "undo the last one", so calling it twice returns the player to where the first `back`
      * took them from. Read `teleportOrigin()` first — the record may be hours old.
+     * @since 5.1.0
      */
     teleportBack(steamId: string): Promise<BridgeCommandResult>;
-    /** Where `teleportBack()` would put this player, and how long ago they were there. */
+    /** Where `teleportBack()` would put this player, and how long ago they were there.
+     * @since 5.1.0
+     */
     teleportOrigin(steamId: string): Promise<Record<string, any> | null>;
     /**
      * Every player `teleportBack()` could still undo — `{ origins, count, max }`.
@@ -2033,11 +2576,14 @@ export interface Host {
      * The list is a **ring** — at `max` the OLDEST record is dropped, so a long event can quietly
      * lose the ability to undo its own first teleports. `count` against `max` is how you see that
      * coming.
+     * @since 5.1.0
      */
     teleportOrigins(): Promise<Record<string, any> | null>;
     /** Every prisoner corpse in the world with the name written on it. Not a convenience:
      *  `moveCorpse()` addresses a body BY that name, so this is the only way to know what names exist
-     *  and whether one is duplicated. */
+     *  and whether one is duplicated.
+     * @since 5.1.0
+     */
     corpses(): Promise<Record<string, any> | null>;
     /**
      * Move a body, addressed by the name written on it.
@@ -2047,30 +2593,45 @@ export interface Host {
      * server. Vehicle wrecks are not covered at all: nothing on one distinguishes it from another.
      *
      * `force` skips the engine's fit test and puts it exactly where asked, including inside a hill.
+     * @since 5.1.0
      */
     moveCorpse(displayName: string, x: number, y: number, z: number, yaw: number,
                dropCm?: number, force?: boolean): Promise<BridgeCommandResult>;
     /** Turn a player where they stand, through the game's own turn-in-place path, so the animation
-     *  plays. Yaw only — a prisoner has no meaningful pitch or roll. */
+     *  plays. Yaw only — a prisoner has no meaningful pitch or roll.
+     * @since 5.1.0
+     */
     facePlayer(steamId: string, yaw: number): Promise<BridgeCommandResult>;
     /** Turn a vehicle where it stands, with a full rotator — righting something lying on its side is
-     *  most of the reason to ask. Refused while someone is driving it. */
+     *  most of the reason to ask. Refused while someone is driving it.
+     * @since 5.1.0
+     */
     faceVehicle(idLo: number, idHi: number, pitch: number, yaw: number, roll: number): Promise<BridgeCommandResult>;
-    /** The same for a dropped item. */
+    /** The same for a dropped item.
+     * @since 5.1.0
+     */
     faceItem(idLo: number, idHi: number, pitch: number, yaw: number, roll: number): Promise<BridgeCommandResult>;
 
     // ── outposts and the economy ─────────────────────────────────────────────────────────────────
 
-    /** Every trade outpost the server has loaded. */
+    /** Every trade outpost the server has loaded.
+     * @since 5.1.0
+     */
     traders(): Promise<Record<string, any> | null>;
     /** The economy settings alone — no world walk at all, so this is the one that belongs on a screen
-     *  an owner leaves open. */
+     *  an owner leaves open.
+     * @since 5.1.0
+     */
     economy(): Promise<Record<string, any> | null>;
     /** Every key `setEconomy()` accepts, with its kind, its bounds and whether a change reaches
-     *  clients — enough to draw the form without knowing what any of them mean. */
+     *  clients — enough to draw the form without knowing what any of them mean.
+     * @since 5.1.0
+     */
     economyWritable(): Promise<Record<string, any> | null>;
     /** Per-item price overrides, for every trader personality or only those whose asset name contains
-     *  `text`. Behind its own switch. */
+     *  `text`. Behind its own switch.
+     * @since 5.1.0
+     */
     itemPrices(text?: string): Promise<Record<string, any> | null>;
     /**
      * Set one live economy setting. One key per call, deliberately: a batch would have to decide what
@@ -2081,6 +2642,7 @@ export interface Host {
      * replication: unlimited funds, unlimited stock and the fame requirement reach clients, while the
      * gold base price and the sale modifier do not, so the server computes with the new value
      * immediately while an already-open shop shows the old one.
+     * @since 5.1.0
      */
     setEconomy(key: string, value: string | number | boolean): Promise<BridgeCommandResult>;
 
@@ -2092,23 +2654,39 @@ export interface Host {
     // locations are ten different places and starting one on the wrong side of the island is not
     // recoverable by cancelling it.
 
-    /** Start the announce → round → end cycle for one event. */
+    /** Start the announce → round → end cycle for one event.
+     * @since 5.1.0
+     */
     scheduleEvent(cls: string, x?: number, y?: number, z?: number): Promise<BridgeCommandResult>;
-    /** Stop it. `force` skips whatever grace the game would normally give. */
+    /** Stop it. `force` skips whatever grace the game would normally give.
+     * @since 5.1.0
+     */
     cancelEvent(cls: string, x?: number, y?: number, z?: number, force?: boolean): Promise<BridgeCommandResult>;
-    /** Put the arena back the way it started. */
+    /** Put the arena back the way it started.
+     * @since 5.1.0
+     */
     resetEventArea(cls: string, x?: number, y?: number, z?: number): Promise<BridgeCommandResult>;
-    /** Set every team's score to zero. */
+    /** Set every team's score to zero.
+     * @since 5.1.0
+     */
     clearEventScores(cls: string, x?: number, y?: number, z?: number): Promise<BridgeCommandResult>;
     /** Re-target a crate that is **already falling**, optionally changing its remaining seconds.
-     *  Starting a NEW drop is the game's own `#ScheduleCargoDrop`, not this. */
+     *  Starting a NEW drop is the game's own `#ScheduleCargoDrop`, not this.
+     * @since 5.1.0
+     */
     retargetCargoDrop(x: number, y: number, z: number, seconds?: number): Promise<BridgeCommandResult>;
-    /** Detonate a crate early. With no point it acts on the only one; with one it picks the nearest. */
+    /** Detonate a crate early. With no point it acts on the only one; with one it picks the nearest.
+     * @since 5.1.0
+     */
     detonateCargo(x?: number, y?: number, z?: number): Promise<BridgeCommandResult>;
     /** Move an ambient event's declared centre. `cls` is optional — an idle server has no ambient
-     *  events and a busy one rarely has two. */
+     *  events and a busy one rarely has two.
+     * @since 5.1.0
+     */
     moveAmbientEvent(cls: string | null | undefined, x: number, y: number, z: number): Promise<BridgeCommandResult>;
-    /** Resize one. The value is the game's own hundredths-of-a-metre figure, not metres. */
+    /** Resize one. The value is the game's own hundredths-of-a-metre figure, not metres.
+     * @since 5.1.0
+     */
     resizeAmbientEvent(cls: string | null | undefined, radius: number): Promise<BridgeCommandResult>;
 
     // ── more zones ───────────────────────────────────────────────────────────────────────────────
@@ -2117,18 +2695,30 @@ export interface Host {
     // it never saw. Writing needs a player online. Game-default zones are never dropped: a delete
     // marks them deleted and an edit marks them modified, which is the game's own mechanism.
 
-    /** One zone by name, with its configuration resolved. */
+    /** One zone by name, with its configuration resolved.
+     * @since 5.1.0
+     */
     zone(name: string): Promise<Record<string, any> | null>;
-    /** The server-wide configuration every zone inherits from. */
+    /** The server-wide configuration every zone inherits from.
+     * @since 5.1.0
+     */
     globalZoneConfig(): Promise<Record<string, any> | null>;
-    /** One configuration by index — the number a zone's `config` points at. */
+    /** One configuration by index — the number a zone's `config` points at.
+     * @since 5.1.0
+     */
     zoneConfig(index: number): Promise<Record<string, any> | null>;
     /** The words every zone verb accepts — shapes, damage channels, handlings. Ask this rather than
-     *  hard-coding them. */
+     *  hard-coding them.
+     * @since 5.1.0
+     */
     zoneEnums(): Promise<Record<string, any> | null>;
-    /** Move a zone's centre. */
+    /** Move a zone's centre.
+     * @since 5.1.0
+     */
     moveZone(name: string, x: number, y: number): Promise<BridgeCommandResult>;
-    /** Resize one. */
+    /** Resize one.
+     * @since 5.1.0
+     */
     resizeZone(name: string, width: number, height: number): Promise<BridgeCommandResult>;
     /** Change a zone between a circle and a rectangle. */
     /**
@@ -2138,6 +2728,7 @@ export interface Host {
      * means circle. A rectangle stored without one therefore comes back as a circle after the next
      * restart, with a different test for what is inside it and nothing logged. A circle carries no
      * height to inherit, so that direction is refused without one; the other way it is dropped.
+     * @since 5.1.0
      */
     reshapeZone(name: string, shape: 'circle' | 'rectangle', height?: number): Promise<BridgeCommandResult>;
 
@@ -2147,24 +2738,39 @@ export interface Host {
      * Where two zones overlap, a DAMAGE rule is answered by the EARLIER of them and no later zone
      * overrides it. Event rules are resolved a different way and reordering does not affect them.
      * The reply names the full new order.
+     * @since 5.9.0
      */
     orderZone(name: string, where: 'up' | 'down' | 'top' | 'bottom' | number): Promise<BridgeCommandResult>;
 
-    /** Put a zone the GAME ships back the way it shipped it. A zone the owner made is refused. */
+    /** Put a zone the GAME ships back the way it shipped it. A zone the owner made is refused.
+     * @since 5.9.0
+     */
     restoreZone(name: string): Promise<BridgeCommandResult>;
 
-    /** Restore every shipped zone at once. */
+    /** Restore every shipped zone at once.
+     * @since 5.9.0
+     */
     restoreAllZones(): Promise<BridgeCommandResult>;
 
-    /** The zones the game ships, each saying whether it is still on the server and under what name. */
+    /** The zones the game ships, each saying whether it is still on the server and under what name.
+     * @since 5.9.0
+     */
     zoneDefaults(): Promise<unknown>;
-    /** Point a zone at a different configuration index. */
+    /** Point a zone at a different configuration index.
+     * @since 5.1.0
+     */
     assignZoneConfig(name: string, index: number): Promise<BridgeCommandResult>;
-    /** Rename a zone. */
+    /** Rename a zone.
+     * @since 5.1.0
+     */
     renameZone(oldName: string, newName: string): Promise<BridgeCommandResult>;
-    /** Duplicate a zone under a new name. */
+    /** Duplicate a zone under a new name.
+     * @since 5.1.0
+     */
     copyZone(name: string, newName: string): Promise<BridgeCommandResult>;
-    /** Remove every custom zone. Game-default zones are marked deleted rather than dropped. */
+    /** Remove every custom zone. Game-default zones are marked deleted rather than dropped.
+     * @since 5.1.0
+     */
     clearZones(): Promise<BridgeCommandResult>;
 
     /**
@@ -2183,6 +2789,7 @@ export interface Host {
      * that faulted, never an island with no guarded places.
      *
      * Read-only, needs the `zones` module and its own `guarded` switch.
+     * @since 5.1.0
      */
     guardedZones(): Promise<{ global?: Record<string, number>; zones?: Array<Record<string, any>>; truncated?: boolean } | null>;
     /**
@@ -2198,6 +2805,7 @@ export interface Host {
      * to learn whether the server enforces it.
      *
      * Read-only, needs the `zones` module and its own `border` switch.
+     * @since 5.1.0
      */
     mapBorder(): Promise<Record<string, any> | null>;
     /**
@@ -2215,6 +2823,7 @@ export interface Host {
      *
      * WHEN the zone manager re-reads a changed value is not established: the write lands on a live
      * actor, but whether a respawn already scheduled picks it up needs a live server to answer.
+     * @since 5.1.0
      */
     setSentryTuning(field: 'respawn' | 'standdown' | 'hits' | 'hitsreset',
                     value: number): Promise<BridgeCommandResult>;
@@ -2240,6 +2849,7 @@ export interface Host {
      *
      * A field that could not be read is omitted rather than defaulted: `respawning` absent and
      * `respawning: 0` are different facts.
+     * @since 5.16.0
      */
     sentrySpawners(x?: number, y?: number, radius?: number): Promise<{
       found: number;
@@ -2265,17 +2875,21 @@ export interface Host {
      *
      * Left as one string on purpose: ten verbs of three to six fields each, all colon-separated with
      * no nested separator, and `zoneEnums()` already names every word they take.
+     * @since 5.1.0
      */
     zoneConfigCommand(rest: string): Promise<BridgeCommandResult>;
     /** The same for the server-wide configuration: `'setting:<value>'`, `'event:<event>:<handling>'`,
      *  `'eventall:<handling>'`, `'rename:<name>'`, `'color:<r>:<g>:<b>:<a>'`,
-     *  `'damage:<instigator>:<channel>:<receiver>:<handling>'`, `'damageclear:<instigator>'`. */
+     *  `'damage:<instigator>:<channel>:<receiver>:<handling>'`, `'damageclear:<instigator>'`.
+     * @since 5.1.0
+     */
     globalZoneCommand(rest: string): Promise<BridgeCommandResult>;
     /**
      * Several zone edits sent to the game as ONE zone set, each written as it is on the wire
      * (`'set:…'`, `'move:…'`, `'config:color:…'`, `'delete:…'`). All or nothing: the first edit the
      * bridge refuses abandons the batch and the refusal names it. `config:delete:` is not allowed in
      * a batch. A set that changes nothing is not sent and answers `changed: false`.
+     * @since 5.16.1
      */
     zoneBatch(edits: string[]): Promise<BridgeCommandResult>;
 
@@ -2291,14 +2905,22 @@ export interface Host {
     // asset's own. And the `questId` in activity **cannot be joined** to a quest name or to the
     // `netIndex` the catalogue uses — different identifiers, unrelated anywhere in the build.
 
-    /** The quest manager's own state — counts, rules, overrides. */
+    /** The quest manager's own state — counts, rules, overrides.
+     * @since 5.1.0
+     */
     quests(): Promise<Record<string, any> | null>;
     /** Every quest this server has, by `netIndex`. Objectives are included only when the module's
-     *  `conditions` switch is on, because each one costs an extra read per quest. */
+     *  `conditions` switch is on, because each one costs an extra read per quest.
+     * @since 5.1.0
+     */
     questCatalogue(): Promise<Record<string, any> | null>;
-    /** One quest by `netIndex`. Objectives are ALWAYS included here — one quest is one read. */
+    /** One quest by `netIndex`. Objectives are ALWAYS included here — one quest is one read.
+     * @since 5.1.0
+     */
     quest(netIndex: number): Promise<Record<string, any> | null>;
-    /** Quest outposts and where they are. */
+    /** Quest outposts and where they are.
+     * @since 5.1.0
+     */
     questOutposts(): Promise<Record<string, any> | null>;
     /**
      * The named circular regions quests draw their objectives inside — `{ count, groups }`, each
@@ -2313,12 +2935,17 @@ export interface Host {
      * two differ exactly when `areasTruncated` is set; `truncated` says the same about the group
      * list. `radius` is absent when this build has no readable one — draw the point, not a circle of
      * an invented size.
+     * @since 5.1.0
      */
     questAreas(): Promise<Record<string, any> | null>;
-    /** The quest-giver components. Behind its own switch — a full pass over the object array. */
+    /** The quest-giver components. Behind its own switch — a full pass over the object array.
+     * @since 5.1.0
+     */
     questGivers(): Promise<Record<string, any> | null>;
     /** Time-limited quests. **`startTicks`/`endTicks` are raw engine ticks** and must not be rendered
-     *  as a date without checking that first. */
+     *  as a date without checking that first.
+     * @since 5.1.0
+     */
     timedQuests(): Promise<Record<string, any> | null>;
     /**
      * Quest activity the bridge has watched — starts, advances, completions, resets. Pass a `steamId`
@@ -2326,6 +2953,7 @@ export interface Host {
      *
      * A `steamId` is **omitted**, never a placeholder, when the player had already left before the
      * event resolved: the event is real and its owner is unknown, and those are different facts.
+     * @since 5.1.0
      */
     questActivity(steamId?: string): Promise<Record<string, any> | null>;
     /**
@@ -2334,9 +2962,12 @@ export interface Host {
      * `questId` is the game's own id as `questActivity()` reports it — not a `netIndex`. **`ok: true`
      * means DISPATCHED**, not that the player's quest log now reads the way you intended; nothing
      * inside the process can claim that.
+     * @since 5.1.0
      */
     abandonQuest(steamId: string, questId: number): Promise<BridgeCommandResult>;
-    /** The same for one task. */
+    /** The same for one task.
+     * @since 5.1.0
+     */
     abandonTask(steamId: string, taskId: number): Promise<BridgeCommandResult>;
     /**
      * Start a TASK for a player.
@@ -2345,6 +2976,7 @@ export interface Host {
      * struct that reflects no members and therefore cannot be built. Server-side quest COMPLETION
      * does not exist either — the game's completion call is a client-side notification, and sending
      * one would tell a player they finished something the server does not believe they finished.
+     * @since 5.1.0
      */
     startTask(steamId: string, taskId: number): Promise<BridgeCommandResult>;
     /**
@@ -2352,6 +2984,7 @@ export interface Host {
      *
      * `reset` and `endcycle` **change every player's quests at once and have no undo**. All three go
      * out as admin commands, so success means SENT — the game returns nothing.
+     * @since 5.1.0
      */
     questCycle(sub: 'reset' | 'endcycle' | 'refresh'): Promise<BridgeCommandResult>;
 
@@ -2365,14 +2998,22 @@ export interface Host {
     // This is WORLD-object wetness. A prisoner's is `setWetness()`.
 
     /** Every knob with its value, range, group and which manager it lives on. A value that could not
-     *  be read comes back as an explicit `null`, never 0. */
+     *  be read comes back as an explicit `null`, never 0.
+     * @since 5.1.0
+     */
     hazard(): Promise<Record<string, any> | null>;
-    /** One knob on its own. */
+    /** One knob on its own.
+     * @since 5.1.0
+     */
     hazardKnob(key: string): Promise<Record<string, any> | null>;
-    /** The two group names and the five writable per-zone field names. */
+    /** The two group names and the five writable per-zone field names.
+     * @since 5.1.0
+     */
     hazardGroups(): Promise<Record<string, any> | null>;
     /** Every radiation zone the island DECLARES. `zoneCount: null` in `hazard()` means the array could
-     *  not be reached — not the same as zero. */
+     *  not be reached — not the same as zero.
+     * @since 5.1.0
+     */
     radiationZones(): Promise<Record<string, any> | null>;
     /**
      * The same zones, each actually SAMPLED at its own epicentre.
@@ -2385,16 +3026,23 @@ export interface Host {
      * finished list carries `complete: true` and the job beside it as `job`. If the wait runs out or
      * the job fails, the answer is the list as declared, unmeasured, and `job.state` says which. An
      * older bridge answers without `job`.
+     * @since 5.1.0
      */
     radiationMeasured(): Promise<(Record<string, any> & { complete?: boolean; job?: HazardJob }) | null>;
     /** Every online player's radiation exposure. `radiationRate` is OMITTED, never zeroed, when the
-     *  sample could not be taken. */
+     *  sample could not be taken.
+     * @since 5.1.0
+     */
     radiationExposure(): Promise<Record<string, any> | null>;
     /** Write one knob. Outside its range it is REFUSED, never clamped. Each write arms one re-read
-     *  about two seconds later, and only the LAST write is watched. */
+     *  about two seconds later, and only the LAST write is watched.
+     * @since 5.1.0
+     */
     setHazard(key: string, value: number): Promise<BridgeCommandResult>;
     /** Write one field of one radiation zone. Zone GEOMETRY is deliberately read-only — the coordinate
-     *  frame is unverified. */
+     *  frame is unverified.
+     * @since 5.1.0
+     */
     setRadiationZone(index: number,
                      field: 'rate' | 'falloff' | 'radius' | 'noiseAmount' | 'noiseScale',
                      value: number): Promise<BridgeCommandResult>;
@@ -2404,6 +3052,7 @@ export interface Host {
      * **This changes the whole island for everyone online.** All-or-nothing on the range check: if
      * the multiplier would put any one zone outside its bounds, the whole event is refused and
      * nothing changes. `restoreRadiation()` and a restart are both undos.
+     * @since 5.1.0
      */
     radiationEvent(multiplier: number): Promise<BridgeCommandResult>;
     /**
@@ -2414,22 +3063,31 @@ export interface Host {
      * restart restores them). A failed job answers `ok: false` with the bridge's `reason`. Still
      * running when the wait ends is `ok: true, pending: true` with `job`. An older bridge answers
      * once it has finished, without these keys.
+     * @since 5.1.0
      */
     restoreRadiation(index?: number): Promise<BridgeCommandResult & { restored?: number; stuck?: number; pending?: boolean; job?: HazardJob }>;
 
     // ── ambushes and spawn waves ─────────────────────────────────────────────────────────────────
 
-    /** Everything below in one payload, each section present only when its switch is on. */
+    /** Everything below in one payload, each section present only when its switch is on.
+     * @since 5.1.0
+     */
     encounters(): Promise<Record<string, any> | null>;
     /** The encounter manager's tuning. `governedBy` names WHICH switch governs each family, not what
-     *  that switch is currently set to. */
+     *  that switch is currently set to.
+     * @since 5.1.0
+     */
     encounterTuning(): Promise<Record<string, any> | null>;
     /** Live hordes, grouped by proximity. **The only expensive verb here.** It returns null with a
      *  reason rather than a zero count when the walk fails: a zero reads as "the coast is clear",
-     *  which is precisely the wrong thing to say about a horde. */
+     *  which is precisely the wrong thing to say about a horde.
+     * @since 5.1.0
+     */
     hordes(): Promise<Record<string, any> | null>;
     /** Bases that have gained an encounter, with `active` and an age. An ended encounter is kept as
-     *  `active: false` — "this base had an ambush and it is over" is not "this base never had one". */
+     *  `active: false` — "this base had an ambush and it is over" is not "this base never had one".
+     * @since 5.1.0
+     */
     encounterBases(): Promise<Record<string, any> | null>;
     /**
      * The last encounter capture an in-game command produced. **Possibly stale** — call
@@ -2438,9 +3096,12 @@ export interface Host {
      * `seen: false` (nobody has ever run it) and `seen: true` with an empty list (an admin asked and
      * there was nothing) are DIFFERENT answers: collapsing them turns "we have not looked" into "we
      * looked and there is nothing".
+     * @since 5.1.0
      */
     nearbyEncounters(): Promise<Record<string, any> | null>;
-    /** The competitive-event schedule. A bucket is omitted entirely when its array cannot be read. */
+    /** The competitive-event schedule. A bucket is omitted entirely when its array cannot be read.
+     * @since 5.1.0
+     */
     eventSchedule(): Promise<Record<string, any> | null>;
     /**
      * Force a base-building encounter at a base near one player.
@@ -2448,6 +3109,7 @@ export interface Host {
      * **Irreversible** — it drops hostiles on somebody's base and the game exposes no way to call
      * them off. There is no default target, ever. **`ok: true` means the dispatch did not fault**,
      * nothing more; read `encounterBases()` a moment later, and THAT is the confirmation.
+     * @since 5.1.0
      */
     forceBaseEncounter(steamId: string): Promise<BridgeCommandResult>;
     /**
@@ -2461,10 +3123,13 @@ export interface Host {
      * Measured live: 50 000 found one encounter, 500 000 found two.
      *
      * This is what fills `encountersNearby()`, which has nothing to report until it has run.
+     * @since 5.9.0
      */
     drawNearbyEncounters(steamId: string, extentCm?: number): Promise<BridgeCommandResult>;
     /** Ask the game to dump its encounter-manager data to disk. **The path is unknowable from inside
-     *  the process**, so nothing is handed back. */
+     *  the process**, so nothing is handed back.
+     * @since 5.1.0
+     */
     dumpEncounters(): Promise<BridgeCommandResult>;
 
     /**
@@ -2492,6 +3157,7 @@ export interface Host {
      *
      * A read. It answers with the bridge's "allow changing" switch off, so a screen can be drawn
      * before anything has been turned on.
+     * @since 5.20.0
      */
     encounterPlaces(): Promise<any>;
 
@@ -2511,6 +3177,7 @@ export interface Host {
      * `holdSec` is not optional. The bridge puts the asset back on its own when the hold lapses,
      * which is the only restore that survives the manager crashing — ask again before it lapses to
      * keep a change going. `encounterPlaces().maxHoldSec` is the ceiling.
+     * @since 5.20.0
      */
     setEncounterZone(asset: string, chancePercent: number | null, checkMinSec: number | null,
                      checkMaxSec: number | null, holdSec: number): Promise<BridgeCommandResult>;
@@ -2519,6 +3186,7 @@ export interface Host {
      * Put one kind of place — or every one the bridge has changed — back to the values the game
      * authored, read back and compared before it says so. Works with the "allow changing" switch
      * off, because putting something back must not need the switch that allowed it.
+     * @since 5.20.0
      */
     restoreEncounterZones(asset?: string): Promise<BridgeCommandResult>;
 
@@ -2539,18 +3207,28 @@ export interface Host {
      * Pass NO argument for every record. Profile `0` is not "all": it is what the game left
      * unowned, so an empty or non-numeric id THROWS rather than being read as 0.
      */
-    /** Omit `profileId` for every record. An id that is not a number REJECTS: profile 0 means "unowned", so it is never guessed. */
+    /** Omit `profileId` for every record. An id that is not a number REJECTS: profile 0 means "unowned", so it is never guessed.
+     * @since 5.1.0
+     */
     virtualized(profileId?: number): Promise<Record<string, any> | null>;
     /** World containers with their locks. `locks: []` means "walk in"; the key being ABSENT means the
-     *  lock list could not be read at all, and the two must not be confused. */
+     *  lock list could not be read at all, and the two must not be confused.
+     * @since 5.1.0
+     */
     worldContainers(): Promise<Record<string, any> | null>;
-    /** Who owns a container, by profile id — WHO, never how many. */
+    /** Who owns a container, by profile id — WHO, never how many.
+     * @since 5.1.0
+     */
     containerOwners(): Promise<Record<string, any> | null>;
     /** The container replication map. Its lock arrays are reported as UNREAD rather than as empty.
-     *  Cannot be joined to `worldContainers()` — the two key on different identifiers. */
+     *  Cannot be joined to `worldContainers()` — the two key on different identifiers.
+     * @since 5.1.0
+     */
     containerRepData(): Promise<Record<string, any> | null>;
     /** A survey of both managers, re-measured on this server rather than read off a dump — so a game
-     *  update shows up as a number moving. */
+     *  update shows up as a number moving.
+     * @since 5.1.0
+     */
     virtualSurvey(): Promise<Record<string, any> | null>;
 
     // ── server-wide messages ─────────────────────────────────────────────────────────────────────
@@ -2565,12 +3243,18 @@ export interface Host {
     // Per-PLAYER messages are `hud()` and `warn()`; this family is broadcast only.
 
     /** Whether the game has a notification manager yet, and what is queued. `{ found: false }` is an
-     *  answer, not a refusal. */
+     *  answer, not a refusal.
+     * @since 5.1.0
+     */
     notifyQueue(): Promise<Record<string, any> | null>;
     /** A HUD line to everyone, 1..200 bytes. Cannot report a recipient count — the fan-out happens
-     *  inside the game mode. */
+     *  inside the game mode.
+     * @since 5.1.0
+     */
     announceAll(text: string): Promise<BridgeCommandResult>;
-    /** The same with the game's alert sound. Needs the module's `sound` switch as well. */
+    /** The same with the game's alert sound. Needs the module's `sound` switch as well.
+     * @since 5.1.0
+     */
     alertAll(text: string): Promise<BridgeCommandResult>;
     /**
      * The same banner, to everyone. **THIS ALWAYS REFUSES too** — see `warn()` for why.
@@ -2581,6 +3265,7 @@ export interface Host {
      *
      * `bannerAll()` and `warn()` are the only two calls in this whole interface that cannot work.
      * For a broadcast that reaches everybody, use `killFeedAll()` or ordinary chat.
+     * @since 5.1.0
      */
     bannerAll(seconds: number, colour: string, text: string): Promise<BridgeCommandResult>;
     /**
@@ -2591,10 +3276,13 @@ export interface Host {
      * them, so **none of the three may itself contain a `|`**: the module refuses a line with more
      * than three parts rather than guessing where the split was meant. `prefix` and `suffix` may be
      * empty, `name` may not, and each is at most 64 bytes.
+     * @since 5.1.0
      */
     killFeed(steamId: string, prefix: string, name: string, suffix: string,
              ping?: boolean): Promise<BridgeCommandResult>;
-    /** The same line to everyone online. Refused when nobody is. */
+    /** The same line to everyone online. Refused when nobody is.
+     * @since 5.1.0
+     */
     killFeedAll(prefix: string, name: string, suffix: string, ping?: boolean): Promise<BridgeCommandResult>;
 
     // -- more things to do to one player ---------------------------------------------------------
@@ -2602,56 +3290,96 @@ export interface Host {
     // its rules: the player has to be online and spawned in, and a `true` means the game accepted
     // the call, not that you can see the result.
 
-    /** Take a player out of their squad, server-side. They do not have to agree, or be looking. */
+    /** Take a player out of their squad, server-side. They do not have to agree, or be looking.
+     * @since 5.1.0
+     */
     squadQuit(steamId: string): Promise<BridgeCommandResult>;
-    /** Drop whatever they are holding onto the ground. */
+    /** Drop whatever they are holding onto the ground.
+     * @since 5.1.0
+     */
     disarm(steamId: string): Promise<BridgeCommandResult>;
-    /** Get them out of a vehicle, a bed, a chair - whatever they are sitting in. */
+    /** Get them out of a vehicle, a bed, a chair - whatever they are sitting in.
+     * @since 5.1.0
+     */
     unmount(steamId: string): Promise<BridgeCommandResult>;
-    /** Free look on or off - whether they can turn their head without turning their body. */
+    /** Free look on or off - whether they can turn their head without turning their body.
+     * @since 5.1.0
+     */
     freeLook(steamId: string, on: boolean): Promise<BridgeCommandResult>;
-    /** How tight their handcuffs are. Higher hurts more and does damage over time. */
+    /** How tight their handcuffs are. Higher hurts more and does damage over time.
+     * @since 5.1.0
+     */
     setCuffTightness(steamId: string, value: number): Promise<BridgeCommandResult>;
-    /** Which limbs the cuffs are on. */
+    /** Which limbs the cuffs are on.
+     * @since 5.1.0
+     */
     setCuffPart(steamId: string, part: 'hands' | 'feet'): Promise<BridgeCommandResult>;
-    /** The character's gender, as the game models it. */
+    /** The character's gender, as the game models it.
+     * @since 5.1.0
+     */
     setGender(steamId: string, gender: string): Promise<BridgeCommandResult>;
-    /** How they move - walking, running, and the speeds between. */
+    /** How they move - walking, running, and the speeds between.
+     * @since 5.1.0
+     */
     setPace(steamId: string, pace: string): Promise<BridgeCommandResult>;
     /**
      * Show a different name over their head and in the kill feed.
      *
      * It changes what OTHERS see, not who the player is: nothing about their account, their squad
      * or their database rows moves with it. Useful for an event; misleading if left on by accident.
+     * @since 5.1.0
      */
     setFakeName(steamId: string, name: string): Promise<BridgeCommandResult>;
-    /** Make them vomit. `natural` asks the game for its own reason rather than forcing it. */
+    /** Make them vomit. `natural` asks the game for its own reason rather than forcing it.
+     * @since 5.1.0
+     */
     vomit(steamId: string, natural?: boolean): Promise<BridgeCommandResult>;
-    /** The other end of the same idea. */
+    /** The other end of the same idea.
+     * @since 5.1.0
+     */
     urinate(steamId: string, natural?: boolean): Promise<BridgeCommandResult>;
-    /** As above; `diarrhea` picks the unpleasant variant. */
+    /** As above; `diarrhea` picks the unpleasant variant.
+     * @since 5.1.0
+     */
     defecate(steamId: string, diarrhea?: boolean): Promise<BridgeCommandResult>;
-    /** A cough. `intensity` is 0..1 and decides how loud it is - which is how far it carries. */
+    /** A cough. `intensity` is 0..1 and decides how loud it is - which is how far it carries.
+     * @since 5.1.0
+     */
     cough(steamId: string, intensity?: number): Promise<BridgeCommandResult>;
-    /** A sneeze, same scale. Both give away a hiding player, which is usually the point. */
+    /** A sneeze, same scale. Both give away a hiding player, which is usually the point.
+     * @since 5.1.0
+     */
     sneeze(steamId: string, intensity?: number): Promise<BridgeCommandResult>;
-    /** Fade their screen to black and back over `seconds`. A scene transition, not a punishment. */
+    /** Fade their screen to black and back over `seconds`. A scene transition, not a punishment.
+     * @since 5.1.0
+     */
     fade(steamId: string, seconds?: number): Promise<BridgeCommandResult>;
     /**
      * Blow their head off. `keepHeadgear` leaves the helmet where it was.
      *
      * Fatal and immediate. There is no undo, and nothing asks the player first.
+     * @since 5.1.0
      */
     detonateHead(steamId: string, keepHeadgear?: boolean): Promise<BridgeCommandResult>;
-    /** Put the spawn-selection screen in front of them. `withLoadout` includes the gear choice. */
+    /** Put the spawn-selection screen in front of them. `withLoadout` includes the gear choice.
+     * @since 5.1.0
+     */
     showSpawnScreen(steamId: string, withLoadout?: boolean): Promise<BridgeCommandResult>;
-    /** How long the suicide hold takes for this player, in seconds. */
+    /** How long the suicide hold takes for this player, in seconds.
+     * @since 5.1.0
+     */
     setSuicideTime(steamId: string, seconds: number): Promise<BridgeCommandResult>;
-    /** Hand a player back control of their own character after something else took it. */
+    /** Hand a player back control of their own character after something else took it.
+     * @since 5.1.0
+     */
     repossess(steamId: string): Promise<BridgeCommandResult>;
-    /** Ask the game to load this player's character. Rarely what you want; occasionally the only thing that is. */
+    /** Ask the game to load this player's character. Rarely what you want; occasionally the only thing that is.
+     * @since 5.1.0
+     */
     loadPlayer(steamId: string): Promise<BridgeCommandResult>;
-    /** One kill-feed line to one player. The same three parts and the same pipe rule as `killFeed()`. */
+    /** One kill-feed line to one player. The same three parts and the same pipe rule as `killFeed()`.
+     * @since 5.1.0
+     */
     killFeedTo(steamId: string, prefix: string, name: string, suffix: string,
                ping?: boolean): Promise<BridgeCommandResult>;
 
@@ -2660,8 +3388,11 @@ export interface Host {
     // so the value survives a restart - and so a mistake survives one too. There is no undo beyond
     // writing the old number back, and you have to have read it first.
 
+    /** @since 5.1.0 */
     setMoneyPersistent(steamId: string, amount: number): Promise<BridgeCommandResult>;
+    /** @since 5.1.0 */
     setGoldPersistent(steamId: string, amount: number): Promise<BridgeCommandResult>;
+    /** @since 5.1.0 */
     setFamePersistent(steamId: string, amount: number): Promise<BridgeCommandResult>;
 
     /**
@@ -2671,6 +3402,7 @@ export interface Host {
      * mean. Anything else is refused rather than quietly applied to one player. It is exactly as
      * irreversible as the single-player form, multiplied by however many people are logged in, so
      * read the single-player documentation for the verb before reaching for this.
+     * @since 5.1.0
      */
     actAll(verb: string, value?: string | number | boolean): Promise<BridgeCommandResult>;
 
@@ -2680,27 +3412,47 @@ export interface Host {
     // between them. Reading is free; writing here changes how the weather BEHAVES rather than what
     // it currently is, which is the difference between making it rain and making it a rainy island.
 
-    /** Every value the weather system currently holds. */
+    /** Every value the weather system currently holds.
+     * @since 5.1.0
+     */
     climateMembers(): Promise<any>;
-    /** The ranges each channel rolls its next value inside. */
+    /** The ranges each channel rolls its next value inside.
+     * @since 5.1.0
+     */
     climateRolls(): Promise<any>;
-    /** The curves it follows moving from one value to the next. */
+    /** The curves it follows moving from one value to the next.
+     * @since 5.1.0
+     */
     climateCurves(): Promise<any>;
-    /** Set a multi-part value (a colour, a direction) in one call. */
+    /** Set a multi-part value (a colour, a direction) in one call.
+     * @since 5.1.0
+     */
     setClimateVector(key: string, ...values: number[]): Promise<BridgeCommandResult>;
-    /** RETIRED, and the bridge refuses it, exactly as `pinClimate()` is. */
+    /** RETIRED, and the bridge refuses it, exactly as `pinClimate()` is.
+     * @since 5.1.0
+     */
     pinClimateVector(key: string, ...values: number[]): Promise<BridgeCommandResult>;
-    /** One part of a multi-part value, leaving the rest alone. */
+    /** One part of a multi-part value, leaving the rest alone.
+     * @since 5.1.0
+     */
     setClimateComponent(key: string, component: string | number, value: number): Promise<BridgeCommandResult>;
-    /** Move one point on one curve - the gentlest way to make a change stay. */
+    /** Move one point on one curve - the gentlest way to make a change stay.
+     * @since 5.1.0
+     */
     setClimateCurveKey(curve: string, index: number, value: number): Promise<BridgeCommandResult>;
-    /** Narrow (or widen) one stage of one channel's roll range. */
+    /** Narrow (or widen) one stage of one channel's roll range.
+     * @since 5.1.0
+     */
     setClimateRollStage(channel: string, index: number, value: number): Promise<BridgeCommandResult>;
     /** RETIRED, and the bridge refuses it. The server writes this byte at startup and never reads
-     *  it again, so nothing stopped. Still readable through `climateSwitches()`. */
+     *  it again, so nothing stopped. Still readable through `climateSwitches()`.
+     * @since 5.1.0
+     */
     setClimateSimulation(on: boolean): Promise<BridgeCommandResult>;
     /** RETIRED, and the bridge refuses it. The clock ran on at the speed `timeSpeed` sets with this
-     *  switched off. Write `timeSpeed` 0 to stop it — that one holds, and clients are told. */
+     *  switched off. Write `timeSpeed` 0 to stop it — that one holds, and clients are told.
+     * @since 5.1.0
+     */
     setClimateClock(on: boolean): Promise<BridgeCommandResult>;
 
     // -- more to read -----------------------------------------------------------------------------
@@ -2708,11 +3460,17 @@ export interface Host {
     // rather than an empty answer when it is not - so "nothing there" and "not turned on" stay
     // different things.
 
-    /** What the creature reader knows how to report, so you can ask for the right thing. */
+    /** What the creature reader knows how to report, so you can ask for the right thing.
+     * @since 5.1.0
+     */
     creatureFields(): Promise<any>;
-    /** What is inside one base, by base id. */
+    /** What is inside one base, by base id.
+     * @since 5.1.0
+     */
     baseContents(baseId: string | number): Promise<any>;
-    /** Every base the building system knows about. */
+    /** Every base the building system knows about.
+     * @since 5.1.0
+     */
     buildBases(): Promise<any>;
     /**
      * Teach the building catalogue one class, proved rather than assumed.
@@ -2728,13 +3486,20 @@ export interface Host {
      *
      * `path` is the full class path exactly as `buildCatalogue()` reports it. One field: a class
      * path contains no colon, so anything after it is refused rather than ignored.
+     * @since 5.1.0
      */
     buildLearn(path: string): Promise<BridgeCommandResult>;
-    /** The catalogue of things a base can be built from. */
+    /** The catalogue of things a base can be built from.
+     * @since 5.1.0
+     */
     catalogueElements(): Promise<any>;
-    /** The game's own kill registry, as the running world holds it. */
+    /** The game's own kill registry, as the running world holds it.
+     * @since 5.1.0
+     */
     prisonerKillRegistry(): Promise<any>;
-    /** The same registry, narrowed to one player. */
+    /** The same registry, narrowed to one player.
+     * @since 5.1.0
+     */
     killRegistryBySteamId(steamId: string): Promise<any>;
     /**
      * Remove ONE entry from the game's own kill registry — the write half of `killRegistry()`.
@@ -2746,21 +3511,36 @@ export interface Host {
      * Every rejection happens before anything is sent, so a refusal means nothing moved, and it
      * re-reads the registry afterwards — `true` here is verified, not merely dispatched. Not
      * established: whether the mark a player sees on their own screen clears with it.
+     * @since 5.1.0
      */
     forgiveKill(profileId: number): Promise<BridgeCommandResult>;
-    /** Which bases the encounter system has flagged, and how. */
+    /** Which bases the encounter system has flagged, and how.
+     * @since 5.1.0
+     */
     encounterBaseFlags(): Promise<any>;
-    /** The raid-protection manager's own state. */
+    /** The raid-protection manager's own state.
+     * @since 5.1.0
+     */
     protectionManager(): Promise<any>;
-    /** What has CHANGED in raid protection since the last look - begins and lapses, not a snapshot. */
+    /** What has CHANGED in raid protection since the last look - begins and lapses, not a snapshot.
+     * @since 5.1.0
+     */
     protectionDelta(): Promise<any>;
-    /** Raid announcements the game has made. */
+    /** Raid announcements the game has made.
+     * @since 5.1.0
+     */
     raidAnnouncements(): Promise<any>;
-    /** Raids the encounter system is tracking. */
+    /** Raids the encounter system is tracking.
+     * @since 5.1.0
+     */
     raidEncounters(): Promise<any>;
-    /** Server settings that have been changed and not yet taken effect. */
+    /** Server settings that have been changed and not yet taken effect.
+     * @since 5.1.0
+     */
     outstandingSettings(): Promise<any>;
-    /** Point a player's quest tracker at a quest or one of its tasks. */
+    /** Point a player's quest tracker at a quest or one of its tasks.
+     * @since 5.1.0
+     */
     trackQuest(steamId: string, id: string | number, kind?: 'quest' | 'task'): Promise<BridgeCommandResult>;
 
     // ── where new players arrive ─────────────────────────────────────────────────────────────────
@@ -2771,11 +3551,16 @@ export interface Host {
      * A point whose position could not be read is ABSENT and counted under `unreadable`, never
      * reported at 0,0,0 — which is a real place on this map, in the sea, and would send someone
      * swimming. `count` is the array length and is deliberately not the length of `points`.
+     * @since 5.1.0
      */
     spawnPoints(): Promise<Record<string, any> | null>;
-    /** The map's own bounds, elevation limits and spawn altitudes. */
+    /** The map's own bounds, elevation limits and spawn altitudes.
+     * @since 5.1.0
+     */
     spawnMap(): Promise<Record<string, any> | null>;
-    /** Respawn prices, currencies and cooldowns, grouped the way the spawn menu shows them. */
+    /** Respawn prices, currencies and cooldowns, grouped the way the spawn menu shows them.
+     * @since 5.1.0
+     */
     respawnSettings(): Promise<Record<string, any> | null>;
     /**
      * Switch one authored spawn point off or on, by the index `spawnPoints()` reported.
@@ -2787,6 +3572,7 @@ export interface Host {
      * **Whether the game re-reads this array when it picks a spawn, or caches it at level load,
      * cannot be established from inside the process.** Try it on a spare server before a live one.
      * Nothing here persists a restart either.
+     * @since 5.1.0
      */
     setSpawnPointEnabled(index: number, on: boolean): Promise<BridgeCommandResult>;
 
@@ -2799,18 +3585,28 @@ export interface Host {
 
     /** How many animals, sharks and fish schools exist right now, by species. A species with none
      *  alive is ABSENT from the map, not `0`. **Answer on demand, never on a timer** — a census walks
-     *  every creature on the server. */
+     *  every creature on the server.
+     * @since 5.1.0
+     */
     wildlifeCensus(): Promise<Record<string, any> | null>;
     /** Every population knob with its value, range, whether it needs a confirmation, and — when the
      *  class default resolved — whether it has MOVED from what the blueprint shipped, which is the
-     *  only static evidence that the game itself writes to it. */
+     *  only static evidence that the game itself writes to it.
+     * @since 5.1.0
+     */
     wildlifeLimits(): Promise<Record<string, any> | null>;
     /** Per-biome animal density. **The species MIX is unreachable** — it lives in a set type the
-     *  engine layer has no reader for — and the payload says so in words rather than omitting it. */
+     *  engine layer has no reader for — and the payload says so in words rather than omitting it.
+     * @since 5.1.0
+     */
     wildlifeBiomes(): Promise<Record<string, any> | null>;
-    /** The aquatic manager, shark species and the fishing volumes. */
+    /** The aquatic manager, shark species and the fishing volumes.
+     * @since 5.1.0
+     */
     wildlifeWater(): Promise<Record<string, any> | null>;
-    /** Fish species, spawning presets and their weights. */
+    /** Fish species, spawning presets and their weights.
+     * @since 5.1.0
+     */
     wildlifeFish(): Promise<Record<string, any> | null>;
     /**
      * Set one population knob — `animalMax`, `sharkMax`, `schoolMax`, `spawnDistance` (centimetres),
@@ -2818,6 +3614,7 @@ export interface Host {
      *
      * Out of range is REFUSED, never clamped. Six of the keys can empty or flood the map and require
      * `confirm: true`; the module refuses without it where it is needed, which is the safe direction.
+     * @since 5.1.0
      */
     setWildlifeLimit(key: string, value: number, confirm?: boolean): Promise<BridgeCommandResult>;
     /**
@@ -2826,10 +3623,13 @@ export interface Host {
      *
      * **This writes a SHARED DATA ASSET**: one biome asset is used by every region that references
      * it, so the blast radius is not something the caller picks. Behind its own `assets` switch.
+     * @since 5.1.0
      */
     setBiomeDensity(biome: string, slot: 0 | 1, value: number): Promise<BridgeCommandResult>;
     /** Set one species' spawning weight inside one preset, 0..1000. Also a shared asset — one preset
-     *  is used by every volume pointing at it. */
+     *  is used by every volume pointing at it.
+     * @since 5.1.0
+     */
     setFishWeight(preset: string, species: string, value: number): Promise<BridgeCommandResult>;
 
     // ── watching raid protection ─────────────────────────────────────────────────────────────────
@@ -2849,28 +3649,44 @@ export interface Host {
     // answer. Settle that against `base_raid_protection` in the save.
 
     /** Which raid-protection mode the server is in, read TWO independent ways, with `agrees` when both
-     *  are known. */
+     *  are known.
+     * @since 5.1.0
+     */
     protectionMode(): Promise<Record<string, any> | null>;
     /** The server's raid-protection settings, as the game's own text. Ten reflected calls — meant to
-     *  be asked rarely. A setting that could not be read is absent, never blank. */
+     *  be asked rarely. A setting that could not be read is absent, never blank.
+     * @since 5.1.0
+     */
     protectionRules(): Promise<Record<string, any> | null>;
     /** The entry list as the last census saw it, with each flag's raw packed change stamp. The stamp
-     *  is reported and never interpreted: it is not a duration in any unit. */
+     *  is reported and never interpreted: it is not a duration in any unit.
+     * @since 5.1.0
+     */
     protectionState(): Promise<Record<string, any> | null>;
     /** Protection windows that began, lapsed or changed since the module started watching — plus
      *  `gap` entries where a census could not be taken, and a change on the far side of a gap may
-     *  have happened at any point inside it. Memory only: gone on a restart. */
+     *  have happened at any point inside it. Memory only: gone on a restart.
+     * @since 5.1.0
+     */
     protectionChanges(): Promise<Record<string, any> | null>;
     /** Protection RPCs seen going past — what was ASKED FOR, before the game handled it, which is not
-     *  the same as a confirmed change. */
+     *  the same as a confirmed change.
+     * @since 5.1.0
+     */
     protectionRequests(): Promise<Record<string, any> | null>;
     /** One flag. `sinceMs` is present **only** when the module actually witnessed the protection
      *  begin — "protected since the bridge started looking" is not a start time, and `sinceObserved`
-     *  says which of the two you have. */
+     *  says which of the two you have.
+     * @since 5.1.0
+     */
     flagProtectionState(flagId: number): Promise<Record<string, any> | null>;
-    /** Run the census now instead of waiting for the poll. This is a read, not a write. */
+    /** Run the census now instead of waiting for the poll. This is a read, not a write.
+     * @since 5.1.0
+     */
     recheckProtection(): Promise<BridgeCommandResult>;
-    /** Discard the change log and the baseline. **No undo.** */
+    /** Discard the change log and the baseline. **No undo.**
+     * @since 5.1.0
+     */
     forgetProtectionHistory(): Promise<BridgeCommandResult>;
 
     // ── levels and streaming ─────────────────────────────────────────────────────────────────────
@@ -2885,26 +3701,37 @@ export interface Host {
     // from the game's own accessor.
 
     /** How many streaming levels this map has and how many are loaded. `worldSource` says whether the
-     *  world was identified from the game mode (decisive) or inferred (not). */
+     *  world was identified from the game mode (decisive) or inferred (not).
+     * @since 5.1.0
+     */
     worldSummary(): Promise<Record<string, any> | null>;
     /** The level list. `matched` and `returned` are separate keys on purpose, and `truncated` (the
      *  walk hit its ceiling) is a different fact from `listCapped` (the list was cut to the
-     *  configured limit) — a caller that confuses them believes it has seen the whole map. */
+     *  configured limit) — a caller that confuses them believes it has seen the whole map.
+     * @since 5.1.0
+     */
     levels(filter?: 'all' | 'loaded' | 'unloaded'): Promise<Record<string, any> | null>;
     /** Every level whose name contains `text`, case-insensitively. The right first call before
-     *  guessing at a level name. */
+     *  guessing at a level name.
+     * @since 5.1.0
+     */
     findLevels(text: string): Promise<Record<string, any> | null>;
     /**
      * One level in full — loaded, visible, pending, its package and what it contains.
      *
      * `known: false` and NO `known` key at all are different answers: the second means the lookup
      * could not be MADE, and only the first means a spawn there is pointless.
+     * @since 5.1.0
      */
     level(name: string): Promise<Record<string, any> | null>;
     /** The world's own managers. `{ present: true }` with no count means "there, and its table could
-     *  not be read", which is not `{ present: false }`. */
+     *  not be read", which is not `{ present: false }`.
+     * @since 5.1.0
+     */
     worldManagers(): Promise<Record<string, any> | null>;
-    /** The distant-level descriptions and their draw distances. */
+    /** The distant-level descriptions and their draw distances.
+     * @since 5.1.0
+     */
     distantLevels(): Promise<Record<string, any> | null>;
     /**
      * Ask the game to stream a level in.
@@ -2915,6 +3742,7 @@ export interface Host {
      * within a frame. Call `level(name)` a moment later; that is how anybody finds out.
      *
      * There is no unload at any setting: a level taken away under a player is not recoverable.
+     * @since 5.1.0
      */
     streamLevel(name: string): Promise<BridgeCommandResult>;
 
@@ -2951,6 +3779,7 @@ export interface Host {
      *
      * Needs the `fortifications` module and its `sweep` switch; the module's own `detail` switch adds
      * toughness and the repair figures.
+     * @since 5.1.0
      */
     fortifications(): Promise<{ source: 'sweep'; sweepUnreadable?: boolean; truncated?: boolean;
                                 fortifications?: Array<Record<string, any>>; count?: number } | null>;
@@ -2958,6 +3787,7 @@ export interface Host {
      * The same walk, filtered to a sphere — the raid-report shape. **All four numbers are required**
      * and are centimetres; the radius is capped at 100000 and an over-large one is REFUSED rather than
      * trimmed.
+     * @since 5.1.0
      */
     fortificationsNear(x: number, y: number, z: number, radius: number):
         Promise<{ source: 'sweep'; sweepUnreadable?: boolean; truncated?: boolean;
@@ -2977,6 +3807,7 @@ export interface Host {
      * one counter and answers it permanently.**
      *
      * Needs the `fortifications` module and its `ledger` switch.
+     * @since 5.1.0
      */
     fortificationLedger(): Promise<{ openings: Array<Record<string, any>>; openingCount: number;
                                      barricadeCount: number; watchingForMs: number;
@@ -2984,13 +3815,17 @@ export interface Host {
                                      destroyMatchedAsRelative: number; destroyMatchedAsWorld: number;
                                      destroyUnmatched: number } | null>;
     /** Every barricade the ledger attributes to one profile id — the game's own profile number, not a
-     *  Steam ID. The question this module exists for, and the walk cannot answer it. */
+     *  Steam ID. The question this module exists for, and the walk cannot answer it.
+     * @since 5.1.0
+     */
     fortificationsByOwner(profileId: number):
         Promise<{ owner: number; barricades: Array<Record<string, any>>; count: number;
                   onlyWhatWasWatched: true } | null>;
     /** The recent barricade events, newest first, with how long ago each was: `add`, `addMany`,
      *  `update`, `destroy`, `removeAll`. A short bounded window, not an audit trail — nothing is
-     *  written to disk and a restart clears it. Needs the module's `events` switch. */
+     *  written to disk and a restart clears it. Needs the module's `events` switch.
+     * @since 5.1.0
+     */
     fortificationEvents(): Promise<{ events: Array<Record<string, any>>; count: number;
                                      window: number; droppedEvents?: number } | null>;
     /**
@@ -2998,6 +3833,7 @@ export interface Host {
      *
      * The literal `true` is required and the SDK refuses without it: the ledger is the only route to
      * who built a barricade, and that fact cannot be recovered once it is dropped.
+     * @since 5.1.0
      */
     forgetFortifications(confirm: true): Promise<BridgeCommandResult>;
 
@@ -3038,6 +3874,7 @@ export interface Host {
      * **Unverified on a live game.** Call `damagePreview()` first.
      *
      * Needs the `damage` module on and its `explode` switch on beneath it.
+     * @since 5.1.0
      */
     explodeAt(x: number, y: number, z: number, radiusCm: number, damage: number,
               opts: { confirm: 'CONFIRM'; players?: boolean }): Promise<BridgeCommandResult>;
@@ -3048,6 +3885,7 @@ export interface Host {
      * is the answer the verb would give. Use it before the first real one — and before every one
      * that matters. Needs only the `damage` module, not its blast switch: deciding *whether* to fire
      * should not require arming the thing first.
+     * @since 5.1.0
      */
     damagePreview(x: number, y: number, z: number, radiusCm: number):
         Promise<{ x: number; y: number; z: number; radiusCm: number;
@@ -3067,6 +3905,7 @@ export interface Host {
      * effect may be deferred, blocked or absent and this cannot tell which. `confirmed: false` with
      * none re-read means nothing in the blast could be read back at all. `meaning` says which in
      * words. A refused call does not replace the record, which is why `ageMs` is here.
+     * @since 5.1.0
      */
     damageLast(): Promise<{ x: number; y: number; z: number; radiusCm: number;
                             innerRadiusCm: number; damage: number; falloff: number; force: number;
@@ -3091,6 +3930,7 @@ export interface Host {
      * and neither is a truncated table. `asset` and `enabled` are each omitted when that column did
      * not resolve; `allEnabled` is absent when there is no flag column to judge. Read-only, needs
      * the `craft` module, and it refuses with a reason while the world is still loading.
+     * @since 5.1.0
      */
     cookRecipes(): Promise<{ entries: Array<{ index: number; asset?: string; enabled?: boolean }>;
                              count: number; truncated?: true; allEnabled?: boolean } | null>;
@@ -3106,7 +3946,9 @@ export interface Host {
     // account behind it is the manager's own database join.
 
     /** Ask the game for a squad's member list. Read it back with `squadMembers()` a moment later.
-     *  It travels through an online player, so somebody has to be on the server. */
+     *  It travels through an online player, so somebody has to be on the server.
+     * @since 5.1.0
+     */
     squadMemberInfo(squadId: number): Promise<BridgeCommandResult>;
     /**
      * The member list, if one has arrived — profile ids, names and fame, with `ageMs`.
@@ -3116,6 +3958,7 @@ export interface Host {
      * identical from here. `count` is how many the game sent and `members` is as many as fitted;
      * `truncated` says when they differ. Fame is the number the game sends and its scale is not
      * established anywhere.
+     * @since 5.1.0
      */
     squadMembers(squadId: number):
         Promise<{ squadId: number; ageMs: number; count: number;
@@ -3128,6 +3971,7 @@ export interface Host {
      * Both arguments are optional; an absent one leaves its field off entirely rather than sending a
      * placeholder the module would read as a value. Pass `squadId` to have the reply also carry that
      * squad's own rank.
+     * @since 5.1.0
      */
     squadLeaderboardRefresh(count?: number, squadId?: number): Promise<BridgeCommandResult>;
     /**
@@ -3137,6 +3981,7 @@ export interface Host {
      * joining a row to a squad means matching the name, and two squads may share one. `position` is
      * the order the game sent them in. `squadRank` / `squadIndex` answer for `forSquadId` and not
      * for the list.
+     * @since 5.1.0
      */
     squadLeaderboard():
         Promise<{ ageMs: number; asked: number; count: number;
@@ -3154,6 +3999,7 @@ export interface Host {
      * identical here. Treat a long empty list on a busy server as the second one. An entry with no
      * `squadId` is a real destruction whose squad could no longer be named, which is different from
      * one that had no name. Not a log: it starts empty after a restart.
+     * @since 5.1.0
      */
     squadsDestroyed(): Promise<{ kept: number; held: number;
                                  destroyed: Array<{ squadId?: number; name?: string;
@@ -3170,6 +4016,7 @@ export interface Host {
      * rather than hard-coded, so a game update that adds a sort order needs no new manager.
      *
      * Needs the `stats` module on and `ranking` on beneath it.
+     * @since 5.1.0
      */
     requestStatsRanking(count?: number, sortBy?: string, order?: string):
         Promise<BridgeCommandResult>;
@@ -3181,6 +4028,7 @@ export interface Host {
      * `rows: []` means the game answered and nobody is ranked. Those are different claims. On a build
      * where the ranking is wired only to game events the first is what you get, and **it is not a
      * fault**. Over 50 rows sets `truncated`.
+     * @since 5.1.0
      */
     statsRanking(): Promise<{ received: boolean; rows: Array<Record<string, any>> | null;
                               waiting: boolean; hint?: string; ageMs?: number;
@@ -3191,6 +4039,7 @@ export interface Host {
      *
      * `fromEngine` says whether a word was resolved against the build or is this build's fallback —
      * which is the difference between a vocabulary and a guess.
+     * @since 5.1.0
      */
     statsRankingWords(): Promise<{ maxRows: number;
                                    sortBy: Array<{ word: string; game: string; value: number;
@@ -3214,6 +4063,7 @@ export interface Host {
      * tell apart. Two honest caveats: the flag is replicated state the game may rebuild on its own
      * schedule, so an unchanged reading is "it did not move yet" and not proof either way; and it
      * says nothing about a weight cached somewhere the bridge cannot see.
+     * @since 5.1.0
      */
     lastContainerDestroy(): Promise<{ made: boolean; hint?: string; ageMs?: number;
                                       container?: number; item?: number; class?: string;
@@ -3221,25 +4071,35 @@ export interface Host {
                                       hadEntriesAfter?: boolean } | null>;
   };
 
+  /** @since 5.0.3 */
   discord: {
-    /** The entire discord.js module (EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, …). */
+    /** The entire discord.js module (EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, …).
+     * @since 5.0.3
+     */
     readonly js: any;
+    /** @since 5.0.3 */
     client(): any | null;
+    /** @since 5.0.3 */
     enabled(): boolean;
-    /** The admin's configured live-embed image URLs (any may be null). */
+    /** The admin's configured live-embed image URLs (any may be null).
+     * @since 5.0.3
+     */
     liveEmbedImages(): { status: string | null; players: string | null; bunker: string | null; leaderboard: string | null; economy: string | null };
+    /** @since 5.0.3 */
     embed(): any;                                                                        // discord.js EmbedBuilder
     /**
      * A picture address from the owner's config, the way an embed must carry it: an http(s) URL as
      * it is, an UPLOAD (`/uploads/…`, which Discord cannot fetch) as `attachment://<file>`, anything
      * else `null`. Hand it to `setImage` / `setThumbnail` / an author or footer icon. Newer managers
      * only: test `typeof host.discord.imageUrl === 'function'`.
+     * @since 5.59.2
      */
     imageUrl?(url: string): string | null;
     /**
      * Add every uploaded picture a message's embeds name to its `files`, rewriting a bare
      * `/uploads/…` address on the way. `send()` and `dm()` already do this; call it for a message
      * you send or EDIT yourself (`msg.edit`, `interaction.reply`). Returns the same payload.
+     * @since 5.59.2
      */
     attachUploads?<P extends { embeds?: any[]; files?: any[] }>(payload: P): P;
     /**
@@ -3248,10 +4108,14 @@ export interface Host {
      * same bot instead of inventing a second identity.
      *
      * The field names are discord.js's own: `{ text, iconURL }`, not `{ name, icon }`.
+     * @since 5.0.3
      */
     branding(): { text: string; iconURL: string | null } | null;
+    /** @since 5.0.3 */
     button(o?: { id?: string; label?: string; style?: number; url?: string; emoji?: string; disabled?: boolean }): any;
+    /** @since 5.0.3 */
     row(...components: any[]): any;                  // ActionRowBuilder
+    /** @since 5.0.3 */
     channel(id: string): Promise<any | null>;
     /**
      * Post to a channel. payload: string | EmbedBuilder | EmbedBuilder[] |
@@ -3263,42 +4127,57 @@ export interface Host {
      *
      * The manager's branded footer and a timestamp are stamped onto the FIRST embed of the message,
      * exactly as on its own embeds, so a plugin's post sits next to them without looking foreign.
+     * @since 5.0.3
      */
     send(channelId: string, payload: any): Promise<any | false>;
-    /** Direct-message a user. Resolves to the Message, or `false` — a closed DM is not an error. */
+    /** Direct-message a user. Resolves to the Message, or `false` — a closed DM is not an error.
+     * @since 5.0.3
+     */
     dm(userId: string, payload: any): Promise<any | false>;
+    /** @since 5.0.3 */
     onMessage(fn: (message: any) => void): () => void;
+    /** @since 5.0.3 */
     onInteraction(fn: (interaction: any) => void): () => void;
+    /** @since 5.0.3 */
     onButton(customId: string | RegExp, fn: (interaction: any) => void): () => void;
+    /** @since 5.0.3 */
     onSelect(customId: string | RegExp, fn: (interaction: any) => void): () => void;
     /**
      * Register a slash command and its handler. Guild-scoped when the owner configured a guild
      * (instant), global otherwise (visible everywhere, and up to an hour late). `false` when the
      * bot is not ready.
+     * @since 5.0.3
      */
     registerSlash(data: any, handler?: (interaction: any) => void): Promise<boolean>;
     /**
      * The channel ids the OWNER configured, by role — not a listing of the channels the bot can
      * see. Any role the owner left unset is simply absent, so test for the key rather than for an
      * empty string.
+     * @since 5.0.3
      */
     channels(): Partial<Record<'admin' | 'players' | 'status' | 'playersEmbed' | 'bunkers'
                             | 'leaderboards' | 'economy' | 'accountLinking', string>>;
-    /** Add/modify fields on the manager's own embeds. fn may mutate or return an EmbedBuilder. */
+    /** Add/modify fields on the manager's own embeds. fn may mutate or return an EmbedBuilder.
+     * @since 5.0.3
+     */
     onEmbed(kind: EmbedKind, fn: (embed: any, ctx: any, kind: EmbedKind) => any): void;
     /**
      * Every styleable kind with the embed's REAL current shape. Use this instead of describing the
      * manager's layouts yourself — the real ones are translated, have conditional fields, and
      * format their values on the way out.
+     * @since 5.0.3
      */
     embedKinds(): EmbedKindInfo[];
-    /** The last embed the manager really sent for one kind, or null if it hasn't sent one. */
+    /** The last embed the manager really sent for one kind, or null if it hasn't sent one.
+     * @since 5.0.3
+     */
     lastEmbed(kind: EmbedKind): { at: number; embed: EmbedKindInfo['sample']; ctx: any } | null;
     /**
      * Turn `:shield:` shortcodes into the glyph Discord will actually show.
      *
      * The send path does this anyway, so you only need it when you are RENDERING text yourself —
      * a preview that skips it does not look like the message it is previewing.
+     * @since 5.0.3
      */
     emojify(text: string): string;
   };
@@ -3310,6 +4189,7 @@ export interface Host {
    * because a bridge that is off is the ordinary state on a free server; a chat line is a thing you
    * asked to happen, so it rejects instead — with `bridge_off`, `chat_failed` or the bridge's own
    * word. Never let that reach an event handler unawaited.
+   * @since 5.0.3
    */
   chat: {
     /**
@@ -3326,14 +4206,18 @@ export interface Host {
      * declared shapes — a throw, a timeout, `ready: false` with neither `until` nor `why` — reads as
      * "I could not find out" and is said so in its own sentence; it is never reported as ready.
      * Keep it cheap: one `/help` runs every provider on the server.
+     * @since 5.0.3
      */
     onCommand(
       name: string,
       handler: (ctx: ChatCommandCtx) => void | Promise<void>,
       opts?: { status?: (who: { steamId: string }) => ChatCommandStatus | Promise<ChatCommandStatus> },
     ): () => void;
-    /** Change the in-game command prefix (default `/`) for every plugin, not just yours. */
+    /** Change the in-game command prefix (default `/`) for every plugin, not just yours.
+     * @since 5.0.3
+     */
     setPrefix(prefix: string): void;
+    /** @since 5.0.3 */
     prefix(): string;
     /**
      * `targets` narrows delivery to those SteamIDs; `channel` only decides where it appears.
@@ -3355,11 +4239,16 @@ export interface Host {
      * the recipients are grouped by language and sent one line per group; without, the server's
      * line goes to everyone except the players reading another language, who get theirs. A plain
      * string with no `vars` is sent exactly as before.
+     * @since 5.0.3
      */
     send(text: LocText, opts?: ChatOpts & { history?: boolean }): Promise<{ channel: string; delivered: number; lines?: number }>;
-    /** Rejects like `send()`. A LocText is rendered in that player's language. */
+    /** Rejects like `send()`. A LocText is rendered in that player's language.
+     * @since 5.0.3
+     */
     dm(steamId: string, text: LocText, opts?: ChatOpts): Promise<{ channel: string; delivered: number }>;
-    /** Rejects like `send()`. A LocText is sent per language, like `send()` without targets. */
+    /** Rejects like `send()`. A LocText is sent per language, like `send()` without targets.
+     * @since 5.0.3
+     */
     broadcast(text: LocText, opts?: ChatOpts & { history?: boolean }): Promise<{ channel: string; delivered: number; lines?: number }>;
     /**
      * Put a line in the CHAT HISTORY: the admin chat view, the Field Console, and your Discord chat
@@ -3375,16 +4264,23 @@ export interface Host {
      *
      * Feature-detect it — it is an addition, so an older manager simply does not have it:
      * `typeof host.chat.record === 'function'`.
+     * @since 5.15.4
      */
     record?(text: string, opts?: { channel?: string; name?: string }): { ok: boolean; reason?: string };
   };
 
-  /** Push a notification through the manager's own pipeline (Discord + admin realtime). */
+  /** Push a notification through the manager's own pipeline (Discord + admin realtime).
+   * @since 5.0.3
+   */
   notify(type: string, data?: Record<string, any>): void;
 
-  /** Timers cleared for you on unload. A delay that is not a number, or a `fn` that is not a function, schedules nothing and returns a no-op `off()`. */
+  /** Timers cleared for you on unload. A delay that is not a number, or a `fn` that is not a function, schedules nothing and returns a no-op `off()`.
+   * @since 5.0.3
+   */
   schedule: {
+    /** @since 5.0.3 */
     every(ms: number, fn: () => void): () => void;
+    /** @since 5.0.3 */
     after(ms: number, fn: () => void): () => void;
   };
 
@@ -3418,30 +4314,49 @@ export interface Host {
   /**
    * Languages: what each player reads, the server's default, and your plugin's own words.
    * Feature-detect it: `if (host.i18n)`.
+   * @since 5.56.0
    */
   i18n?: {
-    /** `[{ code, name }]` — every language a player may choose. */
+    /** `[{ code, name }]` — every language a player may choose.
+     * @since 5.56.0
+     */
     languages(): { code: string; name: string }[];
-    /** The server's default for player text (`Game.Language`, else the Discord bot's language). */
+    /** The server's default for player text (`Game.Language`, else the Discord bot's language).
+     * @since 5.56.0
+     */
     serverLang(): string;
-    /** The language one player reads; the server's when they chose none. */
+    /** The language one player reads; the server's when they chose none.
+     * @since 5.56.0
+     */
     playerLang(steamId: string): string;
-    /** Store a player's language (`null` = server default). */
+    /** Store a player's language (`null` = server default).
+     * @since 5.56.0
+     */
     setPlayerLang(steamId: string, lang: string | null): { ok: boolean; lang?: string; reason?: string };
-    /** The variant for one language, or the base text. */
+    /** The variant for one language, or the base text.
+     * @since 5.56.0
+     */
     pick(loc: LocText, lang: string): string;
-    /** `{name}` placeholders, and `[ optional segments ]` dropped when a placeholder inside is empty. */
+    /** `{name}` placeholders, and `[ optional segments ]` dropped when a placeholder inside is empty.
+     * @since 5.56.0
+     */
     fill(text: string, vars?: Record<string, any>): string;
-    /** `pick`, then `fill`. */
+    /** `pick`, then `fill`.
+     * @since 5.56.0
+     */
     render(loc: LocText, lang: string, vars?: Record<string, any>): string;
     /**
      * A string from your plugin's own `web/i18n/<lang>.json` (keys `pl.<id>.*`), with the English
      * fallback, in `lang` (default: the server's language).
+     * @since 5.56.0
      */
     t(key: string, fallback?: string, lang?: string, vars?: Record<string, any>): string;
   };
+  /** @since 5.4.0 */
   time: {
-    /** Open right now? `why` is a sentence you can show a player verbatim. */
+    /** Open right now? `why` is a sentence you can show a player verbatim.
+     * @since 5.4.0
+     */
     isOpen(schedule: TimeWindow[] | TimeWindow | null, at?: Date): {
       open: boolean;
       /** Why, in words — "open now — Fri 22:00–02:00…" or "available Mon–Fri 20:00–22:00 … in 2h". */
@@ -3451,13 +4366,21 @@ export interface Host {
       /** Windows that could not be read. An unreadable window is treated as CLOSED. */
       invalid: string[];
     };
-    /** Call before saving. `errors` name the problem in words an owner can act on. */
+    /** Call before saving. `errors` name the problem in words an owner can act on.
+     * @since 5.4.0
+     */
     validate(schedule: TimeWindow[] | TimeWindow | null): { ok: boolean; errors: string[] };
-    /** The one sentence a screen shows. Render THIS; do not compose your own. */
+    /** The one sentence a screen shows. Render THIS; do not compose your own.
+     * @since 5.4.0
+     */
     describe(schedule: TimeWindow[] | TimeWindow | null): string;
-    /** What the manager's own clock says right now. */
+    /** What the manager's own clock says right now.
+     * @since 5.4.0
+     */
     now(tz?: string): { unix: number; weekday: number; minutes: number; hhmm: string; tz: string | null; offset: string | null; label: string } | null;
-    /** `{ tz, offset, label }` for a zone, or for this machine when `tz` is omitted. */
+    /** `{ tz, offset, label }` for a zone, or for this machine when `tz` is omitted.
+     * @since 5.4.0
+     */
     zone(tz?: string): { tz: string | null; offset: string | null; label: string };
   };
 
@@ -3466,19 +4389,27 @@ export interface Host {
    * anonymous; `req.visitor` is the signed-in visitor or null. `routes.player.*` → the same mount,
    * answering 401 `{ error: 'login_required', reason }` unless a Field Console visitor (or an admin)
    * is signed in; `req.visitor` is then always set.
+   * @since 5.0.3
    */
-  routes: RouteApi & { public: RouteApi; player: RouteApi };
+  routes: RouteApi & { public: RouteApi; /** @since 5.53.0 */ player: RouteApi };
 
+  /** @since 5.0.3 */
   realtime: { toAdmins(event: string, payload: any): void };
 
-  /** Read-only. Plugins cannot enable, disable or fake Premium. */
+  /** Read-only. Plugins cannot enable, disable or fake Premium.
+   * @since 5.0.3
+   */
   premium: { active(): boolean };
 
+  /** @since 5.0.3 */
   paths: { root: string; serverDir: string; appRoot: string };
 
+  /** @since 5.0.3 */
   provide(name: string, api: any): void;
+  /** @since 5.0.3 */
   consume<T = any>(name: string): T | null;
 
+  /** @since 5.0.3 */
   onUnload(fn: () => void): void;
 }
 
@@ -3815,9 +4746,13 @@ export interface FcVisitor {
 }
 
 export interface RouteApi {
+  /** @since 5.0.3 */
   get(path: string, handler: (req: any, res: any) => void): void;
+  /** @since 5.0.3 */
   post(path: string, handler: (req: any, res: any) => void): void;
+  /** @since 5.0.3 */
   put(path: string, handler: (req: any, res: any) => void): void;
+  /** @since 5.0.3 */
   delete(path: string, handler: (req: any, res: any) => void): void;
 }
 
@@ -3868,6 +4803,7 @@ export type ChatCommandStatus =
  * Every event the manager raises on the plugin bus. Two more names reach you that no list can hold:
  * `<yourId>:config` (your own config was saved, the payload is the new config; `config.onChange` is
  * the same thing) and anything another plugin `emit()`s as `<itsId>:<name>`.
+ * @since 4.0.2 for every event listed here. Later: `backup:restored` 5.18.0.
  */
 export type PluginEvent =
   | 'server:online' | 'server:offline' | 'server:starting' | 'server:loading' | 'server:stopping'
@@ -3965,39 +4901,73 @@ export interface EmbedKindInfo {
  * older one; the fields an older manager does not know simply do nothing there.
  */
 export interface PluginManifest {
-  /** Unique slug: letters, digits, `.`, `_`, `-`. Also the plugin's folder name in the library. */
+  /** Unique slug: letters, digits, `.`, `_`, `-`. Also the plugin's folder name in the library.
+   * @since 4.0.2
+   */
   id: string;
+  /** @since 4.0.2 */
   name: string;
-  /** `x.y.z`. Deployment is version-gated: a change ships only under a new version. */
+  /** `x.y.z`. Deployment is version-gated: a change ships only under a new version.
+   * @since 4.0.2
+   */
   version: string;
-  /** Defaults to `ue4ss` when absent, so a manager plugin must say `manager`. */
+  /** Defaults to `ue4ss` when absent, so a manager plugin must say `manager`.
+   * @since 4.0.2
+   */
   type?: 'manager' | 'ue4ss' | 'ue4ss-runtime';
+  /** @since 4.0.2 */
   description?: string;
+  /** @since 4.0.2 */
   author?: string;
+  /** @since 4.0.2 */
   website?: string;
-  /** Card icon, a file in the plugin folder (1:1 PNG or SVG). */
+  /** Card icon, a file in the plugin folder (1:1 PNG or SVG).
+   * @since 4.0.2
+   */
   image?: string;
-  /** Shown in the card's readme viewer. */
+  /** Shown in the card's readme viewer.
+   * @since 4.0.2
+   */
   readme?: string;
-  /** Free text shown on the card, usually a date. */
+  /** Free text shown on the card, usually a date.
+   * @since 4.0.2
+   */
   updated?: string;
-  /** The host contract you target. Only `1` exists. */
+  /** The host contract you target. Only `1` exists.
+   * @since 4.0.2
+   */
   apiVersion?: number;
+  /** @since 4.0.2 */
   minManagerVersion?: string;
+  /** @since 4.0.2 */
   maxManagerVersion?: string;
-  /** Must be active first. A plain id or `{ id, min?, max? }`. Blocks enabling when unmet. */
+  /** Must be active first. A plain id or `{ id, min?, max? }`. Blocks enabling when unmet.
+   * @since 4.0.2
+   */
   dependencies?: Array<string | { id: string; min?: string; max?: string }>;
-  /** Load order only; never blocks anything. `host.consume()` answers `null` when absent. */
+  /** Load order only; never blocks anything. `host.consume()` answers `null` when absent.
+   * @since 5.4.0
+   */
   optionalDependencies?: Array<string | { id: string; min?: string; max?: string }>;
-  /** Backend entry, relative to `payload/`. Omit for a frontend-only plugin. */
+  /** Backend entry, relative to `payload/`. Omit for a frontend-only plugin.
+   * @since 4.0.2
+   */
   main?: string;
-  /** Your editable config file, relative to `payload/`. `host.config.set()` needs it. */
+  /** Your editable config file, relative to `payload/`. `host.config.set()` needs it.
+   * @since 4.0.2
+   */
   config?: string;
-  /** Admin-panel assets, relative to `payload/`. `i18n` is a folder of `<lang>.json` files (no `en.json`). */
-  web?: { script?: string; style?: string; i18n?: string };
-  /** Field Console assets. `requireLogin: true` (the boolean) puts every tab behind the sign-in card. */
-  fc?: { script?: string; style?: string; requireLogin?: boolean };
-  /** What must be switched on in the SSA Bridge. The owner applies `needs` in one click; `wants` is never written. */
+  /** Admin-panel assets, relative to `payload/`. `i18n` is a folder of `<lang>.json` files (no `en.json`).
+   * @since 4.0.2
+   */
+  web?: { script?: string; style?: string; /** @since 5.19.0 */ i18n?: string };
+  /** Field Console assets. `requireLogin: true` (the boolean) puts every tab behind the sign-in card.
+   * @since 4.0.2
+   */
+  fc?: { script?: string; style?: string; /** @since 5.53.0 */ requireLogin?: boolean };
+  /** What must be switched on in the SSA Bridge. The owner applies `needs` in one click; `wants` is never written.
+   * @since 5.3.0
+   */
   bridge?: { needs?: Array<{ module: string; switches: string[]; why: string }>; wants?: Array<{ module: string; switches: string[]; why: string }> };
   /**
    * What the plugin will ask the bridge for. Each entry is a bridge module id (`"live"`, read and
@@ -4010,9 +4980,12 @@ export interface PluginManifest {
    * the plugin's card. When the owner sets `plugins.capabilities` to `enforce`, such a call is
    * refused with `code: 'not_permitted'` (a chat call rejects with `capability_refused`). A
    * plugin without this key is never refused or warned about. Older managers ignore it.
+   * @since 6.1.0
    */
   capabilities?: string[];
-  /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`. */
+  /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`.
+   * @since 4.0.2
+   */
   modName?: string;
 }
 
@@ -4093,30 +5066,48 @@ export interface SSAMapPoint {
 }
 
 export interface SSA {
-  /** The frontend SDK contract, `1`. New calls arrive without raising it: feature-detect with `typeof SSA.x === 'function'` or the `can*()` flags. */
+  /** The frontend SDK contract, `1`. New calls arrive without raising it: feature-detect with `typeof SSA.x === 'function'` or the `can*()` flags.
+   * @since 4.0.2
+   */
   version: number;
+  /** @since 4.0.2 */
   ready(fn: (ssa: SSA) => void): void;
+  /** @since 4.0.2 */
   registerTab(opts: TabDef): void;
+  /** @since 4.0.2 */
   views: {
+    /** @since 4.0.2 */
     mount(anchor: string | HTMLElement, render: (el: HTMLElement) => void, opts?: { when?: () => boolean }): () => void;
+    /** @since 4.0.2 */
     replace(tabId: string, render: (el: HTMLElement) => void): void;
   };
+  /** @since 4.0.2 */
   actions: {
+    /** @since 4.0.2 */
     player(fn: (player: any) => ActionEntry | ActionEntry[] | null): void;
+    /** @since 4.0.2 */
     entity(kind: 'player' | 'vehicle' | 'chest' | 'base' | 'storage', fn: (entity: any) => ActionEntry | ActionEntry[] | null): void;
   };
+  /** @since 4.0.2 */
   el(tag: string, props?: Record<string, any>, kids?: any): HTMLElement;
+  /** @since 4.0.2 */
   mount(target: string | HTMLElement, content: string | HTMLElement): HTMLElement | null;
+  /** @since 4.0.2 */
   toast(msg: string, kind?: 'ok' | 'err' | 'error' | 'info'): void;
+  /** @since 4.0.2 */
   modal(opts: { title?: string; body: string | HTMLElement; actions?: Array<{ label: string; primary?: boolean; run?: () => boolean | void }>; wide?: boolean; dismissable?: boolean; /** Called once however the dialog closes: a button, ✕, the backdrop or Escape. */ onClose?: () => void }): { close: () => void; el: HTMLElement; body: HTMLElement };
+  /** @since 4.0.2 */
   confirm(msg: string, opts?: { title?: string; okLabel?: string; cancelLabel?: string }): Promise<boolean>;
+  /** @since 4.0.2 */
   menu(title: string, entries: ActionEntry[], opts?: any): void;
+  /** @since 4.0.2 */
   theme: { setTokens(tokens: Record<string, string>, opts?: { selector?: string }): void; injectCss(css: string): void };
   /**
    * Merge strings into the panel's dictionary by hand. For your OWN screens, ship locale files
    * instead: `payload/web/i18n/<lang>.json`, declared as `"web": { …, "i18n": "web/i18n" }`. The
    * panel fetches the reader's language for you before your script runs, so a tab label registered
    * at load time is translated too. This call stays for overriding one of the panel's own strings.
+   * @since 4.0.2
    */
   i18n: { add(lang: string, dict: Record<string, string>): void; override(lang: string, dict: Record<string, string>): void };
   /**
@@ -4129,8 +5120,10 @@ export interface SSA {
    *
    * `vars` replaces `{name}` for each of its own keys. Use it rather than concatenating a
    * translated fragment with a number or a name: word order is not the same in nineteen languages.
+   * @since 4.0.2
    */
   t(key: string, fallback?: string, vars?: Record<string, any>): string;
+  /** @since 4.0.2 */
   lang(): string;
   /**
    * The editor for a text players read in several languages: a growing textarea, one tab per
@@ -4143,6 +5136,7 @@ export interface SSA {
    * returned blank, so your stored config stays small and your shipped wording keeps reaching players.
    * A token's `title` is its hover (an example value), `kind` styles it (`player` is drawn dashed), and
    * `tokenNote` is one line under the chips. `setTokens()` redraws the chips, for a route that changed.
+   * @since 5.56.0
    */
   locText(opts: {
     value?: string; i18n?: Record<string, string>;
@@ -4165,6 +5159,7 @@ export interface SSA {
    * send it through `host.discord.send`/`.dm` or `host.discord.attachUploads()` — Discord cannot
    * fetch the panel. Newer managers only: test `typeof SSA.imageField === 'function'` and keep a
    * plain box otherwise.
+   * @since 5.59.2
    */
   imageField?(opts: {
     value?: string; onChange?: (url: string) => void; input?: HTMLInputElement;
@@ -4180,6 +5175,7 @@ export interface SSA {
    * `plugin_unresolved`. Prefer `apiClient()`.
    *
    * REJECTS on a non-2xx and on a network failure; see `apiClient` for the error shape.
+   * @since 4.0.2
    */
   api<T = any>(path: string, opts?: RequestInit): Promise<T>;
   /**
@@ -4191,6 +5187,7 @@ export interface SSA {
    * `(r.items || [])` over a swallowed failure draws a screen that says nothing is configured when
    * the truth was about the request. Feed the rejection to `apiError()` and put the sentence on the
    * screen — a throwing client with nowhere to print only moves the silence.
+   * @since 5.13.0
    */
   apiClient(): <T = any>(path: string, opts?: RequestInit) => Promise<T>;
   /**
@@ -4202,8 +5199,10 @@ export interface SSA {
    * browser: that is what opens the screen in a new tab. `get()` is what the address names when
    * your `render()` runs; `onChange` hears Back, Forward and an address followed while the page is
    * open. Feature-test it: an older manager has no `route` and opens your first screen instead.
+   * @since the release after 6.1.0
    */
   route?: {
+    /** @since the release after 6.1.0 */
     client(): {
       href(sub?: string): string;
       get(): string;
@@ -4215,32 +5214,55 @@ export interface SSA {
    * One sentence for a rejection, in the order that matters: the route's own `reason` (it is the
    * only layer that knows which value was over which limit), then the expired-session case, then
    * the code.
+   * @since 5.13.0
    */
   apiError(err: SSAApiError | Error | null, fallback?: string): string;
+  /** @since 4.0.2 */
   on(evt: string, fn: (payload: any) => void): () => void;
+  /** @since 4.0.2 */
   emit(evt: string, payload?: any): void;
+  /** @since 4.0.2 */
   socket: { on(evt: string, fn: (payload: any) => void): void };
+  /** @since 4.0.2 */
   provide(name: string, api: any): void;
+  /** @since 4.0.2 */
   consume<T = any>(name: string): T | null;
+  /** @since 4.0.2 */
   premium(): boolean;
+  /** @since 4.0.2 */
   admin(): { isDefault?: boolean; permissions?: string[] } | null;
+  /** @since 4.0.2 */
   refreshGates(): void;
 
   // ── native UI building blocks (render plugin UIs that are pixel-identical to the panel) ──
-  /** A panel SVG sprite icon node: `<svg class="ico [cls]"><use href="#i-<id>"/></svg>`. Never use emoji. */
+  /** A panel SVG sprite icon node: `<svg class="ico [cls]"><use href="#i-<id>"/></svg>`. Never use emoji.
+   * @since 4.0.2
+   */
   icon(id: string, cls?: string): SVGElement;
-  /** Native clickable table cells — identical markup/behaviour to the Log Viewer. */
+  /** Native clickable table cells — identical markup/behaviour to the Log Viewer.
+   * @since 4.0.2
+   */
   cell: {
-    /** Player name → opens the native player modal on click (admin-actions if no name). */
+    /** Player name → opens the native player modal on click (admin-actions if no name).
+     * @since 4.0.2
+     */
     player(name?: string | null, steamId?: string | null): Node;
-    /** World coordinate → centres the native Live Map on click. */
+    /** World coordinate → centres the native Live Map on click.
+     * @since 4.0.2
+     */
     location(x: number, y: number, z?: number): Node;
-    /** Item code → shows the item-preview popover on click (same as the Log Viewer). */
+    /** Item code → shows the item-preview popover on click (same as the Log Viewer).
+     * @since 4.0.2
+     */
     item(code?: string | null, label?: string): Node;
-    /** Coloured status label. kind: 'ok'|'bad'|'warn'|'muted' or a number 0–5 (stable palette). */
+    /** Coloured status label. kind: 'ok'|'bad'|'warn'|'muted' or a number 0–5 (stable palette).
+     * @since 4.0.2
+     */
     tag(text: string, kind?: 'ok' | 'bad' | 'warn' | 'muted' | number): HTMLElement;
   };
-  /** A full native data-table with search, click-to-sort headers and pagination. Returns { el, refresh }. */
+  /** A full native data-table with search, click-to-sort headers and pagination. Returns { el, refresh }.
+   * @since 4.0.2
+   */
   table(opts: {
     columns: Array<{ key: string; label: string; sort?: boolean; sortVal?: (row: any) => any; render: (row: any) => Node; tdClass?: string; thClass?: string }>;
     rows: (() => any[]) | any[];
@@ -4255,23 +5277,33 @@ export interface SSA {
 
   // ── native affordances (open the built-in UI a plugin can't rebuild) ──
   /** Open a player's detail card. Pass `steamId` when you have it: two players can share a name,
-   *  and a card asked for by name alone cannot open for either of them. */
+   *  and a card asked for by name alone cannot open for either of them.
+   * @since 4.0.2
+   */
   openPlayer(name: string, steamId?: string): void;
+  /** @since 4.0.2 */
   openPlayerAdmin(steamIdOrName: string, name?: string): void; // open the admin-actions menu
+  /** @since 4.0.2 */
   showOnMap(x: number, y: number, z?: number): void;           // centre the Live Map on a coordinate
+  /** @since 4.0.2 */
   itemPreview(elOrCode: HTMLElement | string, anchor?: HTMLElement): void; // show the item-preview popover
+  /** @since 4.0.2 */
   showTab(name: string): void;                                 // switch to a native panel tab
   /**
    * The panel's record card for one game code: every published field, the cross-linked lists, and
    * what only this server knows (how many exist in the save, the trader price, a Give button).
    * `onUse` adds a *Use this* button that closes the card and hands the code back. Feature-detect
    * with `canOpenRecord()`.
+   * @since 5.4.0
    */
   openRecord(code: string, opts?: { domain?: 'items' | 'vehicles' | string; onUse?: (code: string) => void; useLabel?: string }): void;
 
   // ── native pickers (Promise; also accept opts.onPick / opts.onCancel) ──
+  /** @since 4.0.2 */
   pickItem(opts?: { domain?: 'items' | 'vehicles'; category?: string; title?: string; onPick?: (it: any) => void; onCancel?: () => void }): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
+  /** @since 4.0.2 */
   pickVehicle(opts?: any): Promise<{ id: string; code: string; name: string; image: string | null } | null>;
+  /** @since 4.0.2 */
   pickPlayer(opts?: { title?: string }): Promise<{ steamId: string; name: string } | null>;
 
   /**
@@ -4296,68 +5328,108 @@ export interface SSA {
    * ⚠ Going to the map and back is a TAB SWITCH, so your tab is re-rendered. The promise settles
    * after that re-render: keep the point in your plugin's own state and read it in `render()`,
    * never in a node you captured before the call.
+   * @since 5.23.0
    */
   pickOnMap(opts?: { note?: string; ground?: boolean; onPick?: (p: SSAMapPoint) => void; onCancel?: () => void }): Promise<SSAMapPoint | null>;
 
   // ── data helpers (same endpoints the panel uses) ──
+  /** @since 4.0.2 */
   onlinePlayers(): Promise<any[]>;
+  /** @since 4.0.2 */
   itemInfo(codes: string | string[]): Promise<any[]>;
+  /** @since 4.0.2 */
   searchItems(query: string, opts?: { domain?: 'items' | 'vehicles' }): Promise<any[]>;
 
   // ── capability flags (feature-detect before wiring an affordance up) ──
+  /** @since 4.0.2 */
   canOpenPlayer(): boolean;
+  /** @since 4.0.2 */
   canShowOnMap(): boolean;
+  /** @since 4.0.2 */
   canItemPreview(): boolean;
+  /** @since 4.0.2 */
   canPickItem(): boolean;
+  /** @since 5.4.0 */
   canOpenRecord(): boolean;
+  /** @since 5.23.0 */
   canPickOnMap(): boolean;
 }
 
 // ── Public Field Console frontend: window.FC (payload/fc/plugin.js) ───────────
 // Mirrors SSA minus the admin-only bits. Feed it with PUBLIC routes (host.routes.public.*).
 export interface FC {
-  /** The Field Console SDK contract, `1`. Feature-detect newer calls: `typeof FC.apiClient === 'function'`. */
+  /** The Field Console SDK contract, `1`. Feature-detect newer calls: `typeof FC.apiClient === 'function'`.
+   * @since 4.0.2
+   */
   version: number;
+  /** @since 4.0.2 */
   ready(fn: (fc: FC) => void): void;
-  /** `icon` is a sprite id of the console (`i-users`, `i-map`, …). Namespace `id`: an id the console already ships takes that screen over. */
+  /** `icon` is a sprite id of the console (`i-users`, `i-map`, …). Namespace `id`: an id the console already ships takes that screen over.
+   * @since 4.0.2
+   */
   registerTab(opts: { id: string; label: string; icon?: string; order?: number; render: (el: HTMLElement) => void }): void;
+  /** @since 4.0.2 */
   views: { mount(anchor: string | HTMLElement, render: (el: HTMLElement) => void, opts?: { when?: () => boolean }): () => void; replace(viewId: string, render: (el: HTMLElement) => void): void };
+  /** @since 4.0.2 */
   el(tag: string, props?: Record<string, any>, kids?: any): HTMLElement;
+  /** @since 4.0.2 */
   mount(target: string | HTMLElement, content: string | HTMLElement): HTMLElement | null;
+  /** @since 4.0.2 */
   toast(msg: string, kind?: string): void;
+  /** @since 4.0.2 */
   modal(opts: { title?: string; body: string | HTMLElement; actions?: Array<{ label: string; primary?: boolean; run?: () => boolean | void }>; dismissable?: boolean; onClose?: () => void }): { close: () => void; el: HTMLElement; body: HTMLElement };
-  /** Answers `false` however the reader closes it other than OK. */
+  /** Answers `false` however the reader closes it other than OK.
+   * @since 4.0.2
+   */
   confirm(msg: string, opts?: { title?: string; okLabel?: string; cancelLabel?: string }): Promise<boolean>;
+  /** @since 4.0.2 */
   theme: { setTokens(tokens: Record<string, string>, opts?: { selector?: string }): void; injectCss(css: string): void };
-  /** The console loads your `web.i18n` files (the panel's) before your script runs. `add()` merges strings by hand. */
+  /** The console loads your `web.i18n` files (the panel's) before your script runs. `add()` merges strings by hand.
+   * @since 4.0.2
+   */
   i18n: { add(lang: string, dict: Record<string, string>): void; override(lang: string, dict: Record<string, string>): void };
+  /** @since 4.0.2 */
   t(key: string, fallback?: string, vars?: Record<string, any>): string;
+  /** @since 4.0.2 */
   lang(): string;
   /**
    * Your public route (`/api/plugin-public/<id>/…`). Does NOT reject on a non-2xx: a 403 resolves with
    * the route's body. Resolves which plugin is asking at CALL time, so from a click handler or a timer
    * it asks `/_/` instead. Prefer `apiClient()`.
+   * @since 4.0.2
    */
   api<T = any>(path: string, opts?: RequestInit): Promise<T>;
   /**
    * The client to hold, the Field Console's twin of `SSA.apiClient()`. Call it once at the top of your
    * script. It REJECTS on a non-2xx with `{ status, code, reason?, body }`, and refuses with
    * `plugin_unresolved` if it was captured outside your script. Feature-detect it on an older manager.
+   * @since 5.53.0
    */
   apiClient(): <T = any>(path: string, opts?: RequestInit) => Promise<T>;
-  /** One sentence for a rejection: the route's own `reason` first. */
+  /** One sentence for a rejection: the route's own `reason` first.
+   * @since 5.53.0
+   */
   apiError(err: { status?: number; code?: string; reason?: string } | Error | null, fallback?: string): string;
+  /** @since 4.0.2 */
   on(evt: string, fn: (payload: any) => void): () => void;
+  /** @since 4.0.2 */
   emit(evt: string, payload?: any): void;
+  /** @since 4.0.2 */
   provide(name: string, api: any): void;
+  /** @since 4.0.2 */
   consume<T = any>(name: string): T | null;
+  /** @since 4.0.2 */
   go(viewId: string): void;
   /** Who is signed in on this page, from the session it already read (no request); null for nobody.
-   *  `FC.on('visitor', fn)` hears every later answer. The server still decides: use `host.routes.player`. */
+   *  `FC.on('visitor', fn)` hears every later answer. The server still decides: use `host.routes.player`.
+   * @since 5.53.0
+   */
   visitor(): { steamId: string | null; discordId: string | null; name: string | null; via: 'discord' | 'steam' } | null;
   /** The calls that need to know which plugin is asking, bound to yours. Take it at load (or in
    *  `FC.ready`) and use it after an `await`, when the console no longer knows who is calling.
-   *  Manager 5.53+; feature-detect with `typeof FC.self === 'function'`. */
+   *  Manager 5.53+; feature-detect with `typeof FC.self === 'function'`.
+   * @since 5.53.0
+   */
   self(): { id: string; registerTab(opts: Parameters<FC['registerTab']>[0]): void; api: FC['api']; apiClient: FC['apiClient'] };
 }
 
