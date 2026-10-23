@@ -20,7 +20,7 @@ skeleton.
 ## Anatomy
 
 ```
-ue4ss-mod-example/
+ue4ss-example/
   plugin.json                  manifest (type "ue4ss"), only for the manager-plugin form
   README.md                    shown in the card's Readme viewer
   icon.png                     209x209 card icon

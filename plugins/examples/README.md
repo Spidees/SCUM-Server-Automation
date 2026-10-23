@@ -6,7 +6,7 @@ Copy one, make it yours, and upload it under the kind in the second column.
 | Example | Upload as | What it is |
 |---|---|---|
 | [`hello-plugin`](hello-plugin) | Manager plugin | A complete manager plugin: config, events, routes, the game database, in-game chat, Discord, an admin tab and a Field Console tab. |
-| [`ue4ss-mod-example`](ue4ss-mod-example) | UE4SS mod | A small, safe Lua mod that reads a live game object on the game thread. Ships as a plain mod folder or wrapped as a manager plugin. |
+| [`ue4ss-example`](ue4ss-example) | UE4SS mod | A small, safe Lua mod that reads a live game object on the game thread. Ships as a plain mod folder or wrapped as a manager plugin. |
 | [`server-pak-example`](server-pak-example) | Server pak | How to cook, pack and publish a `.pak` the dedicated server loads. |
 | [`client-pak-example`](client-pak-example) | Client pak | How to cook, pack and publish a `.pak` a player's game loads, and what players need the SCUMSA Launcher for. |
 | [`zone-list-tool`](zone-list-tool) | Tool | A Python script that lists the custom zones in a server's save, read-only. |

@@ -141,7 +141,7 @@ Browse and get them in-app, or on the [Plugins page at scumsa.com](https://scums
 Anyone can write plugins against a small, documented API, with no access to the manager's source needed. Start from the examples in [**`plugins/examples/`**](plugins/examples), one for every kind the [library](https://scumsa.com/mods/) takes:
 
 - [**`hello-plugin`**](plugins/examples/hello-plugin): a complete manager plugin that shows every feature end to end. It covers config, events, HTTP routes, the game and manager databases, item and vehicle images, in-game chat and `/commands`. It also covers the SSA Bridge, Discord, scheduling, an admin tab and a public Field Console tab.
-- [**`ue4ss-mod-example`**](plugins/examples/ue4ss-mod-example): a small, safe UE4SS (Lua) mod skeleton for in-game work.
+- [**`ue4ss-example`**](plugins/examples/ue4ss-example): a small, safe UE4SS (Lua) mod skeleton for in-game work.
 - [**`server-pak-example`**](plugins/examples/server-pak-example) and [**`client-pak-example`**](plugins/examples/client-pak-example): how to make, pack and publish a pak for the server or for players' games.
 - [**`zone-list-tool`**](plugins/examples/zone-list-tool): a small read-only tool, and how to share one on scumsa.com/tools.
 - [**`ssa-plugin-sdk.d.ts`**](plugins/examples/ssa-plugin-sdk.d.ts): TypeScript typings for the whole `host` / `SSA` / `FC` surface (editor autocomplete).
