@@ -73,8 +73,11 @@ hello-plugin/
 - `apiVersion` — the plugin API you target (current: `1`).
 - `minManagerVersion` / `maxManagerVersion` — optional manager version range. The minimum is the newest
   manager that ships every host and SDK name you call without a feature test; a name an older manager
-  lacks is `undefined`, and calling it throws.
+  lacks is `undefined`, and calling it throws. Every declaration in `ssa-plugin-sdk.d.ts` carries an
+  `@since` tag: use the highest one among the calls you make.
 - `dependencies` — other plugins that must be active first (with optional versions, below).
+- `capabilities` — what the plugin asks the bridge for. This one sends chat lines (`chat`), runs two
+  admin commands (`cmd:Announce`, `cmd:SpawnItem`) and reads the live player list (`live:read`).
 - `main` — backend entry under `payload/`; omit for a frontend-only plugin.
 - `web` — admin UI: `{ "script": "web/plugin.js", "style": "web/plugin.css", "i18n": "web/i18n" }`. `i18n` is a folder with one flat `<lang>.json` per language and no `en.json`: English is the fallback written at each `SSA.t('pl.<id>.key', 'English')` call.
 - `fc` — public Field Console UI: `{ "script": "fc/plugin.js", "style": "fc/plugin.css" }`. Add `"requireLogin": true` to keep the plugin's tabs behind the console's sign-in card; protect the data itself with `host.routes.player.*`, because the script and style still load for everyone.
@@ -94,7 +97,7 @@ id or an object with a `min` / `max` range (`major.minor.patch`):
     { "id": "embed-editor", "min": "1.2.0" },
     { "id": "some-lib", "min": "2.0.0", "max": "2.9.9" }
   ],
-  "minManagerVersion": "3.5.0",            // gate against the MANAGER version too
+  "minManagerVersion": "6.0.0",            // gate against the MANAGER version too
   "apiVersion": 1                          // and against the plugin API version
 }
 ```
