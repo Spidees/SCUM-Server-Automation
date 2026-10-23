@@ -11,8 +11,19 @@ Copy one, make it yours, and upload it under the kind in the second column.
 | [`client-pak-example`](client-pak-example) | Client pak | How to cook, pack and publish a `.pak` a player's game loads, and what players need the SCUMSA Launcher for. |
 | [`zone-list-tool`](zone-list-tool) | Tool | A Python script that lists the custom zones in a server's save, read-only. |
 | [`ssa-plugin-sdk.d.ts`](ssa-plugin-sdk.d.ts) | | TypeScript typings for the plugin `host`, `SSA` and `FC` APIs, for editor autocomplete. |
+| [`mock-host.js`](mock-host.js) | | A stand-in for the plugin `host`, so a backend can be tested with plain Node. [`test-hello-plugin.js`](test-hello-plugin.js) is the example plugin's tests written on it. |
 
 The pak examples hold no pak: a real one comes from your own cooked content.
+
+## Testing a plugin
+
+Copy `test-hello-plugin.js` next to your plugin and change what the plugin should answer. It needs Node 20 or newer and no packages:
+
+```
+node plugins/examples/test-hello-plugin.js [path/to/your-plugin]
+```
+
+The mock knows only the names in `ssa-plugin-sdk.d.ts`. Reading any other name throws, because the manager does not have it either, and the game and the bridge answer only what your test tells them to. The options are listed at the top of `mock-host.js`. Passing on the mock does not prove the game does what you asked, so try the plugin on your own server too.
 
 ## Uploading
 

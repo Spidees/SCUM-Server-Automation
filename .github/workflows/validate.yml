@@ -21,3 +21,5 @@ jobs:
         run: node plugins/tools/test-validate-plugins.js
       - name: Official plugins and examples
         run: node plugins/tools/validate-plugins.js plugins/ssa-plugins plugins/examples
+      - name: Example plugin tests
+        run: node plugins/examples/test-hello-plugin.js

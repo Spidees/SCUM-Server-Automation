@@ -20,7 +20,7 @@ What it checks:
 
 It ends with `valid: ...` and exit code 0, or a list of findings and exit code 1. Warnings do not fail the run unless you add `--strict`. `--quiet` prints only the plugins that have something to say.
 
-Passing means the plugin is shaped the way the manager and the [library](https://scumsa.com/mods/) expect. It does not run your code, so test that in your own manager too.
+Passing means the plugin is shaped the way the manager and the [library](https://scumsa.com/mods/) expect. It does not run your code: test that with the mock host in [`plugins/examples`](../examples#testing-a-plugin), and in your own manager too.
 
 ## test-validate-plugins.js
 
