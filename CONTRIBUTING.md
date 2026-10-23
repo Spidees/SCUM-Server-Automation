@@ -4,7 +4,7 @@ Thank you for helping. This page says what lives here, how to build a plugin, ho
 
 ## What is in this repository
 
-- **Releases.** The manager in `manager/`, the SSA Bridge in `ssa_bridge/`, the SSA Reporter in `ssa_reporter/` and the SCUMSA Launcher in `launcher/`. These are built and published by the maintainer.
+- **Releases.** The manager, the SSA Bridge, the SSA Reporter and the SCUMSA Launcher are files on the [Releases page](https://github.com/Spidees/SCUM-Server-Automation/releases). Their folders here, `manager/`, `ssa_bridge/`, `ssa_reporter/` and `launcher/`, name the current version, the download link and its SHA-256. These are built and published by the maintainer.
 - **Official plugins.** The source of every official plugin in `plugins/ssa-plugins/`, with its packed zip in `plugins/ssa-plugins/dist/`.
 - **Examples and the SDK.** Starting points for your own work in `plugins/examples/`, and the typings in `plugins/examples/ssa-plugin-sdk.d.ts`. The bridge SDK is in `ssa_bridge/sdk/`.
 - **Tools.** The plugin validator in `plugins/tools/`.

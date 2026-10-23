@@ -63,7 +63,9 @@ More screenshots on [**scumsa.com/features.php**](https://scumsa.com/features.ph
 
 ## ⬇ Download
 
-The manager lives in [**`manager/`**](manager). Grab the `.zip`, unpack it, and follow the [Getting started guide](https://scumsa.com/docs). The always-current release and the full changelog are on [scumsa.com](https://scumsa.com).
+Every download is on the [**Releases page**](https://github.com/Spidees/SCUM-Server-Automation/releases): the manager, the bridge, the Reporter and the launcher, each version with its own release. The newest manager is at [**releases/latest**](https://github.com/Spidees/SCUM-Server-Automation/releases/latest). Grab the `.zip`, unpack it, and follow the [Getting started guide](https://scumsa.com/docs). The full changelog is on [scumsa.com](https://scumsa.com).
+
+Each folder here ([`manager/`](manager), [`ssa_bridge/`](ssa_bridge), [`ssa_reporter/`](ssa_reporter), [`launcher/`](launcher)) names its current version, the download link and the file's SHA-256, so you can check what you downloaded.
 
 The filename tells you which kind of build it is:
 
@@ -74,7 +76,7 @@ The filename tells you which kind of build it is:
 
 ### 🔌 The SSA Bridge, on its own
 
-[**`ssa_bridge/`**](ssa_bridge) holds the **SSA Bridge** as a standalone download: the in-game mod that lets anything talk to a running SCUM server. Spawns, teleports, admin commands, and reads of the live world that no log file and no save can give you. A file named `unstable_…` is a test build.
+The **SSA Bridge** is the in-game mod that lets anything talk to a running SCUM server: spawns, teleports, admin commands, and reads of the live world that no log file and no save can give you. It is a standalone download on the [Releases page](https://github.com/Spidees/SCUM-Server-Automation/releases), and [**`ssa_bridge/`**](ssa_bridge) names its current version and checksum. A file named `unstable_…` is a test build.
 
 **It is free, and it does not need the manager.** Every module, command and read works on its own. Unpack it into your server's `SCUM/Binaries/Win64/` and it runs. UE4SS is in the archive, so there is nothing else to fetch. A licence changes exactly one thing: whether joining players see a single chat line naming the bridge.
 
@@ -82,11 +84,11 @@ The filename tells you which kind of build it is:
 
 ### 📡 The SSA Reporter, for the server browser
 
-[**`ssa_reporter/`**](ssa_reporter) holds the **SSA Reporter**: a small in-game mod that tells [scumsa.com](https://scumsa.com) your server's name, player count, version, game time and uptime once a minute. Your listing in the server browser is then live and yours to claim, even when the official master list is stale or wrong. Unpack it into your server's `SCUM/Binaries/Win64/`, paste the token from your scumsa account page into its config, restart. It sends nothing from the save and no player names. Run the bridge or the Reporter, not both: the bridge has the same report built in.
+The **SSA Reporter** is a small in-game mod, on the [Releases page](https://github.com/Spidees/SCUM-Server-Automation/releases) with its version and checksum in [**`ssa_reporter/`**](ssa_reporter). It tells [scumsa.com](https://scumsa.com) your server's name, player count, version, game time and uptime once a minute. Your listing in the server browser is then live and yours to claim, even when the official master list is stale or wrong. Unpack it into your server's `SCUM/Binaries/Win64/`, paste the token from your scumsa account page into its config, restart. It sends nothing from the save and no player names. Run the bridge or the Reporter, not both: the bridge has the same report built in.
 
 ### 🎮 The SCUMSA Launcher, for players
 
-[**`launcher/`**](launcher) holds the **SCUMSA Launcher** installer, free for every SCUM player:
+The **SCUMSA Launcher** installer is on the [Releases page](https://github.com/Spidees/SCUM-Server-Automation/releases), with its version and checksum in [**`launcher/`**](launcher). It is free for every SCUM player:
 
 - **Every SCUM server** with your real ping over the game's own connection. Filter by mode, region, country, mods and free slots.
 - **One press to join.** Your favourites, recent servers and characters come from your own game.
