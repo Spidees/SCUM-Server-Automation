@@ -301,7 +301,7 @@ export type BridgeErrorCode =
   | 'no_ground'
   /** Nothing solid below that point. */
   | 'no ground below that height'
-  /** Nobody online to run the command through. `reasonCode` is `needs_player` or `executor_offline`. */
+  /** Nobody online to run the command through. `reasonCode` is `needs_player`, `executor_offline`, or `executor_in_drone` (the named player is flying the admin drone and has no prisoner). */
   | 'no_executor'
   /** A `batch` where none of the commands ran. The reason carries the first command's own words, and `result` the counts. */
   | 'nothing_ran'
@@ -394,6 +394,8 @@ export interface PlayerRow {
   x?: number;
   y?: number;
   z?: number;
+  /** True while the player flies the admin drone; the position is then the drone's. Absent from an older bridge. */
+  inDrone?: boolean;
 }
 
 export interface CmdResult {
@@ -563,7 +565,7 @@ export declare function bareCommand(command: string): string;
 
 // ── GENERATED: the module vocabulary ───────────────────────────────────────────────────────────
 //
-// 50 modules, 223 reads, 286 writes, 34 retired verbs, 386 settings.
+// 51 modules, 226 reads, 287 writes, 34 retired verbs, 393 settings.
 // Produced from the bridge's own source. Do not edit by hand.
 
 /** The words the despawn module's first field accepts. */
@@ -1271,6 +1273,23 @@ export type ActionsWrite_Sneeze =
 export type ActionsWrite_Spawnscreen =
   | `${string}:spawnscreen`
   | `${string}:spawnscreen:${string}`;
+
+/**
+ * `<steamid>:spectate:off`
+ *
+ * - `steamid`
+ * - `off`: the word `off`
+ * - also `<steamid>:spectate:<steamid>`
+ *
+ * Needs: That player online. Acts on the named player, who must be online. Note: the viewer must be a server admin, and the player to watch must be online too.
+ * After a restart: Does not apply. Changes nothing that a restart could keep, such as a message or a read.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * In-game actions, `module_command`.
+ */
+export type ActionsWrite_Spectate =
+  | `${string}:spectate`
+  | `${string}:spectate:${string}`;
 
 /**
  * `<steamId>:squadcreate:<v>`
@@ -5159,6 +5178,34 @@ export type RespawnWrite_Set =
   | `set:${string}:${string}:${string}`;
 
 /**
+ * `refused:since:<seq>`
+ *
+ * - `since`: the word `since`
+ * - `seq`
+ *
+ * Action rules, `module_data`.
+ */
+export type RulesRead_Refused =
+  | "refused"
+  | `refused:since:${string}`;
+
+/**
+ * - `rules`
+ *
+ * Action rules, `module_data`.
+ */
+export type RulesRead_Rules =
+  | "rules";
+
+/**
+ * - `seen`
+ *
+ * Action rules, `module_data`.
+ */
+export type RulesRead_Seen =
+  | "seen";
+
+/**
  * - `categories`
  *
  * Live server settings, `module_data`.
@@ -7283,7 +7330,7 @@ export type ZonesWrite_Shape =
  */
 export interface ModuleVocabulary {
   /**
-   * In-game actions · 18 settings
+   * In-game actions · 19 settings
    *
    * Reads (`module_data`):
    * - `state:<steamid>`
@@ -7327,6 +7374,7 @@ export interface ModuleVocabulary {
    * - `<steamid>:silence:<hours>[:<channel>]`
    * - `<steamId>:sneeze:<intensity>`
    * - `<steamId>:spawnscreen:<withLoadout>`
+   * - `<steamid>:spectate:off`
    * - `<steamId>:squadcreate:<v>`
    * - `<steamId>:squaddemote:<v>`
    * - `<steamId>:squadjoin:<v>`
@@ -7388,6 +7436,7 @@ export interface ModuleVocabulary {
       | ActionsWrite_Silence
       | ActionsWrite_Sneeze
       | ActionsWrite_Spawnscreen
+      | ActionsWrite_Spectate
       | ActionsWrite_Squadcreate
       | ActionsWrite_Squaddemote
       | ActionsWrite_Squadjoin
@@ -7705,7 +7754,7 @@ export interface ModuleVocabulary {
     retired: never;
   };
   /**
-   * Live game events · 12 settings · read-only
+   * Live game events · 14 settings · read-only
    *
    * Reads (`module_data`):
    * - `events:since:<seq>`
@@ -7781,7 +7830,7 @@ export interface ModuleVocabulary {
     retired: never;
   };
   /**
-   * Move items · 11 settings
+   * Move items · 12 settings
    *
    * Reads (`module_data`):
    * - `last`
@@ -8363,6 +8412,22 @@ export interface ModuleVocabulary {
     retired: never;
   };
   /**
+   * Action rules · 3 settings · read-only
+   *
+   * Reads (`module_data`):
+   * - `refused:since:<seq>`
+   * - `rules`
+   * - `seen`
+   */
+  "rules": {
+    data:
+      | RulesRead_Refused
+      | RulesRead_Rules
+      | RulesRead_Seen;
+    command: never;
+    retired: never;
+  };
+  /**
    * Live server settings · 1 settings
    *
    * Reads (`module_data`):
@@ -8941,6 +9006,8 @@ export interface ModuleSettingsMap {
     squads?: boolean;
     /** Stop a player talking in chat. Stops a player chatting in local, global or squad chat, for some hours or until lifted. */
     silence?: boolean;
+    /** Watch another player's view. Lets a server admin see what another online player sees. Their own prisoner stays put, open to anything nearby. */
+    spectate?: boolean;
   };
   "ai": {
     /** Read what creatures are doing, and allow the changes below. Reports each creature's stance, target, health and position. Creatures only exist near players. (default false) */
@@ -9171,6 +9238,10 @@ export interface ModuleSettingsMap {
     containers?: boolean;
     /** Kills inside competitive events. Reports a kill inside one of the game's four competitive modes, naming both players and where the victim died. (default true) */
     eventkills?: boolean;
+    /** Explosions. Reports each explosion: where, which grenade, charge, mine or round, who set it off, and the nearest base. */
+    explosives?: boolean;
+    /** Nearest base within (metres). An explosion this close to a base names that base and how far away it is. 0 skips the lookup. (default 100, min 0, max 2000, applies when `explosives`) */
+    explosiveBaseRadius?: number;
     /** Resolve player names. Puts the player's name in every event above instead of only a profile id, at one extra lookup per event. (default true) */
     names?: boolean;
   };
@@ -9221,6 +9292,8 @@ export interface ModuleSettingsMap {
     wear?: boolean;
     /** Put an item on a shoulder. Slings an item over a player's left or right shoulder, the way a player carries a rifle. (default false) */
     shoulder?: boolean;
+    /** Take an item off a shoulder. Takes a slung item off a player's shoulder, into their bag or onto the ground at their feet. (default false) */
+    unshoulder?: boolean;
     /** Most item actors to walk in one call. How many item actors one call may search. A search that hits this says it was cut short. (default 20000, min 500, max 20000) */
     maxItems?: number;
   };
@@ -9528,6 +9601,14 @@ export interface ModuleSettingsMap {
     /** Change respawn timers. Lets the panel and plugins set or clear those locks. (applies when `enabled`) */
     write?: boolean;
   };
+  "rules": {
+    /** Refuse actions by rule. Stops a player's action before the game runs it, by the rules switched on below. (default false) */
+    enabled?: boolean;
+    /** Dial locks only on doors. Refuses fitting a dial lock to anything but a door, such as a chest, wardrobe or vehicle. (default false, applies when `enabled`) */
+    dialLockDoorsOnly?: boolean;
+    /** No destroying storage. Refuses chopping or destroying a chest, wardrobe or other storage, the owner's own too. Vehicle storage is untouched. (default false, applies when `enabled`) */
+    noStorageDestroy?: boolean;
+  };
   "settings": {
     /** Read live server settings. Reads a server setting's live value and lists names, types and sections. Change settings in ServerSettings.ini. */
     enabled?: boolean;
@@ -9799,6 +9880,8 @@ export interface ReadingActions_State {
   found?: boolean;
   /** Absent when the game did not give it. On each item of a list. */
   id?: number;
+  /** Online, flying the admin drone, with no prisoner. Absent when the game did not give it. */
+  inDrone?: boolean;
   /** Absent when the game did not give it. */
   item?: boolean;
   /** Absent when the game did not give it. Type not readable from the source. */
@@ -11601,6 +11684,8 @@ export interface ReadingEntities_Entity {
   unrealSaves?: unknown;
   /** Absent when the game did not give it. */
   value?: number | string;
+  /** Absent when the game did not give it. */
+  valueStr?: string;
   /** Absent when the game did not give it. Type not readable from the source. */
   wholeByte?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
@@ -11744,6 +11829,8 @@ export interface ReadingEvents_Watches {
   /** On each item of a list. */
   recorded?: number;
   resolved?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  source?: string;
   /** On each item of a list. */
   state?: string;
   /** On each item of a list. Type not readable from the source. */
@@ -12163,11 +12250,13 @@ export interface ReadingGive_Last {
   ageMs?: number;
   class?: string;
   confirmed?: number;
+  /** The whole entity id as text, which stays exact in JavaScript and works after eid:. Absent when the game did not give it. */
+  eidStr?: string;
   /** Absent when the game did not give it. */
   entityHi?: number;
   /** Absent when the game did not give it. */
   entityLo?: number;
-  /** Absent when the game did not give it. */
+  /** Unsafe in JavaScript, since JSON.parse rounds it above 2^53; read eidStr or entityLo instead. Absent when the game did not give it. */
   entityPacked?: number;
   /** Where the item was BEFORE the move, floor, inventory, corpse or attachment. Absent when the game did not give it. */
   foundIn?: string;
@@ -12646,6 +12735,8 @@ export interface ReadingItems_Inventory {
   condition?: number;
   count?: number;
   /** Absent when the game did not give it. */
+  eidStr?: string;
+  /** Absent when the game did not give it. */
   entityHi?: number;
   /** Absent when the game did not give it. */
   entityLo?: number;
@@ -12757,6 +12848,8 @@ export interface ReadingItems_Near {
   condition?: number;
   count?: number;
   /** Absent when the game did not give it. */
+  eidStr?: string;
+  /** Absent when the game did not give it. */
   entityHi?: number;
   /** Absent when the game did not give it. */
   entityLo?: number;
@@ -12835,6 +12928,8 @@ export interface ReadingItems_Traps {
   /** Absent when the game did not give it. On each item of a list. */
   defuseAttemptsLeft?: number;
   destroyedRows?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  eidStr?: string;
   /** Absent when the game did not give it. On each item of a list. */
   entityHi?: number;
   /** Absent when the game did not give it. On each item of a list. */
@@ -14613,6 +14708,8 @@ export interface ReadingQuests_Givers {
   /** Absent when the game did not give it. On each item of a list. */
   uniqueId?: number;
   /** Absent when the game did not give it. On each item of a list. */
+  uniqueIdStr?: string;
+  /** Absent when the game did not give it. On each item of a list. */
   x?: number;
   /** Absent when the game did not give it. On each item of a list. */
   y?: number;
@@ -15314,6 +15411,104 @@ export interface ReadingRespawn_Timers {
   /** Absent when the game did not give it. On each item of a list. */
   secondsLeft?: number;
   steamId?: string;
+}
+
+/**
+ * Keys the Action rules read `refused:since:<seq>` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingRules_Refused {
+  /** Unit: ms. */
+  agoMs?: number;
+  /** Type not readable from the source. */
+  call?: unknown;
+  droppedBeforeDrain?: number;
+  /** Absent when the game did not give it. */
+  element?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  item?: unknown;
+  latest?: number;
+  oldest?: number;
+  /** Absent when the game did not give it. */
+  refused?: unknown[];
+  /** Absent when the game did not give it. Type not readable from the source. */
+  rule?: unknown;
+  /** Absent when the game did not give it. */
+  seq?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  steamId?: unknown;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  target?: unknown;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  type?: unknown;
+  window?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  would?: unknown;
+  /** Absent when the game did not give it. */
+  x?: number;
+  /** Absent when the game did not give it. */
+  y?: number;
+  /** Absent when the game did not give it. */
+  z?: number;
+}
+
+/**
+ * Keys the Action rules read `rules` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingRules_Rules {
+  /** On each item of a list. Type not readable from the source. */
+  call?: unknown;
+  calls?: unknown[];
+  droppedBeforeDrain?: number;
+  /** On each item of a list. */
+  matched?: number;
+  /** On each item of a list. Type not readable from the source. */
+  on?: unknown;
+  refused?: number;
+  /** On each item of a list. Type not readable from the source. */
+  rule?: unknown;
+  rules?: unknown[];
+  /** On each item of a list. */
+  seen?: number;
+  /** On each item of a list. Type not readable from the source. */
+  state?: unknown;
+  /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
+  why?: unknown;
+}
+
+/**
+ * Keys the Action rules read `seen` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingRules_Seen {
+  /** Unit: ms. */
+  agoMs?: number;
+  /** Type not readable from the source. */
+  call?: unknown;
+  /** Absent when the game did not give it. */
+  element?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  item?: unknown;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  refused?: unknown;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  rule?: unknown;
+  seen?: unknown[];
+  /** Absent when the game did not give it. */
+  seq?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  steamId?: unknown;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  target?: unknown;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  type?: unknown;
+  window?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  would?: unknown;
+  /** Absent when the game did not give it. */
+  x?: number;
+  /** Absent when the game did not give it. */
+  y?: number;
+  /** Absent when the game did not give it. */
+  z?: number;
 }
 
 /**
@@ -17695,6 +17890,8 @@ export interface ReadingWildlife_Feeders {
   count?: number;
   /** Absent when the game did not give it. */
   damageOnLure?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  eidStr?: string;
   /** Absent when the game did not give it. */
   emptyNote?: string;
   /** Absent when the game did not give it. On each item of a list. */
@@ -18741,6 +18938,11 @@ export interface ModuleReadings {
   "respawn": {
     "timers": ReadingRespawn_Timers;
   };
+  "rules": {
+    "refused": ReadingRules_Refused;
+    "rules": ReadingRules_Rules;
+    "seen": ReadingRules_Seen;
+  };
   "settings": {
     "categories": ReadingSettings_Categories;
     "changes": ReadingSettings_Changes;
@@ -19037,6 +19239,10 @@ export interface ModuleReadPairs {
     | [ResourcesRead_Stations, ReadingResources_Stations];
   "respawn":
     | [RespawnRead_Timers, ReadingRespawn_Timers];
+  "rules":
+    | [RulesRead_Refused, ReadingRules_Refused]
+    | [RulesRead_Rules, ReadingRules_Rules]
+    | [RulesRead_Seen, ReadingRules_Seen];
   "settings":
     | [SettingsRead_Categories, ReadingSettings_Categories]
     | [SettingsRead_Changes, ReadingSettings_Changes]
@@ -19238,6 +19444,7 @@ export interface ModuleWriteNeeds {
     "silence": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "sneeze": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "spawnscreen": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
+    "spectate": { needs: "player-target"; persists: "n-a"; creates: "none" };
     "squadcreate": { needs: "player-target"; persists: "unmeasured"; creates: "game-route"; persistable: false };
     "squaddemote": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
     "squadjoin": { needs: "player-target"; persists: "unmeasured"; creates: "none"; persistable: false };
