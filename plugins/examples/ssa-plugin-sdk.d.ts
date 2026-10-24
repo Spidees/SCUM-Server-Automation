@@ -2460,15 +2460,18 @@ export interface Host {
      * @since 5.1.0
      */
     takeFromContainer(containerId: string, itemId: string, steamId: string): Promise<BridgeCommandResult>;
-    /** Move an item between containers. Made through a player's inventory component, so it needs at
-     *  least one player spawned in even though no player is involved in the outcome.
+    /** Move an item between containers. Made through the inventory component of a player standing at
+     *  the container (within 1.8 m): the one `steamId` names, else the nearest one. Refused with the
+     *  distance when nobody is that close. `steamId` is accepted by the manager release after 6.1.0.
      * @since 5.1.0
      */
-    moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string): Promise<BridgeCommandResult>;
-    /** Destroy one item inside a container. No undo.
+    moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string, steamId?: string): Promise<BridgeCommandResult>;
+    /** Destroy one item inside a container. No undo. Acts through a player standing at the container,
+     *  like `moveBetweenContainers`; name the one who has it open with `steamId` (the manager release
+     *  after 6.1.0).
      * @since 5.1.0
      */
-    destroyContainerItem(containerId: string, itemId: string): Promise<BridgeCommandResult>;
+    destroyContainerItem(containerId: string, itemId: string, steamId?: string): Promise<BridgeCommandResult>;
 
     // ── placing your own items and containers ────────────────────────────────────────────────────
     /** Put one of the game's own items or containers at x, y, z (centimetres), optionally holding
