@@ -190,7 +190,7 @@ export interface Host {
     byName(name: string): any | null;
     /**
      * Everyone online right now. Each row has the named fields `steamId`, `name` and `playerName`; the raw
-     * columns (`SteamID`, `PlayerName`, …) are still on it. The named fields exist from the release after 6.1.0,
+     * columns (`SteamID`, `PlayerName`, …) are still on it. The named fields exist from 6.2.0,
      * so on an older manager read `SteamID` and `PlayerName`.
      * @since 5.0.3
      */
@@ -2473,13 +2473,12 @@ export interface Host {
     takeFromContainer(containerId: string, itemId: string, steamId: string): Promise<BridgeCommandResult>;
     /** Move an item between containers. Made through the inventory component of a player standing at
      *  the container (within 1.8 m): the one `steamId` names, else the nearest one. Refused with the
-     *  distance when nobody is that close. `steamId` is accepted by the manager release after 6.1.0.
+     *  distance when nobody is that close. `steamId` is accepted by manager 6.2.0.
      * @since 5.1.0
      */
     moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string, steamId?: string): Promise<BridgeCommandResult>;
     /** Destroy one item inside a container. No undo. Acts through a player standing at the container,
-     *  like `moveBetweenContainers`; name the one who has it open with `steamId` (the manager release
-     *  after 6.1.0).
+     *  like `moveBetweenContainers`; name the one who has it open with `steamId` (manager 6.2.0).
      * @since 5.1.0
      */
     destroyContainerItem(containerId: string, itemId: string, steamId?: string): Promise<BridgeCommandResult>;
