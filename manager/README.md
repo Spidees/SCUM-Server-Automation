@@ -10,10 +10,10 @@ The download is a file on the [Releases page](https://github.com/Spidees/SCUM-Se
 |---|---|
 | Version | **6.2.0** |
 | Download | [SCUM-Server-Automation-v6.2.0.zip](https://github.com/Spidees/SCUM-Server-Automation/releases/download/manager-v6.2.0/SCUM-Server-Automation-v6.2.0.zip) |
-| Size | 86,383,235 bytes (82.4 MiB) |
-| SHA-256 | `175c27481e2f362dcf95966bd99a45d6067bbacfae5a2935d10297ecf20b0490` |
+| Size | 86,281,771 bytes (82.3 MiB) |
+| SHA-256 | `99517154c337b669890a8ea84167dca86fcd7f56dab6c345ab8d16b07feac5c7` |
 | Release | [manager-v6.2.0](https://github.com/Spidees/SCUM-Server-Automation/releases/tag/manager-v6.2.0) |
-| Source commit | `5a0c48fac1e79199175e4c7b2b721f380c823883` |
+| Source commit | `5e9f50316716c53b3ea4d7bfa6457947ffff7c30` |
 
 Unpack the zip and follow the [Getting started guide](https://scumsa.com/docs). After that the manager updates itself from scumsa.com.
 
