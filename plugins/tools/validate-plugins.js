@@ -46,6 +46,8 @@ const RAW_ACTIONS = ['cmd', 'batch', 'chat', 'console', 'module_config', 'module
   'setcmdprefix', 'spawn', 'groundz', 'list', 'players', 'where', 'name', 'tracediag', 'perf', 'snapshot',
   'status', 'modules', 'subscribe'];
 const SAVE_WRITE = 'save:write';
+// What a plugin's admin-panel script may do on the Live Map (SSA.map). `map.layers` is the same word.
+const PANEL_WORDS = ['map:layers', 'map:actions'];
 
 // ── output ──────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -461,7 +463,7 @@ function checkCapabilities(r, man, dir) {
   const bad = caps.filter((c) => typeof c !== 'string' || !c.trim());
   if (bad.length) r.err(`"capabilities" holds something that is not a word: ${some(bad.map((c) => JSON.stringify(c)))}`);
   const odd = caps.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim()).filter((c) => !(
-    c === '*' || c === SAVE_WRITE || /^cmd:.+$/i.test(c) || RAW_ACTIONS.includes(c) || /^[a-z][a-z0-9_]*(?::(read|write))?$/.test(c)));
+    c === '*' || c === SAVE_WRITE || PANEL_WORDS.includes(c.toLowerCase().replace(/^map\./, 'map:')) || /^cmd:.+$/i.test(c) || RAW_ACTIONS.includes(c) || /^[a-z][a-z0-9_]*(?::(read|write))?$/.test(c)));
   if (odd.length) r.warn(`"capabilities" word(s) the manager will not recognise and that grant nothing: ${some(odd)}`);
 }
 

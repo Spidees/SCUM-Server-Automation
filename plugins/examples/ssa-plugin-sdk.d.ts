@@ -5118,7 +5118,9 @@ export interface PluginModule {
 }
 
 // ── Admin frontend: window.SSA (payload/web/plugin.js) ───────────────────────
-export interface ActionEntry { label: string; icon?: string; danger?: boolean; disabled?: boolean; run?: () => void; submenu?: any }
+export interface ActionEntry { label: string; icon?: string; danger?: boolean; disabled?: boolean; run?: () => void; submenu?: any;
+  /** A stable name for the entry inside your plugin (64 characters). The panel prefixes it with your id. */
+  key?: string }
 export interface TabDef {
   id: string; label: string; icon?: string; order?: number;
   permission?: string; premium?: boolean; when?: () => boolean;
@@ -5150,6 +5152,142 @@ export interface SSAMapPoint {
   y: number;
   /** `sky` = the highest surface in that column, which indoors is the ROOF. */
   ground?: { z: number; from: 'sky' | 'same' } | null;
+}
+
+/**
+ * What a layer's `draw()` and an `SSA.map.on('view')` listener are handed: where the map is, in
+ * SCREEN pixels of the map's viewport. Your canvas covers exactly that viewport, so draw with
+ * `toScreen` and the drawing stays sharp at every zoom.
+ */
+export interface SSAMapView {
+  /** The map's zoom factor. */
+  scale: number;
+  /** The map's pan, in the panel's own units. Use `toScreen` rather than these. */
+  x: number;
+  y: number;
+  /** The viewport in CSS pixels. */
+  width: number;
+  height: number;
+  /** `devicePixelRatio`. The canvas transform already applies it. */
+  dpr: number;
+  /** World centimetres to viewport pixels; null while the map cannot place a point. */
+  toScreen(x: number, y: number): { left: number; top: number } | null;
+  /** Viewport pixels to world centimetres; null while the map cannot place a point. */
+  toWorld(left: number, top: number): { x: number; y: number } | null;
+  /** A length in world centimetres as viewport pixels, at this zoom. */
+  cmToPx(cm: number): number;
+}
+
+/** One point of a shape: `[x, y]` or `{ x, y }`, in world centimetres. */
+export type SSAMapXY = [number, number] | { x: number; y: number };
+
+/**
+ * A layer: a row in the map's layer list under "Plugin layers" and one canvas on the map. The four
+ * shape lists are drawn for you; `draw()` adds anything else, after them. Colours are CSS hex,
+ * `rgb()`/`rgba()` or `hsl()`/`hsla()`. A list is cut at 5000 markers and 2000 of every other shape.
+ */
+export interface SSAMapLayerDef {
+  /** Unique inside your plugin (64 characters). Adding the same id again replaces the layer. */
+  id: string;
+  /** The row's label in the layer list, already translated by you. */
+  label?: string;
+  /** The row's badge, and the colour of any shape that names none. */
+  color?: string;
+  /** Shown when first added. The reader's own choice is remembered per layer and wins. */
+  visible?: boolean;
+  markers?: Array<{ x: number; y: number; label?: string; color?: string; radius?: number; [k: string]: any }>;
+  /** `r` is in world centimetres, so the circle grows with the zoom. */
+  circles?: Array<{ x: number; y: number; r: number; color?: string; fill?: string; width?: number; [k: string]: any }>;
+  polygons?: Array<{ points: SSAMapXY[]; color?: string; fill?: string; width?: number; [k: string]: any }>;
+  lines?: Array<{ points: SSAMapXY[]; color?: string; width?: number; [k: string]: any }>;
+  /**
+   * Your own drawing, in viewport pixels, on a cleared canvas after the shapes. A draw that THROWS
+   * switches this layer off, says so on its row and in the console, and leaves the rest of the map
+   * drawn; clicking the row tries it again.
+   */
+  draw?(ctx: CanvasRenderingContext2D, view: SSAMapView): void;
+  /**
+   * Your own answer to "is this click on my layer". Without it the shapes answer: a marker, then a
+   * line within 6 px, a polygon the point is inside, a circle. Return null for "not mine".
+   */
+  hitTest?(left: number, top: number, info: { x?: number; y?: number; view: SSAMapView }): any;
+  /**
+   * A click on the bare map that your layer took. Only reaches you after the map's own markers,
+   * zones, pickers and drags have had it; the map does nothing else with that click.
+   */
+  onClick?(hit: SSAMapHit | any, point: { x: number; y: number } | null): void;
+}
+
+/** What the built-in hit test hands `onClick`: which list, which entry, and the entry itself. */
+export interface SSAMapHit {
+  kind: 'marker' | 'circle' | 'polygon' | 'line';
+  index: number;
+  item: any;
+}
+
+/**
+ * What `addLayer` returns. Calling it removes the layer, like `remove()`. When the layer was refused
+ * it is a handle that does nothing and `visible()` answers false.
+ */
+export interface SSAMapLayer {
+  (): void;
+  remove(): void;
+  /** Replace any of the four shape lists; the ones you leave out stay. */
+  update(data: Partial<Pick<SSAMapLayerDef, 'markers' | 'circles' | 'polygons' | 'lines'>>): SSAMapLayer;
+  /** Ask for a draw on the next frame, after your own state changed. */
+  redraw(): SSAMapLayer;
+  /** Whether it is on the map right now: switched on and not switched off by a failed draw. */
+  visible(): boolean;
+}
+
+/**
+ * The Live Map itself. Feature-detect with `SSA.canMap()`.
+ *
+ * Declare what you use in plugin.json `capabilities`: `map:layers` for `addLayer`, `map:actions` for
+ * `onContext`. Undeclared, the call works and the console says so once; on a manager that enforces
+ * capabilities it is refused: `addLayer` hands back a handle that draws nothing, `onContext` adds nothing.
+ *
+ * Like `SSA.api`, it knows which plugin is asking only while your script runs. From a click handler,
+ * a timer or after an `await`, use the object `SSA.map.client()` returned at load.
+ */
+export interface SSAMap {
+  /** @since the release after 6.1.0 */
+  addLayer(def: SSAMapLayerDef): SSAMapLayer;
+  /** World centimetres to viewport pixels; null while the map is hidden or not calibrated.
+   * @since the release after 6.1.0
+   */
+  toScreen(x: number, y: number): { left: number; top: number } | null;
+  /** Viewport pixels to world centimetres; null while the map is hidden or not calibrated.
+   * @since the release after 6.1.0
+   */
+  toWorld(left: number, top: number): { x: number; y: number } | null;
+  /** The view right now; null while the map is hidden or not calibrated.
+   * @since the release after 6.1.0
+   */
+  view(): SSAMapView | null;
+  /** The map moved, zoomed, resized or redrew. Coalesced to one call a frame. Returns the unsubscribe.
+   * @since the release after 6.1.0
+   */
+  on(event: 'view', fn: (view: SSAMapView) => void): () => void;
+  /**
+   * Entries for the map's right-click menu, in a "From plugins" section after the panel's own.
+   * `z` is the height of the nearest thing the map knows, a hint and not the ground. Return an
+   * entry, an array of them, or nothing. Returns the unsubscribe.
+   * @since the release after 6.1.0
+   */
+  onContext(fn: (point: { x: number; y: number; z: number }) => ActionEntry | ActionEntry[] | null | void): () => void;
+  /** `SSA.pickOnMap`, here as well.
+   * @since the release after 6.1.0
+   */
+  pickPosition(opts?: Parameters<SSA['pickOnMap']>[0]): Promise<SSAMapPoint | null>;
+  /** `SSA.canPickOnMap`, here as well.
+   * @since the release after 6.1.0
+   */
+  canPickPosition(): boolean;
+  /** This object bound to your plugin. Take it at load and use it from asynchronous code.
+   * @since the release after 6.1.0
+   */
+  client(): SSAMap;
 }
 
 export interface SSA {
@@ -5419,6 +5557,13 @@ export interface SSA {
    */
   pickOnMap(opts?: { note?: string; ground?: boolean; onPick?: (p: SSAMapPoint) => void; onCancel?: () => void }): Promise<SSAMapPoint | null>;
 
+  /**
+   * The Live Map: your own layers in its layer list, its coordinates both ways and its right-click
+   * menu. Needs `map:layers` / `map:actions` in plugin.json `capabilities`. Feature-detect with `canMap()`.
+   * @since the release after 6.1.0
+   */
+  map: SSAMap;
+
   // ── data helpers (same endpoints the panel uses) ──
   /** @since 4.0.2 */
   onlinePlayers(): Promise<any[]>;
@@ -5440,6 +5585,8 @@ export interface SSA {
   canOpenRecord(): boolean;
   /** @since 5.23.0 */
   canPickOnMap(): boolean;
+  /** @since the release after 6.1.0 */
+  canMap(): boolean;
 }
 
 // ── Public Field Console frontend: window.FC (payload/fc/plugin.js) ───────────

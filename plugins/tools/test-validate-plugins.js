@@ -120,6 +120,7 @@ const cases = [
   ['empty payload', (d) => { fs.rmSync(P(d, 'payload'), { recursive: true }); fs.mkdirSync(P(d, 'payload')); }, 1, 'payload/ is missing or empty'],
   ['dependency that is not an id', (d) => manifest(d, (m) => { m.dependencies = [{}]; }), 1, 'dependencies[0] must be a plugin id'],
   ['capability that is not text', (d) => manifest(d, (m) => { m.capabilities = ['chat', 3]; }), 1, 'holds something that is not a word'],
+  ['the Live Map words pass under --strict', (d) => manifest(d, (m) => { m.capabilities = ['map:layers', 'map.actions']; }), 0, 'valid: 1 plugin(s)', ['--strict']],
   ['capability nobody recognises warns', (d) => manifest(d, (m) => { m.capabilities = ['Give Items']; }), 0, 'will not recognise'],
   ['save write without save:write', (d) => { appendBackend(d, 'module.exports._w = (host) => host.db.scum.write({});'); manifest(d, (m) => { m.capabilities = ['*']; }); }, 1, 'does not list "save:write"'],
   ['save write with save:write passes', (d) => { appendBackend(d, 'module.exports._w = (host) => host.db.scum.write({});'); manifest(d, (m) => { m.capabilities = ['save:write']; }); }, 0, 'valid: 1 plugin(s)'],
