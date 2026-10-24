@@ -613,13 +613,13 @@ export type Kind_despawn =
   | "puppets"
   | "razor"
   | "razors"
+  | "school"
+  | "schools"
   | "sentries"
   | "sentry"
   | "sentry2"
   | "shark"
   | "sharks"
-  | "school"
-  | "schools"
   | "vehicle"
   | "vehicles"
   | "wildlife"
@@ -1778,6 +1778,21 @@ export type BuildWrite_Catalogue =
   | "catalogue";
 
 /**
+ * `chown:<old>:<new>`
+ *
+ * - `old`
+ * - `new`
+ *
+ * Needs: No player needed. Works with nobody online.
+ * After a restart: Survives. Measured to be in the save after a restart.
+ * Creates: Nothing. Creates nothing new in the world.
+ *
+ * Base building, `module_command`.
+ */
+export type BuildWrite_Chown =
+  | `chown:${string}:${string}`;
+
+/**
  * `clearowner:<baseId>:<x>:<y>:<z>:CONFIRM`
  *
  * - `baseId`
@@ -1854,21 +1869,6 @@ export type BuildWrite_Destroy =
  */
 export type BuildWrite_Fill =
   | `fill:${string}:${string}`;
-
-/**
- * `chown:<old>:<new>`
- *
- * - `old`
- * - `new`
- *
- * Needs: No player needed. Works with nobody online.
- * After a restart: Survives. Measured to be in the save after a restart.
- * Creates: Nothing. Creates nothing new in the world.
- *
- * Base building, `module_command`.
- */
-export type BuildWrite_Chown =
-  | `chown:${string}:${string}`;
 
 /**
  * `learn:<full class path>`
@@ -2468,11 +2468,11 @@ export type DoorsWrite_Unlock =
   | `unlock:${string}`;
 
 /**
- * `unseal:<key>:force`
+ * `unseal:<Level>:<Actor>`
  *
- * - `key`
- * - `force`: the word `force`
- * - also `unseal:<Level>:<Actor>`
+ * - `Level`: Level
+ * - `Actor`: Door
+ * - also `unseal:<key>:force`
  *
  * Needs: No player needed. Works with nobody online.
  * After a restart: Lost. Measured to revert, or never saved.
@@ -3336,7 +3336,7 @@ export type ItemsWrite_Condition =
  * - `selector`
  * - also `destroy:CONFIRM:<selector>`
  *
- * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player.
+ * Needs: Target must be loaded. Works with nobody online only when the game keeps the target loaded. Doors, bases and lockpick crates stay loaded; vehicles and creatures are built only near a player. Note: an item in a container goes through the container, with a player standing within 1.8 m of it: the one named after a comma (eid:<id>,<steamid>) or else the nearest.
  * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -3364,12 +3364,12 @@ export type ItemsWrite_Detach =
   | `detach:${string}`;
 
 /**
- * `drop:eid:<id>`
+ * `drop:eid:<id>[,<steamid>]`
  *
  * - `eid`: the word `eid`
- * - `id`
+ * - `id,steamid`: id and steamid, separated by commas
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: an item in a container needs a player standing within 1.8 m of it: the one named after a comma (eid:<id>,<steamid>) or else the nearest.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
@@ -3783,20 +3783,20 @@ export type MedicalRead_Fields =
   | "fields";
 
 /**
- * - `lastcure`
- *
- * Medical state, `module_data`.
- */
-export type MedicalRead_Lastcure =
-  | "lastcure";
-
-/**
  * - `lastchange`
  *
  * Medical state, `module_data`.
  */
 export type MedicalRead_Lastchange =
   | "lastchange";
+
+/**
+ * - `lastcure`
+ *
+ * Medical state, `module_data`.
+ */
+export type MedicalRead_Lastcure =
+  | "lastcure";
 
 /**
  * - `lastmeta`
@@ -4214,6 +4214,14 @@ export type NotifyWrite_Killfeedall =
   | `killfeedall:${string}`;
 
 /**
+ * - `changes`
+ *
+ * Offline raid protection, `module_data`.
+ */
+export type OfflineRead_Changes =
+  | "changes";
+
+/**
  * - `encounterBases`
  *
  * Offline raid protection, `module_data`.
@@ -4230,14 +4238,6 @@ export type OfflineRead_EncounterBases =
  */
 export type OfflineRead_Flag =
   | `flag:${string}`;
-
-/**
- * - `changes`
- *
- * Offline raid protection, `module_data`.
- */
-export type OfflineRead_Changes =
-  | "changes";
 
 /**
  * - `mode`
@@ -4472,6 +4472,14 @@ export type ProtectRead_Calls =
   | "calls";
 
 /**
+ * - `changes`
+ *
+ * Raid protection control, `module_data`.
+ */
+export type ProtectRead_Changes =
+  | "changes";
+
+/**
  * `flag:<id>`
  *
  * - `id`
@@ -4480,14 +4488,6 @@ export type ProtectRead_Calls =
  */
 export type ProtectRead_Flag =
   | `flag:${string}`;
-
-/**
- * - `changes`
- *
- * Raid protection control, `module_data`.
- */
-export type ProtectRead_Changes =
-  | "changes";
 
 /**
  * - `layout`
@@ -5167,6 +5167,14 @@ export type SettingsRead_Categories =
   | "categories";
 
 /**
+ * - `changes`
+ *
+ * Live server settings, `module_data`.
+ */
+export type SettingsRead_Changes =
+  | "changes";
+
+/**
  * `get:<type>:<name>`
  *
  * - `type`
@@ -5176,14 +5184,6 @@ export type SettingsRead_Categories =
  */
 export type SettingsRead_Get =
   | `get:${string}`;
-
-/**
- * - `changes`
- *
- * Live server settings, `module_data`.
- */
-export type SettingsRead_Changes =
-  | "changes";
 
 /**
  * `list:<text>`
@@ -5906,10 +5906,8 @@ export type StorageRead_Storage =
  * `destroy:<containerId>,<itemId>[,<steamid>]`
  *
  * - `containerId,itemId,steamid`: containerId, itemId and steamid, separated by commas
- * - also `destroy:CONFIRM:eid:<entityLo>`
- * - also `destroy:CONFIRM:eid:<this>`
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: a player standing within 1.8 m of the container, the one named or else the nearest; the game judges the removal against that player.
  * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -5923,7 +5921,7 @@ export type StorageWrite_Destroy =
  *
  * - `container,item,steamid`: container, item and steamid, separated by commas
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: a player standing within 1.8 m of the container, the one named or else the nearest.
  * After a restart: Lost. Measured to revert, or never saved.
  * Not kept on request: a one-off act, so a replay would do it again at every boot.
  * Creates: Nothing. Creates nothing new in the world.
@@ -5938,7 +5936,7 @@ export type StorageWrite_Drop =
  *
  * - `containerId,itemId,targetContainerId,steamid`: containerId, itemId, targetContainerId and steamid, separated by commas
  *
- * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server.
+ * Needs: Any player online. Goes through an online player's connection, so somebody must be on the server. Note: a player standing within 1.8 m of the source container, the one named or else the nearest.
  * After a restart: Survives. Measured to be in the save after a restart.
  * Creates: Nothing. Creates nothing new in the world.
  *
@@ -7472,11 +7470,11 @@ export interface ModuleVocabulary {
    *
    * Writes (`module_command`):
    * - `catalogue`
+   * - `chown:<old>:<new>`
    * - `clearowner:<baseId>:<x>:<y>:<z>:CONFIRM`
    * - `demolish:<x>:<y>:<z>:<radius>:<elementType>:CONFIRM`
    * - `destroy:<baseId>:<elementId>:<x>:<y>:<z>[:<reason>[:<cascade>]]`
    * - `fill:<placementId>:craft|godmode:via:<executor>`
-   * - `chown:<old>:<new>`
    * - `learn:<full class path>`
    * - `overtake:<elementId>:<x>:<y>:<z>:<newOwnerProfileId>`
    * - `place:<recipeName>:<x>:<y>:<z>:via:<steamId>`
@@ -7494,11 +7492,11 @@ export interface ModuleVocabulary {
       | BuildRead_Elements;
     command:
       | BuildWrite_Catalogue
+      | BuildWrite_Chown
       | BuildWrite_Clearowner
       | BuildWrite_Demolish
       | BuildWrite_Destroy
       | BuildWrite_Fill
-      | BuildWrite_Chown
       | BuildWrite_Learn
       | BuildWrite_Overtake
       | BuildWrite_Place
@@ -7628,7 +7626,7 @@ export interface ModuleVocabulary {
    * - `save`
    * - `seal:<Level>:<Actor>`
    * - `unlock:<target>`
-   * - `unseal:<key>:force`
+   * - `unseal:<Level>:<Actor>`
    */
   "doors": {
     data:
@@ -7870,7 +7868,7 @@ export interface ModuleVocabulary {
    * - `condition:<value>:<selector>`
    * - `destroy:<selector>`
    * - `detach:eid:<weapon>:eid:<attachment>`
-   * - `drop:eid:<id>`
+   * - `drop:eid:<id>[,<steamid>]`
    */
   "items": {
     data:
@@ -8000,8 +7998,8 @@ export interface ModuleVocabulary {
    * - `conditions:<steamid>`
    * - `deaths:since:<seq>`
    * - `fields`
-   * - `lastcure`
    * - `lastchange`
+   * - `lastcure`
    * - `lastmeta`
    * - `player:<steamid>`
    * - `players`
@@ -8034,8 +8032,8 @@ export interface ModuleVocabulary {
       | MedicalRead_Conditions
       | MedicalRead_Deaths
       | MedicalRead_Fields
-      | MedicalRead_Lastcure
       | MedicalRead_Lastchange
+      | MedicalRead_Lastcure
       | MedicalRead_Lastmeta
       | MedicalRead_Player
       | MedicalRead_Players
@@ -8090,9 +8088,9 @@ export interface ModuleVocabulary {
    * Offline raid protection · 5 settings
    *
    * Reads (`module_data`):
+   * - `changes`
    * - `encounterBases`
    * - `flag:<id>`
-   * - `changes`
    * - `mode`
    * - `requests`
    * - `rules`
@@ -8104,9 +8102,9 @@ export interface ModuleVocabulary {
    */
   "offline": {
     data:
+      | OfflineRead_Changes
       | OfflineRead_EncounterBases
       | OfflineRead_Flag
-      | OfflineRead_Changes
       | OfflineRead_Mode
       | OfflineRead_Requests
       | OfflineRead_Rules
@@ -8171,8 +8169,8 @@ export interface ModuleVocabulary {
    *
    * Reads (`module_data`):
    * - `calls`
-   * - `flag:<id>`
    * - `changes`
+   * - `flag:<id>`
    * - `layout`
    * - `manager`
    * - `offline:<id>`
@@ -8188,8 +8186,8 @@ export interface ModuleVocabulary {
   "protect": {
     data:
       | ProtectRead_Calls
-      | ProtectRead_Flag
       | ProtectRead_Changes
+      | ProtectRead_Flag
       | ProtectRead_Layout
       | ProtectRead_Manager
       | ProtectRead_Offline
@@ -8369,8 +8367,8 @@ export interface ModuleVocabulary {
    *
    * Reads (`module_data`):
    * - `categories`
-   * - `get:<type>:<name>`
    * - `changes`
+   * - `get:<type>:<name>`
    * - `list:<text>`
    * - `outstanding`
    * - `probe:<name>`
@@ -8383,8 +8381,8 @@ export interface ModuleVocabulary {
   "settings": {
     data:
       | SettingsRead_Categories
-      | SettingsRead_Get
       | SettingsRead_Changes
+      | SettingsRead_Get
       | SettingsRead_List
       | SettingsRead_Outstanding
       | SettingsRead_Probe
@@ -9859,9 +9857,9 @@ export interface ReadingAi_Creature {
   /** Absent when the game did not give it. */
   speciesNameGameSaid?: string;
   /** Absent when the game did not give it. */
-  speciesNameNote?: string;
-  /** Absent when the game did not give it. */
   speciesNameNotItsOwn?: boolean;
+  /** Absent when the game did not give it. */
+  speciesNameNote?: string;
   /** Absent when the game did not give it. */
   state?: string;
   /** Absent when the game did not give it. */
@@ -9964,9 +9962,9 @@ export interface ReadingAi_Hunting {
   /** Absent when the game did not give it. */
   speciesNameGameSaid?: string;
   /** Absent when the game did not give it. */
-  speciesNameNote?: string;
-  /** Absent when the game did not give it. */
   speciesNameNotItsOwn?: boolean;
+  /** Absent when the game did not give it. */
+  speciesNameNote?: string;
   /** Absent when the game did not give it. */
   state?: string;
   /** Absent when the game did not give it. */
@@ -10094,9 +10092,9 @@ export interface ReadingAi_Threats {
   /** Absent when the game did not give it. */
   speciesNameGameSaid?: string;
   /** Absent when the game did not give it. */
-  speciesNameNote?: string;
-  /** Absent when the game did not give it. */
   speciesNameNotItsOwn?: boolean;
+  /** Absent when the game did not give it. */
+  speciesNameNote?: string;
   /** Absent when the game did not give it. */
   state?: string;
   /** Absent when the game did not give it. */
@@ -10194,8 +10192,8 @@ export interface ReadingBases_Contents {
   elementsZeroMeans?: string;
   /** On each item of a list. */
   mesh?: string;
-  meshes?: unknown[];
   meshTypes?: number;
+  meshes?: unknown[];
   noElementIds?: boolean;
   truncated?: boolean;
 }
@@ -10845,6 +10843,8 @@ export interface ReadingDamage_Preview {
   playerIdsUnreadable?: boolean;
   /** Absent when the game did not give it. */
   playerListTruncated?: boolean;
+  /** Absent when the game did not give it. */
+  playerSteamIds?: unknown[];
   players?: number;
   /** Absent when the game did not give it. */
   playersAwaitingCleanup?: number;
@@ -10852,8 +10852,6 @@ export interface ReadingDamage_Preview {
   playersCountedUnread?: number;
   /** Absent when the game did not give it. */
   playersReadAtWorldOrigin?: number;
-  /** Absent when the game did not give it. */
-  playerSteamIds?: unknown[];
   puppets?: number;
   /** Unit: cm. */
   radiusCm?: number;
@@ -11162,9 +11160,9 @@ export interface ReadingEncounters_Encounters {
   /** Absent when the game did not give it. */
   historyLimit?: number;
   /** Absent when the game did not give it. */
-  hordes?: Record<string, unknown>;
-  /** Absent when the game did not give it. */
   hordeTruncated?: boolean;
+  /** Absent when the game did not give it. */
+  hordes?: Record<string, unknown>;
   /** Absent when the game did not give it. Type not readable from the source. */
   intervals?: unknown;
   kept?: number;
@@ -11184,9 +11182,9 @@ export interface ReadingEncounters_Encounters {
   radius?: number;
   resolved?: boolean;
   /** Absent when the game did not give it. */
-  seen?: boolean | number;
-  /** Absent when the game did not give it. */
   schedule?: Record<string, unknown>;
+  /** Absent when the game did not give it. */
+  seen?: boolean | number;
   source?: string;
   /** Absent when the game did not give it. */
   specialCooldownTag?: string;
@@ -11290,6 +11288,13 @@ export interface ReadingEncounters_Places {
   /** Absent when the game did not give it. On each item of a list. */
   baseAmountUnreadable?: boolean;
   canChange?: boolean;
+  chance?: "percent";
+  /** Unit: %. Absent when the game did not give it. On each item of a list. */
+  chancePercent?: number;
+  /** Unit: s. Absent when the game did not give it. On each item of a list. */
+  checkMaxSec?: number;
+  /** Unit: s. Absent when the game did not give it. On each item of a list. */
+  checkMinSec?: number;
   /** Absent when the game did not give it. On each item of a list. */
   class?: string;
   /** Absent when the game did not give it. On each item of a list. */
@@ -11309,13 +11314,6 @@ export interface ReadingEncounters_Places {
   hold?: "real-seconds";
   /** Unit: s. On each item of a list. */
   holdLeftSec?: number;
-  chance?: "percent";
-  /** Unit: %. Absent when the game did not give it. On each item of a list. */
-  chancePercent?: number;
-  /** Unit: s. Absent when the game did not give it. On each item of a list. */
-  checkMaxSec?: number;
-  /** Unit: s. Absent when the game did not give it. On each item of a list. */
-  checkMinSec?: number;
   /** On each item of a list. */
   i?: number;
   interval?: "real-seconds";
@@ -11474,10 +11472,10 @@ export interface ReadingEntities_Entities {
   id?: number | string;
   /** Absent when the game did not give it. */
   idNote?: "'id' changes on restart; use eid:<elo> to keep it.";
-  /** Absent when the game did not give it. On each item of a list. */
-  indestructible?: boolean;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
   inParts?: unknown;
+  /** Absent when the game did not give it. On each item of a list. */
+  indestructible?: boolean;
   kind?: string;
   /** Absent when the game did not give it. On each item of a list. */
   label?: string;
@@ -11553,11 +11551,11 @@ export interface ReadingEntities_Entity {
   id?: number;
   /** Absent when the game did not give it. */
   idNote?: "'id' changes on restart; use eid:<elo> to keep it.";
-  /** Absent when the game did not give it. On each item of a list. */
-  indestructible?: boolean;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
   inParts?: unknown;
   inStruct?: string;
+  /** Absent when the game did not give it. On each item of a list. */
+  indestructible?: boolean;
   kind?: string;
   /** Absent when the game did not give it. On each item of a list. */
   label?: string;
@@ -11986,11 +11984,11 @@ export interface ReadingFortifications_Ledger {
   barricades?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   clearedWholesale?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  destroyed?: number;
   destroyMatchedAsRelative?: number;
   destroyMatchedAsWorld?: number;
   destroyUnmatched?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  destroyed?: number;
   /** Absent when the game did not give it. On each item of a list. */
   dropped?: number;
   /** Absent when the game did not give it. */
@@ -12073,6 +12071,8 @@ export interface ReadingFortifications_Near {
 export interface ReadingFortifications_Openings {
   /** Absent when the game did not give it. On each item of a list. */
   attachedTo?: string;
+  /** Absent when the game did not give it. */
+  barricadeWalkTruncated?: boolean;
   /** Absent when the game did not give it. On each item of a list. */
   barricades?: number;
   /** Absent when the game did not give it. On each item of a list. */
@@ -12083,19 +12083,17 @@ export interface ReadingFortifications_Openings {
   barricadesStanding?: number;
   barricadesUnreadable?: boolean;
   barricadesUnreadableWhy?: string;
-  /** Absent when the game did not give it. */
-  barricadeWalkTruncated?: boolean;
   count?: number;
   /** On each item of a list. */
   fortifiable?: number;
-  /** Absent when the game did not give it. */
-  hostsWithoutMarkers?: number;
   /** Absent when the game did not give it. On each item of a list. */
   hostX?: number;
   /** Absent when the game did not give it. On each item of a list. */
   hostY?: number;
   /** Absent when the game did not give it. On each item of a list. */
   hostZ?: number;
+  /** Absent when the game did not give it. */
+  hostsWithoutMarkers?: number;
   loadedWorldOnly?: boolean;
   /** Absent when the game did not give it. */
   markerListUnreadable?: number;
@@ -12103,11 +12101,11 @@ export interface ReadingFortifications_Openings {
   markers?: number;
   /** Absent when the game did not give it. On each item of a list. */
   markersTruncated?: boolean;
-  openingsFortifiable?: number;
   /** Absent when the game did not give it. */
   openingWalkUnreadable?: boolean;
   /** Absent when the game did not give it. */
   openingWalkUnreadableWhy?: string;
+  openingsFortifiable?: number;
   places?: unknown[];
   placesWalked?: number;
   placesWithNoFortifiableOpening?: number;
@@ -12312,6 +12310,8 @@ export interface ReadingHazard_Job {
  */
 export interface ReadingHazard_Measure {
   busyUs?: number;
+  /** On each item of a list. */
+  changed?: boolean;
   /** Absent when the game did not give it. */
   complete?: boolean;
   count?: number;
@@ -12335,8 +12335,6 @@ export interface ReadingHazard_Measure {
   geometryReason?: "Zone positions are read-only; run 'measure' to check them." | "Zones cannot be moved; only rate, falloff, radius and noise can change.";
   /** Said outright, once, because it is the fact an owner most needs and the one they would otherwise infer from an absence. */
   geometryWritable?: boolean;
-  /** On each item of a list. */
-  changed?: boolean;
   id?: number;
   /** On each item of a list. */
   index?: number;
@@ -12365,15 +12363,15 @@ export interface ReadingHazard_Measure {
   /** Absent when the game did not give it. On each item of a list. */
   rotationVerdict?: string;
   /** Absent when the game did not give it. On each item of a list. */
+  sampleDominatedByAnotherZone?: boolean;
+  /** Absent when the game did not give it. On each item of a list. */
+  sampleDominatedNote?: string;
+  /** Absent when the game did not give it. On each item of a list. */
   sampledAtEpicenter?: number;
   /** Absent when the game did not give it. On each item of a list. */
   sampledAtLocalPoint?: number;
   /** Absent when the game did not give it. On each item of a list. */
   sampledAtTranslationOnly?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  sampleDominatedByAnotherZone?: boolean;
-  /** Absent when the game did not give it. On each item of a list. */
-  sampleDominatedNote?: string;
   /** Absent when the game did not give it. On each item of a list. */
   sampledOutsideRadius?: number;
   /** Absent when the game did not give it. */
@@ -12471,6 +12469,8 @@ export interface ReadingHazard_State {
  * Keys the Radiation and wetness read `zones` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingHazard_Zones {
+  /** On each item of a list. */
+  changed?: boolean;
   /** Absent when the game did not give it. */
   complete?: boolean;
   count?: number;
@@ -12493,8 +12493,6 @@ export interface ReadingHazard_Zones {
   /** Said outright, once, because it is the fact an owner most needs and the one they would otherwise infer from an absence. */
   geometryWritable?: boolean;
   /** On each item of a list. */
-  changed?: boolean;
-  /** On each item of a list. */
   index?: number;
   /** Absent when the game did not give it. */
   level?: string;
@@ -12511,15 +12509,15 @@ export interface ReadingHazard_Zones {
   /** Absent when the game did not give it. On each item of a list. */
   rotationVerdict?: string;
   /** Absent when the game did not give it. On each item of a list. */
+  sampleDominatedByAnotherZone?: boolean;
+  /** Absent when the game did not give it. On each item of a list. */
+  sampleDominatedNote?: string;
+  /** Absent when the game did not give it. On each item of a list. */
   sampledAtEpicenter?: number;
   /** Absent when the game did not give it. On each item of a list. */
   sampledAtLocalPoint?: number;
   /** Absent when the game did not give it. On each item of a list. */
   sampledAtTranslationOnly?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  sampleDominatedByAnotherZone?: boolean;
-  /** Absent when the game did not give it. On each item of a list. */
-  sampleDominatedNote?: string;
   /** Absent when the game did not give it. On each item of a list. */
   sampledOutsideRadius?: number;
   /** Absent when the game did not give it. */
@@ -12566,9 +12564,9 @@ export interface ReadingItems_Attachjob {
   reasonCode?: string;
   scumRegistered?: boolean;
   /** Absent when the game did not give it. */
-  spawned?: number;
-  /** Absent when the game did not give it. */
   spawnStep?: string;
+  /** Absent when the game did not give it. */
+  spawned?: number;
   /** Absent when the game did not give it. */
   state?: string;
   weapon?: number;
@@ -12721,14 +12719,14 @@ export interface ReadingItems_Inventory {
 export interface ReadingItems_Last {
   /** Unit: ms. Absent when the game did not give it. */
   ageMs?: number;
+  changed?: number;
   /** Type not readable from the source. */
   confirmed?: unknown;
-  destroyed?: number;
   /** Absent when the game did not give it. */
   destroyPending?: boolean;
   /** Unit: ms. Absent when the game did not give it. */
   destroyPendingMs?: number;
-  changed?: number;
+  destroyed?: number;
   /** Absent when the game did not give it. Type not readable from the source. */
   refused?: unknown;
   result?: string;
@@ -12845,19 +12843,19 @@ export interface ReadingItems_Traps {
   lastTriggeredByProfileId?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   minDamageForTrigger?: number;
-  /** Unit: s. Absent when the game did not give it. On each item of a list. */
-  ownerlessLifetimeSeconds?: number;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
   ownerProfileId?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   ownerUnread?: boolean;
+  /** Unit: s. Absent when the game did not give it. On each item of a list. */
+  ownerlessLifetimeSeconds?: number;
   scope?: "loaded";
   scopeNote?: string;
   /** Absent when the game did not give it. On each item of a list. */
   scumRegistered?: boolean;
-  traps?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   trapType?: string;
+  traps?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   trigger?: string;
   /** Absent when the game did not give it. */
@@ -12990,15 +12988,15 @@ export interface ReadingKillbox_Killbox {
   roomCount?: number;
   /** On each item of a list. */
   roomIndex?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  roomTag?: string;
   rooms?: unknown[];
   /** Absent when the game did not give it. */
   roomsPackedNote?: string;
-  /** Absent when the game did not give it. On each item of a list. */
-  roomTag?: string;
-  /** Absent when the game did not give it. */
-  spawnedZombies?: number;
   /** Absent when the game did not give it. */
   spawnPoints?: number;
+  /** Absent when the game did not give it. */
+  spawnedZombies?: number;
   /** Absent when the game did not give it. */
   target?: string;
   /** Absent when the game did not give it. */
@@ -13430,10 +13428,10 @@ export interface ReadingLocks_Saved {
   doorsReported?: number;
   /** Absent when the game did not give it. Type not readable from the source. */
   famePointsRequired?: unknown;
-  /** Absent when the game did not give it. Type not readable from the source. */
-  forceUnlockable?: unknown;
   /** Unit: s. Absent when the game did not give it. */
   forceUnlockSeconds?: number;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  forceUnlockable?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   health?: number;
   /** Absent when the game did not give it. */
@@ -13486,12 +13484,12 @@ export interface ReadingLocks_Saved {
 export interface ReadingLoot_Files {
   /** Absent when the game did not give it. */
   bytes?: number;
+  /** Unit: s. Absent when the game did not give it. */
+  changedAgoSec?: number;
   /** Type not readable from the source. */
   exists?: unknown;
   files?: unknown[];
   holds?: string;
-  /** Unit: s. Absent when the game did not give it. */
-  changedAgoSec?: number;
   name?: string;
   path?: string;
 }
@@ -13585,6 +13583,32 @@ export interface ReadingMedical_Fields {
 }
 
 /**
+ * Keys the Medical state read `lastchange` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingMedical_Lastchange {
+  added?: unknown[];
+  /** Unit: ms. */
+  ageMs?: number;
+  aimed?: boolean;
+  command?: string;
+  effect?: string;
+  /** -1 rather than a count: the readback itself failed, which is not "they had none". */
+  effectsAfter?: number;
+  effectsBefore?: number;
+  gameSaid?: string;
+  hint?: string;
+  made?: boolean;
+  note?: "Run as the target player; observedChange shows whether their effects changed.";
+  observedChange?: boolean;
+  removed?: unknown[];
+  sent?: boolean;
+  target?: string;
+  verb?: string;
+  /** Kept beside the new name rather than replaced. */
+  watching?: string;
+}
+
+/**
  * Keys the Medical state read `lastcure` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingMedical_Lastcure {
@@ -13633,32 +13657,6 @@ export interface ReadingMedical_Lastcure {
   unreadable?: number;
   written?: number;
   zeroed?: number;
-}
-
-/**
- * Keys the Medical state read `lastchange` can carry, at any depth. Not the object's shape.
- */
-export interface ReadingMedical_Lastchange {
-  added?: unknown[];
-  /** Unit: ms. */
-  ageMs?: number;
-  aimed?: boolean;
-  command?: string;
-  effect?: string;
-  /** -1 rather than a count: the readback itself failed, which is not "they had none". */
-  effectsAfter?: number;
-  effectsBefore?: number;
-  gameSaid?: string;
-  hint?: string;
-  made?: boolean;
-  note?: "Run as the target player; observedChange shows whether their effects changed.";
-  observedChange?: boolean;
-  removed?: unknown[];
-  sent?: boolean;
-  target?: string;
-  verb?: string;
-  /** Kept beside the new name rather than replaced. */
-  watching?: string;
 }
 
 /**
@@ -13843,16 +13841,43 @@ export interface ReadingMedical_Substances {
  * Keys the Server notifications read `queue` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingNotify_Queue {
+  /** Absent when the game did not give it. */
+  chains?: number;
   class?: string;
   /** Absent when the game did not give it. */
   found?: boolean;
-  /** Absent when the game did not give it. */
-  chains?: number;
   note?: "Held for offline players. Sending a notification does not change this count; timeout is in seconds.";
   /** Absent when the game did not give it. */
   queued?: number;
   /** Absent when the game did not give it. */
   timeout?: number;
+}
+
+/**
+ * Keys the Offline raid protection read `changes` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingOffline_Changes {
+  /** Unit: ms. On each item of a list. */
+  ageMs?: number;
+  baselineTaken?: boolean;
+  changes?: unknown[];
+  dropped?: number;
+  /** On each item of a list. */
+  event?: string;
+  /** Absent when the game did not give it. On each item of a list. */
+  flag?: number;
+  kept?: number;
+  /** On each item of a list. */
+  lastProtectionTimeChangedPacked?: number;
+  note?: "A gap is a missed read; a change after one may have happened during it.";
+  /** Unit: ms. */
+  pollMs?: number;
+  /** On each item of a list. */
+  previousLastProtectionTimeChangedPacked?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  reason?: string;
+  watching?: boolean;
+  why?: "Raid protection is off on this server. Changing that needs a restart.";
 }
 
 /**
@@ -13888,33 +13913,6 @@ export interface ReadingOffline_Flag {
   sinceObserved?: boolean;
   /** Absent when the game did not give it. */
   truncated?: boolean;
-}
-
-/**
- * Keys the Offline raid protection read `changes` can carry, at any depth. Not the object's shape.
- */
-export interface ReadingOffline_Changes {
-  /** Unit: ms. On each item of a list. */
-  ageMs?: number;
-  baselineTaken?: boolean;
-  dropped?: number;
-  /** On each item of a list. */
-  event?: string;
-  /** Absent when the game did not give it. On each item of a list. */
-  flag?: number;
-  changes?: unknown[];
-  kept?: number;
-  /** On each item of a list. */
-  lastProtectionTimeChangedPacked?: number;
-  note?: "A gap is a missed read; a change after one may have happened during it.";
-  /** Unit: ms. */
-  pollMs?: number;
-  /** On each item of a list. */
-  previousLastProtectionTimeChangedPacked?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  reason?: string;
-  watching?: boolean;
-  why?: "Raid protection is off on this server. Changing that needs a restart.";
 }
 
 /**
@@ -13961,8 +13959,8 @@ export interface ReadingOffline_Requests {
   unitNote?: "Delay and duration are in seconds, as sent.";
   /** Absent when the game did not give it. On each item of a list. */
   verb?: "reset" | "set";
-  watching?: boolean;
   watchNote?: "'failed' means these requests cannot be recorded until a restart; report it.";
+  watching?: boolean;
 }
 
 /**
@@ -14081,11 +14079,11 @@ export interface ReadingPlace_World {
  */
 export interface ReadingPower_Cooking {
   containers?: number;
-  cooking?: unknown[];
   /** Absent when the game did not give it. */
   cookQualityPacked?: number;
   /** Absent when the game did not give it. */
   cookTimeRaw?: number;
+  cooking?: unknown[];
   count?: number;
   /** Absent when the game did not give it. */
   itemTagIndex?: number;
@@ -14154,6 +14152,8 @@ export interface ReadingPower_Power {
   atWorldOrigin?: boolean;
   /** Absent when the game did not give it. */
   cell?: string;
+  /** Absent when the game did not give it. */
+  chargeRatio?: number;
   class?: string;
   classConfigNote?: string;
   devices?: unknown[];
@@ -14174,8 +14174,6 @@ export interface ReadingPower_Power {
   generators?: unknown[] | number;
   /** Absent when the game did not give it. */
   has?: number;
-  /** Absent when the game did not give it. */
-  chargeRatio?: number;
   /** Absent when the game did not give it. */
   intensityRaw?: number;
   /** Absent when the game did not give it. Type not readable from the source. */
@@ -14259,39 +14257,6 @@ export interface ReadingProtect_Calls {
 }
 
 /**
- * Keys the Raid protection control read `flag:<id>` can carry, at any depth. Not the object's shape.
- */
-export interface ReadingProtect_Flag {
-  active?: boolean;
-  count?: number;
-  /** Unit: s. Absent when the game did not give it. */
-  durationSeconds?: number;
-  flag?: number;
-  /** Absent when the game did not give it. */
-  forever?: boolean;
-  /** Absent when the game did not give it. On each item of a list. */
-  inActiveList?: boolean;
-  lastChangedPacked?: number;
-  /** Absent when the game did not give it. */
-  managerClass?: string;
-  managerPresent?: boolean;
-  /** Absent when the game did not give it. */
-  note?: string;
-  packed?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  protected?: boolean;
-  protections?: unknown[];
-  /** Absent when the game did not give it. */
-  scopeNote?: string;
-  serverTimeInSyncs?: number;
-  serverUtcDayAtStartup?: number;
-  /** Unit: s. Absent when the game did not give it. */
-  startSeconds?: number;
-  /** Absent when the game did not give it. */
-  truncated?: boolean;
-}
-
-/**
  * Keys the Raid protection control read `changes` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingProtect_Changes {
@@ -14327,15 +14292,48 @@ export interface ReadingProtect_Changes {
 }
 
 /**
+ * Keys the Raid protection control read `flag:<id>` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingProtect_Flag {
+  active?: boolean;
+  count?: number;
+  /** Unit: s. Absent when the game did not give it. */
+  durationSeconds?: number;
+  flag?: number;
+  /** Absent when the game did not give it. */
+  forever?: boolean;
+  /** Absent when the game did not give it. On each item of a list. */
+  inActiveList?: boolean;
+  lastChangedPacked?: number;
+  /** Absent when the game did not give it. */
+  managerClass?: string;
+  managerPresent?: boolean;
+  /** Absent when the game did not give it. */
+  note?: string;
+  packed?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  protected?: boolean;
+  protections?: unknown[];
+  /** Absent when the game did not give it. */
+  scopeNote?: string;
+  serverTimeInSyncs?: number;
+  serverUtcDayAtStartup?: number;
+  /** Unit: s. Absent when the game did not give it. */
+  startSeconds?: number;
+  /** Absent when the game did not give it. */
+  truncated?: boolean;
+}
+
+/**
  * Keys the Raid protection control read `layout` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingProtect_Layout {
   active?: number;
   canArm?: boolean;
+  changedAt?: number;
   duration?: number;
   entries?: number;
   entriesProven?: number;
-  changedAt?: number;
   /** Absent when the game did not give it. */
   layout?: string;
   managerClass?: string;
@@ -14537,14 +14535,14 @@ export interface ReadingQuests_Catalogue {
   items?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   itemsTruncated?: boolean;
+  /** Absent when the game did not give it. On each item of a list. */
+  limitToAreaCount?: number;
   /** Absent when the game did not give it. */
   limitedToX?: number;
   /** Absent when the game did not give it. */
   limitedToY?: number;
   /** Absent when the game did not give it. */
   limitedToZ?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  limitToAreaCount?: number;
   /** Absent when the game did not give it. On each item of a list. */
   mapMarkers?: number;
   /** Absent when the game did not give it. */
@@ -14717,14 +14715,14 @@ export interface ReadingQuests_Quest {
   items?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   itemsTruncated?: boolean;
+  /** Absent when the game did not give it. On each item of a list. */
+  limitToAreaCount?: number;
   /** Absent when the game did not give it. */
   limitedToX?: number;
   /** Absent when the game did not give it. */
   limitedToY?: number;
   /** Absent when the game did not give it. */
   limitedToZ?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  limitToAreaCount?: number;
   /** Absent when the game did not give it. On each item of a list. */
   mapMarkers?: number;
   /** Absent when the game did not give it. */
@@ -15011,8 +15009,8 @@ export interface ReadingRaid_Encounters {
   base?: number;
   /** The same distinction the other two payloads now carry. */
   encounterEvents?: number;
-  encounters?: unknown[];
   encounterUnresolved?: number;
+  encounters?: unknown[];
   /** Reported beside a raid and never counted as one: a base nobody has hit is not raided. */
   note?: "an encounter attack on a base is not counted as a raid";
   /** On each item of a list. */
@@ -15084,9 +15082,9 @@ export interface ReadingRaid_Raids {
  * Keys the Raid detection read `reasons` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingRaid_Reasons {
-  destroyedByReason?: Record<string, unknown>;
   destroyEvents?: number;
   destroyUnresolved?: number;
+  destroyedByReason?: Record<string, unknown>;
   note?: string;
   raidReason?: "damage";
 }
@@ -15227,9 +15225,9 @@ export interface ReadingResources_Resources {
   refillRadius?: Record<string, unknown>;
   removed?: number;
   /** Absent when the game did not give it. */
-  replenishmentsPerTick?: number;
-  /** Absent when the game did not give it. */
   replenishNearPlayersWithin?: number;
+  /** Absent when the game did not give it. */
+  replenishmentsPerTick?: number;
   source?: string;
   /** Absent when the game did not give it. */
   sourceNote?: string;
@@ -15288,12 +15286,12 @@ export interface ReadingResources_Stations {
   proximityReplenishTimeout?: number;
   /** Absent when the game did not give it. On each item of a list. */
   replenishAmount?: number;
-  /** Absent when the game did not give it. On each item of a list. */
-  replenishesOnATimer?: boolean;
   /** Unit: min. Absent when the game did not give it. On each item of a list. */
   replenishIntervalMinutes?: number;
   /** Unit: s. Absent when the game did not give it. On each item of a list. */
   replenishIntervalSeconds?: number;
+  /** Absent when the game did not give it. On each item of a list. */
+  replenishesOnATimer?: boolean;
   /** Absent when the game did not give it. On each item of a list. */
   state?: string;
   stations?: unknown[];
@@ -15324,6 +15322,28 @@ export interface ReadingSettings_Categories {
 }
 
 /**
+ * Keys the Live server settings read `changes` can carry, at any depth. Not the object's shape.
+ */
+export interface ReadingSettings_Changes {
+  /** On each item of a list. Type not readable from the source. */
+  after?: unknown;
+  /** Unit: ms. On each item of a list. */
+  agoMs?: number;
+  basis?: string;
+  /** On each item of a list. Type not readable from the source. */
+  before?: unknown;
+  cap?: number;
+  changes?: unknown[];
+  count?: number;
+  /** On each item of a list. */
+  name?: string;
+  /** On each item of a list. */
+  reverted?: boolean;
+  /** On each item of a list. */
+  type?: string;
+}
+
+/**
  * Keys the Live server settings read `get:<type>:<name>` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingSettings_Get {
@@ -15334,9 +15354,9 @@ export interface ReadingSettings_Get {
   /** Absent when the game did not give it. */
   category?: string;
   /** Absent when the game did not give it. */
-  exists?: boolean;
-  /** Absent when the game did not give it. */
   changedHere?: boolean;
+  /** Absent when the game did not give it. */
+  exists?: boolean;
   /** Absent when the game did not give it. */
   inSettingsFile?: boolean;
   /** Absent when the game did not give it. */
@@ -15356,28 +15376,6 @@ export interface ReadingSettings_Get {
   typeCaution?: string;
   /** Type not readable from the source. */
   value?: unknown;
-}
-
-/**
- * Keys the Live server settings read `changes` can carry, at any depth. Not the object's shape.
- */
-export interface ReadingSettings_Changes {
-  /** On each item of a list. Type not readable from the source. */
-  after?: unknown;
-  /** Unit: ms. On each item of a list. */
-  agoMs?: number;
-  basis?: string;
-  /** On each item of a list. Type not readable from the source. */
-  before?: unknown;
-  cap?: number;
-  count?: number;
-  changes?: unknown[];
-  /** On each item of a list. */
-  name?: string;
-  /** On each item of a list. */
-  reverted?: boolean;
-  /** On each item of a list. */
-  type?: string;
 }
 
 /**
@@ -15468,12 +15466,12 @@ export interface ReadingSettings_Values {
   catalogue?: string;
   /** Absent when the game did not give it. */
   category?: string;
+  /** Absent when the game did not give it. */
+  changedHere?: boolean;
   count?: number;
   /** Absent when the game did not give it. */
   exists?: boolean;
   from?: number;
-  /** Absent when the game did not give it. */
-  changedHere?: boolean;
   /** Absent when the game did not give it. */
   inSettingsFile?: boolean;
   matched?: number;
@@ -15510,12 +15508,12 @@ export interface ReadingSettings_Valuesfrom {
   catalogue?: string;
   /** Absent when the game did not give it. */
   category?: string;
+  /** Absent when the game did not give it. */
+  changedHere?: boolean;
   count?: number;
   /** Absent when the game did not give it. */
   exists?: boolean;
   from?: number;
-  /** Absent when the game did not give it. */
-  changedHere?: boolean;
   /** Absent when the game did not give it. */
   inSettingsFile?: boolean;
   matched?: number;
@@ -15635,12 +15633,12 @@ export interface ReadingSpawn_Persistence {
   at30s?: Record<string, unknown>;
   at5m?: Record<string, unknown>;
   available?: boolean;
+  checked?: number;
   confirmable?: "only with somebody online";
   countersCaveat?: string;
   engineRoute?: Record<string, unknown>;
   evidence?: string;
   gone?: number;
-  checked?: number;
   kinds?: "animal, zombie, armednpc, vehicle";
   means?: string;
   measured?: string;
@@ -15718,6 +15716,8 @@ export interface ReadingSpawn_Spawn {
   at5m?: Record<string, unknown>;
   /** Absent when the game did not give it. */
   brain?: boolean;
+  /** Absent when the game did not give it. */
+  checked?: number;
   class?: string;
   confirmed?: boolean;
   confirmedNote?: string;
@@ -15754,8 +15754,6 @@ export interface ReadingSpawn_Spawn {
   gone?: number;
   /** Absent when the game did not give it. */
   health?: number;
-  /** Absent when the game did not give it. */
-  checked?: number;
   /** Absent when the game did not give it. */
   id?: string;
   /** Absent when the game did not give it. */
@@ -16347,6 +16345,8 @@ export interface ReadingStats_Lastskill {
  * Keys the Survival stats read `ranking` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingStats_Ranking {
+  /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
+  IsBanned?: unknown;
   /** Unit: ms. */
   ageMs?: number;
   asked?: number;
@@ -16357,8 +16357,6 @@ export interface ReadingStats_Ranking {
   fameLevelNote?: "Show fameLevelComputed; the raw FameLevel reads 0 on this build.";
   /** Absent when the game did not give it. */
   hint?: "send command 'rank' and read again in a moment";
-  /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
-  IsBanned?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   name?: string;
   note?: "Rows around one player, not the top N — use each row's rank.";
@@ -16452,8 +16450,8 @@ export interface ReadingStats_Skills {
 export interface ReadingStats_Stats {
   /** Unit: ms. */
   ageMs?: number;
-  cached?: number;
   cacheMax?: number;
+  cached?: number;
   fields?: number;
   /** Absent when the game did not give it. */
   hint?: "send command 'refresh' and read again in a moment";
@@ -16531,6 +16529,8 @@ export interface ReadingStorage_Dropcheck {
   containerEntityLo?: number;
   /** Absent when the game did not give it. */
   entityLo?: number;
+  /** Unit: m. Absent when the game did not give it. */
+  reachM?: number;
   /** Type not readable from the source. */
   ready?: unknown;
   /** Absent when the game did not give it. */
@@ -16574,7 +16574,13 @@ export interface ReadingStorage_Lastdestroy {
   /** Absent when the game did not give it. */
   itemModule?: string;
   made?: boolean;
+  /** Unit: m. Absent when the game did not give it. */
+  reachM?: number;
+  /** Absent when the game did not give it. */
+  retryWith?: unknown[];
   stillInContainerAfterRemoval?: boolean;
+  /** Absent when the game did not give it. */
+  through?: string;
   /** Absent when the game did not give it. */
   via?: string;
   /** Absent when the game did not give it. */
@@ -16589,9 +16595,9 @@ export interface ReadingStorage_Lastdestroy {
  * Keys the Live storage read `lockboxes` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingStorage_Lockboxes {
-  attemptsLeft?: unknown[];
   /** Absent when the game did not give it. */
   atWorldOrigin?: boolean;
+  attemptsLeft?: unknown[];
   /** Absent when the game did not give it. Type not readable from the source. */
   canBeForceUnlocked?: unknown;
   class?: string;
@@ -16609,7 +16615,6 @@ export interface ReadingStorage_Lockboxes {
   id?: number;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
   ignoresLockProtection?: unknown;
-  lockboxes?: unknown[];
   lockData?: unknown[];
   lockDataCount?: number;
   /** Absent when the game did not give it. */
@@ -16620,10 +16625,11 @@ export interface ReadingStorage_Lockboxes {
   lockDataViaNote?: unknown;
   /** Absent when the game did not give it. */
   lockRuntimeId?: string;
-  /** Absent when the game did not give it. */
-  locks?: number;
   lockState?: unknown[];
   lockTypes?: unknown[];
+  lockboxes?: unknown[];
+  /** Absent when the game did not give it. */
+  locks?: number;
   /** Absent when the game did not give it. */
   owned?: number;
   /** Absent when the game did not give it. */
@@ -16661,9 +16667,9 @@ export interface ReadingStorage_Storage {
   /** Absent when the game did not give it. */
   addressableReason?: string;
   /** Absent when the game did not give it. */
-  attemptsLeft?: unknown[];
-  /** Absent when the game did not give it. */
   atWorldOrigin?: boolean;
+  /** Absent when the game did not give it. */
+  attemptsLeft?: unknown[];
   /** Absent when the game did not give it. */
   bcuLock?: string;
   /** Type not readable from the source. */
@@ -16705,12 +16711,12 @@ export interface ReadingStorage_Storage {
   lockIdsUnfilled?: boolean;
   /** Absent when the game did not give it. */
   lockObjects?: number;
+  lockState?: unknown[];
+  lockTypes?: unknown[];
   /** Absent when the game did not give it. Type not readable from the source. */
   lockpickable?: unknown;
   /** Absent when the game did not give it. */
   locks?: number;
-  lockState?: unknown[];
-  lockTypes?: unknown[];
   /** Absent when the game did not give it. */
   maxWeight?: number;
   /** Absent when the game did not give it. Type not readable from the source. */
@@ -16803,14 +16809,14 @@ export interface ReadingTeleport_Inflight {
   toleranceCm?: number;
   /** Unit: ms. Absent when the game did not give it. On each item of a list. */
   tookMs?: number;
-  /** Absent when the game did not give it. */
-  turned?: boolean | number;
-  turnedAlreadyFacing?: number;
-  turns?: unknown[];
   /** Unit: degrees. */
   turnSlackDeg?: number;
   /** Unit: ms. */
   turnTimeoutMs?: number;
+  /** Absent when the game did not give it. */
+  turned?: boolean | number;
+  turnedAlreadyFacing?: number;
+  turns?: unknown[];
   /** On each item of a list. */
   wantYaw?: number;
   /** Absent when the game did not give it. On each item of a list. */
@@ -16875,20 +16881,20 @@ export interface ReadingTrade_Bank {
   bankerProvisionPercent?: "fraction-0-1";
   /** Absent when the game did not give it. */
   cardCount?: null | number;
-  /** Type not readable from the source. */
-  cards?: unknown;
-  /** Absent when the game did not give it. */
-  cardsUnreadable?: boolean;
   /** Absent when the game did not give it. On each item of a list. */
   cardType?: string;
   /** Absent when the game did not give it. On each item of a list. */
   cardTypeRaw?: number;
+  /** Type not readable from the source. */
+  cards?: unknown;
+  /** Absent when the game did not give it. */
+  cardsUnreadable?: boolean;
+  /** On each item of a list. Type not readable from the source. */
+  chance?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   configSymbol?: string;
   /** Absent when the game did not give it. Type not readable from the source. */
   currencies?: unknown;
-  /** On each item of a list. Type not readable from the source. */
-  chance?: unknown;
   /** On each item of a list. */
   index?: number;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
@@ -16906,8 +16912,8 @@ export interface ReadingTrade_Bank {
   requiresCard?: string;
   /** Absent when the game did not give it. On each item of a list. */
   requiresCardRaw?: number;
-  rotationRarityCount?: number;
   rotationRarityChance?: "percent-0-100";
+  rotationRarityCount?: number;
   /** Absent when the game did not give it. */
   rotationRarityUnreadable?: boolean;
   /** Absent when the game did not give it. On each item of a list. */
@@ -16955,8 +16961,8 @@ export interface ReadingTrade_Prices {
   itemNames?: boolean;
   itemNamesNote?: "This game version does not say which item each price is for.";
   note?: "Only a trader's per-item overrides; other items sell at the economy price.";
-  overridesOnly?: boolean;
   overrideTraderKey?: "traderName";
+  overridesOnly?: boolean;
   /** Absent when the game did not give it. */
   path?: string;
   /** On each item of a list. */
@@ -16977,9 +16983,9 @@ export interface ReadingTrade_Prices {
   traderCount?: number;
   /** Absent when the game did not give it. On each item of a list. */
   traderName?: string;
-  traders?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   traderType?: string;
+  traders?: unknown[];
   /** Absent when the game did not give it. */
   truncated?: boolean;
   /** Absent when the game did not give it. On each item of a list. */
@@ -17126,9 +17132,9 @@ export interface ReadingVehicles_Vehicles {
   /** Absent when the game did not give it. */
   containerEHi?: number;
   /** Absent when the game did not give it. */
-  containerEidStr?: string;
-  /** Absent when the game did not give it. */
   containerELo?: number;
+  /** Absent when the game did not give it. */
+  containerEidStr?: string;
   /** Absent when the game did not give it. */
   containerOwner?: number;
   /** Absent when the game did not give it. */
@@ -17142,9 +17148,9 @@ export interface ReadingVehicles_Vehicles {
   /** Absent when the game did not give it. */
   eHi?: number;
   /** Absent when the game did not give it. */
-  eidStr?: string;
-  /** Absent when the game did not give it. */
   eLo?: number;
+  /** Absent when the game did not give it. */
+  eidStr?: string;
   /** Absent when the game did not give it. */
   engine?: string;
   /** Absent when the game did not give it. */
@@ -17177,14 +17183,14 @@ export interface ReadingVehicles_Vehicles {
   lockDetailTruncated?: boolean;
   /** Absent when the game did not give it. */
   lockIds?: number;
-  /** Absent when the game did not give it. Type not readable from the source. */
-  lockpickable?: unknown;
-  /** Absent when the game did not give it. */
-  locks?: number;
   /** Absent when the game did not give it. */
   lockTypes?: unknown[];
   /** Absent when the game did not give it. */
   lockTypesTruncated?: boolean;
+  /** Absent when the game did not give it. Type not readable from the source. */
+  lockpickable?: unknown;
+  /** Absent when the game did not give it. */
+  locks?: number;
   /** Absent when the game did not give it. */
   maxCarryWeight?: number;
   /** Absent when the game did not give it. Type not readable from the source. */
@@ -17325,11 +17331,11 @@ export interface ReadingVirtual_Repdata {
   joinUnavailable?: boolean;
   joinUnavailableNote?: string;
   /** Absent when the game did not give it. On each item of a list. */
+  lockClassPaths?: unknown[];
+  /** Absent when the game did not give it. On each item of a list. */
   lockClasses?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   lockClassesTruncated?: boolean;
-  /** Absent when the game did not give it. On each item of a list. */
-  lockClassPaths?: unknown[];
   /** Absent when the game did not give it. On each item of a list. */
   lockCount?: number;
   lockDisagreementNote?: string;
@@ -17619,9 +17625,9 @@ export interface ReadingWildlife_Biomes {
 export interface ReadingWildlife_Census {
   /** Absent when the game did not give it. */
   animalCeiling?: number;
-  animals?: Record<string, unknown>;
   /** Absent when the game did not give it. Type not readable from the source. */
   animalSpawning?: unknown;
+  animals?: Record<string, unknown>;
   /** Absent when the game did not give it. */
   byRole?: Record<string, unknown>;
   bySpecies?: Record<string, unknown>;
@@ -17629,8 +17635,8 @@ export interface ReadingWildlife_Census {
   ceiling?: number;
   /** Absent when the game did not give it. */
   displayNameGameSaid?: Record<string, unknown>;
-  displayNameNote?: string;
   displayNameNotItsOwn?: unknown[];
+  displayNameNote?: string;
   /** Absent when the game did not give it. Type not readable from the source. */
   displayNames?: unknown;
   enumSource?: string;
@@ -17834,9 +17840,9 @@ export interface ReadingWildlife_Water {
   /** Absent when the game did not give it. On each item of a list. */
   specialTag?: string;
   /** Absent when the game did not give it. */
-  specialTagged?: number;
-  /** Absent when the game did not give it. */
   specialTagNote?: string;
+  /** Absent when the game did not give it. */
+  specialTagged?: number;
   /** Absent when the game did not give it. On each item of a list. */
   speciesPreset?: string;
   /** Absent when the game did not give it. */
@@ -18092,12 +18098,12 @@ export interface ReadingWorldevents_Events {
   eventLists?: unknown;
   /** Type not readable from the source. */
   eventManager?: unknown;
+  /** Absent when the game did not give it. */
+  eventTypes?: number;
   /** Absent when the game did not give it. Type not readable from the source. */
   events?: unknown;
   /** Absent when the game did not give it. */
   eventsEmptyReason?: "Events are not set up yet. Ask again in a minute.";
-  /** Absent when the game did not give it. */
-  eventTypes?: number;
   /** Absent when the game did not give it. On each item of a list. */
   fallingSpeed?: number;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
@@ -18155,13 +18161,13 @@ export interface ReadingWorldevents_Events {
   reportsNothing?: string;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
   running?: unknown;
+  scheduleNote?: "No activation window yet; the times shown are placeholders.";
+  scheduled?: boolean;
   score?: number;
   /** Absent when the game did not give it. On each item of a list. Type not readable from the source. */
   secret?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   selector?: string;
-  scheduled?: boolean;
-  scheduleNote?: "No activation window yet; the times shown are placeholders.";
   /** Absent when the game did not give it. */
   state?: string;
   /** Absent when the game did not give it. Type not readable from the source. */
@@ -18201,12 +18207,12 @@ export interface ReadingWorldevents_Ledger {
   /** On each item of a list. */
   firstSeen?: number;
   id?: string;
-  /** Absent when the game did not give it. On each item of a list. */
-  index?: number;
   /** Type not readable from the source. */
   inEvent?: unknown;
   /** Absent when the game did not give it. On each item of a list. */
   inPlay?: unknown[];
+  /** Absent when the game did not give it. On each item of a list. */
+  index?: number;
   /** Absent when the game did not give it. */
   lastPoll?: number;
   /** Absent when the game did not give it. On each item of a list. */
@@ -18225,9 +18231,9 @@ export interface ReadingWorldevents_Ledger {
   player?: string;
   /** Unit: ms. */
   pollEveryMs?: number;
-  polls?: number;
   pollUsAvg?: number;
   pollUsMax?: number;
+  polls?: number;
   processEvents?: number;
   processEventsLastMinute?: number;
   /** Absent when the game did not give it. On each item of a list. */
@@ -18278,6 +18284,10 @@ export interface ReadingZones_Border {
  * Keys the Custom zones read `config:rename:<index>:<name>` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingZones_Config {
+  /** On each item of a list. */
+  channel?: string;
+  /** On each item of a list. */
+  channels?: number;
   color?: unknown[];
   damage?: unknown[];
   damageGroups?: unknown[];
@@ -18288,10 +18298,6 @@ export interface ReadingZones_Config {
   gameDefault?: boolean;
   /** On each item of a list. */
   handling?: string;
-  /** On each item of a list. */
-  channel?: string;
-  /** On each item of a list. */
-  channels?: number;
   index?: number;
   /** On each item of a list. */
   instigator?: string;
@@ -18337,10 +18343,10 @@ export interface ReadingZones_Defaults {
  * Keys the Custom zones read `enums` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingZones_Enums {
+  channel?: unknown[];
   damageGroupCustom?: string;
   event?: unknown[];
   handling?: unknown[];
-  channel?: unknown[];
   instigator?: unknown[];
   orderWord?: unknown[];
   receiver?: unknown[];
@@ -18353,6 +18359,10 @@ export interface ReadingZones_Enums {
  * Keys the Custom zones read `global` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingZones_Global {
+  /** On each item of a list. */
+  channel?: string;
+  /** On each item of a list. */
+  channels?: number;
   color?: unknown[];
   damage?: unknown[];
   damageGroups?: unknown[];
@@ -18363,10 +18373,6 @@ export interface ReadingZones_Global {
   gameDefault?: boolean;
   /** On each item of a list. */
   handling?: string;
-  /** On each item of a list. */
-  channel?: string;
-  /** On each item of a list. */
-  channels?: number;
   index?: number;
   /** On each item of a list. */
   instigator?: string;
@@ -18436,9 +18442,9 @@ export interface ReadingZones_Spawners {
   note?: "Levels of sentries standing in the circle now. Ask without a circle for every level." | "Posts show only shortly after a server start. Nothing here stops a place making sentries.";
   posts?: number;
   /** Absent when the game did not give it. */
-  respawning?: number;
-  /** Absent when the game did not give it. */
   respawnRead?: number;
+  /** Absent when the game did not give it. */
+  respawning?: number;
   sentriesStanding?: number;
 }
 
@@ -18446,6 +18452,10 @@ export interface ReadingZones_Spawners {
  * Keys the Custom zones read `zone:<name>` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingZones_Zone {
+  /** On each item of a list. */
+  channel?: string;
+  /** On each item of a list. */
+  channels?: number;
   color?: unknown[];
   config?: number;
   /** Absent when the game did not give it. On each item of a list. */
@@ -18460,10 +18470,6 @@ export interface ReadingZones_Zone {
   /** On each item of a list. */
   handling?: string;
   height?: number;
-  /** On each item of a list. */
-  channel?: string;
-  /** On each item of a list. */
-  channels?: number;
   index?: number;
   /** On each item of a list. */
   instigator?: string;
@@ -18663,8 +18669,8 @@ export interface ModuleReadings {
     "conditions": ReadingMedical_Conditions;
     "deaths": ReadingMedical_Deaths;
     "fields": ReadingMedical_Fields;
-    "lastcure": ReadingMedical_Lastcure;
     "lastchange": ReadingMedical_Lastchange;
+    "lastcure": ReadingMedical_Lastcure;
     "lastmeta": ReadingMedical_Lastmeta;
     "player": ReadingMedical_Player;
     "players": ReadingMedical_Players;
@@ -18675,9 +18681,9 @@ export interface ModuleReadings {
     "queue": ReadingNotify_Queue;
   };
   "offline": {
+    "changes": ReadingOffline_Changes;
     "encounterBases": ReadingOffline_EncounterBases;
     "flag": ReadingOffline_Flag;
-    "changes": ReadingOffline_Changes;
     "mode": ReadingOffline_Mode;
     "requests": ReadingOffline_Requests;
     "rules": ReadingOffline_Rules;
@@ -18693,8 +18699,8 @@ export interface ModuleReadings {
   };
   "protect": {
     "calls": ReadingProtect_Calls;
-    "flag": ReadingProtect_Flag;
     "changes": ReadingProtect_Changes;
+    "flag": ReadingProtect_Flag;
     "layout": ReadingProtect_Layout;
     "manager": ReadingProtect_Manager;
     "offline": ReadingProtect_Offline;
@@ -18735,8 +18741,8 @@ export interface ModuleReadings {
   };
   "settings": {
     "categories": ReadingSettings_Categories;
-    "get": ReadingSettings_Get;
     "changes": ReadingSettings_Changes;
+    "get": ReadingSettings_Get;
     "list": ReadingSettings_List;
     "outstanding": ReadingSettings_Outstanding;
     "probe": ReadingSettings_Probe;
@@ -18971,8 +18977,8 @@ export interface ModuleReadPairs {
     | [MedicalRead_Conditions, ReadingMedical_Conditions]
     | [MedicalRead_Deaths, ReadingMedical_Deaths]
     | [MedicalRead_Fields, ReadingMedical_Fields]
-    | [MedicalRead_Lastcure, ReadingMedical_Lastcure]
     | [MedicalRead_Lastchange, ReadingMedical_Lastchange]
+    | [MedicalRead_Lastcure, ReadingMedical_Lastcure]
     | [MedicalRead_Lastmeta, ReadingMedical_Lastmeta]
     | [MedicalRead_Player, ReadingMedical_Player]
     | [MedicalRead_Players, ReadingMedical_Players]
@@ -18981,9 +18987,9 @@ export interface ModuleReadPairs {
   "notify":
     | [NotifyRead_Queue, ReadingNotify_Queue];
   "offline":
+    | [OfflineRead_Changes, ReadingOffline_Changes]
     | [OfflineRead_EncounterBases, ReadingOffline_EncounterBases]
     | [OfflineRead_Flag, ReadingOffline_Flag]
-    | [OfflineRead_Changes, ReadingOffline_Changes]
     | [OfflineRead_Mode, ReadingOffline_Mode]
     | [OfflineRead_Requests, ReadingOffline_Requests]
     | [OfflineRead_Rules, ReadingOffline_Rules]
@@ -18996,8 +19002,8 @@ export interface ModuleReadPairs {
     | [PowerRead_Power, ReadingPower_Power];
   "protect":
     | [ProtectRead_Calls, ReadingProtect_Calls]
-    | [ProtectRead_Flag, ReadingProtect_Flag]
     | [ProtectRead_Changes, ReadingProtect_Changes]
+    | [ProtectRead_Flag, ReadingProtect_Flag]
     | [ProtectRead_Layout, ReadingProtect_Layout]
     | [ProtectRead_Manager, ReadingProtect_Manager]
     | [ProtectRead_Offline, ReadingProtect_Offline]
@@ -19031,8 +19037,8 @@ export interface ModuleReadPairs {
     | [RespawnRead_Timers, ReadingRespawn_Timers];
   "settings":
     | [SettingsRead_Categories, ReadingSettings_Categories]
-    | [SettingsRead_Get, ReadingSettings_Get]
     | [SettingsRead_Changes, ReadingSettings_Changes]
+    | [SettingsRead_Get, ReadingSettings_Get]
     | [SettingsRead_List, ReadingSettings_List]
     | [SettingsRead_Outstanding, ReadingSettings_Outstanding]
     | [SettingsRead_Probe, ReadingSettings_Probe]
@@ -19258,11 +19264,11 @@ export interface ModuleWriteNeeds {
   };
   "build": {
     "catalogue": { needs: "own-records"; persists: "n-a"; creates: "none" };
+    "chown": { needs: "no-player"; persists: "survives"; creates: "none" };
     "clearowner": { needs: "no-player"; persists: "survives"; creates: "none" };
     "demolish": { needs: "no-player"; persists: "survives"; creates: "none" };
     "destroy": { needs: "no-player"; persists: "survives"; creates: "none" };
     "fill": { needs: "player-channel"; persists: "unmeasured"; creates: "game-route"; persistable: false };
-    "chown": { needs: "no-player"; persists: "survives"; creates: "none" };
     "learn": { needs: "own-records"; persists: "n-a"; creates: "none" };
     "overtake": { needs: "no-player"; persists: "survives"; creates: "none" };
     "place": { needs: "player-target"; persists: "lost"; creates: "game-route"; persistable: false };
