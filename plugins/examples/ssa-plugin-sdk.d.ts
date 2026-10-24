@@ -446,6 +446,15 @@ export interface Host {
     info(): { name: string | null; publicIP: string | null; port: number | null; connectPort: number | null; address: string; version: string | null; nextRestartUnix: number | null };
     /** @since 5.0.3 */
     isRunning(): boolean;
+    /**
+     * The server's own admin list, read from `AdminUsers.ini` on every call, in file order. `flags`
+     * are the names inside the brackets after an id (`[]` for a bare id). Returns `[]` when the file
+     * does not exist and `null` when it exists and could not be read: those are different answers.
+     * Read-only and needs no capability. The game treats any listed id as a full admin whatever the
+     * brackets name, so `flags` is what the file says, not a permission set to rely on.
+     * @since the release after 6.1.0
+     */
+    admins(): Array<{ steamId: string; flags: string[] }> | null;
     /** @since 5.0.3 */
     start(reason?: string): Promise<boolean>;
     /** @since 5.0.3 */
@@ -4465,6 +4474,10 @@ export interface Host {
    * anonymous; `req.visitor` is the signed-in visitor or null. `routes.player.*` → the same mount,
    * answering 401 `{ error: 'login_required', reason }` unless a Field Console visitor (or an admin)
    * is signed in; `req.visitor` is then always set.
+   *
+   * On `routes.*` (the admin mount) `req.admin` is `{ id, name }` for the signed-in panel admin
+   * making the request and `null` otherwise; see `RouteAdmin`. On the public and player mounts it
+   * is always `null`: an admin browsing the site is `req.visitor.admin` there.
    * @since 5.0.3
    */
   routes: RouteApi & { public: RouteApi; /** @since 5.53.0 */ player: RouteApi };
@@ -4822,6 +4835,19 @@ export interface FcVisitor {
   groups: string[];
 }
 
+/**
+ * Who is acting, as an admin route sees them (`req.admin`): the panel admin whose session made the
+ * request. Two facts and nothing else, so an audit line or a per-admin setting can rest on them.
+ * `id` is the admin's account id as a string, and `null` for the built-in recovery admin, which has
+ * a name and no account. An admin whose account was disabled, or whose password changed, is not
+ * signed in any more and the route answers 401 before the handler runs. `req.admin` is `null` on
+ * the public and player mounts, and the same pair is `SSA.me()` in the panel.
+ */
+export interface RouteAdmin {
+  id: string | null;
+  name: string;
+}
+
 export interface RouteApi {
   /** @since 5.0.3 */
   get(path: string, handler: (req: any, res: any) => void): void;
@@ -5070,6 +5096,15 @@ export interface PluginManifest {
    * @since 6.1.0
    */
   capabilities?: string[];
+  /**
+   * The outside hosts the plugin connects to, as bare host names (`["api.stripe.com", "proxycheck.io"]`):
+   * no scheme, port, path or wildcard. The owner reads the list on the plugin's card; a plugin
+   * without the key shows "Does not list where it connects", and `[]` says it connects nowhere.
+   * Informational only: the manager cannot see which hosts a plugin's code opens a connection to,
+   * so nothing enforces this list. Older managers ignore the key.
+   * @since the release after 6.1.0
+   */
+  net?: string[];
   /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`.
    * @since 4.0.2
    */
@@ -5456,6 +5491,13 @@ export interface SSA {
   premium(): boolean;
   /** @since 4.0.2 */
   admin(): { isDefault?: boolean; permissions?: string[] } | null;
+  /**
+   * Who is signed in to this panel: `{ id, name }`, or `null` when nobody is or there is no panel
+   * behind the SDK. `id` is a string, `null` for the built-in recovery admin. The same pair a backend
+   * route reads as `req.admin`; unlike `admin()` it will not change shape.
+   * @since the release after 6.1.0
+   */
+  me(): { id: string | null; name: string } | null;
   /** @since 4.0.2 */
   refreshGates(): void;
 
@@ -5508,6 +5550,16 @@ export interface SSA {
   openPlayer(name: string, steamId?: string): void;
   /** @since 4.0.2 */
   openPlayerAdmin(steamIdOrName: string, name?: string): void; // open the admin-actions menu
+  /**
+   * Open the admin menu of one player or vehicle by id, the menu the Live Map opens. `kind` is
+   * `'player'` (a SteamID) or `'vehicle'` (the save row id the map card shows). Resolves to `true`
+   * when a menu opened and `false` when not (no bridge, an unknown kind, no such vehicle); the panel
+   * says why in a toast. A vehicle is found on the Live Map's data, or in a fresh map read when the
+   * map has not been opened: that read has the saved position and no running-game id, so recovery
+   * verbs address the vehicle by position. Feature-detect with `canOpenEntityAdmin()`.
+   * @since the release after 6.1.0
+   */
+  openEntityAdmin(kind: 'player' | 'vehicle', id: string | number): Promise<boolean>;
   /** @since 4.0.2 */
   showOnMap(x: number, y: number, z?: number): void;           // centre the Live Map on a coordinate
   /** @since 4.0.2 */
@@ -5575,6 +5627,10 @@ export interface SSA {
   // ── capability flags (feature-detect before wiring an affordance up) ──
   /** @since 4.0.2 */
   canOpenPlayer(): boolean;
+  /** Does this panel have `openEntityAdmin` behind it?
+   * @since the release after 6.1.0
+   */
+  canOpenEntityAdmin(): boolean;
   /** @since 4.0.2 */
   canShowOnMap(): boolean;
   /** @since 4.0.2 */

@@ -13,7 +13,7 @@ Give it one plugin folder, or a folder that holds several. It reads files and ne
 
 What it checks:
 
-- **plugin.json**: valid JSON, an `id` that matches the folder, a `name`, a `type`, an `x.y.z` version, an `x.y.z` `minManagerVersion`, `capabilities` written as words, and `dependencies` and `bridge` in the right shape.
+- **plugin.json**: valid JSON, an `id` that matches the folder, a `name`, a `type`, an `x.y.z` version, an `x.y.z` `minManagerVersion`, `capabilities` written as words, `net` (when present) a list of bare host names, and `dependencies` and `bridge` in the right shape. A missing `net` is a note: the plugin card then says the plugin does not list where it connects.
 - **Files the manifest names**: `main`, `web`, `fc`, `config`, `image` and `readme` exist and stay inside the plugin. A `README.md` is there. An `icon.png` is named in `image`.
 - **Translations** in `payload/web/i18n`: every file is valid, flat JSON for a language the panel has, with no `en.json`. Every key the code asks for through `SSA.t()`, `FC.t()` or `host.i18n.t()` is in every language, and no file carries a key nobody asks for. No value is empty. Each one keeps the `{placeholders}` and the leading or trailing space of its English. Counts have real plural forms.
 - **The packed zip**: when `dist/<id>-<version>.zip` exists, it is read and compared with the source byte for byte.
