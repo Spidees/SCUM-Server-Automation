@@ -30,6 +30,37 @@ export interface LinkedPlayer {
   [column: string]: unknown;
 }
 
+/**
+ * One player who is online right now, as `host.players.online()` returns it.
+ *
+ * `steamId`, `name` and `playerName` are the named fields, the same ones `LinkedPlayer` has. The
+ * columns of the query behind them travel alongside (`PlayerName`, `SteamID`, `last_login_time`, …):
+ * they are kept so nothing that already reads them breaks. Write new code against the named fields.
+ */
+export interface OnlinePlayer {
+  /** The player's Steam ID as a string, or `null` if the row carried none. */
+  steamId: string | null;
+  /** The in-game character name, or `null`. */
+  name: string | null;
+  /** An alias of `name`, to match `LinkedPlayer`. */
+  playerName: string | null;
+  [column: string]: unknown;
+}
+
+/** One finished backup, as `host.backups.list()` returns it. */
+export interface BackupInfo {
+  /** The file (or, for an uncompressed backup, folder) name inside the backup folder. */
+  name: string;
+  /** Bytes on disk. */
+  size: number;
+  /** When it was taken, in milliseconds since 1970; `null` if the file system did not say. */
+  createdAt: number | null;
+  /** `true` for a .zip, `false` for a plain folder copy. */
+  compressed: boolean;
+  /** `true` when the manager could open it and found a save inside, so Restore would work. */
+  restorable: boolean;
+}
+
 // ── Backend: the `host` facade passed to register(host) ──────────────────────
 export interface Host {
   /**
@@ -157,8 +188,13 @@ export interface Host {
     squad(steamId: string): any | null;
     /** @since 5.0.3 */
     byName(name: string): any | null;
-    /** @since 5.0.3 */
-    online(): any[];
+    /**
+     * Everyone online right now. Each row has the named fields `steamId`, `name` and `playerName`; the raw
+     * columns (`SteamID`, `PlayerName`, …) are still on it. The named fields exist from 6.2.0,
+     * so on an older manager read `SteamID` and `PlayerName`.
+     * @since 5.0.3
+     */
+    online(): OnlinePlayer[];
     /** The language this player reads the server in — same answer as `host.i18n.playerLang()`.
      * @since 5.56.0
      */
@@ -410,6 +446,15 @@ export interface Host {
     info(): { name: string | null; publicIP: string | null; port: number | null; connectPort: number | null; address: string; version: string | null; nextRestartUnix: number | null };
     /** @since 5.0.3 */
     isRunning(): boolean;
+    /**
+     * The server's own admin list, read from `AdminUsers.ini` on every call, in file order. `flags`
+     * are the names inside the brackets after an id (`[]` for a bare id). Returns `[]` when the file
+     * does not exist and `null` when it exists and could not be read: those are different answers.
+     * Read-only and needs no capability. The game treats any listed id as a full admin whatever the
+     * brackets name, so `flags` is what the file says, not a permission set to rely on.
+     * @since 6.2.0
+     */
+    admins(): Array<{ steamId: string; flags: string[] }> | null;
     /** @since 5.0.3 */
     start(reason?: string): Promise<boolean>;
     /** @since 5.0.3 */
@@ -1738,7 +1783,9 @@ export interface Host {
      * @since 5.43.0
      */
     equipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
-    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full.
+    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full. On a newer
+     * bridge with the *Take an item off a shoulder* switch on, it also takes a slung item off a
+     * shoulder; nothing is destroyed. An item neither worn nor slung is refused.
      * @since 5.43.0
      */
     unequipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
@@ -2424,15 +2471,17 @@ export interface Host {
      * @since 5.1.0
      */
     takeFromContainer(containerId: string, itemId: string, steamId: string): Promise<BridgeCommandResult>;
-    /** Move an item between containers. Made through a player's inventory component, so it needs at
-     *  least one player spawned in even though no player is involved in the outcome.
+    /** Move an item between containers. Made through the inventory component of a player standing at
+     *  the container (within 1.8 m): the one `steamId` names, else the nearest one. Refused with the
+     *  distance when nobody is that close. `steamId` is accepted by manager 6.2.0.
      * @since 5.1.0
      */
-    moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string): Promise<BridgeCommandResult>;
-    /** Destroy one item inside a container. No undo.
+    moveBetweenContainers(containerId: string, itemId: string, targetContainerId: string, steamId?: string): Promise<BridgeCommandResult>;
+    /** Destroy one item inside a container. No undo. Acts through a player standing at the container,
+     *  like `moveBetweenContainers`; name the one who has it open with `steamId` (manager 6.2.0).
      * @since 5.1.0
      */
-    destroyContainerItem(containerId: string, itemId: string): Promise<BridgeCommandResult>;
+    destroyContainerItem(containerId: string, itemId: string, steamId?: string): Promise<BridgeCommandResult>;
 
     // ── placing your own items and containers ────────────────────────────────────────────────────
     /** Put one of the game's own items or containers at x, y, z (centimetres), optionally holding
@@ -4269,6 +4318,43 @@ export interface Host {
     record?(text: string, opts?: { channel?: string; name?: string }): { ok: boolean; reason?: string };
   };
 
+  /**
+   * The manager's own backups of the game save: the ones the panel's Backup button, the schedule and
+   * the pre-update backup make. Listing them and reading the settings need no capability. Taking one
+   * needs `"backups:write"` in `capabilities` (or `"*"`), and the call never throws.
+   *
+   * Each backup counts toward the owner's `maxBackups`, and the oldest is deleted when the limit is
+   * passed, so a plugin that backs up in a loop would push out the backups the owner is relying on.
+   * The manager lets one plugin start one backup a minute. Ask for one before a risky change, not on
+   * a timer; the schedule is the owner's.
+   * @since 6.2.0
+   */
+  backups: {
+    /**
+     * Take a backup now and wait for it. Resolves `{ ok: true, fileName }` when the archive was written
+     * and opened again to check it, or `{ ok: false, code, reason }`:
+     *  • `not_permitted`  the owner enforces plugin capabilities and `backups:write` is not declared
+     *  • `too_soon`       this plugin took one less than a minute ago
+     *  • `no_source`      the game's saved folder does not exist yet
+     *  • any other code   the backup itself failed; `reason` is its own sentence
+     * If a backup is already running (the schedule's, say) the call waits for that one and shares its
+     * result. `opts.reason` is one line of your own, written to the manager log beside your plugin id.
+     * @since 6.2.0
+     */
+    create(opts?: { reason?: string }): Promise<{ ok: true; fileName: string } | { ok: false; code: string; reason: string; error?: string }>;
+    /**
+     * Every finished backup, newest first. `null` when the backup folder could not be read, which is
+     * not the same answer as `[]`: a folder that does not exist yet is an install that has never taken
+     * a backup and answers `[]`.
+     * @since 6.2.0
+     */
+    list(): Promise<BackupInfo[] | null>;
+    /** The owner's backup settings: where, how many are kept, whether they are zipped, how often the schedule runs.
+     * @since 6.2.0
+     */
+    settings(): { dir: string | null; maxBackups: number; compress: boolean; intervalMinutes: number };
+  };
+
   /** Push a notification through the manager's own pipeline (Discord + admin realtime).
    * @since 5.0.3
    */
@@ -4389,6 +4475,10 @@ export interface Host {
    * anonymous; `req.visitor` is the signed-in visitor or null. `routes.player.*` → the same mount,
    * answering 401 `{ error: 'login_required', reason }` unless a Field Console visitor (or an admin)
    * is signed in; `req.visitor` is then always set.
+   *
+   * On `routes.*` (the admin mount) `req.admin` is `{ id, name }` for the signed-in panel admin
+   * making the request and `null` otherwise; see `RouteAdmin`. On the public and player mounts it
+   * is always `null`: an admin browsing the site is `req.visitor.admin` there.
    * @since 5.0.3
    */
   routes: RouteApi & { public: RouteApi; /** @since 5.53.0 */ player: RouteApi };
@@ -4424,8 +4514,9 @@ export interface Host {
  *                  refused without saying why.
  *  • `not_permitted` the manager did not send the call: the owner enforces plugin capabilities and
  *                  your plugin.json `capabilities` does not cover it. `error` is
- *                  `capability_refused` and `reason` names what is missing. Never seen by a plugin
- *                  that declares no `capabilities`.
+ *                  `capability_refused` and `reason` names what is missing. A plugin that declares no
+ *                  `capabilities` at all is treated as declaring none, so it sees this code too (only
+ *                  while the owner enforces; in the default mode nothing is refused).
  */
 export type BridgeFailureCode = 'bridge_off' | 'no_module' | 'module_off' | 'refused' | 'not_permitted';
 
@@ -4745,6 +4836,19 @@ export interface FcVisitor {
   groups: string[];
 }
 
+/**
+ * Who is acting, as an admin route sees them (`req.admin`): the panel admin whose session made the
+ * request. Two facts and nothing else, so an audit line or a per-admin setting can rest on them.
+ * `id` is the admin's account id as a string, and `null` for the built-in recovery admin, which has
+ * a name and no account. An admin whose account was disabled, or whose password changed, is not
+ * signed in any more and the route answers 401 before the handler runs. `req.admin` is `null` on
+ * the public and player mounts, and the same pair is `SSA.me()` in the panel.
+ */
+export interface RouteAdmin {
+  id: string | null;
+  name: string;
+}
+
 export interface RouteApi {
   /** @since 5.0.3 */
   get(path: string, handler: (req: any, res: any) => void): void;
@@ -4979,10 +5083,29 @@ export interface PluginManifest {
    * Every call still goes through by default; one outside the list is logged once and shown on
    * the plugin's card. When the owner sets `plugins.capabilities` to `enforce`, such a call is
    * refused with `code: 'not_permitted'` (a chat call rejects with `capability_refused`). A
-   * plugin without this key is never refused or warned about. Older managers ignore it.
+   * plugin without this key counts as declaring nothing: in the default mode its calls go through
+   * and its card says it declares none, and under `enforce` they are refused like any undeclared
+   * call. Older managers ignore the key.
+   *
+   * `"backups:write"` lets `host.backups.create()` take a backup. Listing backups and reading the
+   * backup settings need no word.
+   *
+   * This limits what a plugin may ask the manager and the bridge to do. It does not limit Node: a
+   * plugin backend runs inside the manager's own process with the manager's rights and can read
+   * files, start programs and open connections without going through `host`. Owners install only
+   * plugins they trust, and the list tells them what a plugin means to do, not what it is unable to do.
    * @since 6.1.0
    */
   capabilities?: string[];
+  /**
+   * The outside hosts the plugin connects to, as bare host names (`["api.stripe.com", "proxycheck.io"]`):
+   * no scheme, port, path or wildcard. The owner reads the list on the plugin's card; a plugin
+   * without the key shows "Does not list where it connects", and `[]` says it connects nowhere.
+   * Informational only: the manager cannot see which hosts a plugin's code opens a connection to,
+   * so nothing enforces this list. Older managers ignore the key.
+   * @since 6.2.0
+   */
+  net?: string[];
   /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`.
    * @since 4.0.2
    */
@@ -5031,7 +5154,9 @@ export interface PluginModule {
 }
 
 // ── Admin frontend: window.SSA (payload/web/plugin.js) ───────────────────────
-export interface ActionEntry { label: string; icon?: string; danger?: boolean; disabled?: boolean; run?: () => void; submenu?: any }
+export interface ActionEntry { label: string; icon?: string; danger?: boolean; disabled?: boolean; run?: () => void; submenu?: any;
+  /** A stable name for the entry inside your plugin (64 characters). The panel prefixes it with your id. */
+  key?: string }
 export interface TabDef {
   id: string; label: string; icon?: string; order?: number;
   permission?: string; premium?: boolean; when?: () => boolean;
@@ -5063,6 +5188,142 @@ export interface SSAMapPoint {
   y: number;
   /** `sky` = the highest surface in that column, which indoors is the ROOF. */
   ground?: { z: number; from: 'sky' | 'same' } | null;
+}
+
+/**
+ * What a layer's `draw()` and an `SSA.map.on('view')` listener are handed: where the map is, in
+ * SCREEN pixels of the map's viewport. Your canvas covers exactly that viewport, so draw with
+ * `toScreen` and the drawing stays sharp at every zoom.
+ */
+export interface SSAMapView {
+  /** The map's zoom factor. */
+  scale: number;
+  /** The map's pan, in the panel's own units. Use `toScreen` rather than these. */
+  x: number;
+  y: number;
+  /** The viewport in CSS pixels. */
+  width: number;
+  height: number;
+  /** `devicePixelRatio`. The canvas transform already applies it. */
+  dpr: number;
+  /** World centimetres to viewport pixels; null while the map cannot place a point. */
+  toScreen(x: number, y: number): { left: number; top: number } | null;
+  /** Viewport pixels to world centimetres; null while the map cannot place a point. */
+  toWorld(left: number, top: number): { x: number; y: number } | null;
+  /** A length in world centimetres as viewport pixels, at this zoom. */
+  cmToPx(cm: number): number;
+}
+
+/** One point of a shape: `[x, y]` or `{ x, y }`, in world centimetres. */
+export type SSAMapXY = [number, number] | { x: number; y: number };
+
+/**
+ * A layer: a row in the map's layer list under "Plugin layers" and one canvas on the map. The four
+ * shape lists are drawn for you; `draw()` adds anything else, after them. Colours are CSS hex,
+ * `rgb()`/`rgba()` or `hsl()`/`hsla()`. A list is cut at 5000 markers and 2000 of every other shape.
+ */
+export interface SSAMapLayerDef {
+  /** Unique inside your plugin (64 characters). Adding the same id again replaces the layer. */
+  id: string;
+  /** The row's label in the layer list, already translated by you. */
+  label?: string;
+  /** The row's badge, and the colour of any shape that names none. */
+  color?: string;
+  /** Shown when first added. The reader's own choice is remembered per layer and wins. */
+  visible?: boolean;
+  markers?: Array<{ x: number; y: number; label?: string; color?: string; radius?: number; [k: string]: any }>;
+  /** `r` is in world centimetres, so the circle grows with the zoom. */
+  circles?: Array<{ x: number; y: number; r: number; color?: string; fill?: string; width?: number; [k: string]: any }>;
+  polygons?: Array<{ points: SSAMapXY[]; color?: string; fill?: string; width?: number; [k: string]: any }>;
+  lines?: Array<{ points: SSAMapXY[]; color?: string; width?: number; [k: string]: any }>;
+  /**
+   * Your own drawing, in viewport pixels, on a cleared canvas after the shapes. A draw that THROWS
+   * switches this layer off, says so on its row and in the console, and leaves the rest of the map
+   * drawn; clicking the row tries it again.
+   */
+  draw?(ctx: CanvasRenderingContext2D, view: SSAMapView): void;
+  /**
+   * Your own answer to "is this click on my layer". Without it the shapes answer: a marker, then a
+   * line within 6 px, a polygon the point is inside, a circle. Return null for "not mine".
+   */
+  hitTest?(left: number, top: number, info: { x?: number; y?: number; view: SSAMapView }): any;
+  /**
+   * A click on the bare map that your layer took. Only reaches you after the map's own markers,
+   * zones, pickers and drags have had it; the map does nothing else with that click.
+   */
+  onClick?(hit: SSAMapHit | any, point: { x: number; y: number } | null): void;
+}
+
+/** What the built-in hit test hands `onClick`: which list, which entry, and the entry itself. */
+export interface SSAMapHit {
+  kind: 'marker' | 'circle' | 'polygon' | 'line';
+  index: number;
+  item: any;
+}
+
+/**
+ * What `addLayer` returns. Calling it removes the layer, like `remove()`. When the layer was refused
+ * it is a handle that does nothing and `visible()` answers false.
+ */
+export interface SSAMapLayer {
+  (): void;
+  remove(): void;
+  /** Replace any of the four shape lists; the ones you leave out stay. */
+  update(data: Partial<Pick<SSAMapLayerDef, 'markers' | 'circles' | 'polygons' | 'lines'>>): SSAMapLayer;
+  /** Ask for a draw on the next frame, after your own state changed. */
+  redraw(): SSAMapLayer;
+  /** Whether it is on the map right now: switched on and not switched off by a failed draw. */
+  visible(): boolean;
+}
+
+/**
+ * The Live Map itself. Feature-detect with `SSA.canMap()`.
+ *
+ * Declare what you use in plugin.json `capabilities`: `map:layers` for `addLayer`, `map:actions` for
+ * `onContext`. Undeclared, the call works and the console says so once; on a manager that enforces
+ * capabilities it is refused: `addLayer` hands back a handle that draws nothing, `onContext` adds nothing.
+ *
+ * Like `SSA.api`, it knows which plugin is asking only while your script runs. From a click handler,
+ * a timer or after an `await`, use the object `SSA.map.client()` returned at load.
+ */
+export interface SSAMap {
+  /** @since 6.2.0 */
+  addLayer(def: SSAMapLayerDef): SSAMapLayer;
+  /** World centimetres to viewport pixels; null while the map is hidden or not calibrated.
+   * @since 6.2.0
+   */
+  toScreen(x: number, y: number): { left: number; top: number } | null;
+  /** Viewport pixels to world centimetres; null while the map is hidden or not calibrated.
+   * @since 6.2.0
+   */
+  toWorld(left: number, top: number): { x: number; y: number } | null;
+  /** The view right now; null while the map is hidden or not calibrated.
+   * @since 6.2.0
+   */
+  view(): SSAMapView | null;
+  /** The map moved, zoomed, resized or redrew. Coalesced to one call a frame. Returns the unsubscribe.
+   * @since 6.2.0
+   */
+  on(event: 'view', fn: (view: SSAMapView) => void): () => void;
+  /**
+   * Entries for the map's right-click menu, in a "From plugins" section after the panel's own.
+   * `z` is the height of the nearest thing the map knows, a hint and not the ground. Return an
+   * entry, an array of them, or nothing. Returns the unsubscribe.
+   * @since 6.2.0
+   */
+  onContext(fn: (point: { x: number; y: number; z: number }) => ActionEntry | ActionEntry[] | null | void): () => void;
+  /** `SSA.pickOnMap`, here as well.
+   * @since 6.2.0
+   */
+  pickPosition(opts?: Parameters<SSA['pickOnMap']>[0]): Promise<SSAMapPoint | null>;
+  /** `SSA.canPickOnMap`, here as well.
+   * @since 6.2.0
+   */
+  canPickPosition(): boolean;
+  /** This object bound to your plugin. Take it at load and use it from asynchronous code.
+   * @since 6.2.0
+   */
+  client(): SSAMap;
 }
 
 export interface SSA {
@@ -5199,10 +5460,10 @@ export interface SSA {
    * browser: that is what opens the screen in a new tab. `get()` is what the address names when
    * your `render()` runs; `onChange` hears Back, Forward and an address followed while the page is
    * open. Feature-test it: an older manager has no `route` and opens your first screen instead.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   route?: {
-    /** @since the release after 6.1.0 */
+    /** @since 6.2.0 */
     client(): {
       href(sub?: string): string;
       get(): string;
@@ -5231,6 +5492,13 @@ export interface SSA {
   premium(): boolean;
   /** @since 4.0.2 */
   admin(): { isDefault?: boolean; permissions?: string[] } | null;
+  /**
+   * Who is signed in to this panel: `{ id, name }`, or `null` when nobody is or there is no panel
+   * behind the SDK. `id` is a string, `null` for the built-in recovery admin. The same pair a backend
+   * route reads as `req.admin`; unlike `admin()` it will not change shape.
+   * @since 6.2.0
+   */
+  me(): { id: string | null; name: string } | null;
   /** @since 4.0.2 */
   refreshGates(): void;
 
@@ -5283,6 +5551,16 @@ export interface SSA {
   openPlayer(name: string, steamId?: string): void;
   /** @since 4.0.2 */
   openPlayerAdmin(steamIdOrName: string, name?: string): void; // open the admin-actions menu
+  /**
+   * Open the admin menu of one player or vehicle by id, the menu the Live Map opens. `kind` is
+   * `'player'` (a SteamID) or `'vehicle'` (the save row id the map card shows). Resolves to `true`
+   * when a menu opened and `false` when not (no bridge, an unknown kind, no such vehicle); the panel
+   * says why in a toast. A vehicle is found on the Live Map's data, or in a fresh map read when the
+   * map has not been opened: that read has the saved position and no running-game id, so recovery
+   * verbs address the vehicle by position. Feature-detect with `canOpenEntityAdmin()`.
+   * @since 6.2.0
+   */
+  openEntityAdmin(kind: 'player' | 'vehicle', id: string | number): Promise<boolean>;
   /** @since 4.0.2 */
   showOnMap(x: number, y: number, z?: number): void;           // centre the Live Map on a coordinate
   /** @since 4.0.2 */
@@ -5332,6 +5610,13 @@ export interface SSA {
    */
   pickOnMap(opts?: { note?: string; ground?: boolean; onPick?: (p: SSAMapPoint) => void; onCancel?: () => void }): Promise<SSAMapPoint | null>;
 
+  /**
+   * The Live Map: your own layers in its layer list, its coordinates both ways and its right-click
+   * menu. Needs `map:layers` / `map:actions` in plugin.json `capabilities`. Feature-detect with `canMap()`.
+   * @since 6.2.0
+   */
+  map: SSAMap;
+
   // ── data helpers (same endpoints the panel uses) ──
   /** @since 4.0.2 */
   onlinePlayers(): Promise<any[]>;
@@ -5343,6 +5628,10 @@ export interface SSA {
   // ── capability flags (feature-detect before wiring an affordance up) ──
   /** @since 4.0.2 */
   canOpenPlayer(): boolean;
+  /** Does this panel have `openEntityAdmin` behind it?
+   * @since 6.2.0
+   */
+  canOpenEntityAdmin(): boolean;
   /** @since 4.0.2 */
   canShowOnMap(): boolean;
   /** @since 4.0.2 */
@@ -5353,6 +5642,8 @@ export interface SSA {
   canOpenRecord(): boolean;
   /** @since 5.23.0 */
   canPickOnMap(): boolean;
+  /** @since 6.2.0 */
+  canMap(): boolean;
 }
 
 // ── Public Field Console frontend: window.FC (payload/fc/plugin.js) ───────────

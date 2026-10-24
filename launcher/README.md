@@ -8,12 +8,12 @@ The download is a file on the [Releases page](https://github.com/Spidees/SCUM-Se
 
 | | |
 |---|---|
-| Version | **1.0.9** |
-| Download | [SCUMSA-Launcher_1.0.9_x64-setup.exe](https://github.com/Spidees/SCUM-Server-Automation/releases/download/launcher-v1.0.9/SCUMSA-Launcher_1.0.9_x64-setup.exe) |
-| Size | 6,205,720 bytes (5.92 MiB) |
-| SHA-256 | `317b1b9046b35b5995d77b8f7aa31606500866f8f04b42dea6b128e3dec017a7` |
-| Release | [launcher-v1.0.9](https://github.com/Spidees/SCUM-Server-Automation/releases/tag/launcher-v1.0.9) |
-| Source commit | `f1294dd859ebc891656bff975118b52a60917b64` |
+| Version | **1.0.10** |
+| Download | [SCUMSA-Launcher_1.0.10_x64-setup.exe](https://github.com/Spidees/SCUM-Server-Automation/releases/download/launcher-v1.0.10/SCUMSA-Launcher_1.0.10_x64-setup.exe) |
+| Size | 6,208,808 bytes (5.92 MiB) |
+| SHA-256 | `e71af473b4b3f36c9eb1e15bb6ff3ae29879e7cde39367114dc687bb23d75d54` |
+| Release | [launcher-v1.0.10](https://github.com/Spidees/SCUM-Server-Automation/releases/tag/launcher-v1.0.10) |
+| Source commit | `5a0c48fac1e79199175e4c7b2b721f380c823883` |
 
 Run the installer once. The launcher updates itself after that.
 
@@ -22,10 +22,10 @@ Run the installer once. The launcher updates itself after that.
 The SHA-256 of the file you downloaded must be the one above. On Windows:
 
 ```
-Get-FileHash .\SCUMSA-Launcher_1.0.9_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\SCUMSA-Launcher_1.0.10_x64-setup.exe -Algorithm SHA256
 ```
 
-On Linux: `sha256sum SCUMSA-Launcher_1.0.9_x64-setup.exe`.
+On Linux: `sha256sum SCUMSA-Launcher_1.0.10_x64-setup.exe`.
 
 ## Older versions
 

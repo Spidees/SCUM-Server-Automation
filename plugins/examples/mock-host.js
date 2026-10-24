@@ -212,6 +212,7 @@ function readJson(file) {
  *   serverLang   default 'en'; `playerLangs` `{ [steamId]: 'cs' }` is each player's own choice
  *   items        game names for `items.name()`: `{ Weapon_M1911: 'M1911' }`
  *   serverRunning  what `server.isRunning()` answers (default false)
+ *   admins       what `server.admins()` answers: `[{ steamId, flags: [] }]` (default none), or `null` for an unreadable file
  *   bridgeOnline what `bridge.available()` answers (default true)
  *   commands     what the game answers to `server.command()`: a function `(cmd, opts) => answer`, or
  *                `{ SpawnItem: answer }` by the command's first word, where an answer may be a function
@@ -415,6 +416,7 @@ function createMockHost(opts = {}) {
     'stats.onlineCount': () => st.online.length,
 
     'server.isRunning': () => !!opts.serverRunning,
+    'server.admins': () => (opts.admins === null ? null : (opts.admins || []).map((a) => ({ steamId: String(a.steamId), flags: (a.flags || []).slice() }))),
     'server.bridge': async () => health(),
     'server.command': async (cmd, o) => {
       mock.commandsSent.push({ cmd: String(cmd), opts: o || {} });

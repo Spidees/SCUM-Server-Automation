@@ -46,6 +46,8 @@ const RAW_ACTIONS = ['cmd', 'batch', 'chat', 'console', 'module_config', 'module
   'setcmdprefix', 'spawn', 'groundz', 'list', 'players', 'where', 'name', 'tracediag', 'perf', 'snapshot',
   'status', 'modules', 'subscribe'];
 const SAVE_WRITE = 'save:write';
+// What a plugin's admin-panel script may do on the Live Map (SSA.map). `map.layers` is the same word.
+const PANEL_WORDS = ['map:layers', 'map:actions'];
 
 // ── output ──────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -453,13 +455,43 @@ function checkDeps(r, man, field) {
 
 function checkCapabilities(r, man, dir) {
   const caps = man.capabilities;
-  if (caps === undefined) return;
+  if (caps === undefined) {
+    r.note('no "capabilities" list: a manager set to enforce refuses every bridge call, admin command, chat line and save write this plugin makes');
+    return;
+  }
   if (!Array.isArray(caps)) { r.err('"capabilities" must be an array of strings'); return; }
   const bad = caps.filter((c) => typeof c !== 'string' || !c.trim());
   if (bad.length) r.err(`"capabilities" holds something that is not a word: ${some(bad.map((c) => JSON.stringify(c)))}`);
   const odd = caps.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim()).filter((c) => !(
-    c === '*' || c === SAVE_WRITE || /^cmd:.+$/i.test(c) || RAW_ACTIONS.includes(c) || /^[a-z][a-z0-9_]*(?::(read|write))?$/.test(c)));
+    c === '*' || c === SAVE_WRITE || PANEL_WORDS.includes(c.toLowerCase().replace(/^map\./, 'map:')) || /^cmd:.+$/i.test(c) || RAW_ACTIONS.includes(c) || /^[a-z][a-z0-9_]*(?::(read|write))?$/.test(c)));
   if (odd.length) r.warn(`"capabilities" word(s) the manager will not recognise and that grant nothing: ${some(odd)}`);
+}
+
+// "net": the outside hosts the plugin connects to, as bare host names. Informational: the manager shows
+// the list on the plugin's card and cannot enforce it. A host is lower-case letters, digits and hyphens in
+// dot-separated labels (at least two, or "localhost"), or an IPv4 address; no scheme, port, path or wildcard.
+const NET_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const NET_MAX = 32;
+function isNetHost(raw) {
+  if (typeof raw !== 'string') return false;
+  const h = raw.trim().toLowerCase();
+  if (!h || h.length > 253) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h.split('.').every((o) => Number(o) <= 255);
+  const labels = h.split('.');
+  if (labels.length < 2 && h !== 'localhost') return false;
+  if (!labels.every((l) => NET_LABEL.test(l))) return false;
+  return !/^\d+$/.test(labels[labels.length - 1]);
+}
+function checkNet(r, man) {
+  const net = man.net;
+  if (net === undefined) {
+    r.note('no "net" list: the plugin card tells the owner that it does not say where the plugin connects');
+    return;
+  }
+  if (!Array.isArray(net)) { r.err('"net" must be an array of host names'); return; }
+  const bad = net.filter((h) => !isNetHost(h));
+  if (bad.length) r.err(`"net" holds something that is not a host name (no scheme, port, slash or wildcard): ${some(bad.map((h) => JSON.stringify(h)))}`);
+  if (net.length > NET_MAX) r.err(`"net" lists ${net.length} hosts; the card shows at most ${NET_MAX}`);
 }
 
 function checkPlugin(dir, census) {
@@ -547,6 +579,7 @@ function checkPlugin(dir, census) {
   checkDeps(r, man, 'dependencies');
   checkDeps(r, man, 'optionalDependencies');
   checkCapabilities(r, man, dir);
+  checkNet(r, man);
   checkBridge(r, man);
 
   // A save write is refused unless the plugin names "save:write" itself; "*" does not cover it.
