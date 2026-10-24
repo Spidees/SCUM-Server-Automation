@@ -1783,7 +1783,9 @@ export interface Host {
      * @since 5.43.0
      */
     equipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
-    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full.
+    /** Take a worn garment off; it goes to the bag, or the ground when the bag is full. On a newer
+     * bridge with the *Take an item off a shoulder* switch on, it also takes a slung item off a
+     * shoulder; nothing is destroyed. An item neither worn nor slung is refused.
      * @since 5.43.0
      */
     unequipClothes(steamId: string, entityId: string | number): Promise<BridgeCommandResult>;
