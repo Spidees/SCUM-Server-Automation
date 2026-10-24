@@ -1,6 +1,6 @@
 {
   "name": "ssa-bridge-sdk",
-  "version": "2.44.0",
+  "version": "2.45.0",
   "private": true,
   "description": "Typings and a dependency-free Node client for the SSA Bridge, the SCUM server mod that answers JSON on a TCP socket.",
   "main": "ssa-bridge-client.js",
