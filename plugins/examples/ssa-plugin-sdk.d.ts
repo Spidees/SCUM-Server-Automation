@@ -452,7 +452,7 @@ export interface Host {
      * does not exist and `null` when it exists and could not be read: those are different answers.
      * Read-only and needs no capability. The game treats any listed id as a full admin whatever the
      * brackets name, so `flags` is what the file says, not a permission set to rely on.
-     * @since the release after 6.1.0
+     * @since 6.2.0
      */
     admins(): Array<{ steamId: string; flags: string[] }> | null;
     /** @since 5.0.3 */
@@ -4328,7 +4328,7 @@ export interface Host {
    * passed, so a plugin that backs up in a loop would push out the backups the owner is relying on.
    * The manager lets one plugin start one backup a minute. Ask for one before a risky change, not on
    * a timer; the schedule is the owner's.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   backups: {
     /**
@@ -4340,18 +4340,18 @@ export interface Host {
      *  • any other code   the backup itself failed; `reason` is its own sentence
      * If a backup is already running (the schedule's, say) the call waits for that one and shares its
      * result. `opts.reason` is one line of your own, written to the manager log beside your plugin id.
-     * @since the release after 6.1.0
+     * @since 6.2.0
      */
     create(opts?: { reason?: string }): Promise<{ ok: true; fileName: string } | { ok: false; code: string; reason: string; error?: string }>;
     /**
      * Every finished backup, newest first. `null` when the backup folder could not be read, which is
      * not the same answer as `[]`: a folder that does not exist yet is an install that has never taken
      * a backup and answers `[]`.
-     * @since the release after 6.1.0
+     * @since 6.2.0
      */
     list(): Promise<BackupInfo[] | null>;
     /** The owner's backup settings: where, how many are kept, whether they are zipped, how often the schedule runs.
-     * @since the release after 6.1.0
+     * @since 6.2.0
      */
     settings(): { dir: string | null; maxBackups: number; compress: boolean; intervalMinutes: number };
   };
@@ -5104,7 +5104,7 @@ export interface PluginManifest {
    * without the key shows "Does not list where it connects", and `[]` says it connects nowhere.
    * Informational only: the manager cannot see which hosts a plugin's code opens a connection to,
    * so nothing enforces this list. Older managers ignore the key.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   net?: string[];
   /** UE4SS plugins only: the folder under `Win64/Mods/`. Letters, digits, `.`, `_`, `-`.
@@ -5288,41 +5288,41 @@ export interface SSAMapLayer {
  * a timer or after an `await`, use the object `SSA.map.client()` returned at load.
  */
 export interface SSAMap {
-  /** @since the release after 6.1.0 */
+  /** @since 6.2.0 */
   addLayer(def: SSAMapLayerDef): SSAMapLayer;
   /** World centimetres to viewport pixels; null while the map is hidden or not calibrated.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   toScreen(x: number, y: number): { left: number; top: number } | null;
   /** Viewport pixels to world centimetres; null while the map is hidden or not calibrated.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   toWorld(left: number, top: number): { x: number; y: number } | null;
   /** The view right now; null while the map is hidden or not calibrated.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   view(): SSAMapView | null;
   /** The map moved, zoomed, resized or redrew. Coalesced to one call a frame. Returns the unsubscribe.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   on(event: 'view', fn: (view: SSAMapView) => void): () => void;
   /**
    * Entries for the map's right-click menu, in a "From plugins" section after the panel's own.
    * `z` is the height of the nearest thing the map knows, a hint and not the ground. Return an
    * entry, an array of them, or nothing. Returns the unsubscribe.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   onContext(fn: (point: { x: number; y: number; z: number }) => ActionEntry | ActionEntry[] | null | void): () => void;
   /** `SSA.pickOnMap`, here as well.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   pickPosition(opts?: Parameters<SSA['pickOnMap']>[0]): Promise<SSAMapPoint | null>;
   /** `SSA.canPickOnMap`, here as well.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   canPickPosition(): boolean;
   /** This object bound to your plugin. Take it at load and use it from asynchronous code.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   client(): SSAMap;
 }
@@ -5461,10 +5461,10 @@ export interface SSA {
    * browser: that is what opens the screen in a new tab. `get()` is what the address names when
    * your `render()` runs; `onChange` hears Back, Forward and an address followed while the page is
    * open. Feature-test it: an older manager has no `route` and opens your first screen instead.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   route?: {
-    /** @since the release after 6.1.0 */
+    /** @since 6.2.0 */
     client(): {
       href(sub?: string): string;
       get(): string;
@@ -5497,7 +5497,7 @@ export interface SSA {
    * Who is signed in to this panel: `{ id, name }`, or `null` when nobody is or there is no panel
    * behind the SDK. `id` is a string, `null` for the built-in recovery admin. The same pair a backend
    * route reads as `req.admin`; unlike `admin()` it will not change shape.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   me(): { id: string | null; name: string } | null;
   /** @since 4.0.2 */
@@ -5559,7 +5559,7 @@ export interface SSA {
    * says why in a toast. A vehicle is found on the Live Map's data, or in a fresh map read when the
    * map has not been opened: that read has the saved position and no running-game id, so recovery
    * verbs address the vehicle by position. Feature-detect with `canOpenEntityAdmin()`.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   openEntityAdmin(kind: 'player' | 'vehicle', id: string | number): Promise<boolean>;
   /** @since 4.0.2 */
@@ -5614,7 +5614,7 @@ export interface SSA {
   /**
    * The Live Map: your own layers in its layer list, its coordinates both ways and its right-click
    * menu. Needs `map:layers` / `map:actions` in plugin.json `capabilities`. Feature-detect with `canMap()`.
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   map: SSAMap;
 
@@ -5630,7 +5630,7 @@ export interface SSA {
   /** @since 4.0.2 */
   canOpenPlayer(): boolean;
   /** Does this panel have `openEntityAdmin` behind it?
-   * @since the release after 6.1.0
+   * @since 6.2.0
    */
   canOpenEntityAdmin(): boolean;
   /** @since 4.0.2 */
@@ -5643,7 +5643,7 @@ export interface SSA {
   canOpenRecord(): boolean;
   /** @since 5.23.0 */
   canPickOnMap(): boolean;
-  /** @since the release after 6.1.0 */
+  /** @since 6.2.0 */
   canMap(): boolean;
 }
 
