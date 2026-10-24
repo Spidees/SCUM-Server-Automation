@@ -453,7 +453,10 @@ function checkDeps(r, man, field) {
 
 function checkCapabilities(r, man, dir) {
   const caps = man.capabilities;
-  if (caps === undefined) return;
+  if (caps === undefined) {
+    r.note('no "capabilities" list: a manager set to enforce refuses every bridge call, admin command, chat line and save write this plugin makes');
+    return;
+  }
   if (!Array.isArray(caps)) { r.err('"capabilities" must be an array of strings'); return; }
   const bad = caps.filter((c) => typeof c !== 'string' || !c.trim());
   if (bad.length) r.err(`"capabilities" holds something that is not a word: ${some(bad.map((c) => JSON.stringify(c)))}`);

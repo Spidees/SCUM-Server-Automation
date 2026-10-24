@@ -30,6 +30,37 @@ export interface LinkedPlayer {
   [column: string]: unknown;
 }
 
+/**
+ * One player who is online right now, as `host.players.online()` returns it.
+ *
+ * `steamId`, `name` and `playerName` are the named fields, the same ones `LinkedPlayer` has. The
+ * columns of the query behind them travel alongside (`PlayerName`, `SteamID`, `last_login_time`, …):
+ * they are kept so nothing that already reads them breaks. Write new code against the named fields.
+ */
+export interface OnlinePlayer {
+  /** The player's Steam ID as a string, or `null` if the row carried none. */
+  steamId: string | null;
+  /** The in-game character name, or `null`. */
+  name: string | null;
+  /** An alias of `name`, to match `LinkedPlayer`. */
+  playerName: string | null;
+  [column: string]: unknown;
+}
+
+/** One finished backup, as `host.backups.list()` returns it. */
+export interface BackupInfo {
+  /** The file (or, for an uncompressed backup, folder) name inside the backup folder. */
+  name: string;
+  /** Bytes on disk. */
+  size: number;
+  /** When it was taken, in milliseconds since 1970; `null` if the file system did not say. */
+  createdAt: number | null;
+  /** `true` for a .zip, `false` for a plain folder copy. */
+  compressed: boolean;
+  /** `true` when the manager could open it and found a save inside, so Restore would work. */
+  restorable: boolean;
+}
+
 // ── Backend: the `host` facade passed to register(host) ──────────────────────
 export interface Host {
   /**
@@ -157,8 +188,13 @@ export interface Host {
     squad(steamId: string): any | null;
     /** @since 5.0.3 */
     byName(name: string): any | null;
-    /** @since 5.0.3 */
-    online(): any[];
+    /**
+     * Everyone online right now. Each row has the named fields `steamId`, `name` and `playerName`; the raw
+     * columns (`SteamID`, `PlayerName`, …) are still on it. The named fields exist from the release after 6.1.0,
+     * so on an older manager read `SteamID` and `PlayerName`.
+     * @since 5.0.3
+     */
+    online(): OnlinePlayer[];
     /** The language this player reads the server in — same answer as `host.i18n.playerLang()`.
      * @since 5.56.0
      */
@@ -4269,6 +4305,43 @@ export interface Host {
     record?(text: string, opts?: { channel?: string; name?: string }): { ok: boolean; reason?: string };
   };
 
+  /**
+   * The manager's own backups of the game save: the ones the panel's Backup button, the schedule and
+   * the pre-update backup make. Listing them and reading the settings need no capability. Taking one
+   * needs `"backups:write"` in `capabilities` (or `"*"`), and the call never throws.
+   *
+   * Each backup counts toward the owner's `maxBackups`, and the oldest is deleted when the limit is
+   * passed, so a plugin that backs up in a loop would push out the backups the owner is relying on.
+   * The manager lets one plugin start one backup a minute. Ask for one before a risky change, not on
+   * a timer; the schedule is the owner's.
+   * @since the release after 6.1.0
+   */
+  backups: {
+    /**
+     * Take a backup now and wait for it. Resolves `{ ok: true, fileName }` when the archive was written
+     * and opened again to check it, or `{ ok: false, code, reason }`:
+     *  • `not_permitted`  the owner enforces plugin capabilities and `backups:write` is not declared
+     *  • `too_soon`       this plugin took one less than a minute ago
+     *  • `no_source`      the game's saved folder does not exist yet
+     *  • any other code   the backup itself failed; `reason` is its own sentence
+     * If a backup is already running (the schedule's, say) the call waits for that one and shares its
+     * result. `opts.reason` is one line of your own, written to the manager log beside your plugin id.
+     * @since the release after 6.1.0
+     */
+    create(opts?: { reason?: string }): Promise<{ ok: true; fileName: string } | { ok: false; code: string; reason: string; error?: string }>;
+    /**
+     * Every finished backup, newest first. `null` when the backup folder could not be read, which is
+     * not the same answer as `[]`: a folder that does not exist yet is an install that has never taken
+     * a backup and answers `[]`.
+     * @since the release after 6.1.0
+     */
+    list(): Promise<BackupInfo[] | null>;
+    /** The owner's backup settings: where, how many are kept, whether they are zipped, how often the schedule runs.
+     * @since the release after 6.1.0
+     */
+    settings(): { dir: string | null; maxBackups: number; compress: boolean; intervalMinutes: number };
+  };
+
   /** Push a notification through the manager's own pipeline (Discord + admin realtime).
    * @since 5.0.3
    */
@@ -4424,8 +4497,9 @@ export interface Host {
  *                  refused without saying why.
  *  • `not_permitted` the manager did not send the call: the owner enforces plugin capabilities and
  *                  your plugin.json `capabilities` does not cover it. `error` is
- *                  `capability_refused` and `reason` names what is missing. Never seen by a plugin
- *                  that declares no `capabilities`.
+ *                  `capability_refused` and `reason` names what is missing. A plugin that declares no
+ *                  `capabilities` at all is treated as declaring none, so it sees this code too (only
+ *                  while the owner enforces; in the default mode nothing is refused).
  */
 export type BridgeFailureCode = 'bridge_off' | 'no_module' | 'module_off' | 'refused' | 'not_permitted';
 
@@ -4979,7 +5053,17 @@ export interface PluginManifest {
    * Every call still goes through by default; one outside the list is logged once and shown on
    * the plugin's card. When the owner sets `plugins.capabilities` to `enforce`, such a call is
    * refused with `code: 'not_permitted'` (a chat call rejects with `capability_refused`). A
-   * plugin without this key is never refused or warned about. Older managers ignore it.
+   * plugin without this key counts as declaring nothing: in the default mode its calls go through
+   * and its card says it declares none, and under `enforce` they are refused like any undeclared
+   * call. Older managers ignore the key.
+   *
+   * `"backups:write"` lets `host.backups.create()` take a backup. Listing backups and reading the
+   * backup settings need no word.
+   *
+   * This limits what a plugin may ask the manager and the bridge to do. It does not limit Node: a
+   * plugin backend runs inside the manager's own process with the manager's rights and can read
+   * files, start programs and open connections without going through `host`. Owners install only
+   * plugins they trust, and the list tells them what a plugin means to do, not what it is unable to do.
    * @since 6.1.0
    */
   capabilities?: string[];
