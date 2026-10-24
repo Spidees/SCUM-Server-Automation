@@ -7,6 +7,7 @@
 | [`ssa-bridge-sdk.d.ts`](ssa-bridge-sdk.d.ts) | The interface, typed: connection, frame, replies, every refusal code, and every module's reads, writes and settings. Generated from the bridge itself. |
 | [`ssa-bridge-client.js`](ssa-bridge-client.js) | A Node client with no dependencies. Works with `require` and `import`. |
 | [`python/ssa_bridge_client.py`](python/ssa_bridge_client.py) | The same client for Python 3.8 or newer, standard library only. |
+| [`package.json`](package.json), [`python/pyproject.toml`](python/pyproject.toml) | Package files, so you can install the SDK from a checkout (`npm install ./ssa_bridge/sdk`, `pip install ./ssa_bridge/sdk/python`). Neither is published to npm or PyPI. Their version is the bridge version the SDK was written for. |
 
 Full protocol: [scumsa.com/docs/dev/ssa-bridge-protocol](https://scumsa.com/docs/dev/ssa-bridge-protocol). Every module's vocabulary: [scumsa.com/docs/reference/bridge-verbs](https://scumsa.com/docs/reference/bridge-verbs).
 
@@ -70,8 +71,33 @@ The bridge allows **15 cost units a second with a burst of 30**, and at most **2
 
 - **Over budget is not an error.** The request waits in a queue and runs later. Use your own timeout and treat expiry as unknown, because the request may still run.
 - **Keep one connection open.** Every request goes through one queue, so more connections add nothing.
-- **`rate_limited`** answers too many `auth` attempts. The clients wait and send again.
+- **`rate_limited`** answers too many `auth` attempts. The clients wait and send again. When the refusal carries `retryAfterMs`, they wait exactly that long, and hand the refusal back at once if that is longer than your timeout.
 - **`rate_limited` with `reasonCode` `locked_out`** means too many wrong tokens came from your address. The bridge closes the connection, so the clients do not resend: `connect()` fails with `retryAfterMs`, the time until that address may try again.
+- **`busy` with `reasonCode` `queue_full`** means the bridge holds 1024 unanswered requests and dropped this one without running it. The clients wait and send it again. A module that answers `busy` in `reasonCode` is a different thing: the module refused, and the clients hand that back.
+
+## Timeouts and dropped connections
+
+Every request has a timeout: `timeoutMs` in Node (20 seconds unless you set it on `connect()`), `timeout` in seconds in Python. Each call also takes its own, for example `bridge.players({ timeoutMs: 5000 })` or `bridge.players(timeout=5)`.
+
+- **`timeout` means unknown.** The request may still run. An admin command that timed out keeps the admin slot until the bridge answers it, so the next one never overlaps it.
+- **`reasonCode` `not_sent`** on `timeout` or `closed` means the line never left: it did not run, and sending it again is safe.
+- **`closed` without `not_sent`** means the connection dropped while the request was out. It may have run. The clients never resend it for you.
+- **The clients notice a dead link.** TCP keepalive is on, and after 30 seconds of silence the client sends `status`. No answer closes the connection. Set `heartbeatMs` (Node) or `heartbeat` (Python, seconds) to change that, `0` to switch it off.
+
+Reconnecting is off unless you ask for it:
+
+```js
+const bridge = await connect({
+  ...where,
+  reconnect: { minMs: 1000, maxMs: 30000 },
+  rediscover: () => discover({ serverDir: 'C:/SCUM-Server' }),   // the port and instance change when the game restarts
+});
+bridge.on('disconnect', (why) => console.log('lost the bridge:', why.code));
+bridge.on('reconnect', (info) => console.log('back after', info.attempt, 'attempt(s)'));
+bridge.on('close', () => console.log('gone for good:', bridge.closeReason));
+```
+
+In Python, pass `reconnect=True` or `reconnect=(1, 30)` and `rediscover=lambda: discover(server_dir=...)`, and set `on_disconnect`, `on_reconnect` and `on_close`. A reconnected client logs in and subscribes again. While it is away, a request comes back at once as `closed` with `not_sent`. It stops trying, and closes for good, on a refusal a new connection would only meet again, such as a wrong token or a bridge below `minProtocol`; `closeReason` (`close_reason`) says which.
 
 ## Examples
 
@@ -80,8 +106,10 @@ Node:
 ```js
 const { connect, discover } = require('./ssa-bridge-client.js');
 
-// On the server's machine, from the status file:
-const bridge = await connect({ ...discover({ serverDir: 'C:/SCUM-Server' }), caller: 'my-bot' });
+// On the server's machine, from the status file. No file means the bridge has not started:
+const where = discover({ serverDir: 'C:/SCUM-Server' });
+if (!where) throw new Error('the bridge is not running on this server');
+const bridge = await connect({ ...where, caller: 'my-bot' });
 // From another machine:
 // const bridge = await connect({ host: '203.0.113.5', port: 27717, token: 'a long random secret' });
 
@@ -102,11 +130,16 @@ Python:
 ```python
 from ssa_bridge_client import connect, discover
 
-bridge = connect(**discover(server_dir=r"C:\SCUM-Server"), caller="my-bot")
+where = discover(server_dir=r"C:\SCUM-Server")
+if where is None:
+    raise SystemExit("the bridge is not running on this server")
+bridge = connect(**where, caller="my-bot")
 r = bridge.query("live", "players")
 print(r["result"] if r["ok"] else (r["code"], r["reason"]))
 bridge.chat("Restart in 5 minutes", channel="global")
 ```
+
+An event handler that throws does not break the client: Node reports it as a `listenerError` event, Python logs it to the `ssa_bridge_client` logger. In Python the handlers run on a thread of their own, never the one reading the socket, so a handler may call the client.
 
 A module answers only once its own settings are on. `live` needs **Read live player data** and **Position, facing and speed** for positions. `deaths` needs **Record deaths and their cause** in the medical module.
 

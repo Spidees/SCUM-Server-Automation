@@ -67,13 +67,54 @@ export interface BridgeConnectOptions {
   caller?: string;
   /**
    * How long to wait for one reply. Default 20000. A request over the bridge's rate budget is queued
-   * rather than refused, so an expired timeout means UNKNOWN: the request may still run.
+   * rather than refused, so an expired timeout means UNKNOWN: the request may still run. Every
+   * request method also takes `{ timeoutMs }` for that one call.
+   *
+   * An admin command (`cmd`, `spawn`, `batch`) that times out still holds the admin slot until its
+   * reply arrives or the connection closes, so the next one never overlaps it on the wire. One that
+   * waits for the slot past its own timeout resolves `timeout` with `reasonCode` `not_sent`: it never
+   * left the client.
    */
   timeoutMs?: number;
-  /** How long to wait before resending after `rate_limited`, times the attempt number. Default 1000. */
+  /**
+   * How long to wait before resending after `rate_limited` or `busy`, times the attempt number.
+   * Default 1000. A refusal that carries `retryAfterMs` is resent after that wait instead, or handed
+   * back when the wait is longer than `timeoutMs`.
+   */
   backoffMs?: number;
-  /** How many times to resend after `rate_limited`. Default 3. */
+  /** How many times to resend after `rate_limited` or `busy`. Default 3. */
   retries?: number;
+  /**
+   * After this long with nothing received, the client sends `status`; no reply within the shorter of
+   * this and `timeoutMs` and it closes the connection, so a dead link is noticed instead of every
+   * request waiting out its timeout. Default 30000; 0 turns it off.
+   */
+  heartbeatMs?: number;
+  /** TCP keep-alive on the socket (15 s idle). Default true. */
+  keepAlive?: boolean;
+  /**
+   * Opt in to reconnecting when the connection drops. `true` waits 1000 ms, doubling up to 30000;
+   * an object sets both ends. On every new connection the client logs in again and subscribes again
+   * to the events it had. A request open when the connection dropped resolves `closed` and is never
+   * sent again, because the bridge may already have run it. A request made while the client is
+   * reconnecting resolves `closed` with `reasonCode` `not_sent` at once: it never left the client.
+   * Reconnecting stops for good at `bad_token`, `remote_disabled`, `tampered`, `protocol`, a
+   * `locked_out` login, or `wrong_instance` without `rediscover`. Default off.
+   */
+  reconnect?: boolean | { minMs?: number; maxMs?: number };
+  /**
+   * Called before every reconnect attempt for where the bridge is now. A restarted server writes a
+   * new `instance`, and may move to another port, so a client that read the status file should read
+   * it again here (return `discover(...)`). Without it the client reconnects to the same host, port
+   * and instance, and stops at the first `wrong_instance`. Return null to skip this attempt.
+   */
+  rediscover?: () => { host?: string; port: number; instance?: string } | null;
+}
+
+/** Per-call options every request method takes. */
+export interface RequestOptions {
+  /** This call's timeout, instead of the connection's `timeoutMs`. */
+  timeoutMs?: number;
 }
 
 // ── The frame ───────────────────────────────────────────────────────────────────────────────────
@@ -182,7 +223,11 @@ export interface BridgeRefusal {
   reason: string;
   /** Present when the bridge or a module named a more specific case, e.g. `needs_player`. */
   reasonCode?: string;
-  /** With `rate_limited` on `auth`: how long until this address may send `auth` again. */
+  /**
+   * With `rate_limited` on `auth`: how long until this address may send `auth` again. The client has
+   * already waited this long and resent, up to `retries` times, unless the wait was longer than
+   * `timeoutMs` or the reason is `locked_out`.
+   */
   retryAfterMs?: number;
   /** A refusal after a partial write still reports what was written. */
   reach?: BridgeReach;
@@ -192,22 +237,23 @@ export type BridgeReply<T = unknown> = BridgeOk<T> | BridgeRefusal;
 
 /**
  * Codes the bridge itself sends in `error`. Stable: they never change meaning without the protocol
- * number going up. The sentence after each is what it means and what to do.
+ * number going up. The sentence after each is what it means and what to do. Generated from the
+ * bridge's source, so a code the bridge sends is never missing here.
  */
 export type BridgeErrorCode =
   /** The line was not one complete JSON object. Arrives with id "0". Fix the serialiser. */
   | 'bad json'
   /** No such action in this build. The reason lists the ones there are. */
   | 'unknown action'
+  /** A field has the wrong shape, such as a `persist` that is not a boolean or a `persisted` request the action does not take. Nothing ran. The reason names the field. */
+  | 'bad_request'
+  /** A command, item or text field carried a control character. Nothing ran. Strip it and send again. */
+  | 'control_char'
   /** A remote client has not sent `auth`. Send it first. Also sent before the connection is closed after ten seconds unauthenticated. */
   | 'unauthorized'
   /** A remote client, and the owner has set no token. Remote control is off until they do. */
   | 'remote_disabled'
-  /**
-   * Wrong token, or no token configured. Do not retry in a loop. For a login with `proof`,
-   * `reasonCode` says which: `bad_proof`, `no_nonce` (no `auth_nonce` outstanding on this connection)
-   * or `nonce_expired` (older than 30 s). The connection closes either way.
-   */
+  /** Wrong token, or no token configured. Do not retry in a loop. For a login with `proof`, `reasonCode` says which: `bad_proof`, `no_nonce` (no `auth_nonce` outstanding on this connection) or `nonce_expired` (older than 30 s). The connection closes either way. */
   | 'bad_token'
   /** `auth_nonce` on a server whose crypto library failed HMAC-SHA256's test vector. Send the token. */
   | 'hmac_unavailable'
@@ -215,13 +261,9 @@ export type BridgeErrorCode =
   | 'nonce_failed'
   /** The `instance` names a different run of the bridge. Read the status file again. */
   | 'wrong_instance'
-  /**
-   * Too many `auth` attempts from your address. With `reasonCode` `rate_limited` the client waits and
-   * sends again. With `locked_out` (five wrong tokens in a minute) the bridge has closed the connection;
-   * the client does not resend, and `retryAfterMs` says when this address may try again.
-   */
+  /** Too many `auth` attempts from your address. With `reasonCode` `rate_limited` the client waits `retryAfterMs` and sends again. With `locked_out` (five wrong tokens in a minute) the bridge has closed the connection; the client does not resend, and `retryAfterMs` says when this address may try again. */
   | 'rate_limited'
-  /** 1024 requests are already queued. Arrives with id "0", so the request it dropped times out. */
+  /** The bridge already holds 1024 requests it has not answered, so it dropped this one without queueing it (`reasonCode` `queue_full`). It carries the request's own id, so the client waits and sends it again. Bridges before 2.44.0 sent it with id "0"; the request it dropped then timed out. */
   | 'busy'
   /** Over 64 KB without a newline. The connection closes. */
   | 'line_too_long'
@@ -238,13 +280,31 @@ export type BridgeErrorCode =
   /** `module_config` without a `config` object. Send the full settings object. */
   | 'missing_config'
   /** A required field is absent. The reason names it. */
-  | 'missing_command' | 'missing item' | 'missing text' | 'missing command'
+  | 'missing_command'
+  /** A required field is absent. The reason names it. */
+  | 'missing item'
+  /** A required field is absent. The reason names it. */
+  | 'missing text'
+  /** A required field is absent. The reason names it. */
+  | 'missing command'
+  /** `spawn` with an `item` that is not a class name of 1 to 128 letters, digits, `_` and `-`. Nothing ran. */
+  | 'bad_item'
+  /** `spawn` with a `rest` over 256 characters or holding a character an admin command does not take. Nothing ran. */
+  | 'bad_rest'
   /** Coordinates absent or not JSON numbers. */
-  | 'missing_xy' | 'bad_xy' | 'bad_xyz'
+  | 'missing_xy'
+  /** Coordinates absent or not JSON numbers. */
+  | 'bad_xy'
+  /** Coordinates absent or not JSON numbers. */
+  | 'bad_xyz'
   /** Nothing solid below that point. */
-  | 'no_ground' | 'no ground below that height'
+  | 'no_ground'
+  /** Nothing solid below that point. */
+  | 'no ground below that height'
   /** Nobody online to run the command through. `reasonCode` is `needs_player` or `executor_offline`. */
   | 'no_executor'
+  /** A `batch` where none of the commands ran. The reason carries the first command's own words, and `result` the counts. */
+  | 'nothing_ran'
   /** That player is not on the server or has not spawned. Retry later. */
   | 'player not ready'
   /** The console could not be reached. Says nothing about the command. */
@@ -253,6 +313,12 @@ export type BridgeErrorCode =
   | 'console_refused'
   /** `chat` with a channel that is not one of the five. */
   | 'bad channel'
+  /** `chat` with `targets` that is neither "all" nor an array of Steam ID strings. Nothing was sent. */
+  | 'bad_targets'
+  /** `chat` with an `exclude` that is not an array of Steam ID strings. Nothing was sent. */
+  | 'bad_exclude'
+  /** No game frame came in time, so a chat line was sent to nobody. The server was stalled or shutting down. Retry later. */
+  | 'no_frame'
   /** A `batch` holding more than one spawn command. Send spawns one at a time. */
   | 'too_many_spawns'
   /** `where` found the player but could not read the location. Retry in a moment. */
@@ -261,19 +327,33 @@ export type BridgeErrorCode =
   | 'reply_too_long'
   /** An answer over 8 MB. Ask for less. */
   | 'reply_too_large'
+  /** `persisted` `forget:<id>` with an id that is not in the list. The list is unchanged. */
+  | 'not_found'
+  /** `persisted` could not save its file, so the forget was undone. The reason says why. */
+  | 'write_failed'
+  /** A diagnostic action's `use` that is neither `playerArray` nor `walk`. */
+  | 'bad_use'
+  /** A diagnostic action's `class` that is not a class name of 1 to 128 characters. */
+  | 'bad_class'
+  /** A diagnostic action named a class that does not exist in this server process. Nothing was walked. */
+  | 'unknown_class'
   /** Older bridges only: the licence gate that no longer exists. Treat it as "not available". */
   | 'unlicensed';
 
 /** Codes the reference client adds for things that never reached the bridge or never came back. */
 export type ClientErrorCode =
-  /** No reply within `timeoutMs`. The request may still run; treat the outcome as unknown. */
+  /** No reply within `timeoutMs`. The request may still run; treat the outcome as unknown. With `reasonCode` `not_sent` it never left the client: it was waiting for an earlier admin command's reply, so it did not run. */
   | 'timeout'
-  /** The connection closed before the reply arrived. */
+  /** The connection closed before the reply arrived: the request may have run, and it is never sent again on a new connection. With `reasonCode` `not_sent` it never left the client (the connection was already closed or reconnecting, or the line could not be written), so it did not run and is safe to send again. */
   | 'closed'
-  /** A reply line that was not JSON, or over 8 MB. */
+  /** A reply line that was not JSON, or over 8 MB. After an oversized reply the client closes the connection. */
   | 'bad_response'
   /** A module refused in its own words and gave no code. `reason` is that sentence. */
-  | 'module_refused';
+  | 'module_refused'
+  /** `connect()` only: no port was given. Read it from the status file or ask the owner. */
+  | 'no_port'
+  /** `connect()` only: the bridge speaks a protocol below `minProtocol`. */
+  | 'protocol';
 
 // ── The bridge's own actions ────────────────────────────────────────────────────────────────────
 
@@ -373,39 +453,90 @@ export interface BridgeLimits {
 
 // ── The reference client (ssa-bridge-client.js) ─────────────────────────────────────────────────
 
+/** What the client emits after a reconnect. */
+export interface ReconnectInfo {
+  /** How many attempts this reconnect took, from 1. */
+  attempt: number;
+  /** What `status` answered on the new connection. */
+  status: StatusResult;
+}
+
+/**
+ * The events, typed. A listener that throws does not break the connection: the error is emitted as
+ * `listenerError`, or written to the console when nothing listens for that.
+ */
+export interface BridgeClientEvents {
+  /** A push event, after `subscribe`. */
+  event: [e: BridgeEvent];
+  /** A line with an id this client never sent, or one that was not JSON. */
+  stray: [line: unknown];
+  /** The connection is gone for good: closed by you, or dropped with `reconnect` off or given up. */
+  close: [];
+  /** With `reconnect` on: the connection dropped and the client is about to reconnect. */
+  disconnect: [info: { code: string; reason: string }];
+  /** With `reconnect` on: a new connection is up, logged in and subscribed again. */
+  reconnect: [info: ReconnectInfo];
+  /** An `event`, `stray`, `disconnect` or `reconnect` listener threw. */
+  listenerError: [err: unknown, name: string];
+}
+
+/**
+ * One connection. In Node it is an `EventEmitter`; the methods below are the part of that surface
+ * the client's events use, declared here so these typings need nothing from `@types/node`.
+ */
 export declare class BridgeClient {
-  /** What `status` answered on connect. */
+  /** What `status` answered on connect, and again after each reconnect. */
   readonly status: StatusResult;
   /** `status.protocol`, with an absent number read as 1. */
   readonly protocol: number;
+  /** True once the connection is gone for good. False while it reconnects. */
+  readonly closed: boolean;
+  /** Why the connection closed for good, once it has. */
+  readonly closeReason: { code: string; reason: string } | null;
 
   /** Any action. Resolves to a reply; never rejects for a refusal. */
-  request<T = unknown>(action: BridgeAction, fields?: Record<string, unknown>): Promise<BridgeReply<T>>;
+  request<T = unknown>(action: BridgeAction, fields?: Record<string, unknown>, opts?: RequestOptions): Promise<BridgeReply<T>>;
   /**
    * `module_data`: ask a module for a report. The catalogue lists every spelling a module tests
    * whole, such as `deaths:since:<seq>`. A word inside an argument is not listed (a sub-command such
    * as `zones` `config:delete:<n>`); send those through `request('module_data', { module, what })`,
    * which takes any string.
+   *
+   * The reply's `result` is typed from `what` (`ReplyOf`): the keys that read can carry, all optional.
    */
-  query<M extends ModuleId>(module: M, what: DataQuery<M>): Promise<BridgeReply>;
+  query<M extends ModuleId, W extends DataQuery<M>>(module: M, what: W, opts?: RequestOptions): Promise<BridgeReply<ReplyOf<M, W>>>;
   /** `module_command`: tell a module to do something. Unlisted spellings go through `request()` too. */
-  command<M extends ModuleId>(module: M, what: Command<M>): Promise<BridgeReply>;
+  command<M extends ModuleId>(module: M, what: Command<M>, opts?: RequestOptions): Promise<BridgeReply>;
   /** `module_config`: REPLACES the module's settings. Read `modules`, change the object, send all of it. */
-  configure<M extends ModuleId>(module: M, config: ModuleSettings<M>): Promise<BridgeReply<ModuleEntry[]>>;
-  modules(): Promise<BridgeReply<ModuleEntry[]>>;
-  players(): Promise<BridgeReply<PlayerRow[]>>;
+  configure<M extends ModuleId>(module: M, config: ModuleSettings<M>, opts?: RequestOptions): Promise<BridgeReply<ModuleEntry[]>>;
+  modules(opts?: RequestOptions): Promise<BridgeReply<ModuleEntry[]>>;
+  players(opts?: RequestOptions): Promise<BridgeReply<PlayerRow[]>>;
   /**
    * One SCUM admin command, without the leading `#` (one is stripped if present). The client sends
-   * one admin command at a time: a second call waits for the first reply.
+   * one admin command at a time: a second call waits for the first reply, even after the first one's
+   * caller was handed `timeout`.
    */
-  cmd(command: string, opts?: { executor?: string; hide?: boolean }): Promise<BridgeReply<CmdResult>>;
-  chat(text: string, opts?: ChatOptions): Promise<BridgeReply<{ channel: number; delivered: number }>>;
-  /** Turns on push events for this connection. Unknown names are dropped: compare the answer. */
-  subscribe(events: BridgeEventName[]): Promise<BridgeReply<{ subscribed: string[] }>>;
-  on(name: 'event', fn: (e: BridgeEvent) => void): this;
-  /** A line with an id this client never sent, such as a `busy` with id "0". */
-  on(name: 'stray', fn: (line: unknown) => void): this;
-  on(name: 'close', fn: () => void): this;
+  cmd(command: string, opts?: { executor?: string; hide?: boolean } & RequestOptions): Promise<BridgeReply<CmdResult>>;
+  chat(text: string, opts?: ChatOptions & RequestOptions): Promise<BridgeReply<{ channel: number; delivered: number }>>;
+  /**
+   * Turns on push events for this connection. Unknown names are dropped: compare the answer. With
+   * `reconnect` on, the client subscribes again to these on every new connection.
+   */
+  subscribe(events: BridgeEventName[], opts?: RequestOptions): Promise<BridgeReply<{ subscribed: string[] }>>;
+
+  on<K extends keyof BridgeClientEvents>(name: K, fn: (...args: BridgeClientEvents[K]) => void): this;
+  on(name: string | symbol, fn: (...args: any[]) => void): this;
+  once<K extends keyof BridgeClientEvents>(name: K, fn: (...args: BridgeClientEvents[K]) => void): this;
+  once(name: string | symbol, fn: (...args: any[]) => void): this;
+  off<K extends keyof BridgeClientEvents>(name: K, fn: (...args: BridgeClientEvents[K]) => void): this;
+  off(name: string | symbol, fn: (...args: any[]) => void): this;
+  addListener<K extends keyof BridgeClientEvents>(name: K, fn: (...args: BridgeClientEvents[K]) => void): this;
+  addListener(name: string | symbol, fn: (...args: any[]) => void): this;
+  removeListener<K extends keyof BridgeClientEvents>(name: K, fn: (...args: BridgeClientEvents[K]) => void): this;
+  removeListener(name: string | symbol, fn: (...args: any[]) => void): this;
+  removeAllListeners(name?: keyof BridgeClientEvents | string | symbol): this;
+  listenerCount(name: keyof BridgeClientEvents | string | symbol): number;
+  /** Closes for good: no reconnect follows. Open requests resolve `closed`. */
   close(): void;
 }
 
@@ -415,13 +546,15 @@ export declare class BridgeClient {
  * itself to an older bridge. Then `status`. Rejects only when there is
  * no usable connection: the socket failed, `auth` was refused, or the bridge speaks a protocol below
  * `minProtocol`. The error carries `code` and `reason`, and for an address locked out of `auth` also
- * `reasonCode` `locked_out` and `retryAfterMs`.
+ * `reasonCode` `locked_out` and `retryAfterMs`. The first connection is never retried, even with
+ * `reconnect` on: that option is about keeping a connection that worked.
  */
 export declare function connect(opts: BridgeConnectOptions & { minProtocol?: number }): Promise<BridgeClient>;
 
 /**
  * Read the status file of a bridge on this machine. `serverDir` is the folder holding `SCUM/`.
  * Returns null when there is no file: that bridge has never listened, and a client must not guess.
+ * Check for null before spreading it into `connect()`.
  */
 export declare function discover(where: { serverDir?: string; statusFile?: string }): (BridgeStatusFile & { host: string }) | null;
 
@@ -18723,6 +18856,295 @@ export interface ModuleReadings {
 
 /** The keys of one read, e.g. `ReadingOf<'zones', 'zones'>`. Use it as `BridgeReply<ReadingOf<…>>`. */
 export type ReadingOf<M extends keyof ModuleReadings, Q extends keyof ModuleReadings[M]> = ModuleReadings[M][Q];
+
+/**
+ * Which reading answers which `what`, by module: each pair is one read's spellings and the keys
+ * its answer can carry. `ReplyOf` looks a `what` up in it.
+ */
+export interface ModuleReadPairs {
+  "actions":
+    | [ActionsRead_State, ReadingActions_State];
+  "ai":
+    | [AiRead_Counts, ReadingAi_Counts]
+    | [AiRead_Creature, ReadingAi_Creature]
+    | [AiRead_Fields, ReadingAi_Fields]
+    | [AiRead_Hunting, ReadingAi_Hunting]
+    | [AiRead_Near, ReadingAi_Near]
+    | [AiRead_Threats, ReadingAi_Threats];
+  "bases":
+    | [BasesRead_Bases, ReadingBases_Bases]
+    | [BasesRead_Contents, ReadingBases_Contents]
+    | [BasesRead_Protection, ReadingBases_Protection];
+  "build":
+    | [BuildRead_Bases, ReadingBuild_Bases]
+    | [BuildRead_Build, ReadingBuild_Build]
+    | [BuildRead_Elements, ReadingBuild_Elements];
+  "climate":
+    | [ClimateRead_Curves, ReadingClimate_Curves]
+    | [ClimateRead_Get, ReadingClimate_Get]
+    | [ClimateRead_Groups, ReadingClimate_Groups]
+    | [ClimateRead_Members, ReadingClimate_Members]
+    | [ClimateRead_Rolls, ReadingClimate_Rolls]
+    | [ClimateRead_State, ReadingClimate_State]
+    | [ClimateRead_Switches, ReadingClimate_Switches];
+  "craft":
+    | [CraftRead_Cookrecipes, ReadingCraft_Cookrecipes]
+    | [CraftRead_Craft, ReadingCraft_Craft]
+    | [CraftRead_CraftEvents, ReadingCraft_CraftEvents]
+    | [CraftRead_Fishing, ReadingCraft_Fishing]
+    | [CraftRead_Placements, ReadingCraft_Placements];
+  "damage":
+    | [DamageRead_Last, ReadingDamage_Last]
+    | [DamageRead_Preview, ReadingDamage_Preview];
+  "despawn":
+    | [DespawnRead_Here, ReadingDespawn_Here]
+    | [DespawnRead_Kinds, ReadingDespawn_Kinds]
+    | [DespawnRead_Preview, ReadingDespawn_Preview];
+  "doors":
+    | [DoorsRead_Classes, ReadingDoors_Classes]
+    | [DoorsRead_Door, ReadingDoors_Door]
+    | [DoorsRead_Levels, ReadingDoors_Levels];
+  "encounters":
+    | [EncountersRead_Bases, ReadingEncounters_Bases]
+    | [EncountersRead_Encounters, ReadingEncounters_Encounters]
+    | [EncountersRead_Hordes, ReadingEncounters_Hordes]
+    | [EncountersRead_Nearby, ReadingEncounters_Nearby]
+    | [EncountersRead_Places, ReadingEncounters_Places]
+    | [EncountersRead_Schedule, ReadingEncounters_Schedule]
+    | [EncountersRead_Tuning, ReadingEncounters_Tuning];
+  "entities":
+    | [EntitiesRead_Bases, ReadingEntities_Bases]
+    | [EntitiesRead_Entities, ReadingEntities_Entities]
+    | [EntitiesRead_Entity, ReadingEntities_Entity]
+    | [EntitiesRead_Kinds, ReadingEntities_Kinds];
+  "events":
+    | [EventsRead_Events, ReadingEvents_Events]
+    | [EventsRead_Peek, ReadingEvents_Peek]
+    | [EventsRead_Watches, ReadingEvents_Watches];
+  "farming":
+    | [FarmingRead_Farming, ReadingFarming_Farming]
+    | [FarmingRead_Garden, ReadingFarming_Garden];
+  "fortifications":
+    | [FortificationsRead_Events, ReadingFortifications_Events]
+    | [FortificationsRead_Fortifications, ReadingFortifications_Fortifications]
+    | [FortificationsRead_Ledger, ReadingFortifications_Ledger]
+    | [FortificationsRead_Near, ReadingFortifications_Near]
+    | [FortificationsRead_Openings, ReadingFortifications_Openings]
+    | [FortificationsRead_Owner, ReadingFortifications_Owner];
+  "give":
+    | [GiveRead_Last, ReadingGive_Last];
+  "hazard":
+    | [HazardRead_Exposure, ReadingHazard_Exposure]
+    | [HazardRead_Get, ReadingHazard_Get]
+    | [HazardRead_Groups, ReadingHazard_Groups]
+    | [HazardRead_Job, ReadingHazard_Job]
+    | [HazardRead_Measure, ReadingHazard_Measure]
+    | [HazardRead_State, ReadingHazard_State]
+    | [HazardRead_Zones, ReadingHazard_Zones];
+  "items":
+    | [ItemsRead_Attachjob, ReadingItems_Attachjob]
+    | [ItemsRead_Attachments, ReadingItems_Attachments]
+    | [ItemsRead_Counts, ReadingItems_Counts]
+    | [ItemsRead_Inventory, ReadingItems_Inventory]
+    | [ItemsRead_Last, ReadingItems_Last]
+    | [ItemsRead_Near, ReadingItems_Near]
+    | [ItemsRead_Traps, ReadingItems_Traps]
+    | [ItemsRead_Where, ReadingItems_Where];
+  "killbox":
+    | [KillboxRead_Apex, ReadingKillbox_Apex]
+    | [KillboxRead_Killbox, ReadingKillbox_Killbox];
+  "live":
+    | [LiveRead_Kills, ReadingLive_Kills]
+    | [LiveRead_Players, ReadingLive_Players]
+    | [LiveRead_Server, ReadingLive_Server]
+    | [LiveRead_World, ReadingLive_World];
+  "locks":
+    | [LocksRead_Locked, ReadingLocks_Locked]
+    | [LocksRead_Locks, ReadingLocks_Locks]
+    | [LocksRead_Near, ReadingLocks_Near]
+    | [LocksRead_Replication, ReadingLocks_Replication]
+    | [LocksRead_Saved, ReadingLocks_Saved];
+  "loot":
+    | [LootRead_Files, ReadingLoot_Files];
+  "medical":
+    | [MedicalRead_Catalogue, ReadingMedical_Catalogue]
+    | [MedicalRead_Conditions, ReadingMedical_Conditions]
+    | [MedicalRead_Deaths, ReadingMedical_Deaths]
+    | [MedicalRead_Fields, ReadingMedical_Fields]
+    | [MedicalRead_Lastcure, ReadingMedical_Lastcure]
+    | [MedicalRead_Lastchange, ReadingMedical_Lastchange]
+    | [MedicalRead_Lastmeta, ReadingMedical_Lastmeta]
+    | [MedicalRead_Player, ReadingMedical_Player]
+    | [MedicalRead_Players, ReadingMedical_Players]
+    | [MedicalRead_Severities, ReadingMedical_Severities]
+    | [MedicalRead_Substances, ReadingMedical_Substances];
+  "notify":
+    | [NotifyRead_Queue, ReadingNotify_Queue];
+  "offline":
+    | [OfflineRead_EncounterBases, ReadingOffline_EncounterBases]
+    | [OfflineRead_Flag, ReadingOffline_Flag]
+    | [OfflineRead_Changes, ReadingOffline_Changes]
+    | [OfflineRead_Mode, ReadingOffline_Mode]
+    | [OfflineRead_Requests, ReadingOffline_Requests]
+    | [OfflineRead_Rules, ReadingOffline_Rules]
+    | [OfflineRead_State, ReadingOffline_State];
+  "place":
+    | [PlaceRead_World, ReadingPlace_World];
+  "power":
+    | [PowerRead_Cooking, ReadingPower_Cooking]
+    | [PowerRead_Heat, ReadingPower_Heat]
+    | [PowerRead_Power, ReadingPower_Power];
+  "protect":
+    | [ProtectRead_Calls, ReadingProtect_Calls]
+    | [ProtectRead_Flag, ReadingProtect_Flag]
+    | [ProtectRead_Changes, ReadingProtect_Changes]
+    | [ProtectRead_Layout, ReadingProtect_Layout]
+    | [ProtectRead_Manager, ReadingProtect_Manager]
+    | [ProtectRead_Offline, ReadingProtect_Offline]
+    | [ProtectRead_Protections, ReadingProtect_Protections];
+  "quests":
+    | [QuestsRead_Activity, ReadingQuests_Activity]
+    | [QuestsRead_Areas, ReadingQuests_Areas]
+    | [QuestsRead_Catalogue, ReadingQuests_Catalogue]
+    | [QuestsRead_Givers, ReadingQuests_Givers]
+    | [QuestsRead_Outposts, ReadingQuests_Outposts]
+    | [QuestsRead_Player, ReadingQuests_Player]
+    | [QuestsRead_Quest, ReadingQuests_Quest]
+    | [QuestsRead_Quests, ReadingQuests_Quests]
+    | [QuestsRead_Timed, ReadingQuests_Timed];
+  "raid":
+    | [RaidRead_All, ReadingRaid_All]
+    | [RaidRead_Announcements, ReadingRaid_Announcements]
+    | [RaidRead_Base, ReadingRaid_Base]
+    | [RaidRead_Bases, ReadingRaid_Bases]
+    | [RaidRead_Encounters, ReadingRaid_Encounters]
+    | [RaidRead_Raids, ReadingRaid_Raids]
+    | [RaidRead_Reasons, ReadingRaid_Reasons];
+  "repair":
+    | [RepairRead_Resolve, ReadingRepair_Resolve];
+  "report":
+    | [ReportRead_Status, ReadingReport_Status];
+  "resources":
+    | [ResourcesRead_Resources, ReadingResources_Resources]
+    | [ResourcesRead_Stations, ReadingResources_Stations];
+  "respawn":
+    | [RespawnRead_Timers, ReadingRespawn_Timers];
+  "settings":
+    | [SettingsRead_Categories, ReadingSettings_Categories]
+    | [SettingsRead_Get, ReadingSettings_Get]
+    | [SettingsRead_Changes, ReadingSettings_Changes]
+    | [SettingsRead_List, ReadingSettings_List]
+    | [SettingsRead_Outstanding, ReadingSettings_Outstanding]
+    | [SettingsRead_Probe, ReadingSettings_Probe]
+    | [SettingsRead_Section, ReadingSettings_Section]
+    | [SettingsRead_Values, ReadingSettings_Values]
+    | [SettingsRead_Valuesfrom, ReadingSettings_Valuesfrom];
+  "spawn":
+    | [SpawnRead_Check, ReadingSpawn_Check]
+    | [SpawnRead_Kinds, ReadingSpawn_Kinds]
+    | [SpawnRead_Loadcheck, ReadingSpawn_Loadcheck]
+    | [SpawnRead_Persistence, ReadingSpawn_Persistence]
+    | [SpawnRead_Persistent, ReadingSpawn_Persistent]
+    | [SpawnRead_Spawn, ReadingSpawn_Spawn];
+  "spawnpoints":
+    | [SpawnpointsRead_List, ReadingSpawnpoints_List]
+    | [SpawnpointsRead_Map, ReadingSpawnpoints_Map]
+    | [SpawnpointsRead_Respawn, ReadingSpawnpoints_Respawn];
+  "squads":
+    | [SquadsRead_Board, ReadingSquads_Board]
+    | [SquadsRead_Destroyed, ReadingSquads_Destroyed]
+    | [SquadsRead_Member, ReadingSquads_Member]
+    | [SquadsRead_Names, ReadingSquads_Names]
+    | [SquadsRead_Squad, ReadingSquads_Squad]
+    | [SquadsRead_Squads, ReadingSquads_Squads];
+  "stash":
+    | [StashRead_Check, ReadingStash_Check]
+    | [StashRead_Job, ReadingStash_Job]
+    | [StashRead_Jobs, ReadingStash_Jobs];
+  "stats":
+    | [StatsRead_Attributes, ReadingStats_Attributes]
+    | [StatsRead_Fame, ReadingStats_Fame]
+    | [StatsRead_Kills, ReadingStats_Kills]
+    | [StatsRead_Lastskill, ReadingStats_Lastskill]
+    | [StatsRead_Ranking, ReadingStats_Ranking]
+    | [StatsRead_Rankwords, ReadingStats_Rankwords]
+    | [StatsRead_Skillinfo, ReadingStats_Skillinfo]
+    | [StatsRead_Skills, ReadingStats_Skills]
+    | [StatsRead_Stats, ReadingStats_Stats];
+  "storage":
+    | [StorageRead_Contents, ReadingStorage_Contents]
+    | [StorageRead_Dropcheck, ReadingStorage_Dropcheck]
+    | [StorageRead_Lastdestroy, ReadingStorage_Lastdestroy]
+    | [StorageRead_Lockboxes, ReadingStorage_Lockboxes]
+    | [StorageRead_Storage, ReadingStorage_Storage];
+  "teleport":
+    | [TeleportRead_Corpses, ReadingTeleport_Corpses]
+    | [TeleportRead_Inflight, ReadingTeleport_Inflight]
+    | [TeleportRead_Origin, ReadingTeleport_Origin]
+    | [TeleportRead_Origins, ReadingTeleport_Origins];
+  "trade":
+    | [TradeRead_Bank, ReadingTrade_Bank]
+    | [TradeRead_Economy, ReadingTrade_Economy]
+    | [TradeRead_Prices, ReadingTrade_Prices]
+    | [TradeRead_Trade, ReadingTrade_Trade]
+    | [TradeRead_Writable, ReadingTrade_Writable];
+  "vehicles":
+    | [VehiclesRead_Manager, ReadingVehicles_Manager]
+    | [VehiclesRead_Vehicles, ReadingVehicles_Vehicles];
+  "virtual":
+    | [VirtualRead_Containers, ReadingVirtual_Containers]
+    | [VirtualRead_Owners, ReadingVirtual_Owners]
+    | [VirtualRead_Repdata, ReadingVirtual_Repdata]
+    | [VirtualRead_Survey, ReadingVirtual_Survey]
+    | [VirtualRead_Virtualized, ReadingVirtual_Virtualized];
+  "vote":
+    | [VoteRead_Tournament, ReadingVote_Tournament]
+    | [VoteRead_Vote, ReadingVote_Vote];
+  "wake":
+    | [WakeRead_Near, ReadingWake_Near]
+    | [WakeRead_Reach, ReadingWake_Reach]
+    | [WakeRead_Visitors, ReadingWake_Visitors];
+  "wildlife":
+    | [WildlifeRead_Biomes, ReadingWildlife_Biomes]
+    | [WildlifeRead_Census, ReadingWildlife_Census]
+    | [WildlifeRead_Feeders, ReadingWildlife_Feeders]
+    | [WildlifeRead_Fish, ReadingWildlife_Fish]
+    | [WildlifeRead_Limits, ReadingWildlife_Limits]
+    | [WildlifeRead_Water, ReadingWildlife_Water];
+  "world":
+    | [WorldRead_Distant, ReadingWorld_Distant]
+    | [WorldRead_Find, ReadingWorld_Find]
+    | [WorldRead_Level, ReadingWorld_Level]
+    | [WorldRead_Levels, ReadingWorld_Levels]
+    | [WorldRead_Managers, ReadingWorld_Managers]
+    | [WorldRead_Summary, ReadingWorld_Summary];
+  "worldevents":
+    | [WorldeventsRead_Events, ReadingWorldevents_Events]
+    | [WorldeventsRead_Ledger, ReadingWorldevents_Ledger];
+  "zones":
+    | [ZonesRead_Border, ReadingZones_Border]
+    | [ZonesRead_Config, ReadingZones_Config]
+    | [ZonesRead_Defaults, ReadingZones_Defaults]
+    | [ZonesRead_Enums, ReadingZones_Enums]
+    | [ZonesRead_Global, ReadingZones_Global]
+    | [ZonesRead_Guarded, ReadingZones_Guarded]
+    | [ZonesRead_Spawners, ReadingZones_Spawners]
+    | [ZonesRead_Zone, ReadingZones_Zone]
+    | [ZonesRead_Zones, ReadingZones_Zones];
+}
+
+/** The reading of every pair in `L` whose spelling `W` matches. */
+export type MatchRead<W, L> = L extends [infer P, infer R] ? (W extends P ? R : never) : never;
+
+/**
+ * The `result` type of `query(module, what)`, worked out from the `what` string: the keys that read
+ * can carry, on an object or on the items of a list, so narrow it with `Array.isArray` first. Every
+ * key is optional and may sit deeper than the top level; it names what can be there, it does not
+ * promise the nesting. `unknown` for a read whose payload the generator could not follow.
+ */
+export type ReplyOf<M extends ModuleId, W> = M extends keyof ModuleReadPairs
+  ? ([MatchRead<W, ModuleReadPairs[M]>] extends [never] ? unknown : MatchRead<W, ModuleReadPairs[M]> | MatchRead<W, ModuleReadPairs[M]>[])
+  : unknown;
 
 // ── what a write needs, and whether it survives a restart ─────────────────────────────────────
 

@@ -1,0 +1,19 @@
+{
+  "name": "ssa-bridge-sdk",
+  "version": "2.44.0",
+  "private": true,
+  "description": "Typings and a dependency-free Node client for the SSA Bridge, the SCUM server mod that answers JSON on a TCP socket.",
+  "main": "ssa-bridge-client.js",
+  "types": "ssa-bridge-sdk.d.ts",
+  "files": [
+    "ssa-bridge-client.js",
+    "ssa-bridge-sdk.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "homepage": "https://scumsa.com/docs/dev/ssa-bridge-protocol",
+  "license": "MIT"
+}
