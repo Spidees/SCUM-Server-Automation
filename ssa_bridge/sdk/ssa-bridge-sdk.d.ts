@@ -13544,6 +13544,8 @@ export interface ReadingMedical_Conditions {
  * Keys the Medical state read `deaths:since:<seq>` can carry, at any depth. Not the object's shape.
  */
 export interface ReadingMedical_Deaths {
+  /** Unit: ms. */
+  confirmedAfterMs?: string;
   deaths?: unknown[];
   detectedWithin?: "1 second of the death";
   dropped?: number;
